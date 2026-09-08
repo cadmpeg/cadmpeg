@@ -103,7 +103,10 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .expect("neutral view");
     assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
     assert_eq!(
-        neutral_page.template.as_deref(),
+        neutral_page
+            .template
+            .as_ref()
+            .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
@@ -111,24 +114,26 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         Some(neutral_view.id.as_str())
     );
     assert_eq!(neutral_template.assets.len(), 1);
-    assert_eq!(neutral_view.position, Some([25.0, 40.0]));
-    assert_eq!(neutral_view.scale, Some(2.0));
-    assert_eq!(neutral_view.direction, Some([0.0, 0.0, 1.0]));
+    assert_eq!(
+        neutral_view
+            .position
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([25.0, 40.0])
+    );
+    assert_eq!(
+        neutral_view
+            .scale
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(2.0)
+    );
+    assert_eq!(
+        neutral_view
+            .direction
+            .map(cadmpeg_ir::units::NonzeroVector::get),
+        Some([0.0, 0.0, 1.0])
+    );
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-
-    let mut corrupted = result.ir().clone();
-    corrupted
-        .model
-        .drawings
-        .iter_mut()
-        .find(|drawing| drawing.object.ends_with("#View"))
-        .expect("neutral view")
-        .scale = Some(0.0);
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "invalid drawing reference, order, or numeric state"));
 }
 
 #[test]
@@ -249,7 +254,10 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("neutral view");
     assert_eq!(
-        neutral_page.template.as_deref(),
+        neutral_page
+            .template
+            .as_ref()
+            .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
@@ -292,10 +300,24 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
         .expect("typed drawing carriers");
 
     let drawing = &result.ir().model.drawings[0];
-    assert_eq!(drawing.position, Some([25.0, 40.0]));
-    assert_eq!(drawing.scale, Some(2.0));
-    assert_eq!(drawing.direction, Some([0.0, 0.0, 1.0]));
-    assert_eq!(drawing.rotation_degrees, Some(15.0));
+    assert_eq!(
+        drawing.position.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([25.0, 40.0])
+    );
+    assert_eq!(
+        drawing.scale.map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(2.0)
+    );
+    assert_eq!(
+        drawing.direction.map(cadmpeg_ir::units::NonzeroVector::get),
+        Some([0.0, 0.0, 1.0])
+    );
+    assert_eq!(
+        drawing
+            .rotation_degrees
+            .map(cadmpeg_ir::units::FiniteScalar::get),
+        Some(15.0)
+    );
     assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());

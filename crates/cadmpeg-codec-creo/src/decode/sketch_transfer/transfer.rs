@@ -61,7 +61,7 @@ pub(in super::super) fn transfer_sketches(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> SketchSegmentTransferCoverage {
+) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
     let mut available_parameter_ids = ir
         .model
@@ -191,7 +191,9 @@ pub(in super::super) fn transfer_sketches(
                     .flatten()
                     .or_else(|| {
                         Some(SketchGeometry::Native {
-                            native_kind: "line".to_string(),
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                "line".to_string(),
+                            )?,
                         })
                     });
             }
@@ -442,7 +444,7 @@ pub(in super::super) fn transfer_sketches(
             &materialized_saved_section_external_ids,
             profiles,
             &profile_entities,
-        );
+        )?;
         for (external_id, offset) in solver_only_section_entities(definition) {
             let id = sketch_entity_id(&sketch_id, external_id);
             if entities.iter().any(|entity| entity.id() == &id) {
@@ -461,18 +463,20 @@ pub(in super::super) fn transfer_sketches(
                     id,
                     sketch_id.clone(),
                     SketchGeometry::Native {
-                        native_kind: match solver_only_section_entity_family(
-                            definition,
-                            external_id,
-                        ) {
-                            Some(SectionEntityIncidenceFamily::Point) => "point",
-                            Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
-                            Some(SectionEntityIncidenceFamily::Line) => "line",
-                            Some(SectionEntityIncidenceFamily::Arc) => "arc",
-                            Some(SectionEntityIncidenceFamily::Circular) => "circle",
-                            None => "solver_only_section_entity",
-                        }
-                        .to_string(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            match solver_only_section_entity_family(definition, external_id) {
+                                Some(SectionEntityIncidenceFamily::Point) => "point",
+                                Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                                Some(SectionEntityIncidenceFamily::Line) => "line",
+                                Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                                Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                                None => "solver_only_section_entity",
+                            }
+                            .to_string(),
+                        )
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                        })?,
                     },
                 )
                 .with_construction(true)
@@ -866,5 +870,5 @@ pub(in super::super) fn transfer_sketches(
             });
         }
     }
-    coverage
+    Ok(coverage)
 }

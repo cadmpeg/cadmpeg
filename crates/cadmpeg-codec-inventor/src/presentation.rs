@@ -332,13 +332,10 @@ fn project_face_bindings(
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1];
-        if ![r, g, b, a]
-            .iter()
-            .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        {
+        let Some(color) = Color::new(r, g, b, a) else {
             projection.unresolved_face_overrides += 1;
             continue;
-        }
+        };
         let appearance_id = appearance_ids
             .entry((
                 style.identity.segment_token.as_str(),
@@ -359,7 +356,7 @@ fn project_face_bindings(
                     physical_token: None,
                     schema: Some("InventorPrimaryColorStyle".into()),
                     category: None,
-                    base_color: Some(Color { r, g, b, a }),
+                    base_color: Some(color),
                     properties: BTreeMap::new(),
                     textures: Vec::new(),
                 });
@@ -1288,12 +1285,7 @@ mod tests {
         };
         assert_eq!(
             appearance.base_color,
-            Some(Color {
-                r: 0.2,
-                g: 0.4,
-                b: 0.6,
-                a: 0.8
-            })
+            Some(Color::new(0.2, 0.4, 0.6, 0.8).expect("valid color"))
         );
         let [binding] = projection.bindings.as_slice() else {
             panic!("one face binding must be projected");

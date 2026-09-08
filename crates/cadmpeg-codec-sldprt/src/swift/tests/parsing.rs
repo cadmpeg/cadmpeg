@@ -59,7 +59,7 @@ fn encode_objects(name: &str, end: &str, section: &ObjectSection, bytes: &mut Ve
         return;
     }
     put_pstr(bytes, name);
-    bytes.extend_from_slice(&(section.references.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(section.references.as_slice().len() as u32).to_le_bytes());
     for reference in &section.references {
         put_pstr(bytes, &reference.id);
         put_pstr(bytes, &reference.class);
@@ -108,7 +108,7 @@ fn parses_and_projects_semantic_graph() {
     else {
         panic!("position definition");
     };
-    assert_eq!(*magnitude, length(0.25));
+    assert_eq!(magnitude.get(), length(0.25).expect("finite length"));
     assert_eq!(
         datum_system.as_ref().map(cadmpeg_ir::ids::PmiId::as_str),
         Some("sldprt:model:pmi#A20:datum-system")
@@ -121,10 +121,12 @@ fn parses_and_projects_semantic_graph() {
         position.targets,
         [
             PmiTarget::ShapeAspect {
-                source_id: "F20".into()
+                source_id: cadmpeg_ir::products::NonEmptyString::new("F20")
+                    .expect("nonempty source identity")
             },
             PmiTarget::ShapeAspect {
-                source_id: "F21".into()
+                source_id: cadmpeg_ir::products::NonEmptyString::new("F21")
+                    .expect("nonempty source identity")
             }
         ]
     );
@@ -136,8 +138,11 @@ fn parses_and_projects_semantic_graph() {
     let PmiDefinition::DatumSystem { references } = &system.definition else {
         panic!("datum-system definition");
     };
-    assert_eq!(references.len(), 1);
-    let datum_reference = references.first().expect("primary datum reference");
+    assert_eq!(references.as_slice().len(), 1);
+    let datum_reference = references
+        .as_slice()
+        .first()
+        .expect("primary datum reference");
     assert_eq!(datum_reference.precedence.get(), 1);
     assert_eq!(datum_reference.modifiers, ["least_material_requirement"]);
 
@@ -156,10 +161,7 @@ fn parses_and_projects_semantic_graph() {
     };
     assert_eq!(
         *nominal,
-        PmiValue {
-            value: 0.0,
-            quantity: PmiQuantity::Angle,
-        }
+        PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")
     );
 }
 

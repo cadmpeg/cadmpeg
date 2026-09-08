@@ -3929,12 +3929,12 @@ fn accumulate_display_jt_material(
 }
 
 fn display_jt_path_color(path: &DisplayJtPath) -> Option<Color> {
-    Some(Color {
-        r: path.diffuse[0]?,
-        g: path.diffuse[1]?,
-        b: path.diffuse[2]?,
-        a: path.diffuse[3]?,
-    })
+    Color::new(
+        path.diffuse[0]?,
+        path.diffuse[1]?,
+        path.diffuse[2]?,
+        path.diffuse[3]?,
+    )
 }
 
 fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option<DisplayJtMatrix> {
@@ -4483,7 +4483,7 @@ pub(crate) fn display_jt_tessellations(
                 .ok()?
                 .with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: shape_node.id.clone(),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(shape_node.id.clone())?,
                     name: None,
                     color,
                     visible: None,
@@ -5395,12 +5395,7 @@ mod tests {
                 .as_ref()
                 .expect("required invariant")
                 .color,
-            Some(Color {
-                r: 0.2,
-                g: 0.3,
-                b: 0.4,
-                a: 0.5,
-            })
+            Some(Color::new(0.2, 0.3, 0.4, 0.5).expect("valid color"))
         );
         assert_eq!(
             tessellations[1]
@@ -5725,12 +5720,7 @@ mod tests {
         assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]);
         assert_eq!(
             super::display_jt_path_color(&path),
-            Some(Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
-                a: 0.8,
-            })
+            Some(Color::new(0.1, 0.2, 0.3, 0.8).expect("valid color"))
         );
 
         super::accumulate_display_jt_material(&mut path, &material([1.0; 4], 0x06, 0));

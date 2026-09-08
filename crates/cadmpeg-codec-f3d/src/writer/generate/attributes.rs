@@ -1253,16 +1253,7 @@ fn native_color_attribute(
     next: i64,
     owner: i64,
 ) -> Result<(), CodecError> {
-    let channels = [color.r, color.g, color.b, color.a];
-    if channels
-        .iter()
-        .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(channel))
-    {
-        return Err(CodecError::Malformed(
-            "source-less F3D color channels must be finite and in [0, 1]".into(),
-        ));
-    }
-    if color.a != 1.0 {
+    if color.a() != 1.0 {
         return Err(CodecError::NotImplemented(
             "source-less F3D direct color requires opaque RGB channels".into(),
         ));
@@ -1271,9 +1262,9 @@ fn native_color_attribute(
     native_subident(records, "st")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
-    native_f64(records, f64::from(color.r));
-    native_f64(records, f64::from(color.g));
-    native_f64(records, f64::from(color.b));
+    native_f64(records, f64::from(color.r()));
+    native_f64(records, f64::from(color.g()));
+    native_f64(records, f64::from(color.b()));
     native_f64(records, 1.0);
     Ok(())
 }

@@ -301,7 +301,9 @@ pub(crate) fn try_decode_geometry(
             let pid = PointId::mint(format!("nx:s{si}:pt#{pi}")).expect("identity grammar");
             let vid = VertexId::mint(format!("nx:s{si}:v#{pi}")).expect("identity grammar");
             annotate_node(&mut annotations, &pid, &source_stream, node, "POINT");
-            annotations.derived(&pid, "position");
+            annotations
+                .derived(&pid, "position")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position,
@@ -339,7 +341,9 @@ pub(crate) fn try_decode_geometry(
                 node,
                 surface_tag(&geometry),
             );
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -354,7 +358,9 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .note(&id, &source_stream, surf.pos as u64)
                 .tag("B_SPLINE_SURFACE");
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
@@ -369,7 +375,7 @@ pub(crate) fn try_decode_geometry(
             graph,
             &view.offset_surfaces,
             &surfaces_by_xmt,
-            ir.tolerances.linear,
+            ir.tolerances.linear.get(),
             &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
@@ -387,7 +393,9 @@ pub(crate) fn try_decode_geometry(
                     annotations
                         .note(&surface_id, &source_stream, offset.pos as u64)
                         .tag("OFFSET_SURF");
-                    annotations.derived(&surface_id, "geometry");
+                    annotations
+                        .derived(&surface_id, "geometry")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                     ir.model.surfaces.push(Surface {
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Procedural {
@@ -396,7 +404,15 @@ pub(crate) fn try_decode_geometry(
                         },
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Nx,
-                            object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
+                            object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                "nx:s{si}:offset-surface-record#{}",
+                                offset.xmt
+                            ))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
                             name: None,
                             color: None,
                             visible: None,
@@ -409,7 +425,9 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .note(&procedural_id, &source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
-            annotations.derived(&procedural_id, "definition");
+            annotations
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if let Ok(procedural) = ProceduralSurface::try_new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset {
@@ -442,7 +460,9 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .note(&surface_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
-            annotations.derived(&surface_id, "geometry");
+            annotations
+                .derived(&surface_id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -451,7 +471,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: format!("nx:s{si}:blend-surface-record#{}", blend.xmt),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "nx:s{si}:blend-surface-record#{}",
+                        blend.xmt
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -462,7 +488,9 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .note(&procedural_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
-            annotations.derived(&procedural_id, "definition");
+            annotations
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural_index = ir.model.procedural_surfaces.len();
             let attached = ir.model.add_procedural_surface(
                 surface_id.clone(),
@@ -542,7 +570,9 @@ pub(crate) fn try_decode_geometry(
                 node,
                 curve_tag(&geometry),
             );
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry,
@@ -556,7 +586,9 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .note(&id, &source_stream, crv.pos as u64)
                 .tag("B_SPLINE_CURVE");
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: crv.geometry,
@@ -572,7 +604,9 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .note(&id, &source_stream, pcurve.pos as u64)
                 .tag("B_CURVE_2D");
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
@@ -677,7 +711,9 @@ pub(crate) fn try_decode_geometry(
                 .note(&curve_id, &source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived(&curve_id, "geometry");
+                annotations
+                    .derived(&curve_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             } else {
                 annotations.exactness(&curve_id, Exactness::Unknown);
             }
@@ -706,7 +742,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "nx:s{si}:intersection-record#{}",
+                        construction.xmt
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -718,7 +760,9 @@ pub(crate) fn try_decode_geometry(
                 .note(&procedural_id, &source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived(&procedural_id, "definition");
+                annotations
+                    .derived(&procedural_id, "definition")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             } else {
                 annotations.exactness(&procedural_id, Exactness::Unknown);
             }
@@ -866,7 +910,8 @@ pub(crate) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance());
+                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
+                            .map(cadmpeg_ir::units::PositiveScalar::get);
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
                                 metadata.fit_tolerance = fit_tolerance;
@@ -943,7 +988,7 @@ pub(crate) fn try_decode_geometry(
             &transfer_budget,
             &adaptive_geometry_budget,
             &completion_geometry_budget,
-        );
+        )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
         // blend-geometry certificates for support validation and attachment.
@@ -1023,7 +1068,7 @@ pub(crate) fn try_decode_geometry(
             &mut annotations,
             &validated_endpoint_witnesses,
             &completion_geometry_budget,
-        );
+        )?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(si, stream);
@@ -1063,7 +1108,7 @@ pub(crate) fn try_decode_geometry(
         &mut annotations,
         &model_endpoint_witnesses,
         &completion_geometry_budget,
-    );
+    )?;
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
@@ -1126,7 +1171,7 @@ pub(crate) fn try_decode_geometry(
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations);
+    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations)?;
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
     let completion_budget = CompletionBudgetStatus {
@@ -1275,7 +1320,7 @@ pub(crate) fn retain_live_unknown_links(
     ir: &CadIr,
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     ids.extend(ir.model.surfaces.iter().map(|entity| entity.id.to_string()));
     ids.extend(ir.model.curves.iter().map(|entity| entity.id.to_string()));
@@ -1295,9 +1340,12 @@ pub(crate) fn retain_live_unknown_links(
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
-            annotations.derived(unknown.id(), "links");
+            annotations
+                .derived(unknown.id(), "links")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 pub(crate) fn topology_body_node_ids(

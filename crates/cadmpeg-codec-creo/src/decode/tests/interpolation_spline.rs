@@ -1720,7 +1720,8 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
     let unresolved = BTreeMap::from([(
         entity.clone(),
         SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity")
+                .expect("nonempty source identity"),
         },
     )]);
     assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
@@ -1728,7 +1729,8 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
     let native_arc = BTreeMap::from([(
         entity.clone(),
         SketchGeometry::Native {
-            native_kind: "arc".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("arc")
+                .expect("nonempty source identity"),
         },
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
@@ -1736,7 +1738,8 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
     let native_line = BTreeMap::from([(
         entity.clone(),
         SketchGeometry::Native {
-            native_kind: "line".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("line")
+                .expect("nonempty source identity"),
         },
     )]);
     assert!(!sketch_constraint_loci_compatible(

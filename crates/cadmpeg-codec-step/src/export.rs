@@ -834,11 +834,11 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r)),
-            real(f64::from(color.g)),
-            real(f64::from(color.b))
+            real(f64::from(color.r())),
+            real(f64::from(color.g())),
+            real(f64::from(color.b()))
         );
-        let key = format!("surface:{name}:{rgb}:{}", color.a.to_bits());
+        let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
             return *style;
         }
@@ -855,10 +855,11 @@ impl<'a> Builder<'a> {
             .emitter
             .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
         let mut styles = vec![style_fill];
-        if color.a < 1.0 {
-            let transparency = self
-                .emitter
-                .emit("SURFACE_STYLE_TRANSPARENT", &real(1.0 - f64::from(color.a)));
+        if color.a() < 1.0 {
+            let transparency = self.emitter.emit(
+                "SURFACE_STYLE_TRANSPARENT",
+                &real(1.0 - f64::from(color.a())),
+            );
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
                 &format!(".CONSTANT_SHADING.,{colour},{}", refs(&[transparency])),
@@ -886,9 +887,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r)),
-            real(f64::from(color.g)),
-            real(f64::from(color.b))
+            real(f64::from(color.r())),
+            real(f64::from(color.g())),
+            real(f64::from(color.b()))
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -919,9 +920,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r)),
-            real(f64::from(color.g)),
-            real(f64::from(color.b))
+            real(f64::from(color.r())),
+            real(f64::from(color.g())),
+            real(f64::from(color.b()))
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1394,7 +1395,7 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                real(self.ir.tolerances.linear),
+                real(self.ir.tolerances.linear.get()),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -2873,11 +2874,11 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                if aspects.contains_key(source_id) {
+                if aspects.contains_key(source_id.as_str()) {
                     continue;
                 }
                 let target = self.emit_datum_target(pds, annotation, form, identification);
-                aspects.insert(source_id.clone(), target);
+                aspects.insert(source_id.to_string(), target);
             }
         }
         for annotation in &annotations {
@@ -2885,10 +2886,10 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                aspects.entry(source_id.clone()).or_insert_with(|| {
+                aspects.entry(source_id.to_string()).or_insert_with(|| {
                     self.emitter.emit(
                         "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
+                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
                     )
                 });
             }
@@ -2901,10 +2902,10 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                aspects.entry(source_id.clone()).or_insert_with(|| {
+                aspects.entry(source_id.to_string()).or_insert_with(|| {
                     self.emitter.emit(
                         "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
+                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
                     )
                 });
             }
@@ -2923,7 +2924,7 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     return None;
                 };
-                aspects.get(source_id).copied()
+                aspects.get(source_id.as_str()).copied()
             });
             let target_ref = target_ref
                 .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
@@ -2944,7 +2945,7 @@ impl<'a> Builder<'a> {
                     exact = false;
                     continue;
                 };
-                let Some(basis_ref) = aspects.get(source_id).copied() else {
+                let Some(basis_ref) = aspects.get(source_id.as_str()).copied() else {
                     exact = false;
                     continue;
                 };
@@ -2964,7 +2965,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .find_map(|target| {
                     if let PmiTarget::ShapeAspect { source_id } = target {
-                        aspects.get(source_id).copied()
+                        aspects.get(source_id.as_str()).copied()
                     } else {
                         None
                     }
@@ -3052,7 +3053,7 @@ impl<'a> Builder<'a> {
         for annotation in &annotations {
             if let PmiDefinition::DatumSystem { references } = &annotation.definition {
                 let mut groups = BTreeMap::<(u32, Option<u32>), Vec<_>>::new();
-                for reference in references {
+                for reference in references.as_slice() {
                     groups
                         .entry((reference.precedence.get(), reference.common_group))
                         .or_default()
@@ -3065,9 +3066,6 @@ impl<'a> Builder<'a> {
                             .iter()
                             .map(|reference| annotation_refs.get(&reference.datum).copied())
                             .collect::<Option<Vec<_>>>()?;
-                        if group[0].common_group.is_none() && group.len() != 1 {
-                            return None;
-                        }
                         let (datum, modifiers) = if group[0].common_group.is_some() {
                             let elements = group
                                 .iter()
@@ -3242,7 +3240,7 @@ impl<'a> Builder<'a> {
                     if datum_system.is_some() && datum_ref.is_none() {
                         continue;
                     }
-                    let measure = self.emit_pmi_measure(*magnitude);
+                    let measure = self.emit_pmi_measure(magnitude.get());
                     let tolerance_ref = if datum_ref.is_none()
                         && modifiers.is_empty()
                         && defined_unit.is_none()
@@ -3459,10 +3457,10 @@ impl<'a> Builder<'a> {
         for modifier in parsed {
             match modifier {
                 Modifier::WithValue { kind, value } => {
-                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue::new(
                         value,
-                        quantity: cadmpeg_ir::PmiQuantity::Length,
-                    });
+                        cadmpeg_ir::PmiQuantity::Length,
+                    )?);
                     modifiers.push(
                         self.emitter
                             .emit(
@@ -3562,8 +3560,10 @@ impl<'a> Builder<'a> {
             ),
             PmiQuantity::Ratio => ("MEASURE_WITH_UNIT", "RATIO_MEASURE", self.emit_ratio_unit()),
         };
-        self.emitter
-            .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
+        self.emitter.emit(
+            entity,
+            &format!("{typed}({}),{unit}", real(value.value.get())),
+        )
     }
 
     fn emit_pmi_measure_representation_item(
@@ -3578,7 +3578,11 @@ impl<'a> Builder<'a> {
         };
         self.emitter.emit(
             "MEASURE_REPRESENTATION_ITEM",
-            &format!("{},{typed}({}),{unit}", string(name), real(value.value)),
+            &format!(
+                "{},{typed}({}),{unit}",
+                string(name),
+                real(value.value.get())
+            ),
         )
     }
 
@@ -4416,7 +4420,7 @@ impl<'a> Builder<'a> {
                     .filter(|binding| binding.appearance == appearance.id)
                     .collect::<Vec<_>>();
                 let alpha_unwritable = appearance.base_color.is_some_and(|color| {
-                    color.a != 1.0
+                    color.a() != 1.0
                         && bindings.iter().any(|binding| match &binding.target {
                             AppearanceTarget::Curve(_)
                             | AppearanceTarget::Edge(_)

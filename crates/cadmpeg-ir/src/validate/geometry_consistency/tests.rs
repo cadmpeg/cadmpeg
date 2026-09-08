@@ -653,7 +653,8 @@ fn edge_endpoint_mismatch_is_flagged() {
 
     let mut source_tolerant = unit_cube();
     source_tolerant.model.points[0].position.z += 0.015;
-    source_tolerant.tolerances.linear = 0.02;
+    source_tolerant.tolerances.linear =
+        crate::units::PositiveScalar::new(0.02).expect("positive finite tolerance");
     let report = validate_neutral(&source_tolerant, Vec::new());
     assert!(
         !report

@@ -90,9 +90,7 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         7 => {
-            // Mutate tolerances to invalid values
-            ir.tolerances.linear = -1.0;
-            ir.tolerances.angular = f64::NAN;
+            ir.tolerances.linear = const { cadmpeg_ir::units::PositiveScalar::new(f64::MAX).expect("positive finite") };
         }
         8 => {
             // Clear all geometry but keep topology

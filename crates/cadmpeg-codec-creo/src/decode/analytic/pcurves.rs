@@ -1272,7 +1272,7 @@ pub fn transfer_analytic_pcurve_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> BTreeSet<CurveId> {
+) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
     let ignored_surface_ids =
         topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
@@ -1398,7 +1398,12 @@ pub fn transfer_analytic_pcurve_carriers(
             geometry: geometry.clone(),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{curve_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{curve_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1408,7 +1413,7 @@ pub fn transfer_analytic_pcurve_carriers(
         });
         transferred.insert(id);
     }
-    transferred
+    Ok(transferred)
 }
 
 pub type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
@@ -2233,7 +2238,8 @@ mod tests {
         assert_eq!(diagnostics.complete_records, 0);
 
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations);
+        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
+            .expect("valid source object identity");
         assert_eq!(
             transferred,
             BTreeSet::from([

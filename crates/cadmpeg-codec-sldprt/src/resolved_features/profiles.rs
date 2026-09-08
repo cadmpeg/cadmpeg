@@ -1082,10 +1082,13 @@ pub(crate) fn project_marker_backed_sketches(
                                             // the marker whose endpoint collapsed because a newly
                                             // recognized profile point supplied its coordinates.
                                             SketchGeometry::Native {
-                                                native_kind: format!(
-                                                    "sldprt:marker-geometry:{}",
-                                                    marker.kind.native_code()
-                                                ),
+                                                native_kind:
+                                                    cadmpeg_ir::products::NonEmptyString::new(
+                                                        format!(
+                                                            "sldprt:marker-geometry:{}",
+                                                            marker.kind.native_code()
+                                                        ),
+                                                    )?,
                                             }
                                         } else {
                                             return None;
@@ -1151,10 +1154,12 @@ pub(crate) fn project_marker_backed_sketches(
                                     SketchGeometry::Line { start, end }
                                 } else {
                                     SketchGeometry::Native {
-                                        native_kind: format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ),
+                                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                            format!(
+                                                "sldprt:marker-geometry:{}",
+                                                marker.kind.native_code()
+                                            ),
+                                        )?,
                                     }
                                 }
                             }
@@ -1264,14 +1269,16 @@ pub(crate) fn project_marker_backed_sketches(
                                 else {
                                     return None;
                                 };
-                                minor_arc_geometry(start, end, point, QUANTUM).unwrap_or_else(
-                                    || SketchGeometry::Native {
-                                        native_kind: format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ),
-                                    },
-                                )
+                                minor_arc_geometry(start, end, point, QUANTUM).or_else(|| {
+                                    Some(SketchGeometry::Native {
+                                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                            format!(
+                                                "sldprt:marker-geometry:{}",
+                                                marker.kind.native_code()
+                                            ),
+                                        )?,
+                                    })
+                                })?
                             } else {
                                 (|| {
                                     let [start, end] = endpoints.as_slice() else {
@@ -1463,14 +1470,16 @@ pub(crate) fn project_marker_backed_sketches(
                                     ))
                                     .then_some(SketchGeometry::Line { start, end })
                                 })()
-                                .unwrap_or_else(|| {
-                                    SketchGeometry::Native {
-                                        native_kind: format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ),
-                                    }
-                                })
+                                .or_else(|| {
+                                    Some(SketchGeometry::Native {
+                                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                                            format!(
+                                                "sldprt:marker-geometry:{}",
+                                                marker.kind.native_code()
+                                            ),
+                                        )?,
+                                    })
+                                })?
                             }
                         }
                         SketchInputKind::Relation(_)

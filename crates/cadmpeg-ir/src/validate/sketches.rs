@@ -551,7 +551,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 else {
                     continue;
                 };
-                if distance2(left.1, right.0) > ir.tolerances.linear {
+                if distance2(left.1, right.0) > ir.tolerances.linear.get() {
                     finding(
                         findings,
                         Check::GeometricConsistency,
@@ -697,21 +697,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
             }
-            SketchGeometry::ExternalReference { object, .. } => {
-                if object.is_empty() {
-                    finding(
-                        findings,
-                        Check::ReferentialIntegrity,
-                        id,
-                        "empty external sketch reference",
-                    );
-                }
-            }
-            SketchGeometry::Native { native_kind } => {
-                if native_kind.is_empty() {
-                    finding(findings, Check::Counts, id, "empty native sketch kind");
-                }
-            }
+            SketchGeometry::ExternalReference { .. } => {}
+            SketchGeometry::Native { .. } => {}
         }
     }
 
@@ -801,7 +788,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         (left.1.x - right.0.x)
                             .hypot(left.1.y - right.0.y)
                             .hypot(left.1.z - right.0.z)
-                            > ir.tolerances.linear
+                            > ir.tolerances.linear.get()
                     }) {
                         finding(
                             findings,
@@ -925,16 +912,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SpatialSketchGeometry::Native { native_kind } => {
-                if native_kind.is_empty() {
-                    finding(
-                        findings,
-                        Check::Counts,
-                        id,
-                        "empty native spatial sketch kind",
-                    );
-                }
-            }
+            SpatialSketchGeometry::Native { .. } => {}
         }
     }
 
@@ -1320,7 +1298,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .iter()
                     .filter_map(|entity| spatial_geometry.get(entity).copied())
                     .collect::<Vec<_>>();
-                let tolerance = ir.tolerances.linear;
+                let tolerance = ir.tolerances.linear.get();
                 let first_collinear = first_geometry.first().is_some_and(|reference| {
                     first_geometry.iter().all(|candidate| {
                         spatial_parallel_line_distance(reference, candidate)
@@ -1537,6 +1515,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             <= ir
                                 .tolerances
                                 .linear
+                                .get()
                                 .max(EPS_EQUAL_DISTANCE * (1.0 + first.abs().max(second.abs())))
                     })
             }
@@ -1554,6 +1533,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         <= ir
                             .tolerances
                             .linear
+                            .get()
                             .max(EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.0)))
                 });
                 let parameter_matches = parameter.as_ref().is_none_or(|parameter| {
@@ -1567,6 +1547,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         <= ir
                             .tolerances
                             .linear
+                            .get()
                             .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.0)))
                 });
                 distance.0.is_finite() && distance.0 >= 0.0 && distance_matches && parameter_matches
@@ -1579,7 +1560,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         .all(|(measured, expected)| {
                             expected.0.is_finite()
                                 && (measured - expected.0).abs()
-                                    <= ir.tolerances.linear.max(
+                                    <= ir.tolerances.linear.get().max(
                                         EPS_COORDINATE_VALUE
                                             * (1.0 + measured.abs().max(expected.0.abs())),
                                     )
@@ -1605,7 +1586,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             }
                         };
                         (measured - value.0).abs()
-                            <= ir.tolerances.linear.max(
+                            <= ir.tolerances.linear.get().max(
                                 EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.0.abs())),
                             )
                     });
@@ -1626,6 +1607,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         <= ir
                             .tolerances
                             .linear
+                            .get()
                             .max(EPS_POLAR_ANGLE * (1.0 + measured.abs().max(distance.0)))
                 });
                 let angle_matches = match (distance.0 <= EPS_POLAR_ZERO, angle.as_ref()) {
@@ -1653,6 +1635,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         <= ir
                             .tolerances
                             .linear
+                            .get()
                             .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.0)))
                 });
                 distance.0.is_finite()
@@ -1698,7 +1681,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && lengths.len() == entities.len()
                     && lengths[1..].iter().all(|length| {
                         (length - lengths[0]).abs()
-                            <= ir.tolerances.linear.max(
+                            <= ir.tolerances.linear.get().max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + length.abs().max(lengths[0].abs())),
                             )
@@ -1718,7 +1701,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .iter()
                     .filter_map(|entity| geometry.get(entity).copied())
                     .collect::<Vec<_>>();
-                let tolerance = ir.tolerances.linear;
+                let tolerance = ir.tolerances.linear.get();
                 let first_collinear = first_geometry.first().is_some_and(|reference| {
                     first_geometry.iter().all(|candidate| {
                         planar_parallel_line_distance(reference, candidate)
@@ -1778,7 +1761,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && radii.len() == entities.len()
                     && radii[1..].iter().all(|radius| {
                         (radius - radii[0]).abs()
-                            <= ir.tolerances.linear.max(
+                            <= ir.tolerances.linear.get().max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + radius.abs().max(radii[0].abs())),
                             )
@@ -1885,7 +1868,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         } else {
                             distance.0
                         };
-                        sketch_curve_offset_matches(source, result, expected, ir.tolerances.linear)
+                        sketch_curve_offset_matches(
+                            source,
+                            result,
+                            expected,
+                            ir.tolerances.linear.get(),
+                        )
                     });
                 if !valid {
                     finding(

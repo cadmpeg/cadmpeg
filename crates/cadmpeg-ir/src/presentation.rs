@@ -17,17 +17,21 @@ crate::ids::reference_id_type!(
 pub struct CameraState {
     /// Camera position in document coordinates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f64; 3]>,
+    #[serde(deserialize_with = "deserialize_position")]
+    pub position: Option<crate::units::FiniteVector<3>>,
     /// Persisted Inventor axis-angle orientation as X, Y, Z, angle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub orientation: Option<[f64; 4]>,
+    #[serde(deserialize_with = "deserialize_orientation")]
+    pub orientation: Option<crate::units::NonzeroVector<4>>,
     /// Other camera fields retained by exact source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
 }
 
 /// Closed set of document GUI state families.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "type", content = "value")]
 pub enum PresentationStateKind {
     /// Persisted camera pose.
     Camera(CameraState),
@@ -43,44 +47,6 @@ impl PresentationStateKind {
             Self::Camera(_) => "Camera",
             Self::Native(kind) => kind,
         }
-    }
-}
-
-impl Serialize for PresentationStateKind {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for PresentationStateKind {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Ok(if value == "Camera" {
-            Self::Camera(CameraState {
-                position: None,
-                orientation: None,
-                properties: BTreeMap::new(),
-            })
-        } else {
-            Self::Native(value)
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for PresentationStateKind {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "PresentationStateKind".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        String::json_schema(generator)
     }
 }
 
@@ -102,7 +68,10 @@ pub struct PresentationState {
 
 /// Document-wide persisted GUI state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(from = "PresentationDocumentWire", into = "PresentationDocumentWire")]
+#[serde(
+    try_from = "PresentationDocumentWire",
+    into = "PresentationDocumentWire"
+)]
 pub struct PresentationDocument {
     /// Globally unique presentation identity.
     pub id: PresentationId,
@@ -111,7 +80,7 @@ pub struct PresentationDocument {
     /// Active view name or identity.
     pub active_view: Option<String>,
     /// Ordered document-level GUI states.
-    pub states: Vec<PresentationState>,
+    states: Vec<PresentationState>,
     /// Native GUI document record supplying this state.
     pub native_ref: Option<String>,
 }
@@ -124,8 +93,6 @@ struct PresentationDocumentWire {
     schema_version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     active_view: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    camera: Option<CameraState>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     states: Vec<PresentationState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -133,6 +100,34 @@ struct PresentationDocumentWire {
 }
 
 impl PresentationDocument {
+    /// Construct document presentation with no persisted states.
+    #[must_use]
+    pub fn new(id: PresentationId) -> Self {
+        Self {
+            id,
+            schema_version: None,
+            active_view: None,
+            states: Vec::new(),
+            native_ref: None,
+        }
+    }
+
+    /// Return the persisted states in source order.
+    #[must_use]
+    pub fn states(&self) -> &[PresentationState] {
+        &self.states
+    }
+
+    /// Replace persisted states after checking that their orders are distinct.
+    pub fn set_states(&mut self, states: Vec<PresentationState>) -> Result<(), String> {
+        let mut orders = std::collections::HashSet::new();
+        if states.iter().any(|state| !orders.insert(state.order)) {
+            return Err("states must have distinct order values".into());
+        }
+        self.states = states;
+        Ok(())
+    }
+
     /// Persisted active camera, when a Camera state is present.
     #[must_use]
     pub fn camera(&self) -> Option<&CameraState> {
@@ -155,36 +150,26 @@ impl PresentationDocument {
 
 impl From<PresentationDocument> for PresentationDocumentWire {
     fn from(document: PresentationDocument) -> Self {
-        let camera = document.camera().cloned();
         Self {
             id: document.id,
             schema_version: document.schema_version,
             active_view: document.active_view,
-            camera,
             states: document.states,
             native_ref: document.native_ref,
         }
     }
 }
 
-impl From<PresentationDocumentWire> for PresentationDocument {
-    fn from(wire: PresentationDocumentWire) -> Self {
-        let mut states = wire.states;
-        if let Some(camera) = wire.camera {
-            if let Some(state) = states
-                .iter_mut()
-                .find(|state| matches!(state.kind, PresentationStateKind::Camera(_)))
-            {
-                state.kind = PresentationStateKind::Camera(camera);
-            }
-        }
-        Self {
-            id: wire.id,
-            schema_version: wire.schema_version,
-            active_view: wire.active_view,
-            states,
-            native_ref: wire.native_ref,
-        }
+impl TryFrom<PresentationDocumentWire> for PresentationDocument {
+    type Error = String;
+
+    fn try_from(wire: PresentationDocumentWire) -> Result<Self, Self::Error> {
+        let mut document = Self::new(wire.id);
+        document.schema_version = wire.schema_version;
+        document.active_view = wire.active_view;
+        document.native_ref = wire.native_ref;
+        document.set_states(wire.states)?;
+        Ok(document)
     }
 }
 
@@ -228,10 +213,12 @@ pub struct ViewPresentation {
     pub selection_style: Option<String>,
     /// Line width in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_width: Option<f64>,
+    #[serde(deserialize_with = "deserialize_line_width")]
+    pub line_width: Option<crate::units::NonNegativeScalar>,
     /// Point size in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub point_size: Option<f64>,
+    #[serde(deserialize_with = "deserialize_point_size")]
+    pub point_size: Option<crate::units::NonNegativeScalar>,
     /// Remaining view properties by exact source property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
@@ -310,7 +297,8 @@ pub enum PresentationItem {
     /// Source item whose neutral target type is not modeled.
     Source {
         /// Stable source item identity.
-        source_id: String,
+        #[serde(deserialize_with = "deserialize_source_id")]
+        source_id: crate::products::NonEmptyString,
     },
 }
 
@@ -333,8 +321,88 @@ pub struct PresentationLayer {
     pub items: Vec<PresentationItem>,
 }
 
+fn deserialize_position<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::FiniteVector<3>>, D::Error> {
+    crate::units::deserialize_named(deserializer, "position")
+}
+
+fn deserialize_orientation<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::NonzeroVector<4>>, D::Error> {
+    crate::units::deserialize_named(deserializer, "orientation")
+}
+
+fn deserialize_line_width<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "line_width")
+}
+
+fn deserialize_point_size<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "point_size")
+}
+
+fn deserialize_source_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("source_id: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn camera_kinds_and_states_round_trip_without_payload_or_tag_loss() {
+        use super::*;
+        let kinds = [
+            PresentationStateKind::Camera(CameraState {
+                position: Some(
+                    crate::units::FiniteVector::new([1.0, 2.0, 3.0]).expect("finite position"),
+                ),
+                orientation: None,
+                properties: BTreeMap::new(),
+            }),
+            PresentationStateKind::Camera(CameraState {
+                position: Some(
+                    crate::units::FiniteVector::new([4.0, 5.0, 6.0]).expect("finite position"),
+                ),
+                orientation: None,
+                properties: BTreeMap::new(),
+            }),
+            PresentationStateKind::Native("Camera".to_owned()),
+        ];
+        let mut states = Vec::new();
+        for (order, kind) in kinds.into_iter().enumerate() {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(
+                serde_json::from_str::<PresentationStateKind>(&json).unwrap(),
+                kind
+            );
+            let state = PresentationState {
+                kind,
+                order: order as u32,
+                attributes: BTreeMap::new(),
+                assets: Vec::new(),
+            };
+            let json = serde_json::to_string(&state).unwrap();
+            assert_eq!(
+                serde_json::from_str::<PresentationState>(&json).unwrap(),
+                state
+            );
+            states.push(state);
+        }
+        let mut document = PresentationDocument::new(PresentationId::mint("presentation").unwrap());
+        document.set_states(states).expect("distinct orders");
+        let json = serde_json::to_string(&document).unwrap();
+        assert_eq!(
+            serde_json::from_str::<PresentationDocument>(&json).unwrap(),
+            document
+        );
+    }
+
     use super::*;
     use crate::document::CadIr;
     use crate::report::Check;
@@ -349,7 +417,8 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: "#42".into(),
+                source_id: crate::products::NonEmptyString::new("#42")
+                    .expect("nonempty source identity"),
             }],
         });
 
@@ -365,7 +434,8 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: "#42".into(),
+                source_id: crate::products::NonEmptyString::new("#42")
+                    .expect("nonempty source identity"),
             }],
         });
 
@@ -389,5 +459,53 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.check == Check::Presentation));
+    }
+
+    #[test]
+    fn source_identity_admission_preserves_nonempty_wire() {
+        let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
+        let value: PresentationItem =
+            serde_json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let error = serde_json::from_value::<PresentationItem>(
+            serde_json::json!({"kind": "source", "source_id": ""}),
+        )
+        .expect_err("empty source_id");
+        assert!(error.to_string().contains("source_id"));
+        assert!(crate::products::NonEmptyString::new("").is_none());
+    }
+
+    #[test]
+    fn document_state_orders_are_checked_without_reordering_or_partial_updates() {
+        let state = |order| PresentationState {
+            kind: PresentationStateKind::Native("View".into()),
+            order,
+            attributes: BTreeMap::new(),
+            assets: Vec::new(),
+        };
+        let mut document = PresentationDocument::new(
+            PresentationId::mint("presentation").expect("valid identity"),
+        );
+        assert!(document.states().is_empty());
+        let states = vec![state(9), state(2)];
+        document
+            .set_states(states.clone())
+            .expect("distinct orders");
+        assert_eq!(document.states(), states);
+        let wire = serde_json::to_value(&document).expect("serialize");
+        assert_eq!(
+            serde_json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
+            document
+        );
+        assert!(document.set_states(vec![state(2), state(2)]).is_err());
+        assert_eq!(document.states(), states);
+        let mut invalid = wire;
+        invalid["states"] =
+            serde_json::to_value(vec![state(2), state(2)]).expect("serialize states");
+        let error = serde_json::from_value::<PresentationDocument>(invalid)
+            .expect_err("duplicate state order");
+        assert!(error.to_string().contains("states"));
+        document.set_states(Vec::new()).expect("empty states");
+        assert!(document.states().is_empty());
     }
 }

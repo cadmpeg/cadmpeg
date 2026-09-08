@@ -120,7 +120,10 @@ pub(crate) fn transfer_native_sketch_entities(
             }) {
                 continue;
             }
-            let Some(native_kind) = geometry_field.class_name().map(str::to_owned) else {
+            let Some(native_kind) = geometry_field
+                .class_name()
+                .and_then(cadmpeg_ir::products::NonEmptyString::new)
+            else {
                 continue;
             };
             ir.model.sketch_entities.push(
@@ -1670,7 +1673,8 @@ mod tests {
                 entity_id.clone(),
                 SketchId("synthetic:test:sketch#0".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("2DPoint".to_string())
+                        .expect("nonempty source identity"),
                 },
             )
             .with_native_ref(Some("source-record".to_string())),
@@ -1694,7 +1698,10 @@ mod tests {
                     SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
                     SketchId("synthetic:test:sketch#0".to_string()),
                     SketchGeometry::Native {
-                        native_kind: "2DPoint".to_string(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            "2DPoint".to_string(),
+                        )
+                        .expect("nonempty source identity"),
                     },
                 )
                 .with_native_ref(Some("source-record".to_string())),
@@ -1718,7 +1725,8 @@ mod tests {
                 SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
                 SketchId("synthetic:test:other-sketch#0".to_string()),
                 SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("2DPoint".to_string())
+                        .expect("nonempty source identity"),
                 },
             )
             .with_native_ref(Some("source-record".to_string())),

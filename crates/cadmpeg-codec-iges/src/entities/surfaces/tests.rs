@@ -583,7 +583,7 @@ fn decode_uses_recovered_global_resolution_for_line_revolution_admission() {
         )
         .expect("line revolution with recoverable Global syntax decodes");
 
-    assert_eq!(result.ir().tolerances.linear, 2e-6);
+    assert_eq!(result.ir().tolerances.linear.get(), 2e-6);
     assert_eq!(
         result
             .report()

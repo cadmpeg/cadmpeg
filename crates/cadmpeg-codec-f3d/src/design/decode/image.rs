@@ -27,13 +27,19 @@ pub(crate) fn embedded_image_asset(
             _ => None,
         })
         .map(str::to_owned);
-    Ok(Some(Asset {
-        id: crate::ids::neutral_asset_id(&entry.name),
-        name: Some(asset_name.to_owned()),
-        media_type,
-        content: AssetContent::Embedded {
-            data: scan.entry_bytes(&entry.name)?.to_vec(),
-        },
-        native_ref: Some(crate::ids::native_scope(&entry.name)),
-    }))
+    Ok(Some(
+        Asset::try_new(
+            crate::ids::neutral_asset_id(&entry.name),
+            Some(asset_name.to_owned()),
+            media_type,
+            AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(scan.entry_bytes(&entry.name)?.to_vec())
+                    .ok_or_else(|| {
+                    CodecError::Malformed("asset data must not be empty".into())
+                })?,
+            },
+            Some(crate::ids::native_scope(&entry.name)),
+        )
+        .map_err(CodecError::Malformed)?,
+    ))
 }

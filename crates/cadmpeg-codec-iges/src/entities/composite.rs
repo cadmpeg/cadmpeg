@@ -1350,7 +1350,7 @@ fn project_native_composite(
             segments,
             self_intersect: None,
         },
-        source_object: Some(source_object(entry)),
+        source_object: Some(source_object(entry).ok()?),
     });
     ir.model.edges.push(Edge {
         id: edge_id.clone(),
@@ -1753,7 +1753,7 @@ fn project_with_type_130_policy(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Nurbs(nurbs),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),

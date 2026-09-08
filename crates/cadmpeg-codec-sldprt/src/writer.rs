@@ -2299,9 +2299,9 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     out.extend_from_slice(
         &u32::from_le_bytes([
-            component(color.r),
-            component(color.g),
-            component(color.b),
+            component(color.r()),
+            component(color.g()),
+            component(color.b()),
             0,
         ])
         .to_le_bytes(),
@@ -2957,7 +2957,7 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     tag(out, 0x53);
     be32(out, 3);
     be16(out, attr);
-    for value in [color.r, color.g, color.b] {
+    for value in [color.r(), color.g(), color.b()] {
         bef64(out, f64::from(value));
     }
 }
@@ -3648,7 +3648,8 @@ mod nurbs_write_tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
-                source_id: "F1".into(),
+                source_id: cadmpeg_ir::products::NonEmptyString::new("F1")
+                    .expect("nonempty source identity"),
             }],
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),

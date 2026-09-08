@@ -83,7 +83,7 @@ fn check_dimensions(
 ) {
     let mut names = HashSet::new();
     for dimension in dimensions {
-        if dimension.index == 0 || !names.insert(dimension.index) {
+        if !names.insert(dimension.index) {
             spreadsheet_finding(
                 findings,
                 sheet,

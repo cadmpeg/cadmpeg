@@ -615,9 +615,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
         if appearances.next().is_some() {
             return None;
         }
-        appearance
-            .base_color
-            .filter(|color| normalized_color(*color))
+        appearance.base_color
     });
 
     // A body appearance is the base for every owned face that has no direct
@@ -650,8 +648,8 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
 
     match direct_color {
         Some(color) => match bindings.first() {
-            None => normalized_color(color),
-            Some(_) => bound_color.is_some_and(|bound| normalized_color(color) && bound == color),
+            None => true,
+            Some(_) => bound_color.is_some_and(|bound| bound == color),
         },
         None => bound_color.is_some(),
     }
@@ -682,12 +680,6 @@ fn unique_face_body<'a>(
         return None;
     }
     ir.model.bodies.iter().find(|body| body.id == body_id)
-}
-
-fn normalized_color(color: Color) -> bool {
-    [color.r, color.g, color.b, color.a]
-        .into_iter()
-        .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
@@ -1219,12 +1211,7 @@ mod tests {
             physical_token: None,
             schema: None,
             category: None,
-            base_color: Some(Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
-                a: 1.0,
-            }),
+            base_color: Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color")),
             properties: BTreeMap::new(),
             textures: Vec::new(),
         });
@@ -1246,12 +1233,7 @@ mod tests {
             &AppearanceTarget::Body(body.id),
         ));
 
-        ir.model.bodies[0].color = Some(Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        ir.model.bodies[0].color = Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
         assert!(has_effective_color(
             &ir,
             ir.model.bodies[0].color,
@@ -1263,18 +1245,9 @@ mod tests {
             ir.model.bodies[0].color,
             &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
         ));
-        ir.model.appearances[0].base_color = Some(Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
-        ir.model.bodies[0].color = Some(Color {
-            r: 0.9,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        ir.model.appearances[0].base_color =
+            Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
+        ir.model.bodies[0].color = Some(Color::new(0.9, 0.2, 0.3, 1.0).expect("valid color"));
         assert!(!has_effective_color(
             &ir,
             ir.model.bodies[0].color,
@@ -1327,12 +1300,8 @@ mod tests {
         });
         assert!(!has_effective_color(&ir, None, &target));
 
-        ir.model.appearances[0].base_color = Some(Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        ir.model.appearances[0].base_color =
+            Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: "test:model:binding#binding-2"
                 .try_into()
@@ -1358,42 +1327,9 @@ mod tests {
     }
 
     #[test]
-    fn effective_color_requires_normalized_direct_color() {
-        let ir = CadIr::empty();
-        let target = AppearanceTarget::Body(
-            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
-        );
-        assert!(!has_effective_color(
-            &ir,
-            Some(Color {
-                r: 1.1,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            &target,
-        ));
-        assert!(has_effective_color(
-            &ir,
-            Some(Color {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            &target,
-        ));
-    }
-
-    #[test]
     fn effective_face_color_inherits_unique_body_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube();
-        let body_color = Color {
-            r: 0.2,
-            g: 0.3,
-            b: 0.4,
-            a: 1.0,
-        };
+        let body_color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
         ir.model.bodies[0].color = Some(body_color);
 
         assert!(ir.model.faces.iter().all(|face| {

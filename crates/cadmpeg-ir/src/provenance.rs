@@ -132,7 +132,8 @@ pub struct SourceObjectAssociation {
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub format: CodecFormat,
     /// Native source object identifier.
-    pub object_id: String,
+    #[serde(deserialize_with = "deserialize_object_id")]
+    pub object_id: crate::products::NonEmptyString,
     /// Effective source object name, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -148,6 +149,13 @@ pub struct SourceObjectAssociation {
     /// Native instance identifiers from outermost to innermost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_path: Vec<String>,
+}
+
+fn deserialize_object_id<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| D::Error::custom(format_args!("object_id: {error}")))
 }
 
 /// Provenance for bytes identified by a typed location.
@@ -332,4 +340,22 @@ pub enum Exactness {
     Inferred,
     /// Origin or trustworthiness could not be established.
     Unknown,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_object_identity_is_nonempty_and_preserves_wire() {
+        let wire = serde_json::json!({"format": "step", "object_id": "#42"});
+        let value: SourceObjectAssociation =
+            serde_json::from_value(wire.clone()).expect("nonempty identity");
+        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let error = serde_json::from_value::<SourceObjectAssociation>(
+            serde_json::json!({"format": "step", "object_id": ""}),
+        )
+        .expect_err("empty identity");
+        assert!(error.to_string().contains("object_id"));
+    }
 }

@@ -77,7 +77,7 @@ struct SurfacePlan {
 struct CurvePlan {
     geometry: CurveGeometry,
     parameter_range: Option<[f64; 2]>,
-    edge_tolerance: Option<f64>,
+    edge_tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
     cache_fit_tolerance: Option<f64>,
 }
 
@@ -146,7 +146,7 @@ struct TransferPlan {
     /// Solved member order and coedge senses per loop (read by `faces`).
     loop_orientation: BTreeMap<u32, OrientedLoop>,
     /// Endpoint tolerances keyed by vertex index (read by `vertices`).
-    vertex_tolerances: BTreeMap<usize, f64>,
+    vertex_tolerances: BTreeMap<usize, cadmpeg_ir::units::PositiveScalar>,
     /// Edges whose supports reproduce the edge endpoints (read by `edges`).
     exact_support_edges: HashSet<u32>,
     /// Edges whose supports reproduce the lifted curve (read by `edges`).
@@ -221,10 +221,20 @@ fn transfer_complete(
     let Some(mut plan) = build_plan(graph, payload) else {
         return false;
     };
-    vertices::emit_vertices(ir, annotations, graph, &plan);
-    let surface_ids = surfaces::emit_surfaces(ir, annotations, graph, &mut plan);
-    let pcurve_uses = pcurves::emit_pcurves(ir, annotations, graph, &plan);
-    let edge_id_map = edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids);
+    if vertices::emit_vertices(ir, annotations, graph, &plan).is_err() {
+        return false;
+    }
+    let Ok(surface_ids) = surfaces::emit_surfaces(ir, annotations, graph, &mut plan) else {
+        return false;
+    };
+    let Ok(pcurve_uses) = pcurves::emit_pcurves(ir, annotations, graph, &plan) else {
+        return false;
+    };
+    let Ok(edge_id_map) =
+        edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids)
+    else {
+        return false;
+    };
     if !faces::emit_faces(
         ir,
         annotations,
@@ -500,7 +510,9 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                     CurvePlan {
                         geometry: CurveGeometry::Nurbs(helix.cache.clone()),
                         parameter_range: Some(helix.parameter_range),
-                        edge_tolerance: Some(helix.fit_tolerance),
+                        edge_tolerance: Some(cadmpeg_ir::units::PositiveScalar::new(
+                            helix.fit_tolerance,
+                        )?),
                         cache_fit_tolerance: Some(helix.fit_tolerance),
                     },
                 );
@@ -586,7 +598,10 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         edge_support_plan,
         edge_ids,
         loop_orientation,
-        vertex_tolerances,
+        vertex_tolerances: vertex_tolerances
+            .into_iter()
+            .map(|(vertex, value)| Some((vertex, cadmpeg_ir::units::PositiveScalar::new(value)?)))
+            .collect::<Option<_>>()?,
         exact_support_edges,
         exact_support_curves,
         used_vertices,

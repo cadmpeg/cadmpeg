@@ -104,7 +104,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for datum in &scan.planes.datum_cylinders {
         let id = super::native_surface_id(scan, datum.id);
@@ -134,7 +134,13 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("ActDatums:{}", datum.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "ActDatums:{}",
+                    datum.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -144,14 +150,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let round_feature_ids = scan
         .features
         .rows
@@ -237,7 +243,13 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("AllFeatur:{}:{}", feature_id, row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "AllFeatur:{}:{}",
+                    feature_id, row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -247,7 +259,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]
@@ -257,7 +269,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let round_feature_ids = scan
         .features
         .rows
@@ -311,7 +323,12 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("AllFeatur:{rowless_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "AllFeatur:{rowless_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -321,14 +338,14 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_hole_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let hole_feature_ids = scan
         .features
         .rows
@@ -366,7 +383,12 @@ pub(in super::super) fn transfer_hole_cylinders(
                 geometry: geometry.into(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -377,14 +399,14 @@ pub(in super::super) fn transfer_hole_cylinders(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_split_outline_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
         .into_iter()
         .map(|row| (row.id, row))
@@ -478,7 +500,12 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -489,7 +516,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 fn round_edge_cylinder_frame(
@@ -846,7 +873,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> PositionalCylinderTransferSummary {
+) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let constant_round_radii = scan
         .surfaces
         .rows
@@ -1166,7 +1193,13 @@ pub(in super::super) fn transfer_positional_cylinders(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", record.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    record.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1178,7 +1211,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         summary.round_edge_transferred_carriers +=
             usize::from(mechanism == CylinderFrameMechanism::RoundEdgeEndpoint);
     }
-    summary
+    Ok(summary)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1360,7 +1393,7 @@ pub(in super::super) fn transfer_positional_cones(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         let Some(frame) = record.positional_cone_frame() else {
@@ -1405,7 +1438,13 @@ pub(in super::super) fn transfer_positional_cones(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", record.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    record.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1415,14 +1454,14 @@ pub(in super::super) fn transfer_positional_cones(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_circular_sweep_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let sweep_feature_ids = scan
         .features
         .rows
@@ -1462,7 +1501,12 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 geometry: sweep.geometry.into(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -1473,14 +1517,14 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_cross_section_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for frame in &scan.planes.cross_section_local_systems {
         let decoded_frame = frame.frame();
@@ -1519,7 +1563,13 @@ pub(in super::super) fn transfer_cross_section_planes(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("Xsections:{}", frame.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "Xsections:{}",
+                    frame.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1555,7 +1605,13 @@ pub(in super::super) fn transfer_cross_section_planes(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("Xsections:{}", plane.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "Xsections:{}",
+                    plane.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1565,5 +1621,5 @@ pub(in super::super) fn transfer_cross_section_planes(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

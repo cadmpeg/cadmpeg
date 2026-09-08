@@ -184,10 +184,10 @@ fn decode_publishes_global_minimum_resolution_to_neutral_tolerance() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().tolerances.linear, expected);
+        assert_eq!(result.ir().tolerances.linear.get(), expected);
         assert_eq!(
-            result.ir().tolerances.angular,
-            cadmpeg_ir::units::Tolerances::default().angular
+            result.ir().tolerances.angular.get(),
+            cadmpeg_ir::units::Tolerances::default().angular.get()
         );
     }
 }

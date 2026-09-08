@@ -262,9 +262,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
-        return 0;
+        return Ok(0);
     }
     let mut transferred = 0;
     for (prototype, row, section) in unique_surface_prototype_associations(scan) {
@@ -380,7 +380,14 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name(), row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "{}:{}",
+                    section.name(),
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -390,16 +397,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_positional_spline_replays(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
-        return 0;
+        return Ok(0);
     }
     let mut transferred = 0;
     for parameter in &scan.surfaces.parameters {
@@ -496,7 +503,14 @@ pub(in super::super) fn transfer_positional_spline_replays(
             geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name(), row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "{}:{}",
+                    section.name(),
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -506,19 +520,19 @@ pub(in super::super) fn transfer_positional_spline_replays(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if !matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
     ) {
-        return 0;
+        return Ok(0);
     }
     let mut carrier_counts = BTreeMap::<u32, usize>::new();
     for carrier in &scan.surfaces.legacy_carriers {
@@ -641,11 +655,14 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!(
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
                     "{}{}",
                     carrier.namespace.source_prefix(),
                     carrier.surface_id
-                ),
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: Some(carrier.namespace.is_visible()),
@@ -655,7 +672,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]
