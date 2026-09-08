@@ -306,13 +306,7 @@ pub fn prune_edge_candidates_by_port_domains_with_deferred(
         domains.push(domain.clone());
         domains.push(domain);
     }
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(edge_candidates.len() * 2),
-        domains,
-        members: (0..edge_candidates.len() * 2)
-            .map(|node| vec![node])
-            .collect(),
-    };
+    let mut quotient = MeshQuotient::new(domains);
     let mut node_by_port = HashMap::new();
     for (edge, ports) in edge_ports.iter().enumerate() {
         for (endpoint, port) in ports.iter().copied().enumerate() {
@@ -337,19 +331,19 @@ pub fn prune_edge_candidates_by_port_domains_with_deferred(
         .iter()
         .enumerate()
         .map(|(edge, candidates)| {
-            let left = quotient.union.find(edge * 2);
-            let right = quotient.union.find(edge * 2 + 1);
+            let left = quotient.find(edge * 2);
+            let right = quotient.find(edge * 2 + 1);
             let mut filtered = candidates
                 .iter()
                 .copied()
                 .filter(|pair| {
                     if left == right {
-                        pair[0] == pair[1] && quotient.domains[left].contains(&pair[0])
+                        pair[0] == pair[1] && quotient.domains()[left].contains(&pair[0])
                     } else {
-                        (quotient.domains[left].contains(&pair[0])
-                            && quotient.domains[right].contains(&pair[1]))
-                            || (quotient.domains[left].contains(&pair[1])
-                                && quotient.domains[right].contains(&pair[0]))
+                        (quotient.domains()[left].contains(&pair[0])
+                            && quotient.domains()[right].contains(&pair[1]))
+                            || (quotient.domains()[left].contains(&pair[1])
+                                && quotient.domains()[right].contains(&pair[0]))
                     }
                 })
                 .collect::<Vec<_>>();
