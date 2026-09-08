@@ -217,7 +217,7 @@ fn b5_planar_loop_points(
     loop_id: u32,
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &super::pcurves::PcurveUses,
 ) -> Option<Vec<Point3>> {
     let surface = ir
         .model
@@ -291,7 +291,7 @@ fn b5_boundary_roles(
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &super::pcurves::PcurveUses,
 ) -> Option<Vec<LoopBoundaryRole>> {
     if face.loops.len() == 1 {
         return Some(vec![LoopBoundaryRole::Outer]);
@@ -346,7 +346,7 @@ pub(super) fn emit_faces(
     graph: &B5Graph,
     plan: &TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &super::pcurves::PcurveUses,
     edge_id_map: &HashMap<u32, EdgeId>,
 ) -> bool {
     let ownership = &plan.ownership;

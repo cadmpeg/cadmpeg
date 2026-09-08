@@ -30,7 +30,7 @@ pub(super) fn normalize_model_lengths(
     let pcurve_scales = pcurve_scales(ir, length_scale_mm);
     for pcurve in &mut ir.model.pcurves {
         if let Some(scales) = pcurve_scales.get(&pcurve.id) {
-            if !pcurve.geometry.try_scale_coordinates(*scales).is_ok() {
+            if pcurve.geometry.try_scale_coordinates(*scales).is_err() {
                 return Err(CodecError::NotImplemented(format!(
                     "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
                 )));
