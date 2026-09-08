@@ -348,8 +348,8 @@ pub(crate) struct AssemblyPlacementRecord {
     pub(crate) attribute_reference: u32,
     pub(crate) state: u8,
     pub(crate) transform_prefix: bool,
-    pub(crate) transform_encoding: [u16; 2],
-    pub(crate) transform: [[f64; 4]; 4],
+    #[serde(flatten, with = "crate::compact_matrix::assembly_wire")]
+    pub(crate) transform: crate::compact_matrix::CompactMatrix,
     pub(crate) branch: u8,
     pub(crate) graphics_state: u8,
     pub(crate) occurrence_id: u32,
@@ -1522,5 +1522,24 @@ mod tests {
         assert!(super::PropertyValueKind::from_wire("unknown", Some(3)).is_err());
         assert!(super::PropertyValueKind::from_wire("dictionary", Some(0)).is_err());
         assert!(super::PropertyValueKind::from_wire("dictionary", None).is_ok());
+    }
+    #[test]
+    fn assembly_matrix_wire_preserves_keys_and_rejects_mask_disagreement() {
+        let mut wire = serde_json::json!({
+            "id": "placement", "segment_token": "segment", "record_ordinal": 0,
+            "header_id": 0, "owner_reference": 0, "attribute_reference": 0,
+            "state": 0, "transform_prefix": false, "transform_encoding": [33825, 31710],
+            "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+                          [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            "branch": 0, "graphics_state": 0, "occurrence_id": 0,
+            "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": ""
+        });
+        let placement: super::AssemblyPlacementRecord =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+        wire["transform"][0][0] = serde_json::json!(2.0);
+        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire.clone()).is_err());
+        wire["transform_encoding"] = serde_json::json!([0, 0]);
+        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire).is_ok());
     }
 }

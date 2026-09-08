@@ -2103,13 +2103,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(|record| record.occurrence_id)
         .collect::<HashSet<_>>();
     for placement in &data.assembly_placements {
-        if !occurrence_ids.contains(&placement.occurrence_id)
-            || placement.suffix_sha256.len() != 64
-            || placement
-                .transform
-                .iter()
-                .flatten()
-                .any(|value| !value.is_finite())
+        if !occurrence_ids.contains(&placement.occurrence_id) || placement.suffix_sha256.len() != 64
         {
             findings.push(finding(
                 Check::NativeLinks,

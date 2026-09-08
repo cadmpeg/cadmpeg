@@ -14,6 +14,7 @@ use cadmpeg_ir::sketches::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
     content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
     PmDcReferenceList,
@@ -395,9 +396,8 @@ pub(crate) struct PmDcTransformPayload {
     pub(crate) header: PmDcContentHeader,
     #[serde(default, rename = "prefix", with = "transform_prefix")]
     pub(crate) prefix_present: bool,
-    pub(crate) value_mask: u16,
-    pub(crate) zero_mask: u16,
-    pub(crate) matrix: [[f64; 4]; 4],
+    #[serde(flatten)]
+    pub(crate) matrix: CompactMatrix,
 }
 
 mod transform_prefix {
@@ -768,30 +768,14 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload
     }
     let value_mask = cursor.u16("transform value mask")?;
     let zero_mask = cursor.u16("transform zero mask")?;
-    let mut matrix = [[0.0; 4]; 4];
-    for (row, values) in matrix.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().enumerate() {
-            let bit = 1u16 << (column + 4 * row);
-            *value = if zero_mask & bit == 0 {
-                if value_mask & bit == 0 {
-                    cursor.f64("transform explicit value")?
-                } else {
-                    1.0
-                }
-            } else if value_mask & bit == 0 {
-                0.0
-            } else {
-                -1.0
-            };
-        }
-    }
+    let matrix = CompactMatrix::try_new(value_mask, zero_mask, |_| {
+        cursor.f64("transform explicit value")
+    })?;
     cursor.finish("transform")?;
     Ok(PmDcTransformPayload {
         save_version_major: version,
         header,
         prefix_present,
-        value_mask,
-        zero_mask,
         matrix,
     })
 }
@@ -1652,7 +1636,7 @@ fn project_placement(
         sketch.identity.segment_token.clone(),
         sketch.direction.index.checked_sub(1)?,
     ))?;
-    let matrix = transform.matrix;
+    let matrix = transform.matrix.rows();
     if matrix[3]
         .iter()
         .zip([0.0, 0.0, 0.0, 1.0])
