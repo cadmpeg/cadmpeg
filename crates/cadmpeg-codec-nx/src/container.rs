@@ -1089,11 +1089,7 @@ pub fn scan_legacy<'a>(
             .checked_add(entry.path().len())
             .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
             .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
-        ctx.charge_retained(
-            retained as u64,
-            "retain legacy NX directory entry",
-            Some(root.location()),
-        )?;
+        ctx.charge_retained(retained as u64, "retain legacy NX directory entry")?;
         let file_span = match entry {
             CompoundEntry::Stream(stream) => stream_spans.get(&stream.id()).copied(),
             CompoundEntry::Storage(_) => None,

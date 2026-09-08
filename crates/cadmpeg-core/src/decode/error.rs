@@ -51,8 +51,6 @@ pub struct SourceLocation {
 pub struct ErrorContext {
     /// The operation that failed, as a static label.
     pub operation: &'static str,
-    /// Where it failed, when a location is known.
-    pub location: Option<SourceLocation>,
 }
 
 /// A resource refusal.

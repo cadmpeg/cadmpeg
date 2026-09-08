@@ -950,7 +950,7 @@ impl CodecBackend for FcstdCodec {
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
-            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
+            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail")?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
@@ -1006,7 +1006,7 @@ impl CodecBackend for FcstdCodec {
                         .filter(|property| property.side_entries().contains(&entry.name))
                         .map(|property| property.id.clone())
                         .collect();
-                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;
+                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry")?;
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),

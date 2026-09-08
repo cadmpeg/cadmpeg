@@ -905,7 +905,7 @@ impl<'a> Cursor<'a> {
                 "Inventor presentation {field} byte length overflows"
             ))
         })?;
-        ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string", None)?;
+        ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string")?;
         self.source
             .utf16_le(units)
             .map(|value| value.trim_end_matches('\0').to_owned())

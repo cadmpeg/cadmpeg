@@ -112,7 +112,7 @@ fn attach_container_payloads(
         unknowns.push(UnknownRecord::retained(
             id,
             offset,
-            ctx.copy_retained(bytes, "retain NX opaque container payload", None)?,
+            ctx.copy_retained(bytes, "retain NX opaque container payload")?,
             Vec::new(),
         ));
     }
@@ -145,11 +145,7 @@ fn attach_indexed_om_unknowns(
                     unknowns.push(UnknownRecord::retained(
                         id,
                         offset,
-                        ctx.copy_retained(
-                            record.bytes,
-                            "retain NX indexed object-model record",
-                            None,
-                        )?,
+                        ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
                         Vec::new(),
                     ));
                 }
@@ -172,11 +168,7 @@ fn attach_indexed_om_unknowns(
                     unknowns.push(UnknownRecord::retained(
                         id,
                         offset,
-                        ctx.copy_retained(
-                            record.bytes,
-                            "retain NX indexed object-model record",
-                            None,
-                        )?,
+                        ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
                         Vec::new(),
                     ));
                 }
@@ -800,7 +792,7 @@ fn attach_jpeg_preview_assets(
             unknowns.push(UnknownRecord::retained(
                 UnknownId::mint(native_ref).expect("identity grammar"),
                 source_offset,
-                ctx.copy_retained(bytes, "retain NX invalid JPEG preview", None)?,
+                ctx.copy_retained(bytes, "retain NX invalid JPEG preview")?,
                 Vec::new(),
             ));
             continue;
@@ -823,7 +815,7 @@ fn attach_jpeg_preview_assets(
             }),
             media_type: Some("image/jpeg".to_string()),
             content: AssetContent::Embedded {
-                data: ctx.copy_retained(bytes, "retain NX JPEG preview asset", None)?,
+                data: ctx.copy_retained(bytes, "retain NX JPEG preview asset")?,
             },
             native_ref: Some(native_ref),
         });
@@ -866,7 +858,7 @@ fn attach_material_texture_assets(
             name: Some(texture.name().to_owned()),
             media_type: Some("image/tiff".to_string()),
             content: AssetContent::Embedded {
-                data: ctx.copy_retained(bytes, "retain NX TIFF material asset", None)?,
+                data: ctx.copy_retained(bytes, "retain NX TIFF material asset")?,
             },
             native_ref: Some(texture.id.clone()),
         });
