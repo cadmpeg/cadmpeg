@@ -6449,14 +6449,14 @@ fn project_rectangular_pattern_scalars(
     let construction = scope.rectangular_pattern_construction()?;
     let active = [
         (
-            construction.u_count,
-            construction.u_extent,
-            construction.v_count,
+            construction.u_count(),
+            construction.u_extent(),
+            construction.v_count(),
         ),
         (
-            construction.v_count,
-            construction.v_extent,
-            construction.u_count,
+            construction.v_count(),
+            construction.v_extent(),
+            construction.u_count(),
         ),
     ]
     .into_iter()

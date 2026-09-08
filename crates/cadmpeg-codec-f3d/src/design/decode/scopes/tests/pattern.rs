@@ -349,10 +349,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &rectangular_owners,
     )
     .expect("exact rectangular-pattern scalar lanes");
-    assert_eq!(rectangular.u_count, 3);
-    assert_eq!(rectangular.v_count, 1);
-    assert_eq!(rectangular.u_extent, 10.0);
-    assert_eq!(rectangular.v_extent, 0.0);
+    assert_eq!(rectangular.u_count(), 3);
+    assert_eq!(rectangular.v_count(), 1);
+    assert_eq!(rectangular.u_extent(), 10.0);
+    assert_eq!(rectangular.v_extent(), 0.0);
     assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
     assert_eq!(rectangular.instances, None);
