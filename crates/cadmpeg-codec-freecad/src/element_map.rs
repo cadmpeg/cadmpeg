@@ -7,8 +7,8 @@ use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
-    ElementMapGroup, ElementMapNode, ElementMapRecord, ElementMappedName, EntryRecord,
-    PropertyRecord, StringTableEntry, StringTableRecord,
+    ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
+    EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord,
 };
 use crate::topology_transfer::TopologyOccurrence;
 
@@ -203,9 +203,7 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
 /// Connect kernel indexed-map positions to every neutral placed occurrence.
 pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
     for map in maps {
-        let Some(root) = map.maps.last_mut() else {
-            continue;
-        };
+        let root = map.maps.root_mut();
         for group in &mut root.groups {
             let indexed_name = group.indexed_name.clone();
             for occurrence in occurrences.iter().filter(|occurrence| {
@@ -432,10 +430,7 @@ fn direct_element_map<'a, 'input>(
 }
 
 fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
-    let root = parsed
-        .maps
-        .last()
-        .ok_or_else(|| CodecError::Malformed("element map has no root node".into()))?;
+    let root = parsed.maps.root();
     let mapped_name_count = root
         .groups
         .iter()
@@ -667,7 +662,7 @@ fn legacy_map_payload(
     let parsed = ParsedMap {
         map_id: 0,
         postfixes: Vec::new(),
-        maps: vec![ElementMapNode {
+        maps: ElementMapNode {
             index: 1,
             map_id: 0,
             groups: groups
@@ -678,7 +673,8 @@ fn legacy_map_payload(
                     names,
                 })
                 .collect(),
-        }],
+        }
+        .into(),
     };
     Ok(MapPayload {
         source_entry,
@@ -971,7 +967,7 @@ impl<'a> TextScanner<'a> {
 pub(crate) struct ParsedMap {
     map_id: u64,
     postfixes: Vec<String>,
-    maps: Vec<ElementMapNode>,
+    maps: ElementMapNodes,
 }
 
 pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
@@ -990,11 +986,6 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
         .collect::<Result<Vec<_>, _>>()?;
     expect(&mut tokens, "MapCount")?;
     let map_count = next_count(&mut tokens, "map count", MAX_MAP_NODES)?;
-    if map_count == 0 {
-        return Err(CodecError::Malformed(
-            "element map has zero map nodes".into(),
-        ));
-    }
     // Each map node consumes at least one whitespace-separated token, so its count
     // cannot exceed the element map's byte length.
     let map_capacity = bounded_len(map_count as u64, 1, text.len())
@@ -1069,7 +1060,7 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
     Ok(ParsedMap {
         map_id,
         postfixes,
-        maps,
+        maps: maps.try_into().map_err(CodecError::Malformed)?,
     })
 }
 
