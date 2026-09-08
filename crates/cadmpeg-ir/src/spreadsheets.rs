@@ -4,6 +4,7 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 
 use crate::features::{FeatureId, ParameterId};
 
@@ -97,7 +98,7 @@ impl CellAddress {
 
 /// One sheet and its ordered cell/layout state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(from = "SpreadsheetWire", into = "SpreadsheetWire")]
+#[serde(try_from = "SpreadsheetWire", into = "SpreadsheetWire")]
 pub struct Spreadsheet {
     /// Globally unique sheet id.
     pub id: SpreadsheetId,
@@ -141,7 +142,7 @@ impl From<Spreadsheet> for SpreadsheetWire {
                 .column_widths
                 .into_iter()
                 .map(|dimension| SpreadsheetDimensionWire {
-                    name: column_label(dimension.index),
+                    name: column_label(dimension.index.get()),
                     pixels: dimension.pixels,
                 })
                 .collect(),
@@ -159,39 +160,44 @@ impl From<Spreadsheet> for SpreadsheetWire {
     }
 }
 
-impl From<SpreadsheetWire> for Spreadsheet {
-    fn from(wire: SpreadsheetWire) -> Self {
-        Self {
+impl TryFrom<SpreadsheetWire> for Spreadsheet {
+    type Error = String;
+
+    fn try_from(wire: SpreadsheetWire) -> Result<Self, Self::Error> {
+        Ok(Self {
             id: wire.id,
             feature: wire.feature,
             cells: wire.cells,
             column_widths: wire
                 .column_widths
                 .into_iter()
-                .filter_map(|wire| {
-                    column_index(&wire.name).map(|index| SpreadsheetDimension {
+                .map(|wire| {
+                    let index = column_index(&wire.name)
+                        .and_then(NonZeroU32::new)
+                        .ok_or_else(|| format!("column_widths name is invalid: {}", wire.name))?;
+                    Ok(SpreadsheetDimension {
                         index,
                         pixels: wire.pixels,
                     })
                 })
-                .collect(),
+                .collect::<Result<_, String>>()?,
             row_heights: wire
                 .row_heights
                 .into_iter()
-                .filter_map(|wire| {
-                    wire.name
-                        .parse::<u32>()
-                        .ok()
-                        .filter(|row| *row > 0)
-                        .map(|index| SpreadsheetDimension {
-                            index,
-                            pixels: wire.pixels,
-                        })
+                .map(|wire| {
+                    let index = wire
+                        .name
+                        .parse::<NonZeroU32>()
+                        .map_err(|_| format!("row_heights name is invalid: {}", wire.name))?;
+                    Ok(SpreadsheetDimension {
+                        index,
+                        pixels: wire.pixels,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, String>>()?,
             merged_ranges: wire.merged_ranges,
             native_ref: wire.native_ref,
-        }
+        })
     }
 }
 
@@ -215,7 +221,7 @@ impl JsonSchema for Spreadsheet {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpreadsheetDimension {
     /// One-based row or column index.
-    pub index: u32,
+    pub index: NonZeroU32,
     /// Display size in source UI pixels.
     pub pixels: u32,
 }
@@ -320,6 +326,31 @@ fn column_label(mut column: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn spreadsheet_wire_rejects_invalid_dimensions_without_dropping_them() {
+        for (field, names) in [
+            ("column_widths", vec!["", "0", "a", "A1", "ZZZZZZZZZZ"]),
+            ("row_heights", vec!["", "0", "-1", "A", "4294967296"]),
+        ] {
+            for name in names {
+                let mut value =
+                    serde_json::json!({"id": "sheet", "feature": "feature", "cells": []});
+                value[field] = serde_json::json!([{"name": name, "pixels": 10}]);
+                let error =
+                    serde_json::from_value::<Spreadsheet>(value).expect_err("invalid dimension");
+                assert!(error.to_string().contains(field));
+            }
+        }
+        let value = serde_json::json!({"id": "sheet", "feature": "feature", "cells": [], "column_widths": [{"name": "AA", "pixels": 0}], "row_heights": [{"name": "4294967295", "pixels": 0}]});
+        let sheet: Spreadsheet = serde_json::from_value(value.clone()).expect("valid dimensions");
+        assert_eq!(sheet.column_widths[0].index.get(), 27);
+        assert_eq!(sheet.row_heights[0].index.get(), u32::MAX);
+        assert_eq!(
+            serde_json::to_value(sheet).expect("serialize dimensions"),
+            value
+        );
+    }
+
     use super::*;
 
     #[test]
