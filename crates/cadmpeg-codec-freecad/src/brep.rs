@@ -47,6 +47,78 @@ pub struct ShapePayloadRecord {
     pub payload: ShapePayload,
 }
 
+/// Supported text topology grammar versions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextTopologyVersion {
+    /// Version 1.
+    V1,
+    /// Version 2.
+    V2,
+    /// Version 3.
+    V3,
+}
+
+impl TextTopologyVersion {
+    /// Returns the wire version number.
+    pub const fn number(self) -> u8 {
+        match self {
+            Self::V1 => 1,
+            Self::V2 => 2,
+            Self::V3 => 3,
+        }
+    }
+}
+
+impl TryFrom<u8> for TextTopologyVersion {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
+            _ => Err("text topology_version must be in 1..=3".to_owned()),
+        }
+    }
+}
+
+/// Supported binary topology grammar versions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryTopologyVersion {
+    /// Version 1.
+    V1,
+    /// Version 2.
+    V2,
+    /// Version 3.
+    V3,
+    /// Version 4.
+    V4,
+}
+
+impl BinaryTopologyVersion {
+    /// Returns the wire version number.
+    pub const fn number(self) -> u8 {
+        match self {
+            Self::V1 => 1,
+            Self::V2 => 2,
+            Self::V3 => 3,
+            Self::V4 => 4,
+        }
+    }
+}
+
+impl TryFrom<u8> for BinaryTopologyVersion {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
+            4 => Ok(Self::V4),
+            _ => Err("binary topology_version must be in 1..=4".to_owned()),
+        }
+    }
+}
+
 /// Parsed exact-shape carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ShapePayload {
@@ -54,13 +126,20 @@ pub enum ShapePayload {
     Empty,
     /// Compact text shape-set grammar.
     Text {
+        /// Text grammar version.
+        version: TextTopologyVersion,
         /// Shared table contents.
         facts: ShapeSet,
         /// Shape-type token census.
         shape_types: BTreeMap<String, usize>,
     },
     /// Binary shape-set grammar.
-    Binary(ShapeSet),
+    Binary {
+        /// Binary grammar version.
+        version: BinaryTopologyVersion,
+        /// Shared table contents.
+        facts: ShapeSet,
+    },
 }
 
 impl ShapePayload {
@@ -69,7 +148,16 @@ impl ShapePayload {
         match self {
             Self::Empty => ShapePayloadForm::Empty,
             Self::Text { .. } => ShapePayloadForm::Text,
-            Self::Binary(_) => ShapePayloadForm::Binary,
+            Self::Binary { .. } => ShapePayloadForm::Binary,
+        }
+    }
+
+    /// Returns the grammar version for a nonempty carrier.
+    pub const fn topology_version(&self) -> Option<u8> {
+        match self {
+            Self::Empty => None,
+            Self::Text { version, .. } => Some(version.number()),
+            Self::Binary { version, .. } => Some(version.number()),
         }
     }
 
@@ -77,7 +165,7 @@ impl ShapePayload {
     pub const fn shape_set(&self) -> Option<&ShapeSet> {
         match self {
             Self::Empty => None,
-            Self::Text { facts, .. } | Self::Binary(facts) => Some(facts),
+            Self::Text { facts, .. } | Self::Binary { facts, .. } => Some(facts),
         }
     }
 }
@@ -85,8 +173,6 @@ impl ShapePayload {
 /// Versioned prefix tables shared by text and binary shape sets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeSet {
-    /// Topology grammar version.
-    pub topology_version: u8,
     /// Ordered location table with resolved transforms.
     pub locations: Vec<TextLocation>,
     /// Ordered parameter-space curve table.
@@ -168,10 +254,10 @@ struct BinaryFactsWire {
     roots: Vec<TextShapeUse>,
 }
 
-impl From<ShapeSet> for BinaryFactsWire {
-    fn from(value: ShapeSet) -> Self {
+impl From<(ShapeSet, BinaryTopologyVersion)> for BinaryFactsWire {
+    fn from((value, version): (ShapeSet, BinaryTopologyVersion)) -> Self {
         Self {
-            topology_version: value.topology_version,
+            topology_version: version.number(),
             locations: value.locations,
             curve2ds: value.curve2ds,
             curves: value.curves,
@@ -188,7 +274,6 @@ impl From<ShapeSet> for BinaryFactsWire {
 impl From<BinaryFactsWire> for ShapeSet {
     fn from(value: BinaryFactsWire) -> Self {
         Self {
-            topology_version: value.topology_version,
             locations: value.locations,
             curve2ds: value.curve2ds,
             curves: value.curves,
@@ -207,11 +292,15 @@ impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
         let form = value.payload.form();
         let (text, binary) = match value.payload {
             ShapePayload::Empty => (None, None),
-            ShapePayload::Text { facts, shape_types } => {
+            ShapePayload::Text {
+                facts,
+                shape_types,
+                version,
+            } => {
                 let section_counts = facts.section_counts();
                 (
                     Some(TextFactsWire {
-                        topology_version: facts.topology_version,
+                        topology_version: version.number(),
                         section_counts,
                         shape_types,
                         locations: facts.locations,
@@ -227,7 +316,7 @@ impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
                     None,
                 )
             }
-            ShapePayload::Binary(facts) => (None, Some(facts.into())),
+            ShapePayload::Binary { facts, version } => (None, Some((facts, version).into())),
         };
         Self {
             id: value.id,
@@ -247,8 +336,8 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
         let payload = match (wire.form, wire.text, wire.binary) {
             (ShapePayloadForm::Empty, None, None) => ShapePayload::Empty,
             (ShapePayloadForm::Text, Some(text), None) => {
+                let version = TextTopologyVersion::try_from(text.topology_version)?;
                 let facts = ShapeSet {
-                    topology_version: text.topology_version,
                     locations: text.locations,
                     curve2ds: text.curve2ds,
                     curves: text.curves,
@@ -265,11 +354,18 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
                     );
                 }
                 ShapePayload::Text {
+                    version,
                     facts,
                     shape_types: text.shape_types,
                 }
             }
-            (ShapePayloadForm::Binary, None, Some(binary)) => ShapePayload::Binary(binary.into()),
+            (ShapePayloadForm::Binary, None, Some(binary)) => {
+                let version = BinaryTopologyVersion::try_from(binary.topology_version)?;
+                ShapePayload::Binary {
+                    version,
+                    facts: binary.into(),
+                }
+            }
             _ => return Err("shape payload form disagrees with text and binary facts".to_owned()),
         };
         Ok(Self {
@@ -1464,10 +1560,15 @@ pub fn parse_payloads(
         let payload = if entry.data.is_empty() {
             ShapePayload::Empty
         } else if name.to_ascii_lowercase().ends_with(".bin") {
-            ShapePayload::Binary(parse_binary_prefix(&entry.data)?)
+            let (facts, version) = parse_binary_prefix(&entry.data)?;
+            ShapePayload::Binary { facts, version }
         } else {
-            let (facts, shape_types) = parse_text(&entry.data)?;
-            ShapePayload::Text { facts, shape_types }
+            let (facts, shape_types, version) = parse_text(&entry.data)?;
+            ShapePayload::Text {
+                facts,
+                shape_types,
+                version,
+            }
         };
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id("shape-payload", &property.id, &name),
@@ -1519,7 +1620,7 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
         .iter()
         .filter_map(|payload| {
             let facts = payload.payload.shape_set()?;
-            let version = facts.topology_version;
+            let version = payload.payload.topology_version()?;
             let curve2ds = &facts.curve2ds;
             let curves = &facts.curves;
             let surfaces = &facts.surfaces;
@@ -1657,7 +1758,9 @@ fn census_surface(
     increment(counts, family);
 }
 
-pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, BTreeMap<String, usize>), CodecError> {
+pub(crate) fn parse_text(
+    bytes: &[u8],
+) -> Result<(ShapeSet, BTreeMap<String, usize>, TextTopologyVersion), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -1762,7 +1865,6 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, BTreeMap<String, usi
     let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
     Ok((
         ShapeSet {
-            topology_version,
             locations,
             curve2ds,
             curves,
@@ -1774,10 +1876,13 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, BTreeMap<String, usi
             roots,
         },
         shape_types,
+        TextTopologyVersion::try_from(topology_version).map_err(CodecError::Malformed)?,
     ))
 }
 
-pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> {
+pub(crate) fn parse_binary_prefix(
+    bytes: &[u8],
+) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -2030,18 +2135,20 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> 
             }]
         }
     };
-    Ok(ShapeSet {
-        topology_version: version,
-        locations,
-        curve2ds,
-        curves,
-        polygons3d,
-        polygons_on_triangulations,
-        surfaces,
-        triangulations,
-        tshapes,
-        roots,
-    })
+    Ok((
+        ShapeSet {
+            locations,
+            curve2ds,
+            curves,
+            polygons3d,
+            polygons_on_triangulations,
+            surfaces,
+            triangulations,
+            tshapes,
+            roots,
+        },
+        BinaryTopologyVersion::try_from(version).map_err(CodecError::Malformed)?,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5164,6 +5271,40 @@ pub(crate) mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn shape_payload_wire_admits_only_versions_of_its_carrier() {
+        for (form, maximum) in [("text", 3), ("binary", 4)] {
+            for version in [0, 1, maximum, maximum + 1, u8::MAX] {
+                let facts = serde_json::json!({
+                    "topology_version": version,
+                    "locations": [], "curve2ds": [], "curves": [],
+                    "polygons3d": [], "polygons_on_triangulations": [],
+                    "surfaces": [], "triangulations": [], "tshapes": [], "roots": [],
+                    "shape_types": {},
+                    "section_counts": {"Locations": 0, "Curve2ds": 0, "Curves": 0,
+                        "Polygon3D": 0, "PolygonOnTriangulations": 0, "Surfaces": 0,
+                        "Triangulations": 0, "TShapes": 0}
+                });
+                let mut wire = serde_json::json!({
+                    "id": "shape", "property": "property", "entry": "Shape.brp",
+                    "form": form, "text": null, "binary": null
+                });
+                wire[form] = facts;
+                let result = serde_json::from_value::<ShapePayloadRecord>(wire);
+                if (1..=maximum).contains(&version) {
+                    let payload = result.unwrap();
+                    assert_eq!(payload.payload.topology_version(), Some(version));
+                    assert_eq!(
+                        serde_json::to_value(payload).unwrap()[form]["topology_version"],
+                        version
+                    );
+                } else {
+                    assert!(result.unwrap_err().to_string().contains("topology_version"));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
         let mut wire = serde_json::json!({
             "index": 1, "kind": "face",
@@ -5611,8 +5752,8 @@ pub(crate) mod tests {
         }
         bytes.extend_from_slice(b"TShapes 0\n");
 
-        let facts = parse_binary_prefix(&bytes).expect("binary prefix");
-        assert_eq!(facts.topology_version, 3);
+        let (facts, version) = parse_binary_prefix(&bytes).expect("binary prefix");
+        assert_eq!(version.number(), 3);
         assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));

@@ -289,13 +289,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
         .expect("shape payloads");
     assert_eq!(shape_payloads.len(), 1);
-    assert_eq!(
-        shape_payloads[0]
-            .payload
-            .shape_set()
-            .map(|facts| facts.topology_version),
-        Some(1)
-    );
+    assert_eq!(shape_payloads[0].payload.topology_version(), Some(1));
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
