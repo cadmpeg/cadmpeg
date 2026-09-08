@@ -7,6 +7,7 @@ use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
     CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
 };
+use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::mesh_quotient::MeshQuotient;
@@ -584,7 +585,7 @@ pub(crate) fn parse_fbb_edge_tables_width(
 pub(crate) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
     let cycles = trims
         .iter()
-        .map(|trim| boundary_cycles(&trim.triangles))
+        .map(|trim| boundary_cycles(&trim.packet.triangles()))
         .collect::<Option<Vec<_>>>()?;
     for row in rows {
         let complete_matches = cycles
@@ -1333,55 +1334,19 @@ fn parse_trim_record_with_length_encoding(
         position += width;
     }
 
-    let triangles = packet_triangles(
+    let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
+    let packet = TrimPacket::try_from((
         layout.independent_count,
-        layout.strip_count,
-        lengths.len().checked_sub(layout.strip_count)?,
-        &lengths,
-        &handles,
-    )?;
-    Some(TrimRecord {
-        triangles,
-        frame_vector: layout.frame_vector,
+        strip_lengths.to_vec(),
+        fan_lengths.to_vec(),
         handles,
-        independent_count: layout.independent_count,
-        strip_lengths: lengths[..layout.strip_count].to_vec(),
-        fan_lengths: lengths[layout.strip_count..].to_vec(),
+    ))
+    .ok()?;
+    Some(TrimRecord {
+        packet,
+        frame_vector: layout.frame_vector,
         kind: layout.kind,
     })
-}
-
-fn packet_triangles(
-    independent: usize,
-    strips: usize,
-    fans: usize,
-    lengths: &[usize],
-    handles: &[u32],
-) -> Option<Vec<[u32; 3]>> {
-    let mut triangles = Vec::new();
-    for triple in handles.get(..3 * independent)?.chunks_exact(3) {
-        triangles.push([triple[0], triple[1], triple[2]]);
-    }
-    let mut position = 3 * independent;
-    for &length in lengths.get(..strips)? {
-        let strip = handles.get(position..position + length)?;
-        for index in 0..length.saturating_sub(2) {
-            triangles.push(if index % 2 == 0 {
-                [strip[index], strip[index + 1], strip[index + 2]]
-            } else {
-                [strip[index + 1], strip[index], strip[index + 2]]
-            });
-        }
-        position += length;
-    }
-    for &length in lengths.get(strips..strips + fans)? {
-        let fan = handles.get(position..position + length)?;
-        for index in 1..length.saturating_sub(1) {
-            triangles.push([fan[0], fan[index], fan[index + 1]]);
-        }
-        position += length;
-    }
-    (position == handles.len()).then_some(triangles)
 }
 
 pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
