@@ -421,25 +421,12 @@ pub(super) fn encode_document_parameters(
         }
         let crate::records::DesignParameterSource::User {
             family_discriminator,
-        } = &parameter.source
+        } = parameter.source()
         else {
             return Err(CodecError::NotImplemented(
                 "source-less F3D owned Design parameter records are not writable".into(),
             ));
         };
-        if parameter.expression.is_empty()
-            || parameter.name.is_empty()
-            || parameter
-                .unit
-                .as_ref()
-                .is_some_and(|field| field.value.is_empty())
-            || !parameter.evaluated_value.is_finite()
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has an invalid document parameter value",
-                parameter.id
-            )));
-        }
         if !parameter_indices.insert(parameter.record_index)
             || !parameter_ordinals.insert(parameter.source_ordinal)
         {
@@ -455,18 +442,18 @@ pub(super) fn encode_document_parameters(
         out.push(0);
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
         out.push(0);
-        native_lp_utf16(&mut out, &parameter.expression)?;
+        native_lp_utf16(&mut out, parameter.expression())?;
         out.extend_from_slice(&[0; 8]);
         out.push(1);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
-        if let Some(unit) = &parameter.unit {
-            native_lp_utf16(&mut out, &unit.value)?;
+        if let Some(unit) = parameter.unit() {
+            native_lp_utf16(&mut out, unit.value.as_str())?;
         } else {
             out.extend_from_slice(&0u32.to_le_bytes());
         }
-        native_lp_utf16(&mut out, &parameter.name)?;
-        out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
+        native_lp_utf16(&mut out, parameter.name())?;
+        out.extend_from_slice(&parameter.evaluated_value().to_le_bytes());
         out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
     Ok(out)

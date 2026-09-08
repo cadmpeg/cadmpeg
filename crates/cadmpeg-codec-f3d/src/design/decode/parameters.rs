@@ -65,15 +65,9 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
                     continue;
                 }
                 parameter.id = ids::native_design_parameter_id(&entry.name, at);
-                parameter.byte_offset = at as u64;
-                parameter.source.translate_discriminator_offset(at as u64);
-                parameter.expression_offset += at as u64;
-                parameter.source_kind_offset += at as u64;
-                if let Some(unit) = &mut parameter.unit {
-                    unit.offset = unit.offset.map(|offset| offset + at as u64);
-                }
-                parameter.name_offset += at as u64;
-                parameter.evaluated_value_offset += at as u64;
+                parameter
+                    .try_translate_offsets(at as u64)
+                    .map_err(crate::error::malformed)?;
                 out.push(parameter);
                 position = end;
             } else {
@@ -183,14 +177,11 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         || tail[0..2] != [0, 1]
         || tail[3..].iter().any(|byte| *byte != 0)
         || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
-        || expression.is_empty()
         || source_kind.is_empty()
-        || name.is_empty()
-        || !evaluated_value.is_finite()
     {
         return None;
     }
-    Some(DesignParameter {
+    crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
         id: String::new(),
         byte_offset: 0,
         class_tag,
@@ -211,6 +202,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         evaluated_value,
         evaluated_value_offset: name_end as u64,
     })
+    .ok()
 }
 
 /// Parse the class-287 owned parameter family.
@@ -266,14 +258,11 @@ fn parse_legacy_287_design_parameter(
         || tail[legacy_287_tail::ZERO_RUN_9..]
             .iter()
             .any(|byte| *byte != 0)
-        || expression.is_empty()
         || source_kind.is_empty()
-        || name.is_empty()
-        || !evaluated_value.is_finite()
     {
         return None;
     }
-    Some(DesignParameter {
+    crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
         id: String::new(),
         byte_offset: 0,
         class_tag,
@@ -294,6 +283,7 @@ fn parse_legacy_287_design_parameter(
         evaluated_value,
         evaluated_value_offset: u64::try_from(name_end).ok()?,
     })
+    .ok()
 }
 
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
@@ -324,16 +314,10 @@ fn parse_legacy_design_parameter(
     let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
     let evaluated_value = View::f64_le_at(payload, name_end)?;
     let tail = payload.get(name_end + 8..)?;
-    if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        || expression.is_empty()
-        || source_kind.is_empty()
-        || unit.is_empty()
-        || name.is_empty()
-        || !evaluated_value.is_finite()
-    {
+    if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0] || source_kind.is_empty() {
         return None;
     }
-    Some(DesignParameter {
+    crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
         id: String::new(),
         byte_offset: 0,
         class_tag,
@@ -357,6 +341,7 @@ fn parse_legacy_design_parameter(
         evaluated_value,
         evaluated_value_offset: name_end as u64,
     })
+    .ok()
 }
 
 pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
@@ -488,14 +473,14 @@ pub fn decode_parameter_owners(
             if let Some(owner) = parse_parameter_owner(frame) {
                 (owner, false)
             } else if let Some(mut owner) =
-                parse_legacy_parameter_owner_68(frame, parameter.evaluated_value)
+                parse_legacy_parameter_owner_68(frame, parameter.evaluated_value())
             {
-                owner.evaluated_value_offset = parameter.evaluated_value_offset;
+                owner.evaluated_value_offset = parameter.evaluated_value_offset();
                 (owner, true)
             } else if let Some(mut owner) =
-                parse_legacy_parameter_owner_88(frame, parameter.evaluated_value)
+                parse_legacy_parameter_owner_88(frame, parameter.evaluated_value())
             {
-                owner.evaluated_value_offset = parameter.evaluated_value_offset;
+                owner.evaluated_value_offset = parameter.evaluated_value_offset();
                 (owner, true)
             } else {
                 return Err(malformed("does not match the parameter-owner grammar"));

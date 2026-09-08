@@ -303,9 +303,9 @@ pub(crate) fn exact_rectangular_pattern(
                     && parameter.owner_record_index() == Some(direction.distance_parameter)
             });
             let count = direction.evaluated_count.get();
-            if count_parameter
-                .is_some_and(|parameter| !scalar_close(parameter.evaluated_value, f64::from(count)))
-            {
+            if count_parameter.is_some_and(|parameter| {
+                !scalar_close(parameter.evaluated_value(), f64::from(count))
+            }) {
                 return None;
             }
             let distance = direction.evaluated_distance * 10.0;
@@ -598,7 +598,10 @@ pub(crate) fn exact_circular_pattern(
             design_angle(parameter).is_none_or(|value| !scalar_close(value.0, angle.0))
         })
         || count_parameter.is_some_and(|parameter| {
-            !scalar_close(parameter.evaluated_value, f64::from(evaluated_count.get()))
+            !scalar_close(
+                parameter.evaluated_value(),
+                f64::from(evaluated_count.get()),
+            )
         })
     {
         return None;
@@ -1044,7 +1047,7 @@ mod tests {
     }
 
     fn rectangular_parameter(record_index: u32, value: f64) -> DesignParameter {
-        DesignParameter {
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: format!("native:design-parameter#{record_index}"),
             byte_offset: 0,
             class_tag: crate::records::DesignClassTag::try_from("373".to_owned()).unwrap(),
@@ -1055,23 +1058,24 @@ mod tests {
                 Some(record_index),
                 Some(crate::records::Located {
                     value: crate::records::DesignParameterDiscriminator::Code6,
-                    offset: 0,
+                    offset: 22,
                 }),
             )
             .unwrap(),
             expression: value.to_string(),
-            expression_offset: 0,
-            source_kind_offset: 0,
+            expression_offset: 40,
+            source_kind_offset: 60,
 
             unit: Some(crate::records::RecordedValue {
                 value: "mm".into(),
-                offset: Some(0),
+                offset: Some(70),
             }),
             name: format!("d{record_index}"),
-            name_offset: 0,
+            name_offset: 80,
             evaluated_value: value,
-            evaluated_value_offset: 0,
-        }
+            evaluated_value_offset: 90,
+        })
+        .unwrap()
     }
 
     fn rectangular_parameters(count: u32, distance: f64) -> [DesignParameter; 4] {

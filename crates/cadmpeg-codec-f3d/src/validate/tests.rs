@@ -895,64 +895,70 @@ fn validation_accepts_user_design_parameter_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut ir, _, _) = decoded.into_parts();
-    let parameter = crate::records::DesignParameter {
-        id: "f3d:generated:design-parameter#0".into(),
-        byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 900,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::User {
-            family_discriminator: crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 122,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:generated:design-parameter#0".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 900,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::User {
+                family_discriminator: crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 122,
+                },
             },
-        },
-        expression: "60 mm".into(),
-        expression_offset: 136,
-        source_kind_offset: 166,
+            expression: "60 mm".into(),
+            expression_offset: 136,
+            source_kind_offset: 166,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(210),
-        }),
-        name: "Width".into(),
-        name_offset: 220,
-        evaluated_value: 6.0,
-        evaluated_value_offset: 234,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(210),
+            }),
+            name: "Width".into(),
+            name_offset: 220,
+            evaluated_value: 6.0,
+            evaluated_value_offset: 234,
+        })
+        .unwrap();
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate::validate_native(&ir).is_empty());
 }
 
 #[test]
 fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
-    use crate::records::{
-        DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader,
-    };
+    use crate::records::{DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader};
 
     const DESIGN_STREAM: &str = "Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let owned_parameter = DesignParameter {
-        id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
-        byte_offset: 1_068,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 101,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new("Feature Input".into(), Some(100), None)
+    let owned_parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
+            byte_offset: 1_068,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 101,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Feature Input".into(),
+                Some(100),
+                None,
+            )
             .unwrap(),
-        expression: "6 cm".into(),
-        expression_offset: 1_080,
-        source_kind_offset: 1_100,
+            expression: "6 cm".into(),
+            expression_offset: 1_080,
+            source_kind_offset: 1_100,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "cm".into(),
-            offset: Some(1_120),
-        }),
-        name: "Length".into(),
-        name_offset: 1_130,
-        evaluated_value: 6.0,
-        evaluated_value_offset: 1_140,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "cm".into(),
+                offset: Some(1_120),
+            }),
+            name: "Length".into(),
+            name_offset: 1_130,
+            evaluated_value: 6.0,
+            evaluated_value_offset: 1_140,
+        })
+        .unwrap();
     let owner = DesignParameterOwner {
         id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
         byte_offset: 1_000,
@@ -962,7 +968,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         scope_record_index: 0,
         local_ordinal: 0,
         evaluated_value: 6.0,
-        evaluated_value_offset: owned_parameter.evaluated_value_offset,
+        evaluated_value_offset: owned_parameter.evaluated_value_offset(),
         parameter_record_index: 101,
         owned_ordinal: 0,
         variant: None,
@@ -980,24 +986,30 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         payload_byte_length: 0,
         owned_recipe_ids: Vec::new(),
     };
-    let ownerless_parameter = DesignParameter {
-        id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
-        byte_offset: 1_400,
-        class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
-        record_index: 201,
-        source_ordinal: 1,
-        source: crate::records::DesignParameterSource::new("Feature Input".into(), Some(200), None)
+    let ownerless_parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
+            byte_offset: 1_400,
+            class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
+            record_index: 201,
+            source_ordinal: 1,
+            source: crate::records::DesignParameterSource::new(
+                "Feature Input".into(),
+                Some(200),
+                None,
+            )
             .unwrap(),
-        expression: "OffsetX".into(),
-        expression_offset: 1_440,
-        source_kind_offset: 1_470,
+            expression: "OffsetX".into(),
+            expression_offset: 1_440,
+            source_kind_offset: 1_470,
 
-        unit: None,
-        name: "OffsetX".into(),
-        name_offset: 1_490,
-        evaluated_value: 0.0,
-        evaluated_value_offset: 1_510,
-    };
+            unit: None,
+            name: "OffsetX".into(),
+            name_offset: 1_490,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 1_510,
+        })
+        .unwrap();
     {
         let mut native = f3d_native_mut(&mut ir);
         native

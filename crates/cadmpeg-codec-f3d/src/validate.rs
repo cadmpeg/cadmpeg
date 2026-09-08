@@ -3964,8 +3964,7 @@ fn valid_work_plane_construction(
                 && parameter.record_index == owner.parameter_record_index
                 && parameter.owner_record_index() == Some(owner.record_index)
                 && parameter.source_kind() == "ExtraOffset"
-                && parameter.evaluated_value.is_finite()
-                && parameter.evaluated_value == 0.0
+                && parameter.evaluated_value() == 0.0
         })
 }
 
@@ -5035,7 +5034,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         parameters_by_index.get(&(native_stream, owner.parameter_record_index))
                     })
                     .filter(|parameter| parameter.source_kind() == source_kind)
-                    .map(|parameter| parameter.evaluated_value)
+                    .map(|parameter| parameter.evaluated_value())
                     .collect::<Vec<_>>()
             };
             let along_count = parameter_kind_count("AlongDistance");
@@ -5302,12 +5301,10 @@ fn validate_fillet_radius_groups<'a>(
                     assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
                         parameter.source_kind() == "Radius"
                             && parameter
-                                .unit
-                                .as_ref()
+                                .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
-                            && parameter.evaluated_value > 0.0
-                            && parameter.evaluated_value.is_finite()
+                            && parameter.evaluated_value() > 0.0
                     })
                 }
                 records::topology::DesignFilletRadiusLaw::Chordal {
@@ -5316,12 +5313,10 @@ fn validate_fillet_radius_groups<'a>(
                     |parameter| {
                         parameter.source_kind() == "ChordLen"
                             && parameter
-                                .unit
-                                .as_ref()
+                                .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
-                            && parameter.evaluated_value > 0.0
-                            && parameter.evaluated_value.is_finite()
+                            && parameter.evaluated_value() > 0.0
                     },
                 ),
                 records::topology::DesignFilletRadiusLaw::Asymmetric {
@@ -5336,12 +5331,10 @@ fn validate_fillet_radius_groups<'a>(
                     assignment_parameter(record_index).is_some_and(|parameter| {
                         parameter.source_kind() == kind
                             && parameter
-                                .unit
-                                .as_ref()
+                                .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
-                            && parameter.evaluated_value > 0.0
-                            && parameter.evaluated_value.is_finite()
+                            && parameter.evaluated_value() > 0.0
                     })
                 }),
                 records::topology::DesignFilletRadiusLaw::Variable {
@@ -5354,14 +5347,12 @@ fn validate_fillet_radius_groups<'a>(
                             .filter(|parameter| {
                                 parameter.source_kind() == kind
                                     && parameter
-                                        .unit
-                                        .as_ref()
+                                        .unit()
                                         .map(|field| field.value.as_str())
                                         .is_some_and(design::feature_project::design_length_unit)
-                                    && parameter.evaluated_value.is_finite()
-                                    && parameter.evaluated_value >= 0.0
+                                    && parameter.evaluated_value() >= 0.0
                             })
-                            .map(|parameter| parameter.evaluated_value)
+                            .map(|parameter| parameter.evaluated_value())
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
@@ -5375,11 +5366,10 @@ fn validate_fillet_radius_groups<'a>(
                             assignment_parameter(row.parameter_record_index)
                                 .filter(|parameter| {
                                     parameter.source_kind() == "MidParams"
-                                        && parameter.unit.is_none()
-                                        && parameter.evaluated_value.is_finite()
-                                        && (0.0..1.0).contains(&parameter.evaluated_value)
+                                        && parameter.unit().is_none()
+                                        && (0.0..1.0).contains(&parameter.evaluated_value())
                                 })
-                                .map(|parameter| parameter.evaluated_value)
+                                .map(|parameter| parameter.evaluated_value())
                         })
                         .collect::<Option<Vec<_>>>();
                     start.zip(end).zip(middle).zip(positions).is_some_and(
@@ -5394,9 +5384,7 @@ fn validate_fillet_radius_groups<'a>(
                 .tangency_weight_parameter_record_index
                 .is_none_or(|_| {
                     tangency_weight.is_some_and(|parameter| {
-                        parameter.source_kind() == "TangencyWeight"
-                            && parameter.unit.is_none()
-                            && parameter.evaluated_value.is_finite()
+                        parameter.source_kind() == "TangencyWeight" && parameter.unit().is_none()
                     })
                 })
             && fillet_radius_group_records.insert((native_stream, assignment.group_record_index))
@@ -7411,7 +7399,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && owner.scope_record_index == 0
             && owner.local_ordinal == 0
             && parameter.is_some_and(|parameter| {
-                owner.evaluated_value_offset == parameter.evaluated_value_offset
+                owner.evaluated_value_offset == parameter.evaluated_value_offset()
             });
         let legacy_88_frame = owner.frame_length == 88
             && design::decode::parameters::is_legacy_parameter_owner_88_class(
@@ -7420,7 +7408,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && owner.scope_record_index != 0
             && owner.local_ordinal == 0
             && parameter.is_some_and(|parameter| {
-                owner.evaluated_value_offset == parameter.evaluated_value_offset
+                owner.evaluated_value_offset == parameter.evaluated_value_offset()
             });
         let frame_layout = modern_frame_layout || legacy_68_frame || legacy_88_frame;
         let scope_resolves = legacy_68_frame
@@ -7442,7 +7430,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .is_some_and(|companion| companion.owner_record_index == owner.record_index)
             && parameter.is_some_and(|parameter| {
                 parameter.owner_record_index() == Some(owner.record_index)
-                    && parameter.evaluated_value.to_bits() == owner.evaluated_value.to_bits()
+                    && parameter.evaluated_value().to_bits() == owner.evaluated_value.to_bits()
             })
             && unique_index
             && unique_local_ordinal;
@@ -8103,39 +8091,13 @@ fn validate_dimension_null_locus_pairs<'a>(
     }
 }
 
-/// Validate parameter frame positions and record identities.
+/// Validate parameter record identity uniqueness.
 fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let mut parameter_indices = HashSet::new();
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
-        let unique_index = parameter_indices.insert((native_stream, parameter.record_index));
-        let offsets_ordered = parameter.byte_offset < parameter.expression_offset
-            && parameter
-                .family_discriminator()
-                .is_none_or(|discriminator| {
-                    let offset = discriminator.offset;
-                    offset == parameter.byte_offset.saturating_add(22)
-                        && offset < parameter.expression_offset
-                })
-            && parameter.expression_offset < parameter.source_kind_offset
-            && match &parameter.unit {
-                None => parameter.source_kind_offset < parameter.name_offset,
-                Some(unit) => unit.offset.is_some_and(|offset| {
-                    parameter.source_kind_offset < offset && offset < parameter.name_offset
-                }),
-            }
-            && parameter.name_offset < parameter.evaluated_value_offset;
-        let valid = !parameter.expression.is_empty()
-            && !parameter.name.is_empty()
-            && parameter
-                .unit
-                .as_ref()
-                .is_none_or(|unit| !unit.value.is_empty())
-            && parameter.evaluated_value.is_finite()
-            && offsets_ordered
-            && unique_index;
-        if !valid {
+        if !parameter_indices.insert((native_stream, parameter.record_index)) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

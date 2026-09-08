@@ -2,6 +2,7 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
 
+use cadmpeg_ir::NonEmptyString;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -786,7 +787,7 @@ impl DesignParameterSource {
         }
     }
 
-    pub(crate) fn translate_discriminator_offset(&mut self, offset: u64) {
+    fn translate_discriminator_offset(&mut self, offset: u64) {
         let discriminator = match self {
             Self::User {
                 family_discriminator,
@@ -806,7 +807,7 @@ pub struct DesignParameter {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
@@ -815,27 +816,203 @@ pub struct DesignParameter {
     pub source_ordinal: u32,
     /// Indexed owner: user parameters have none; feature and dimension
     /// parameters name their owning record.
-    pub source: DesignParameterSource,
+    source: DesignParameterSource,
     /// Literal or symbolic source expression.
-    pub expression: String,
+    expression: NonEmptyString,
     /// Byte offset of the expression's UTF-16LE code units.
-    pub expression_offset: u64,
+    expression_offset: u64,
     /// Byte offset of the source-family UTF-16LE code units.
-    pub source_kind_offset: u64,
+    source_kind_offset: u64,
     /// Declared unit token; absent for dimensionless and Boolean parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<RecordedValue<String>>,
+    unit: Option<Located<NonEmptyString>>,
     /// Source parameter name or dimension identifier.
-    pub name: String,
+    name: NonEmptyString,
     /// Byte offset of the name's UTF-16LE code units.
-    pub name_offset: u64,
+    name_offset: u64,
     /// Evaluated scalar in the record's native unit convention.
-    pub evaluated_value: f64,
+    evaluated_value: f64,
     /// Byte offset of `evaluated_value`.
+    evaluated_value_offset: u64,
+}
+
+/// Unchecked Design parameter input.
+pub(crate) struct DesignParameterDraft {
+    pub id: String,
+    pub byte_offset: u64,
+    pub class_tag: DesignClassTag,
+    pub record_index: u32,
+    pub source_ordinal: u32,
+    pub source: DesignParameterSource,
+    pub expression: String,
+    pub expression_offset: u64,
+    pub source_kind_offset: u64,
+    pub unit: Option<RecordedValue<String>>,
+    pub name: String,
+    pub name_offset: u64,
+    pub evaluated_value: f64,
     pub evaluated_value_offset: u64,
 }
 
+impl TryFrom<DesignParameterDraft> for DesignParameter {
+    type Error = String;
+    fn try_from(draft: DesignParameterDraft) -> Result<Self, Self::Error> {
+        if !draft.evaluated_value.is_finite() {
+            return Err("evaluated_value must be finite".into());
+        }
+        let expression =
+            NonEmptyString::new(draft.expression).ok_or("expression must not be empty")?;
+        let name = NonEmptyString::new(draft.name).ok_or("name must not be empty")?;
+        let unit = draft
+            .unit
+            .map(|unit| {
+                Ok::<_, String>(Located {
+                    value: NonEmptyString::new(unit.value).ok_or("unit must not be empty")?,
+                    offset: unit.offset.ok_or("unit_offset is required with unit")?,
+                })
+            })
+            .transpose()?;
+        check_parameter_discriminator_offset(
+            &draft.source,
+            draft.byte_offset,
+            draft.expression_offset,
+        )?;
+        if !(draft.byte_offset < draft.expression_offset
+            && draft.expression_offset < draft.source_kind_offset
+            && unit
+                .as_ref()
+                .map_or(draft.source_kind_offset < draft.name_offset, |unit| {
+                    draft.source_kind_offset < unit.offset && unit.offset < draft.name_offset
+                })
+            && draft.name_offset < draft.evaluated_value_offset)
+        {
+            return Err("byte_offset, expression_offset, source_kind_offset, unit_offset, name_offset, and evaluated_value_offset must be strictly ordered".into());
+        }
+        Ok(Self {
+            id: draft.id,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            source_ordinal: draft.source_ordinal,
+            source: draft.source,
+            expression,
+            expression_offset: draft.expression_offset,
+            source_kind_offset: draft.source_kind_offset,
+            unit,
+            name,
+            name_offset: draft.name_offset,
+            evaluated_value: draft.evaluated_value,
+            evaluated_value_offset: draft.evaluated_value_offset,
+        })
+    }
+}
+
+fn check_parameter_discriminator_offset(
+    source: &DesignParameterSource,
+    byte_offset: u64,
+    expression_offset: u64,
+) -> Result<(), String> {
+    let family_discriminator = match source {
+        DesignParameterSource::User {
+            family_discriminator,
+        } => Some(*family_discriminator),
+        DesignParameterSource::Owned(source) => source.family_discriminator,
+    };
+    if family_discriminator.is_some_and(|field| {
+        byte_offset.checked_add(22) != Some(field.offset) || field.offset >= expression_offset
+    }) {
+        return Err("family_discriminator_offset must follow byte_offset by 22 bytes and precede expression_offset".into());
+    }
+    Ok(())
+}
+
 impl DesignParameter {
+    /// Source family and ownership.
+    pub(crate) fn source(&self) -> &DesignParameterSource {
+        &self.source
+    }
+
+    #[cfg(test)]
+    /// Checked replacement of a present unit token.
+    pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {
+        let value = NonEmptyString::new(value).ok_or("unit must not be empty")?;
+        let unit = self.unit.as_mut().ok_or("unit is absent")?;
+        unit.value = value;
+        Ok(())
+    }
+
+    /// Indexed record header offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    /// Expression code-unit offset.
+    pub fn expression_offset(&self) -> u64 {
+        self.expression_offset
+    }
+    /// Source-family code-unit offset.
+    pub fn source_kind_offset(&self) -> u64 {
+        self.source_kind_offset
+    }
+    /// Name code-unit offset.
+    pub fn name_offset(&self) -> u64 {
+        self.name_offset
+    }
+    /// Evaluated scalar offset.
+    pub fn evaluated_value_offset(&self) -> u64 {
+        self.evaluated_value_offset
+    }
+    /// Finite evaluated scalar.
+    pub fn evaluated_value(&self) -> f64 {
+        self.evaluated_value
+    }
+    /// Nonempty parameter name.
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+    /// Nonempty source expression.
+    pub fn expression(&self) -> &str {
+        self.expression.as_str()
+    }
+    /// Located nonempty unit token, when present.
+    pub fn unit(&self) -> Option<&Located<NonEmptyString>> {
+        self.unit.as_ref()
+    }
+
+    /// Checked translation of all parameter locations.
+    pub(crate) fn try_translate_offsets(&mut self, delta: u64) -> Result<(), String> {
+        let evaluated_value_offset = self
+            .evaluated_value_offset
+            .checked_add(delta)
+            .ok_or("evaluated_value_offset translation overflows")?;
+        self.byte_offset += delta;
+        self.source.translate_discriminator_offset(delta);
+        self.expression_offset += delta;
+        self.source_kind_offset += delta;
+        if let Some(unit) = &mut self.unit {
+            unit.offset += delta;
+        }
+        self.name_offset += delta;
+        self.evaluated_value_offset = evaluated_value_offset;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    /// Checked replacement of the evaluated scalar.
+    pub(crate) fn try_set_evaluated_value(&mut self, value: f64) -> Result<(), String> {
+        if !value.is_finite() {
+            return Err("evaluated_value must be finite".into());
+        }
+        self.evaluated_value = value;
+        Ok(())
+    }
+    #[cfg(test)]
+    /// Checked replacement of source family and ownership.
+    pub(crate) fn try_set_source(&mut self, source: DesignParameterSource) -> Result<(), String> {
+        check_parameter_discriminator_offset(&source, self.byte_offset, self.expression_offset)?;
+        self.source = source;
+        Ok(())
+    }
+
     pub(crate) fn family_discriminator(&self) -> Option<Located<DesignParameterDiscriminator>> {
         match &self.source {
             DesignParameterSource::User {
@@ -927,7 +1104,7 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             wire.owner_record_index,
             family_discriminator,
         )?;
-        Ok(Self {
+        Self::try_from(DesignParameterDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
@@ -948,6 +1125,12 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
 
 impl From<DesignParameter> for DesignParameterSerde {
     fn from(parameter: DesignParameter) -> Self {
+        let byte_offset = parameter.byte_offset();
+        let expression_offset = parameter.expression_offset();
+        let source_kind_offset = parameter.source_kind_offset();
+        let name_offset = parameter.name_offset();
+        let evaluated_value_offset = parameter.evaluated_value_offset();
+        let evaluated_value = parameter.evaluated_value();
         let kind = parameter.kind();
         let owner_record_index = parameter.owner_record_index();
         let family_discriminator = parameter.family_discriminator();
@@ -957,24 +1140,24 @@ impl From<DesignParameter> for DesignParameterSerde {
         };
         Self {
             id: parameter.id,
-            byte_offset: parameter.byte_offset,
+            byte_offset,
             class_tag: parameter.class_tag.into(),
             record_index: parameter.record_index,
             family_discriminator: family_discriminator.map(|value| value.value.code()),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: parameter.source_ordinal,
             owner_record_index,
-            expression: parameter.expression,
-            expression_offset: parameter.expression_offset,
+            expression: parameter.expression.to_string(),
+            expression_offset,
             source_kind,
-            source_kind_offset: parameter.source_kind_offset,
+            source_kind_offset,
             kind,
-            unit_offset: parameter.unit.as_ref().and_then(|field| field.offset),
-            unit: parameter.unit.map(|field| field.value),
-            name: parameter.name,
-            name_offset: parameter.name_offset,
-            evaluated_value: parameter.evaluated_value,
-            evaluated_value_offset: parameter.evaluated_value_offset,
+            unit_offset: parameter.unit.as_ref().map(|field| field.offset),
+            unit: parameter.unit.map(|field| field.value.to_string()),
+            name: parameter.name.to_string(),
+            name_offset,
+            evaluated_value,
+            evaluated_value_offset,
         }
     }
 }

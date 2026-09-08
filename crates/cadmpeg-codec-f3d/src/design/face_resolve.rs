@@ -2140,12 +2140,10 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
 
 pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
     (parameter
-        .unit
-        .as_ref()
+        .unit()
         .map(|field| field.value.as_str())
-        .is_some_and(design_angle_unit)
-        && parameter.evaluated_value.is_finite())
-    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
+        .is_some_and(design_angle_unit))
+    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value()))
 }
 
 pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {

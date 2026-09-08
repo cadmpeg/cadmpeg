@@ -47,26 +47,29 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     let parameter = |record_index: u32,
                      source_kind: &str,
                      unit: Option<&str>,
-                     evaluated_value: f64| DesignParameter {
-        id: format!("f3d:test:pipe-parameter#{record_index}"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        record_index,
-        source_ordinal: record_index,
-        source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
-            .unwrap(),
-        expression: String::new(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+                     evaluated_value: f64| {
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("f3d:test:pipe-parameter#{record_index}"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            record_index,
+            source_ordinal: record_index,
+            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+                .unwrap(),
+            expression: evaluated_value.to_string(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: unit.map(|value| crate::records::RecordedValue {
-            value: value.to_owned(),
-            offset: None,
-        }),
-        name: source_kind.into(),
-        name_offset: 0,
-        evaluated_value,
-        evaluated_value_offset: 0,
+            unit: unit.map(|value| crate::records::RecordedValue {
+                value: value.to_owned(),
+                offset: Some(70),
+            }),
+            name: source_kind.into(),
+            name_offset: 80,
+            evaluated_value,
+            evaluated_value_offset: 90,
+        })
+        .unwrap()
     };
     let parameters = [
         parameter(10, "AlongDistance", None, 1.0),
@@ -175,7 +178,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     ));
 
     let mut too_thick_parameters = parameters.clone();
-    too_thick_parameters[3].evaluated_value = 0.35;
+    too_thick_parameters[3]
+        .try_set_evaluated_value(0.35)
+        .unwrap();
     let too_thick_parameter_refs = too_thick_parameters
         .iter()
         .map(|parameter| (parameter.record_index, parameter))

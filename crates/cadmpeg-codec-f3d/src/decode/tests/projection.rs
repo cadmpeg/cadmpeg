@@ -23,8 +23,8 @@ use crate::native::F3dNative;
 use crate::records::feature::DesignParameterScope;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignFeatureTimeline, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
-    DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+    DesignFeatureTimeline, DesignParameterCompanion, DesignParameterOwner, DesignSketchPlacement,
+    LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 
 #[test]
@@ -1342,34 +1342,37 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         return_members: (Vec::new()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     });
-    native.design_parameters.push(DesignParameter {
-        id: "f3d:test:design-parameter#2".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        record_index: 2,
-        source_ordinal: 2,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(3),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "1 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    native.design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:test:design-parameter#2".into(),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            record_index: 2,
+            source_ordinal: 2,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(3),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "1 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "native-unit".into(),
-            offset: Some(0),
-        }),
-        name: "d2".into(),
-        name_offset: 0,
-        evaluated_value: 0.1,
-        evaluated_value_offset: 0,
-    });
+            unit: Some(crate::records::RecordedValue {
+                value: "native-unit".into(),
+                offset: Some(70),
+            }),
+            name: "d2".into(),
+            name_offset: 80,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 90,
+        })
+        .unwrap(),
+    );
     native.design_parameter_scopes.push(DesignParameterScope {
         id: "native:unprojected-scope".into(),
         byte_offset: 0,
@@ -1688,34 +1691,37 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let stream = "f3d:test/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let mut native = F3dNative::default();
-    native.design_parameters.push(DesignParameter {
-        id: format!("{stream}:design-parameter#10"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 10,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(20),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 22,
-            }),
-        )
-        .unwrap(),
-        expression: "5 mm".into(),
-        expression_offset: 40,
-        source_kind_offset: 60,
+    native.design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#10"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 10,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(20),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "5 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(90),
-        }),
-        name: "d1".into(),
-        name_offset: 100,
-        evaluated_value: 0.5,
-        evaluated_value_offset: 110,
-    });
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(90),
+            }),
+            name: "d1".into(),
+            name_offset: 100,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 110,
+        })
+        .unwrap(),
+    );
     native.design_parameter_owners.push(DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#20"),
         byte_offset: 120,
