@@ -1762,11 +1762,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             )?))
         })
         .collect::<Vec<_>>();
-    if reference_indices.len() != 2 {
-        return None;
-    }
     let [slot_index, center_index] = reference_indices.as_slice() else {
-        unreachable!("two slot-handle references were required above")
+        return None;
     };
     let slot_index = u32::try_from(*slot_index).ok()?;
     let center_index = u32::try_from(*center_index).ok()?;
@@ -1787,19 +1784,14 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         })
         .collect::<Vec<_>>();
     points.sort_unstable_by_key(|candidate| candidate.offset);
-    let centers = center_indices
-        .map(|index| points.get(index).copied())
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = centers.as_slice() else {
-        unreachable!("slot descriptor has two center indices")
-    };
+    let [first, second] = center_indices.map(|index| points.get(index).copied());
+    let (first, second) = (first?, second?);
     let center = match (
         first.local_id == Some(center_index),
         second.local_id == Some(center_index),
     ) {
-        (true, false) => *first,
-        (false, true) => *second,
+        (true, false) => first,
+        (false, true) => second,
         _ => return None,
     };
     let coordinates = center.coordinates_m?;
