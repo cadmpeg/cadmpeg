@@ -1041,19 +1041,22 @@ fn split_body_requires_resolved_target_and_tool_selections() {
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
-    native.design_body_bindings.push(DesignBodyBinding {
-        id: "f3d:design:body-binding#0".into(),
-        stream: "Design/BulkStream.dat".into(),
-        pair_count: 1,
-        pair_ordinal: 0,
-        asm_body_key: 0,
-        asm_body_key_offset: 0,
-        entity_suffix: 1,
-        entity_suffix_offset: 8,
-        blob_name: "BREP.snapshot.smb".into(),
-        blob_name_offset: 16,
-        body: None,
-    });
+    native.design_body_bindings.push(
+        DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+            id: "f3d:design:body-binding#0".into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 0,
+            asm_body_key_offset: 0,
+            entity_suffix: 1,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.snapshot.smb".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap(),
+    );
 
     assert_eq!(
         design_projection_gaps(&ir, &native).unresolved_body_bindings,

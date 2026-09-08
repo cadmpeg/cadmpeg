@@ -1931,3 +1931,32 @@ fn body_bounds_admit_only_ordered_finite_cache_frames() {
         assert!(super::DesignBodyBounds::try_from(invalid).is_err());
     }
 }
+
+#[test]
+fn body_binding_wire_rejects_invalid_pair_frames() {
+    let wire = serde_json::json!({"id": "binding", "stream": "Design/BulkStream.dat",
+        "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0, "asm_body_key_offset": 10,
+        "entity_suffix": 0, "entity_suffix_offset": 18, "blob_name": "BREP.", "blob_name_offset": 19});
+    let record: super::DesignBodyBinding = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    for (field, value) in [
+        ("pair_count", serde_json::json!(0)),
+        ("pair_ordinal", serde_json::json!(1)),
+        ("asm_body_key_offset", serde_json::json!(u64::MAX)),
+        ("entity_suffix_offset", serde_json::json!(19)),
+        ("blob_name", serde_json::json!("body.smbh")),
+        ("blob_name_offset", serde_json::json!(18)),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<super::DesignBodyBinding>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    let mut overflow = wire;
+    overflow["asm_body_key_offset"] = u64::MAX.into();
+    overflow["entity_suffix_offset"] = u64::MAX.into();
+    overflow["blob_name_offset"] = u64::MAX.into();
+    assert!(serde_json::from_value::<super::DesignBodyBinding>(overflow).is_err());
+}

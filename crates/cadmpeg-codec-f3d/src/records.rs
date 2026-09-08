@@ -7912,7 +7912,32 @@ impl From<DesignBodyBounds> for DesignBodyBoundsWire {
 
 /// One ordered pair in a Design `BulkStream` BREP body-map record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignBodyBindingWire", into = "DesignBodyBindingWire")]
 pub struct DesignBodyBinding {
+    /// Globally unique deterministic identifier for this native map entry.
+    pub id: String,
+    /// Design `BulkStream` ZIP entry containing the map.
+    pub stream: String,
+    /// Number of pairs in the enclosing body map.
+    pair_count: std::num::NonZeroU32,
+    /// Zero-based position in the enclosing body map.
+    pair_ordinal: u32,
+    /// BREP body selector stored by this pair.
+    pub asm_body_key: u64,
+    /// Byte offset of `asm_body_key` within `stream`.
+    asm_body_key_offset: u64,
+    /// Numeric Design entity suffix stored by this pair.
+    pub entity_suffix: u64,
+    /// Basename of the BREP blob whose body namespace contains the key.
+    blob_name: String,
+    /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
+    blob_name_offset: u64,
+    /// Solved body in the BREP blob named by this pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<BodyId>,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DesignBodyBindingWire {
     /// Globally unique deterministic identifier for this native map entry.
     pub id: String,
     /// Design `BulkStream` ZIP entry containing the map.
@@ -7936,6 +7961,80 @@ pub struct DesignBodyBinding {
     /// Solved body in the BREP blob named by this pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<BodyId>,
+}
+impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
+    type Error = String;
+    fn try_from(wire: DesignBodyBindingWire) -> Result<Self, Self::Error> {
+        let pair_count =
+            std::num::NonZeroU32::new(wire.pair_count).ok_or("pair_count must be nonzero")?;
+        if wire.pair_ordinal >= pair_count.get() {
+            return Err("pair_ordinal must be less than pair_count".into());
+        }
+        let entity_suffix_offset = wire
+            .asm_body_key_offset
+            .checked_add(8)
+            .ok_or("asm_body_key_offset overflows entity_suffix_offset")?;
+        if wire.entity_suffix_offset != entity_suffix_offset {
+            return Err(
+                "entity_suffix_offset must follow asm_body_key_offset by eight bytes".into(),
+            );
+        }
+        if !wire.blob_name.starts_with("BREP.") {
+            return Err("blob_name must start with BREP.".into());
+        }
+        if wire.blob_name_offset <= entity_suffix_offset {
+            return Err("blob_name_offset must follow entity_suffix_offset".into());
+        }
+        Ok(Self {
+            pair_count,
+            id: wire.id,
+            stream: wire.stream,
+            pair_ordinal: wire.pair_ordinal,
+            asm_body_key: wire.asm_body_key,
+            asm_body_key_offset: wire.asm_body_key_offset,
+            entity_suffix: wire.entity_suffix,
+            blob_name: wire.blob_name,
+            blob_name_offset: wire.blob_name_offset,
+            body: wire.body,
+        })
+    }
+}
+impl DesignBodyBinding {
+    pub(crate) fn pair_count(&self) -> u32 {
+        self.pair_count.get()
+    }
+    pub(crate) fn pair_ordinal(&self) -> u32 {
+        self.pair_ordinal
+    }
+    pub(crate) fn asm_body_key_offset(&self) -> u64 {
+        self.asm_body_key_offset
+    }
+    pub(crate) fn entity_suffix_offset(&self) -> u64 {
+        self.asm_body_key_offset + 8
+    }
+    pub(crate) fn blob_name(&self) -> &str {
+        &self.blob_name
+    }
+    pub(crate) fn blob_name_offset(&self) -> u64 {
+        self.blob_name_offset
+    }
+}
+impl From<DesignBodyBinding> for DesignBodyBindingWire {
+    fn from(value: DesignBodyBinding) -> Self {
+        Self {
+            pair_count: value.pair_count(),
+            entity_suffix_offset: value.entity_suffix_offset(),
+            id: value.id,
+            stream: value.stream,
+            pair_ordinal: value.pair_ordinal,
+            asm_body_key: value.asm_body_key,
+            asm_body_key_offset: value.asm_body_key_offset,
+            entity_suffix: value.entity_suffix,
+            blob_name: value.blob_name,
+            blob_name_offset: value.blob_name_offset,
+            body: value.body,
+        }
+    }
 }
 
 /// Design browser-node visibility joined to one solved ASM body.
