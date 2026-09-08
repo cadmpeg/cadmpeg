@@ -6029,8 +6029,7 @@ pub struct CatiaLegacyEntityIdentity {
     /// Little-endian identity following the delimiter.
     pub entity_id: u32,
     /// Stored record lead following the identity.
-    #[serde(default)]
-    pub lead: u8,
+    pub lead: legacy_entity::CatiaLegacyIdentityLead,
 }
 
 /// One complete compact legacy schema program.
