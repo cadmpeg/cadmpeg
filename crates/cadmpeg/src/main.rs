@@ -353,7 +353,7 @@ fn main() -> ExitCode {
         } => commands::dump(
             &inputs,
             file.path(),
-            DestinationPolicy::new(output, force, false),
+            &DestinationPolicy::new(output, force, false),
             FileDestination::optional(report, force).as_ref(),
             input_args.input_format,
             &decode,
