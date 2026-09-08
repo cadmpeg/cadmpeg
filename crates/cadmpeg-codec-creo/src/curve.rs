@@ -1593,6 +1593,56 @@ struct ConditionalFrame {
     condition: Option<bool>,
 }
 
+#[derive(Default)]
+enum ConditionalStack {
+    #[default]
+    Empty,
+    Open {
+        frame: ConditionalFrame,
+        parents: Vec<ConditionalFrame>,
+    },
+}
+
+impl ConditionalStack {
+    fn push(&mut self, frame: ConditionalFrame) {
+        *self = match std::mem::take(self) {
+            Self::Empty => Self::Open {
+                frame,
+                parents: Vec::new(),
+            },
+            Self::Open {
+                frame: parent,
+                mut parents,
+            } => {
+                parents.push(parent);
+                Self::Open { frame, parents }
+            }
+        };
+    }
+
+    fn alternative(&self) -> CurveExpressionActivation {
+        match self {
+            Self::Empty => CurveExpressionActivation::Conditional,
+            Self::Open { frame, .. } => branch_activation(frame.parent, frame.condition, true),
+        }
+    }
+
+    fn end(&mut self) -> CurveExpressionActivation {
+        match std::mem::take(self) {
+            Self::Empty => CurveExpressionActivation::Conditional,
+            Self::Open { frame, mut parents } => {
+                if let Some(parent) = parents.pop() {
+                    *self = Self::Open {
+                        frame: parent,
+                        parents,
+                    };
+                }
+                frame.parent
+            }
+        }
+    }
+}
+
 fn conditional_keyword_expression<'a>(source: &'a str, keyword: &str) -> Option<&'a str> {
     let source = source.trim();
     let prefix = source.get(..keyword.len())?;
@@ -1732,7 +1782,7 @@ fn evaluate_expression_program_details(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let mut stack = Vec::<ConditionalFrame>::new();
+    let mut stack = ConditionalStack::default();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
@@ -1839,13 +1889,11 @@ fn evaluate_expression_program_details(
             continue;
         }
         if source.eq_ignore_ascii_case("else") {
-            let frame = stack.last().expect("validated conditional stack");
-            activity = branch_activation(frame.parent, frame.condition, true);
+            activity = stack.alternative();
             continue;
         }
         if source.eq_ignore_ascii_case("endif") {
-            let frame = stack.pop().expect("validated conditional stack");
-            activity = frame.parent;
+            activity = stack.end();
             continue;
         }
         let Some(mut assignment) = expression_assignment(line) else {
