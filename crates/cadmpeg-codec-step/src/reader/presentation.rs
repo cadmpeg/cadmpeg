@@ -1009,9 +1009,17 @@ fn style_depth(
     result
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SurfaceSideRank {
+    NoUsage,
+    Negative,
+    Positive,
+    Both,
+}
+
 #[derive(Clone)]
 struct ColorCandidate {
-    rank: u8,
+    rank: SurfaceSideRank,
     id: u64,
     color: Color,
     name: Option<String>,
@@ -1020,20 +1028,20 @@ struct ColorCandidate {
 #[derive(Clone)]
 enum ColorResolution {
     Candidate(ColorCandidate),
-    Ambiguous { rank: u8 },
+    Ambiguous { rank: SurfaceSideRank },
 }
 
 type CachedColor = Option<ColorResolution>;
 
 impl ColorResolution {
-    fn priority(&self) -> u8 {
+    fn priority(&self) -> SurfaceSideRank {
         match self {
             Self::Candidate(candidate) => candidate.rank,
             Self::Ambiguous { rank } => *rank,
         }
     }
 
-    fn with_min_rank(self, rank: u8) -> Self {
+    fn with_min_rank(self, rank: SurfaceSideRank) -> Self {
         match self {
             Self::Candidate(mut candidate) => {
                 candidate.rank = candidate.rank.max(rank);
@@ -1128,7 +1136,7 @@ fn find_color(
         let side_rank = if domain == StyleDomain::Surface {
             surface_side_rank(id, record, losses, invalid_surface_sides)?
         } else {
-            0
+            SurfaceSideRank::NoUsage
         };
         let name = record.simple_name().or_else(|| {
             record.partials.iter().find_map(|partial| {
@@ -1328,13 +1336,13 @@ fn surface_side_rank(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     invalid_surface_sides: &mut BTreeSet<u64>,
-) -> Option<u8> {
+) -> Option<SurfaceSideRank> {
     let Some(partial) = record
         .partials
         .iter()
         .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
     else {
-        return Some(0);
+        return Some(SurfaceSideRank::NoUsage);
     };
     let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {
         invalid_surface_sides.insert(id);
@@ -1344,9 +1352,9 @@ fn surface_side_rank(
         return None;
     };
     match side {
-        "BOTH" => Some(3),
-        "POSITIVE" => Some(2),
-        "NEGATIVE" => Some(1),
+        "BOTH" => Some(SurfaceSideRank::Both),
+        "POSITIVE" => Some(SurfaceSideRank::Positive),
+        "NEGATIVE" => Some(SurfaceSideRank::Negative),
         _ => {
             invalid_surface_sides.insert(id);
             losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
