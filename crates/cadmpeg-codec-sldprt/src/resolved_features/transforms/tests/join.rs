@@ -537,7 +537,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ),
         Some(SketchConstraintDefinitionInput::Radius { parameter, .. })
-            if parameter.as_str() == "circle"
+            if parameter.as_str() == "synthetic:test:id#circle"
     ));
     let diameter = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Diameter));
     assert!(matches!(
@@ -550,7 +550,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ),
         Some(SketchConstraintDefinitionInput::Diameter { parameter, .. })
-            if parameter.as_str() == "circle"
+            if parameter.as_str() == "synthetic:test:id#circle"
     ));
     let undisplayed = parameter("synthetic:test:id#circle", None);
     assert_eq!(
