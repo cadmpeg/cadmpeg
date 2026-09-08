@@ -3033,16 +3033,16 @@ pub fn rmfastload_object_id_table(
     let table_id = "nx:rmfastload:object-id-table#0".to_string();
     let mut object_ids = table
         .object_ids
-        .into_vec()
-        .into_iter()
+        .as_slice()
+        .iter()
         .enumerate()
         .map(|(ordinal, object_id)| RmFastLoadObjectId {
             id: format!("nx:rmfastload:object-id#{ordinal:010}"),
             table: table_id.clone(),
             ordinal: ordinal as u32,
-            value: object_id.value,
+            value: *object_id,
             stable_identity: None,
-            source_offset: entry_offset + object_id.offset as u64,
+            source_offset: entry_offset + table.member_offset(ordinal) as u64,
         })
         .collect::<Vec<_>>();
     assign_rmfastload_object_id_identities(&mut object_ids);

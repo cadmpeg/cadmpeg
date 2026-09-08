@@ -153,14 +153,7 @@ pub(crate) fn try_decode_geometry(
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
-        .map(|(_, table)| {
-            table
-                .object_ids
-                .into_vec()
-                .into_iter()
-                .map(|object_id| object_id.value)
-                .collect::<Vec<_>>()
-        })
+        .map(|(_, table)| table.object_ids.into_vec())
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
