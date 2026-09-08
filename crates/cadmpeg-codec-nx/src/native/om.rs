@@ -1818,19 +1818,79 @@ pub struct DataBlockColumnIndexTable {
 
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StoreHeader {
+#[serde(from = "StoreHeaderWire", into = "StoreHeaderWire")]
+pub enum StoreHeader {
+    /// Header in an ID-bounded store record.
+    Fixed(FixedStoreHeader),
+    /// Header in an offset-bounded store block.
+    OffsetOnly(OffsetStoreHeader),
+}
+
+/// Product/version header in an ID-bounded store record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedStoreHeader {
+    /// Persistent object identity.
+    pub object_id: u32,
+    /// Product/version location and text.
+    pub header: OffsetStoreHeader,
+}
+
+/// Product/version location and text in an offset-bounded store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffsetStoreHeader {
     /// Globally unique store-header identity.
     pub id: String,
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
-    /// Persistent object identity when the header belongs to an ID-bounded record.
-    pub object_id: Option<u32>,
     /// Exact printable product/version text.
     pub version: crate::om::product::ProductText<String>,
     /// Directory entry containing the OM store.
     pub source_entry: String,
     /// Absolute file offset of the `04 01` marker.
     pub source_offset: u64,
+}
+
+impl StoreHeader {
+    pub(crate) fn header(&self) -> &OffsetStoreHeader {
+        match self {
+            Self::Fixed(header) => &header.header,
+            Self::OffsetOnly(header) => header,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoreHeaderWire {
+    object_id: Option<u32>,
+    #[serde(flatten)]
+    header: OffsetStoreHeader,
+}
+
+impl From<StoreHeaderWire> for StoreHeader {
+    fn from(wire: StoreHeaderWire) -> Self {
+        match wire.object_id {
+            Some(object_id) => Self::Fixed(FixedStoreHeader {
+                object_id,
+                header: wire.header,
+            }),
+            None => Self::OffsetOnly(wire.header),
+        }
+    }
+}
+
+impl From<StoreHeader> for StoreHeaderWire {
+    fn from(header: StoreHeader) -> Self {
+        match header {
+            StoreHeader::Fixed(header) => Self {
+                object_id: Some(header.object_id),
+                header: header.header,
+            },
+            StoreHeader::OffsetOnly(header) => Self {
+                object_id: None,
+                header,
+            },
+        }
+    }
 }
 
 /// Role of one bounded block in an offset-only NX OM store.
@@ -3632,14 +3692,16 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
             match &section.store {
                 IndexedStore::Fixed { records } => records.iter().find_map(|record| {
                     crate::om::store_version(record.bytes, record.offset).map(|version| {
-                        StoreHeader {
-                            id: format!("nx:om-store-headers:store#{section_ordinal}"),
-                            section_ordinal: section_ordinal as u32,
-                            object_id: Some(record.object_id.0),
-                            version: version.value.into_owned(),
-                            source_entry: entry.name.clone(),
-                            source_offset: entry_offset + version.offset as u64,
-                        }
+                        StoreHeader::Fixed(FixedStoreHeader {
+                            object_id: record.object_id.0,
+                            header: OffsetStoreHeader {
+                                id: format!("nx:om-store-headers:store#{section_ordinal}"),
+                                section_ordinal: section_ordinal as u32,
+                                version: version.value.into_owned(),
+                                source_entry: entry.name.clone(),
+                                source_offset: entry_offset + version.offset as u64,
+                            },
+                        })
                     })
                 }),
                 IndexedStore::OffsetOnly {
@@ -3648,14 +3710,13 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
                     .chain(records.iter())
                     .find_map(|record| {
                         crate::om::store_version(record.bytes, record.offset).map(|version| {
-                            StoreHeader {
+                            StoreHeader::OffsetOnly(OffsetStoreHeader {
                                 id: format!("nx:om-store-headers:store#{section_ordinal}"),
                                 section_ordinal: section_ordinal as u32,
-                                object_id: None,
                                 version: version.value.into_owned(),
                                 source_entry: entry.name.clone(),
                                 source_offset: entry_offset + version.offset as u64,
-                            }
+                            })
                         })
                     }),
             }
@@ -5391,8 +5452,11 @@ mod tests {
             .arena_as::<super::StoreHeader>("store_headers")
             .expect("required invariant");
         assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0].version.as_str(), "NX 2027.3102");
-        assert_eq!(headers[0].object_id, Some(0x101));
+        assert_eq!(headers[0].header().version.as_str(), "NX 2027.3102");
+        let super::StoreHeader::Fixed(header) = &headers[0] else {
+            panic!("ID-bounded store header");
+        };
+        assert_eq!(header.object_id, 0x101);
         assert_eq!(object_records[1].object_id.0, 0x102);
         assert_eq!(
             object_records[1].object_id.1,
