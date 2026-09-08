@@ -189,17 +189,6 @@ pub enum DestinationPolicy {
 }
 
 impl DestinationPolicy {
-    /// Resolves CLI destination flags into a destination-specific policy.
-    #[must_use]
-    pub fn new(destination: Option<PathBuf>, overwrite: bool, binary_stdout: bool) -> Self {
-        match destination {
-            Some(path) => Self::File(FileDestination { path, overwrite }),
-            None => Self::Stdout {
-                allow_binary: binary_stdout,
-            },
-        }
-    }
-
     /// Returns the output path used for format inference, if any.
     #[must_use]
     pub(crate) fn path(&self) -> Option<&Path> {
