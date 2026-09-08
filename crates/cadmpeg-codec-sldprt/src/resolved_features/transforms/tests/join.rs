@@ -398,7 +398,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinition::ArcAngle {
                 entity: SketchEntityId("second".into()),
-                angle: cadmpeg_ir::features::Angle(angle),
+                angle: cadmpeg_ir::features::Angle::new(angle).unwrap(),
             })
         );
         arc_angle.links.as_mut().unwrap().entries_mut()[0]
@@ -452,7 +452,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         name: id.into(),
         expression: String::new(),
         display,
-        value: Some(ParameterValue::Length(Length(2.0))),
+        value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -558,7 +558,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     );
     assert!(matches!(
@@ -773,7 +773,7 @@ fn curve_handles_reject_point_geometry() {
     };
     let circle = SketchGeometry::Circle {
         center: Point2::new(0.0, 0.0),
-        radius: Length(1.0),
+        radius: Length::new(1.0).unwrap(),
     };
 
     assert!(!super::marker_accepts_locus(
@@ -799,7 +799,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         sketch.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(10.0),
+            radius: Length::new(10.0).unwrap(),
         },
     );
     let points = [-10.0, 10.0].map(|u| {

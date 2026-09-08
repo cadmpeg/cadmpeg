@@ -280,9 +280,9 @@ fn arc_carriers_use_trim_vertices() {
         trimmed_section_segment_geometry(&definition, &points, &trim_vertices, &segment),
         Some(SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
     );
 
@@ -335,9 +335,9 @@ fn arc_carriers_use_trim_vertices() {
         ),
         Some(SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
     );
 }

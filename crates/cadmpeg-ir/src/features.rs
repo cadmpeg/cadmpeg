@@ -11,16 +11,694 @@ use crate::ids::{
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::{JointId, NonEmptyString};
+use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+
+macro_rules! checked_feature_geometry {
+    ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(transparent)]
+        pub struct $name($raw);
+
+        impl $name {
+            /// Admit a value that satisfies the feature geometry bounds.
+            pub fn new($value: $raw) -> Option<Self> {
+                ($valid).then_some(Self($value))
+            }
+
+            /// Return the geometric value.
+            pub const fn get(self) -> $raw { self.0 }
+        }
+
+        impl PartialEq<$raw> for $name {
+            fn eq(&self, other: &$raw) -> bool { self.0 == *other }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = $raw;
+            fn deref(&self) -> &$raw { &self.0 }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let value = $raw::deserialize(deserializer)?;
+                Self::try_from(value).map_err(serde::de::Error::custom)
+            }
+        }
+
+        impl TryFrom<$raw> for $name {
+            type Error = &'static str;
+            fn try_from(value: $raw) -> Result<Self, Self::Error> {
+                Self::new(value).ok_or($error)
+            }
+        }
+
+        impl From<$name> for $raw {
+            fn from(value: $name) -> Self { value.0 }
+        }
+    };
+}
+
+checked_feature_geometry!(
+    /// A model-space point with finite coordinates.
+    FinitePoint3, Point3, value,
+    [value.x, value.y, value.z].into_iter().all(f64::is_finite),
+    "FinitePoint3 coordinates must be finite"
+);
+checked_feature_geometry!(
+    /// A displacement with finite components, including zero.
+    FiniteVector3, Vector3, value,
+    [value.x, value.y, value.z].into_iter().all(f64::is_finite),
+    "FiniteVector3 components must be finite"
+);
+checked_feature_geometry!(
+    /// A direction with finite nonzero norm.
+    FeatureDirection3, Vector3, value,
+    value.norm().is_finite() && value.norm() > 0.0,
+    "FeatureDirection3 norm must be finite and nonzero"
+);
+
+checked_feature_geometry!(
+    /// A finite right-handed rigid feature placement.
+    FeatureRigidPlacement, Transform, value, value.is_proper_rigid(),
+    "FeatureRigidPlacement must be a finite right-handed rigid transform"
+);
+
+impl FeatureRigidPlacement {
+    /// Return the identity placement.
+    pub fn identity() -> Self {
+        Self(Transform::identity())
+    }
+}
+
+const EPS_FEATURE_UNIT_FRAME: f64 = 1.0e-9;
+
+/// A finite origin and two perpendicular unit directions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureUnitPlaneFrameWire")]
+pub struct FeatureUnitPlaneFrame {
+    origin: FinitePoint3,
+    u_axis: Vector3,
+    v_axis: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeatureUnitPlaneFrameWire {
+    origin: Point3,
+    u_axis: Vector3,
+    v_axis: Vector3,
+}
+
+impl FeatureUnitPlaneFrame {
+    /// Admit a finite origin and perpendicular unit axes within the feature tolerance.
+    pub fn new(origin: Point3, u_axis: Vector3, v_axis: Vector3) -> Option<Self> {
+        let origin = FinitePoint3::new(origin)?;
+        ((u_axis.norm() - 1.0).abs() <= EPS_FEATURE_UNIT_FRAME
+            && (v_axis.norm() - 1.0).abs() <= EPS_FEATURE_UNIT_FRAME
+            && u_axis.dot(v_axis).abs() <= EPS_FEATURE_UNIT_FRAME)
+            .then_some(Self {
+                origin,
+                u_axis,
+                v_axis,
+            })
+    }
+
+    /// Return the model-space origin.
+    pub fn origin(self) -> Point3 {
+        self.origin.get()
+    }
+    /// Return the first unit direction.
+    pub fn u_axis(self) -> Vector3 {
+        self.u_axis
+    }
+    /// Return the second unit direction.
+    pub fn v_axis(self) -> Vector3 {
+        self.v_axis
+    }
+}
+
+impl TryFrom<FeatureUnitPlaneFrameWire> for FeatureUnitPlaneFrame {
+    type Error = &'static str;
+    fn try_from(wire: FeatureUnitPlaneFrameWire) -> Result<Self, Self::Error> {
+        Self::new(wire.origin, wire.u_axis, wire.v_axis)
+            .ok_or("feature plane requires a finite origin and perpendicular unit axes")
+    }
+}
+
+/// A finite right-handed coordinate frame with perpendicular unit axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "FeatureCoordinateFrameWire",
+    into = "FeatureCoordinateFrameWire"
+)]
+pub struct FeatureCoordinateFrame {
+    plane: FeatureUnitPlaneFrame,
+    z_axis: Vector3,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeatureCoordinateFrameWire {
+    origin: Point3,
+    x_axis: Vector3,
+    y_axis: Vector3,
+    z_axis: Vector3,
+}
+
+impl FeatureCoordinateFrame {
+    /// Admit a finite right-handed frame within the feature unit-axis tolerance.
+    pub fn new(origin: Point3, x_axis: Vector3, y_axis: Vector3, z_axis: Vector3) -> Option<Self> {
+        let plane = FeatureUnitPlaneFrame::new(origin, x_axis, y_axis)?;
+        ((z_axis.norm() - 1.0).abs() <= EPS_FEATURE_UNIT_FRAME
+            && x_axis.dot(z_axis).abs() <= EPS_FEATURE_UNIT_FRAME
+            && y_axis.dot(z_axis).abs() <= EPS_FEATURE_UNIT_FRAME
+            && x_axis.cross(y_axis).dot(z_axis) >= 1.0 - EPS_FEATURE_UNIT_FRAME)
+            .then_some(Self { plane, z_axis })
+    }
+    /// Return the model-space origin.
+    pub fn origin(self) -> Point3 {
+        self.plane.origin()
+    }
+    /// Return the x-axis.
+    pub fn x_axis(self) -> Vector3 {
+        self.plane.u_axis()
+    }
+    /// Return the y-axis.
+    pub fn y_axis(self) -> Vector3 {
+        self.plane.v_axis()
+    }
+    /// Return the z-axis.
+    pub fn z_axis(self) -> Vector3 {
+        self.z_axis
+    }
+}
+
+impl TryFrom<FeatureCoordinateFrameWire> for FeatureCoordinateFrame {
+    type Error = &'static str;
+    fn try_from(wire: FeatureCoordinateFrameWire) -> Result<Self, Self::Error> {
+        Self::new(wire.origin, wire.x_axis, wire.y_axis, wire.z_axis)
+            .ok_or("feature coordinate frame requires finite origin and right-handed perpendicular unit axes")
+    }
+}
+impl From<FeatureCoordinateFrame> for FeatureCoordinateFrameWire {
+    fn from(frame: FeatureCoordinateFrame) -> Self {
+        Self {
+            origin: frame.origin(),
+            x_axis: frame.x_axis(),
+            y_axis: frame.y_axis(),
+            z_axis: frame.z_axis(),
+        }
+    }
+}
+
+/// Two finite opposite image corners with nonzero extent in both coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[Point2; 2]", into = "[Point2; 2]")]
+pub struct FeatureImageBounds([Point2; 2]);
+impl FeatureImageBounds {
+    /// Admit finite corners with nonzero width and height, in either order.
+    pub fn new(corners: [Point2; 2]) -> Option<Self> {
+        let [first, second] = corners;
+        ([first.u, first.v, second.u, second.v]
+            .into_iter()
+            .all(f64::is_finite)
+            && first.u != second.u
+            && first.v != second.v)
+            .then_some(Self(corners))
+    }
+    /// Return the opposite corners.
+    pub fn corners(self) -> [Point2; 2] {
+        self.0
+    }
+}
+impl TryFrom<[Point2; 2]> for FeatureImageBounds {
+    type Error = &'static str;
+    fn try_from(corners: [Point2; 2]) -> Result<Self, Self::Error> {
+        Self::new(corners).ok_or("image bounds require finite corners and nonzero width and height")
+    }
+}
+impl From<FeatureImageBounds> for [Point2; 2] {
+    fn from(bounds: FeatureImageBounds) -> Self {
+        bounds.0
+    }
+}
+
+const EPS_FEATURE_PLANE_ORTHOGONAL: f64 = 1.0e-9;
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeaturePlaneFrameWire {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+}
+
+macro_rules! checked_feature_plane_frame {
+    ($(#[$meta:meta])* $name:ident, $normal_length:ident, $u_length:ident, $bound:expr) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(try_from = "FeaturePlaneFrameWire", into = "FeaturePlaneFrameWire")]
+        pub struct $name {
+            origin: FinitePoint3,
+            normal: FeatureDirection3,
+            u_axis: FeatureDirection3,
+        }
+        impl $name {
+            /// Admit finite origin and nonzero perpendicular directions without normalizing them.
+            pub fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
+                let origin = FinitePoint3::new(origin)?;
+                let normal = FeatureDirection3::new(normal)?;
+                let u_axis = FeatureDirection3::new(u_axis)?;
+                let $normal_length = normal.norm();
+                let $u_length = u_axis.norm();
+                if normal.dot(u_axis.get()).abs() > $bound { return None; }
+                Some(Self { origin, normal, u_axis })
+            }
+            /// Return the model-space origin.
+            pub fn origin(self) -> Point3 { self.origin.get() }
+            /// Return the plane normal with its original magnitude.
+            pub fn normal(self) -> Vector3 { self.normal.get() }
+            /// Return the in-plane direction with its original magnitude.
+            pub fn u_axis(self) -> Vector3 { self.u_axis.get() }
+        }
+        impl TryFrom<FeaturePlaneFrameWire> for $name {
+            type Error = &'static str;
+            fn try_from(wire: FeaturePlaneFrameWire) -> Result<Self, Self::Error> {
+                Self::new(wire.origin, wire.normal, wire.u_axis)
+                    .ok_or("plane frame requires finite origin and nonzero perpendicular directions")
+            }
+        }
+        impl From<$name> for FeaturePlaneFrameWire {
+            fn from(frame: $name) -> Self {
+                Self { origin: frame.origin(), normal: frame.normal(), u_axis: frame.u_axis() }
+            }
+        }
+    };
+}
+
+checked_feature_plane_frame!(
+    /// A datum-plane frame whose orthogonality bound scales with the product of direction norms.
+    FeatureDatumPlaneFrame, normal_length, u_length,
+    { let scale = normal_length * u_length; if !scale.is_finite() { return None; } EPS_FEATURE_PLANE_ORTHOGONAL * scale }
+);
+checked_feature_plane_frame!(
+    /// A resolved support-plane frame whose relative orthogonality bound scales each norm in order.
+    FeatureSupportPlaneFrame, normal_length, u_length,
+    EPS_FEATURE_PLANE_ORTHOGONAL * normal_length * u_length
+);
+
+/// A straight feature edge with distinct finite endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureLineSegmentWire")]
+pub struct FeatureLineSegment {
+    start: FinitePoint3,
+    end: FinitePoint3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeatureLineSegmentWire {
+    start: Point3,
+    end: Point3,
+}
+
+impl FeatureLineSegment {
+    /// Admit distinct finite line endpoints.
+    pub fn new(start: Point3, end: Point3) -> Option<Self> {
+        let start = FinitePoint3::new(start)?;
+        let end = FinitePoint3::new(end)?;
+        (start != end).then_some(Self { start, end })
+    }
+
+    /// Return the start point.
+    pub fn start(self) -> Point3 {
+        self.start.get()
+    }
+
+    /// Return the end point.
+    pub fn end(self) -> Point3 {
+        self.end.get()
+    }
+}
+
+impl TryFrom<FeatureLineSegmentWire> for FeatureLineSegment {
+    type Error = &'static str;
+    fn try_from(wire: FeatureLineSegmentWire) -> Result<Self, Self::Error> {
+        Self::new(wire.start, wire.end).ok_or("line start and end must be finite and distinct")
+    }
+}
+
+/// A finite feature polyline with distinct adjacent vertices and sufficient vertices for closure.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeaturePolylineWire")]
+pub struct FeaturePolyline {
+    points: Vec<FinitePoint3>,
+    closed: bool,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeaturePolylineWire {
+    points: Vec<Point3>,
+    closed: bool,
+}
+
+impl FeaturePolyline {
+    /// Admit a finite chain with at least two points, or three when closed.
+    pub fn new(points: Vec<Point3>, closed: bool) -> Option<Self> {
+        if points.len() < 2
+            || (closed && points.len() < 3)
+            || points.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return None;
+        }
+        let points = points
+            .into_iter()
+            .map(FinitePoint3::new)
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self { points, closed })
+    }
+
+    /// Return the ordered vertices.
+    pub fn points(&self) -> &[FinitePoint3] {
+        &self.points
+    }
+
+    /// Whether the last vertex connects to the first.
+    pub fn closed(&self) -> bool {
+        self.closed
+    }
+}
+
+impl TryFrom<FeaturePolylineWire> for FeaturePolyline {
+    type Error = &'static str;
+    fn try_from(wire: FeaturePolylineWire) -> Result<Self, Self::Error> {
+        Self::new(wire.points, wire.closed).ok_or("polyline points must be finite, adjacent-distinct, and sufficient for its closed state")
+    }
+}
+
+/// Coordinate expressions over a finite increasing feature-curve domain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureEquationCurveWire")]
+pub struct FeatureEquationCurve {
+    parameter: String,
+    x_expression: String,
+    y_expression: String,
+    z_expression: String,
+    start: FiniteReal,
+    end: FiniteReal,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeatureEquationCurveWire {
+    parameter: String,
+    x_expression: String,
+    y_expression: String,
+    z_expression: String,
+    start: f64,
+    end: f64,
+}
+
+impl FeatureEquationCurve {
+    /// Admit nonblank expressions and finite increasing parameter bounds.
+    pub fn new(
+        parameter: String,
+        x_expression: String,
+        y_expression: String,
+        z_expression: String,
+        start: f64,
+        end: f64,
+    ) -> Option<Self> {
+        if [&parameter, &x_expression, &y_expression, &z_expression]
+            .into_iter()
+            .any(|value| value.trim().is_empty())
+            || start >= end
+        {
+            return None;
+        }
+        let start = FiniteReal::new(start)?;
+        let end = FiniteReal::new(end)?;
+        Some(Self {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            start,
+            end,
+        })
+    }
+
+    /// Return the independent parameter symbol.
+    pub fn parameter(&self) -> &str {
+        &self.parameter
+    }
+
+    /// Return the model-space x expression.
+    pub fn x_expression(&self) -> &str {
+        &self.x_expression
+    }
+
+    /// Return the model-space y expression.
+    pub fn y_expression(&self) -> &str {
+        &self.y_expression
+    }
+
+    /// Return the model-space z expression.
+    pub fn z_expression(&self) -> &str {
+        &self.z_expression
+    }
+
+    /// Return the inclusive lower parameter bound.
+    pub fn start(&self) -> f64 {
+        self.start.get()
+    }
+
+    /// Return the inclusive upper parameter bound.
+    pub fn end(&self) -> f64 {
+        self.end.get()
+    }
+}
+
+impl TryFrom<FeatureEquationCurveWire> for FeatureEquationCurve {
+    type Error = &'static str;
+    fn try_from(wire: FeatureEquationCurveWire) -> Result<Self, Self::Error> {
+        Self::new(wire.parameter, wire.x_expression, wire.y_expression, wire.z_expression, wire.start, wire.end)
+            .ok_or("equation-curve expressions must be nonblank and its start and end finite and increasing")
+    }
+}
+
+const EPS_FEATURE_ELLIPSE_AXES_ORTHO: f64 = 1.0e-9;
+
+/// A finite circular feature arc with a nonzero angular span.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureCircularArcWire", into = "FeatureCircularArcWire")]
+pub struct FeatureCircularArc {
+    center: FinitePoint3,
+    normal: FeatureDirection3,
+    radius: PositiveLength,
+    angles: crate::geometry::DirectedParameterRange,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeatureCircularArcWire {
+    center: Point3,
+    normal: Vector3,
+    radius: PositiveLength,
+    start_angle: f64,
+    end_angle: f64,
+}
+
+impl FeatureCircularArc {
+    /// Admit a finite circle frame and a nonzero angular interval.
+    pub fn new(
+        center: Point3,
+        normal: Vector3,
+        radius: PositiveLength,
+        angles: crate::geometry::DirectedParameterRange,
+    ) -> Option<Self> {
+        Some(Self {
+            center: FinitePoint3::new(center)?,
+            normal: FeatureDirection3::new(normal)?,
+            radius,
+            angles,
+        })
+    }
+
+    /// Return the circle center.
+    pub fn center(self) -> Point3 {
+        self.center.get()
+    }
+
+    /// Return the circle-plane normal.
+    pub fn normal(self) -> Vector3 {
+        self.normal.get()
+    }
+
+    /// Return the radius.
+    pub fn radius(self) -> PositiveLength {
+        self.radius
+    }
+
+    /// Return the directed angular interval in radians.
+    pub fn angles(self) -> crate::geometry::DirectedParameterRange {
+        self.angles
+    }
+}
+
+impl TryFrom<FeatureCircularArcWire> for FeatureCircularArc {
+    type Error = &'static str;
+    fn try_from(wire: FeatureCircularArcWire) -> Result<Self, Self::Error> {
+        let angles =
+            crate::geometry::DirectedParameterRange::new([wire.start_angle, wire.end_angle])
+                .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
+        Self::new(wire.center, wire.normal, wire.radius, angles)
+            .ok_or("circular-arc center must be finite and normal must have finite nonzero norm")
+    }
+}
+
+impl From<FeatureCircularArc> for FeatureCircularArcWire {
+    fn from(value: FeatureCircularArc) -> Self {
+        let [start_angle, end_angle] = value.angles.endpoints();
+        Self {
+            center: value.center.get(),
+            normal: value.normal.get(),
+            radius: value.radius,
+            start_angle,
+            end_angle,
+        }
+    }
+}
+
+/// A finite elliptic feature arc with perpendicular axes, ordered radii, and a nonzero angular span.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "FeatureEllipticArcWire", into = "FeatureEllipticArcWire")]
+pub struct FeatureEllipticArc {
+    center: FinitePoint3,
+    normal: FeatureDirection3,
+    major_axis: FeatureDirection3,
+    radii: [PositiveLength; 2],
+    angles: crate::geometry::DirectedParameterRange,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FeatureEllipticArcWire {
+    center: Point3,
+    normal: Vector3,
+    major_axis: Vector3,
+    major_radius: PositiveLength,
+    minor_radius: PositiveLength,
+    start_angle: f64,
+    end_angle: f64,
+}
+
+impl FeatureEllipticArc {
+    /// Admit a finite ellipse frame, major/minor radii, and a directed angular interval.
+    pub fn new(
+        center: Point3,
+        normal: Vector3,
+        major_axis: Vector3,
+        radii: [PositiveLength; 2],
+        angles: crate::geometry::DirectedParameterRange,
+    ) -> Option<Self> {
+        let center = FinitePoint3::new(center)?;
+        let normal = FeatureDirection3::new(normal)?;
+        let major_axis = FeatureDirection3::new(major_axis)?;
+        if normal.dot(major_axis.get()).abs() > EPS_FEATURE_ELLIPSE_AXES_ORTHO
+            || radii[1].get() > radii[0].get()
+        {
+            return None;
+        }
+        Some(Self {
+            center,
+            normal,
+            major_axis,
+            radii,
+            angles,
+        })
+    }
+
+    /// Return the ellipse center.
+    pub fn center(self) -> Point3 {
+        self.center.get()
+    }
+
+    /// Return the ellipse-plane normal.
+    pub fn normal(self) -> Vector3 {
+        self.normal.get()
+    }
+
+    /// Return the major-axis direction.
+    pub fn major_axis(self) -> Vector3 {
+        self.major_axis.get()
+    }
+
+    /// Return the major and minor semiaxis radii.
+    pub fn radii(self) -> [PositiveLength; 2] {
+        self.radii
+    }
+
+    /// Return the directed angular interval in radians.
+    pub fn angles(self) -> crate::geometry::DirectedParameterRange {
+        self.angles
+    }
+}
+
+impl TryFrom<FeatureEllipticArcWire> for FeatureEllipticArc {
+    type Error = &'static str;
+    fn try_from(wire: FeatureEllipticArcWire) -> Result<Self, Self::Error> {
+        let angles =
+            crate::geometry::DirectedParameterRange::new([wire.start_angle, wire.end_angle])
+                .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
+        Self::new(
+            wire.center,
+            wire.normal,
+            wire.major_axis,
+            [wire.major_radius, wire.minor_radius],
+            angles,
+        )
+        .ok_or("elliptic-arc center, axes, or major/minor radius order is invalid")
+    }
+}
+
+impl From<FeatureEllipticArc> for FeatureEllipticArcWire {
+    fn from(value: FeatureEllipticArc) -> Self {
+        let [start_angle, end_angle] = value.angles.endpoints();
+        let [major_radius, minor_radius] = value.radii;
+        Self {
+            center: value.center.get(),
+            normal: value.normal.get(),
+            major_axis: value.major_axis.get(),
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        }
+    }
+}
 
 /// Resolved pull frame of a draft anchor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DraftPull {
     /// Pull direction used to measure the draft angle.
-    pub direction: Vector3,
+    pub direction: FeatureDirection3,
     /// Datum-plane feature that supplied the direction, when retained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plane: Option<FeatureId>,
@@ -75,13 +753,13 @@ struct DraftAnchorSchemaWire {
     neutral_plane: FaceSelection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parting_tool: Option<FaceSelection>,
-    pull_direction: Option<Vector3>,
+    pull_direction: Option<FeatureDirection3>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pull_plane: Option<FeatureId>,
 }
 
 mod draft_anchor_wire {
-    use super::{DraftAnchor, DraftPull, FaceSelection, FeatureId, Vector3};
+    use super::{DraftAnchor, DraftPull, FaceSelection, FeatureDirection3, FeatureId};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize, Deserialize)]
@@ -89,7 +767,7 @@ mod draft_anchor_wire {
         neutral_plane: FaceSelection,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parting_tool: Option<FaceSelection>,
-        pull_direction: Option<Vector3>,
+        pull_direction: Option<FeatureDirection3>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pull_plane: Option<FeatureId>,
     }
@@ -633,17 +1311,172 @@ pub enum ParameterValue {
     String(String),
 }
 
-/// A length in canonical millimeters.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct Length(pub f64);
+macro_rules! checked_feature_scalar {
+    ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
+        $(#[$attribute])*
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(transparent)]
+        pub struct $name(f64);
 
-/// An angle in canonical radians.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+        impl $name {
+            /// Admits a value within the scalar's domain.
+            pub fn new($value: f64) -> Option<Self> {
+                ($value.is_finite() && $condition).then_some(Self($value))
+            }
+
+            /// Returns the scalar value.
+            pub const fn get(self) -> f64 {
+                self.0
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where D: serde::Deserializer<'de>,
+            {
+                Self::new(f64::deserialize(deserializer)?)
+                    .ok_or_else(|| serde::de::Error::custom($error))
+            }
+        }
+
+        impl TryFrom<f64> for $name {
+            type Error = &'static str;
+
+            fn try_from(value: f64) -> Result<Self, Self::Error> {
+                Self::new(value).ok_or($error)
+            }
+        }
+
+        impl From<$name> for f64 {
+            fn from(value: $name) -> Self { value.get() }
+        }
+    };
+}
+
+checked_feature_scalar!(
+    /// A finite length in canonical millimeters.
+    Length, value, true, "Length must be finite"
+);
+checked_feature_scalar!(
+    /// A finite signed angle in canonical radians.
+    #[derive(Default)]
+    Angle, value, true, "Angle must be finite"
+);
+checked_feature_scalar!(
+    /// A positive finite length in canonical millimeters.
+    PositiveLength, value, value > 0.0, "PositiveLength must be positive and finite"
+);
+checked_feature_scalar!(
+    /// A finite nonzero signed length in canonical millimeters.
+    NonZeroLength, value, value != 0.0, "NonZeroLength must be finite and nonzero"
+);
+checked_feature_scalar!(
+    /// A nonnegative finite length in canonical millimeters.
+    NonNegativeLength, value, value >= 0.0, "NonNegativeLength must be nonnegative and finite"
+);
+checked_feature_scalar!(
+    /// A finite angle strictly between negative and positive half-pi radians.
+    SlopeAngle, value, value.abs() < std::f64::consts::FRAC_PI_2,
+    "SlopeAngle must be finite and strictly between -pi/2 and pi/2"
+);
+checked_feature_scalar!(
+    /// A finite angle strictly between zero and pi radians.
+    InteriorAngle, value, value > 0.0 && value < std::f64::consts::PI,
+    "InteriorAngle must be finite and strictly between zero and pi"
+);
+checked_feature_scalar!(
+    /// A positive finite angle in canonical radians.
+    PositiveAngle, value, value > 0.0, "PositiveAngle must be positive and finite"
+);
+checked_feature_scalar!(
+    /// A finite dimensionless scalar.
+    FiniteReal, value, true, "FiniteReal must be finite"
+);
+checked_feature_scalar!(
+    /// A positive finite dimensionless scalar.
+    PositiveReal, value, value > 0.0, "PositiveReal must be positive and finite"
+);
+checked_feature_scalar!(
+    /// A finite nonzero signed dimensionless scalar.
+    NonZeroReal, value, value != 0.0, "NonZeroReal must be finite and nonzero"
+);
+checked_feature_scalar!(
+    /// A finite fraction in the closed interval from zero to one.
+    Fraction, value, (0.0..=1.0).contains(&value), "Fraction must be between zero and one"
+);
+
+impl Length {
+    /// Zero in canonical units.
+    pub const ZERO: Self = Self(0.0);
+}
+
+impl Angle {
+    /// One full turn in radians.
+    pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
+    /// Zero in canonical units.
+    pub const ZERO: Self = Self(0.0);
+}
+
+impl SlopeAngle {
+    /// Zero in canonical radians.
+    pub const ZERO: Self = Self(0.0);
+}
+
+impl PositiveAngle {
+    /// One full turn in radians.
+    pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
+}
+
+macro_rules! feature_scalar_conversion {
+    ($from:ident => $to:ident, $error:literal) => {
+        impl From<$from> for $to {
+            fn from(value: $from) -> Self {
+                Self(value.get())
+            }
+        }
+
+        impl TryFrom<$to> for $from {
+            type Error = &'static str;
+
+            fn try_from(value: $to) -> Result<Self, Self::Error> {
+                Self::new(value.get()).ok_or($error)
+            }
+        }
+    };
+}
+
+feature_scalar_conversion!(PositiveLength => Length, "length must be positive");
+feature_scalar_conversion!(NonZeroLength => Length, "length must be nonzero");
+feature_scalar_conversion!(NonNegativeLength => Length, "length must be nonnegative");
+feature_scalar_conversion!(SlopeAngle => Angle, "angle must be strictly between -pi/2 and pi/2");
+feature_scalar_conversion!(InteriorAngle => Angle, "angle must be strictly between zero and pi");
+feature_scalar_conversion!(PositiveAngle => Angle, "angle must be positive");
+
+/// A polygon side count of at least three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct Angle(pub f64);
+pub struct PolygonSideCount(u32);
+
+impl PolygonSideCount {
+    /// Admits a side count of at least three.
+    pub fn new(value: u32) -> Option<Self> {
+        (value >= 3).then_some(Self(value))
+    }
+
+    /// Returns the number of sides.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PolygonSideCount {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(u32::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("polygon sides must be at least three"))
+    }
+}
 
 /// An ordered neutral construction feature and its resulting bodies.
 ///
@@ -999,12 +1832,8 @@ pub enum DatumPlaneReference {
     Face(FaceSelection),
     /// A resolved support plane without a face identity.
     ResolvedPlane {
-        /// Point on the support plane.
-        origin: Point3,
-        /// Support-plane normal.
-        normal: Vector3,
-        /// Positive-u direction in the support plane.
-        u_axis: Vector3,
+        /// Finite support plane with nonzero perpendicular directions.
+        frame: FeatureSupportPlaneFrame,
     },
 }
 
@@ -1017,9 +1846,9 @@ enum DatumPlaneReferenceWireRef<'a> {
     },
     ResolvedPlane {
         face: FaceSelection,
-        origin: &'a Point3,
-        normal: &'a Vector3,
-        u_axis: &'a Vector3,
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
     },
 }
 
@@ -1067,15 +1896,11 @@ impl Serialize for DatumPlaneReference {
         match self {
             Self::Feature(feature) => DatumPlaneReferenceWireRef::Feature(feature),
             Self::Face(face) => DatumPlaneReferenceWireRef::Face { face },
-            Self::ResolvedPlane {
-                origin,
-                normal,
-                u_axis,
-            } => DatumPlaneReferenceWireRef::ResolvedPlane {
+            Self::ResolvedPlane { frame } => DatumPlaneReferenceWireRef::ResolvedPlane {
                 face: FaceSelection::Unresolved,
-                origin,
-                normal,
-                u_axis,
+                origin: frame.origin(),
+                normal: frame.normal(),
+                u_axis: frame.u_axis(),
             },
         }
         .serialize(serializer)
@@ -1100,9 +1925,8 @@ impl<'de> Deserialize<'de> for DatumPlaneReference {
                 normal,
                 u_axis,
             }) => Self::ResolvedPlane {
-                origin,
-                normal,
-                u_axis,
+                frame: FeatureSupportPlaneFrame::new(origin, normal, u_axis)
+                    .ok_or_else(|| serde::de::Error::custom("resolved plane requires finite origin and nonzero perpendicular directions"))?,
             },
             DatumPlaneReferenceWire::LegacyFace(DatumPlaneLegacyFaceWire { face, .. })
             | DatumPlaneReferenceWire::Face(DatumPlaneFaceWire { face }) => Self::Face(face),
@@ -1193,7 +2017,7 @@ pub enum DatumPointConstruction {
         /// Selected edge.
         edge: EdgeSelection,
         /// Fraction from the path start in the closed interval from zero through one.
-        fraction: f64,
+        fraction: Fraction,
     },
 }
 
@@ -1407,7 +2231,7 @@ pub enum FeatureDefinition {
         face: FaceSelection,
         /// Nominal thread diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<Length>,
+        diameter: Option<PositiveLength>,
         /// Axial extent of the annotation, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<CosmeticThreadExtent>,
@@ -1425,17 +2249,14 @@ pub enum FeatureDefinition {
         /// Whether image v increases toward decreasing plane-local v.
         #[serde(default)]
         mirror_v: bool,
-        /// Origin of the image plane in model space.
-        origin: Point3,
-        /// Unit direction of increasing image u coordinate.
-        u_axis: Vector3,
-        /// Unit direction of increasing image v coordinate.
-        v_axis: Vector3,
-        /// Opposite corners of the image rectangle in plane-local millimeters.
-        bounds: [Point2; 2],
+        /// Finite image plane with perpendicular unit directions.
+        #[serde(flatten)]
+        frame: FeatureUnitPlaneFrame,
+        /// Opposite corners with nonzero extent in both coordinates.
+        bounds: FeatureImageBounds,
         /// Normalized image opacity.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        opacity: Option<f64>,
+        opacity: Option<Fraction>,
     },
     /// Raster image applied to model faces.
     Decal {
@@ -1447,7 +2268,7 @@ pub enum FeatureDefinition {
         mapping: DecalMapping,
         /// Normalized image opacity, or the source format's default when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        opacity: Option<f64>,
+        opacity: Option<Fraction>,
     },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {
@@ -1456,21 +2277,15 @@ pub enum FeatureDefinition {
     },
     /// Constructed reference plane.
     DatumPlane {
-        /// Plane origin in model space.
-        origin: Point3,
-        /// Plane normal.
-        normal: Vector3,
-        /// In-plane u-axis.
-        u_axis: Vector3,
+        /// Finite plane with nonzero perpendicular directions.
+        #[serde(flatten)]
+        frame: FeatureDatumPlaneFrame,
     },
     /// Reference plane constructed through three selected vertices.
     DatumThreePointPlane {
-        /// Plane origin in model space.
-        origin: Point3,
-        /// Plane normal.
-        normal: Vector3,
-        /// In-plane u-axis.
-        u_axis: Vector3,
+        /// Finite plane with nonzero perpendicular directions.
+        #[serde(flatten)]
+        frame: FeatureDatumPlaneFrame,
         /// Construction vertices in source order.
         points: Box<[VertexSelection; 3]>,
     },
@@ -1485,14 +2300,14 @@ pub enum FeatureDefinition {
     /// Constructed reference axis.
     DatumAxis {
         /// Point on the axis in model space.
-        origin: Point3,
+        origin: FinitePoint3,
         /// Axis direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
     },
     /// Constructed reference point.
     DatumPoint {
         /// Point position in model space.
-        position: Point3,
+        position: FinitePoint3,
         /// Rule that derives the point from preceding construction geometry.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         construction: Option<Box<DatumPointConstruction>>,
@@ -1500,65 +2315,45 @@ pub enum FeatureDefinition {
     /// Standalone model vertex constructed at one point.
     PointGeometry {
         /// Vertex position in the feature's local construction frame.
-        position: Point3,
+        position: FinitePoint3,
     },
     /// Straight edge between two finite points.
     LineSegment {
-        /// Start point.
-        start: Point3,
-        /// End point.
-        end: Point3,
+        /// Finite distinct endpoints.
+        #[serde(flatten)]
+        segment: FeatureLineSegment,
     },
     /// Circular edge over an angular interval.
     CircularArc {
-        /// Circle center in the feature's local construction frame.
-        center: Point3,
-        /// Circle-plane normal.
-        normal: Vector3,
-        /// Circle radius.
-        radius: Length,
-        /// Start parameter angle.
-        start_angle: Angle,
-        /// End parameter angle.
-        end_angle: Angle,
+        /// Finite arc geometry and directed angular span.
+        #[serde(flatten)]
+        arc: FeatureCircularArc,
     },
     /// Elliptic edge over an angular interval.
     EllipticArc {
-        /// Ellipse center in the feature's local construction frame.
-        center: Point3,
-        /// Circle-plane normal.
-        normal: Vector3,
-        /// Major-axis direction in the ellipse plane.
-        major_axis: Vector3,
-        /// Major semiaxis radius.
-        major_radius: Length,
-        /// Minor semiaxis radius.
-        minor_radius: Length,
-        /// Start parameter angle.
-        start_angle: Angle,
-        /// End parameter angle.
-        end_angle: Angle,
+        /// Finite arc geometry and directed angular span.
+        #[serde(flatten)]
+        arc: FeatureEllipticArc,
     },
     /// Ordered straight-edge chain.
     Polyline {
-        /// Ordered vertices in the feature's local construction frame.
-        points: Vec<Point3>,
-        /// Whether the last point connects back to the first.
-        closed: bool,
+        /// Finite ordered chain and closure.
+        #[serde(flatten)]
+        chain: FeaturePolyline,
     },
     /// Regular planar polygon centered at the local origin.
     RegularPolygonCurve {
         /// Number of polygon sides.
-        sides: u32,
+        sides: PolygonSideCount,
         /// Center-to-vertex distance.
-        circumradius: Length,
+        circumradius: PositiveLength,
     },
     /// Rectangular bounded planar face in the local XY plane.
     PlanarPatch {
         /// Length along the local x-axis.
-        length: Length,
+        length: PositiveLength,
         /// Width along the local y-axis.
-        width: Length,
+        width: PositiveLength,
     },
     /// Faces built from an ordered set of source shapes.
     FaceFromShapes {
@@ -1571,38 +2366,24 @@ pub enum FeatureDefinition {
     },
     /// Constructed model-space coordinate system.
     DatumCoordinateSystem {
-        /// Frame origin.
-        origin: Point3,
-        /// Unit x-axis.
-        x_axis: Vector3,
-        /// Unit y-axis.
-        y_axis: Vector3,
-        /// Unit z-axis.
-        z_axis: Vector3,
+        /// Finite right-handed coordinate frame.
+        #[serde(flatten)]
+        frame: FeatureCoordinateFrame,
     },
     /// Rectangular solid primitive.
     Block {
         /// Ordered local x, y, and z dimensions, when resolved.
-        dimensions: Option<[Length; 3]>,
+        dimensions: Option<[PositiveLength; 3]>,
         /// Local-to-model placement, when resolved.
-        placement: Option<crate::transform::Transform>,
+        placement: Option<FeatureRigidPlacement>,
         /// Whether the primitive creates or combines material.
         op: BooleanOp,
     },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
-        /// Independent parameter symbol used by the coordinate expressions.
-        parameter: String,
-        /// Model-space x-coordinate expression.
-        x_expression: String,
-        /// Model-space y-coordinate expression.
-        y_expression: String,
-        /// Model-space z-coordinate expression.
-        z_expression: String,
-        /// Inclusive lower parameter bound.
-        start: f64,
-        /// Inclusive upper parameter bound.
-        end: f64,
+        /// Coordinate expressions and parameter domain.
+        #[serde(flatten)]
+        curve: FeatureEquationCurve,
     },
     /// Curve produced by projecting a source path onto target faces.
     ProjectedCurve {
@@ -1624,11 +2405,11 @@ pub enum FeatureDefinition {
         /// Single support face receiving the projection.
         support_face: FaceSelection,
         /// Unit projection direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
         /// Result topology retained from the projected shapes.
         mode: SurfaceProjectionMode,
         /// Normal extrusion height used to turn projected faces into solids.
-        height: Length,
+        height: NonNegativeLength,
         /// Normal offset applied to the projected result.
         offset: Length,
     },
@@ -1643,17 +2424,17 @@ pub enum FeatureDefinition {
     /// Circular helix or planar spiral constructed around an axis.
     Helix {
         /// Point on the construction axis at the curve start.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Construction-axis direction.
-        axis_direction: Vector3,
+        axis_direction: FeatureDirection3,
         /// Initial radial distance from the axis.
-        radius: Length,
+        radius: PositiveLength,
         /// Axial or radial construction law.
         #[serde(flatten, with = "helix_shape_wire")]
         #[cfg_attr(feature = "schema", schemars(with = "HelixShapeSchemaWire"))]
         shape: HelixShape,
         /// Positive number of revolutions.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Angular position at the curve start.
         #[serde(default)]
         start_angle: Angle,
@@ -1661,7 +2442,7 @@ pub enum FeatureDefinition {
         clockwise: bool,
         /// Number of turns per generated curve subdivision, when requested.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        segment_turns: Option<f64>,
+        segment_turns: Option<PositiveReal>,
         /// Persisted construction algorithm generation, when selectable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         construction_style: Option<HelixConstructionStyle>,
@@ -1677,7 +2458,7 @@ pub enum FeatureDefinition {
         #[serde(alias = "height")]
         pitch: Length,
         /// Positive number of revolutions.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Angular position at the curve start.
         start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
@@ -1693,22 +2474,22 @@ pub enum FeatureDefinition {
     /// Solid sphere primitive.
     Sphere {
         /// Sphere center in model space.
-        center: Point3,
+        center: FinitePoint3,
         /// Positive sphere radius.
-        radius: Length,
+        radius: PositiveLength,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
     /// Solid torus primitive.
     Torus {
         /// Torus center in model space.
-        center: Point3,
+        center: FinitePoint3,
         /// Unit normal of the torus center plane.
-        axis: Vector3,
+        axis: FeatureDirection3,
         /// Positive distance from the center to the tube centerline.
-        major_radius: Length,
+        major_radius: PositiveLength,
         /// Positive tube radius.
-        minor_radius: Length,
+        minor_radius: PositiveLength,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
@@ -1860,7 +2641,7 @@ pub enum FeatureDefinition {
         taper: Option<Angle>,
         /// End-to-start profile scale ratio, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        scale: Option<f64>,
+        scale: Option<PositiveReal>,
         /// Whether a profile containing multiple faces is accepted as one operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         allow_multi_profile_faces: Option<bool>,
@@ -1901,7 +2682,7 @@ pub enum FeatureDefinition {
         linearize: bool,
         /// Maximum polynomial degree used to interpolate the sections, when constrained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_degree: Option<u32>,
+        max_degree: Option<std::num::NonZeroU32>,
         /// Whether profiles containing multiple faces are accepted as one operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         allow_multi_profile_faces: Option<bool>,
@@ -1918,7 +2699,7 @@ pub enum FeatureDefinition {
         /// Closed profile defining the planar sheet boundary.
         profile: ProfileRef,
         /// Finished sheet thickness.
-        thickness: Length,
+        thickness: PositiveLength,
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
     },
@@ -1937,7 +2718,7 @@ pub enum FeatureDefinition {
         /// Extent of the flange along the selected edge.
         width: SheetMetalFlangeWidth,
         /// Inside radius of the bend joining the flange to its source face.
-        bend_radius: Length,
+        bend_radius: PositiveLength,
     },
     /// Sheet-metal hem grown from one or more selected edges.
     SheetMetalHem {
@@ -1948,7 +2729,7 @@ pub enum FeatureDefinition {
         /// Direction of the hem fold, when the source carries a proven value.
         direction: SheetMetalHemDirection,
         /// Inside radius of the bend joining the hem to its source face.
-        bend_radius: Length,
+        bend_radius: PositiveLength,
     },
     /// Edge fillet.
     Fillet {
@@ -1986,7 +2767,7 @@ pub enum FeatureDefinition {
         removed_faces: FaceSelection,
         /// Wall thickness left after shelling, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        thickness: Option<Length>,
+        thickness: Option<PositiveLength>,
         /// Whether the wall is grown outward from the original boundary,
         /// as opposed to inward, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2009,7 +2790,7 @@ pub enum FeatureDefinition {
         /// Source shape or body to offset.
         source: BodySelection,
         /// Signed normal offset in canonical millimeters.
-        distance: Length,
+        distance: NonZeroLength,
         /// Offset construction mode.
         mode: ShellMode,
         /// Corner continuation law.
@@ -2062,9 +2843,9 @@ pub enum FeatureDefinition {
         /// Shape transformed into the mirrored result.
         source: BodySelection,
         /// Point on the persisted resolved mirror plane.
-        plane_origin: Point3,
+        plane_origin: FinitePoint3,
         /// Unit normal of the persisted resolved mirror plane.
-        plane_normal: Vector3,
+        plane_normal: FeatureDirection3,
         /// Native plane, face, or circle reference that supplied the resolved plane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plane_reference: Option<FaceSelection>,
@@ -2075,7 +2856,7 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Finished added thickness, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        thickness: Option<Length>,
+        thickness: Option<PositiveLength>,
         /// Distribution of thickness relative to the selected faces, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         side: Option<ThickenSide>,
@@ -2097,14 +2878,14 @@ pub enum FeatureDefinition {
         create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        gap_tolerance: Option<Length>,
+        gap_tolerance: Option<NonNegativeLength>,
     },
     /// Joins sheet or solid bodies along coincident boundaries.
     SewBodies {
         /// Bodies participating in the sew operation.
         bodies: BodySelection,
         /// Maximum accepted boundary gap, when resolved.
-        gap_tolerance: Option<Length>,
+        gap_tolerance: Option<PositiveLength>,
     },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
@@ -2137,7 +2918,7 @@ pub enum FeatureDefinition {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
         /// Positive extension distance in canonical millimeters.
-        distance: Option<Length>,
+        distance: Option<PositiveLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
@@ -2168,7 +2949,7 @@ pub enum FeatureDefinition {
         #[cfg_attr(feature = "schema", schemars(with = "DraftAnchorSchemaWire"))]
         anchor: DraftAnchor,
         /// Signed draft angle.
-        angle: Option<Angle>,
+        angle: Option<SlopeAngle>,
         /// Whether material is added away from the pull direction.
         outward: Option<bool>,
     },
@@ -2260,7 +3041,7 @@ pub enum FeatureDefinition {
         /// Bodies transformed by the operation.
         bodies: BodySelection,
         /// Model-space translation vector in canonical millimeters.
-        translation: Vector3,
+        translation: FiniteVector3,
         /// Axis-angle rotation applied with the translation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rotation: Option<AxisAngle>,
@@ -2274,7 +3055,7 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Dome height measured normal to the base, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        height: Option<Length>,
+        height: Option<PositiveLength>,
         /// Whether the profile is elliptical rather than spherical, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         elliptical: Option<bool>,
@@ -2286,7 +3067,7 @@ pub enum FeatureDefinition {
     Flex {
         /// Flex axis direction in model space, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        axis: Option<Vector3>,
+        axis: Option<FeatureDirection3>,
         /// Applied deformation mode and magnitude.
         #[cfg_attr(feature = "schema", schemars(with = "FlexModeWire"))]
         mode: FlexMode,
@@ -2329,7 +3110,7 @@ pub enum FeatureDefinition {
         exit_kind: Option<HoleKind>,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<Length>,
+        diameter: Option<PositiveLength>,
         /// How deep the hole extends, when resolved. Holes travel on one side
         /// only, so the termination law needs no sidedness wrapper.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2339,7 +3120,7 @@ pub enum FeatureDefinition {
         bottom: Option<HoleBottom>,
         /// Included taper angle for a conical hole, when enabled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        taper_angle: Option<Angle>,
+        taper_angle: Option<InteriorAngle>,
         /// Whether a profile containing multiple faces is accepted as one operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         allow_multi_profile_faces: Option<bool>,
@@ -2536,7 +3317,7 @@ pub enum ExtrudeDirection {
     /// Sweep along an explicit model-space vector.
     Explicit {
         /// Directed model-space sweep vector.
-        vector: Vector3,
+        vector: FeatureDirection3,
         /// Persisted selection or rule used to resolve the vector, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<ExtrusionDirectionSource>,
@@ -2551,7 +3332,7 @@ enum ExtrudeDirectionValueWire {
     #[default]
     ProfileNormal,
     ReversedProfileNormal,
-    Explicit(Vector3),
+    Explicit(FeatureDirection3),
 }
 
 #[cfg(feature = "schema")]
@@ -2648,16 +3429,16 @@ pub enum HolePlacement {
     /// Position and directed drilling vector recorded by the feature definition.
     Directed {
         /// Hole entry position in model space.
-        position: Point3,
+        position: FinitePoint3,
         /// Directed drilling vector.
-        direction: Vector3,
+        direction: FeatureDirection3,
     },
     /// Unoriented geometric axis inferred from a generated cylindrical surface.
     Axis {
         /// Point on the cylinder axis in model space.
-        origin: Point3,
+        origin: FinitePoint3,
         /// Unoriented cylinder-axis vector; its sign has no semantic meaning.
-        axis: Vector3,
+        axis: FeatureDirection3,
     },
 }
 
@@ -2699,7 +3480,7 @@ pub enum FuzzyTolerance {
     /// Determine a suitable tolerance from the participating shapes.
     Automatic,
     /// Use the supplied positive model-unit tolerance.
-    Explicit(f64),
+    Explicit(PositiveLength),
 }
 
 const fn default_true() -> bool {
@@ -2745,11 +3526,120 @@ pub enum RuledCurveOrientation {
     Reversed,
 }
 
+/// An analytic solid primitive with valid dimensions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PrimitiveSolidKind", into = "PrimitiveSolidKind")]
+pub struct PrimitiveSolid(PrimitiveSolidKind);
+
+impl PrimitiveSolid {
+    /// Admits dimensions that define a solid primitive.
+    pub fn new(kind: PrimitiveSolidKind) -> Result<Self, &'static str> {
+        let positive = |value: Length| value.get() > 0.0;
+        let valid = match &kind {
+            PrimitiveSolidKind::Box {
+                length,
+                width,
+                height,
+            } => positive(*length) && positive(*width) && positive(*height),
+            PrimitiveSolidKind::Cylinder { radius, height, .. } => {
+                positive(*radius) && positive(*height)
+            }
+            PrimitiveSolidKind::Cone {
+                radius1,
+                radius2,
+                height,
+                ..
+            } => {
+                radius1.get() >= 0.0
+                    && radius2.get() >= 0.0
+                    && (positive(*radius1) || positive(*radius2))
+                    && positive(*height)
+            }
+            PrimitiveSolidKind::Sphere {
+                radius,
+                latitude1,
+                latitude2,
+                ..
+            } => positive(*radius) && latitude1.get() < latitude2.get(),
+            PrimitiveSolidKind::Ellipsoid {
+                x_radius,
+                y_radius,
+                z_radius,
+                latitude1,
+                latitude2,
+                ..
+            } => {
+                positive(*x_radius)
+                    && positive(*y_radius)
+                    && positive(*z_radius)
+                    && latitude1.get() < latitude2.get()
+            }
+            PrimitiveSolidKind::Torus {
+                major_radius,
+                minor_radius,
+                latitude1,
+                latitude2,
+                ..
+            } => {
+                positive(*major_radius)
+                    && positive(*minor_radius)
+                    && latitude1.get() < latitude2.get()
+            }
+            PrimitiveSolidKind::Prism {
+                sides,
+                circumradius,
+                height,
+            } => *sides >= 3 && positive(*circumradius) && positive(*height),
+            PrimitiveSolidKind::Wedge {
+                xmin,
+                ymin,
+                zmin,
+                x2min,
+                z2min,
+                xmax,
+                ymax,
+                zmax,
+                x2max,
+                z2max,
+            } => {
+                xmax.get() > xmin.get()
+                    && ymax.get() > ymin.get()
+                    && zmax.get() > zmin.get()
+                    && x2max.get() >= x2min.get()
+                    && z2max.get() >= z2min.get()
+            }
+        };
+        valid
+            .then_some(Self(kind))
+            .ok_or("primitive dimensions are invalid")
+    }
+
+    /// Returns the primitive form and dimensions.
+    pub fn kind(&self) -> &PrimitiveSolidKind {
+        &self.0
+    }
+}
+
+impl TryFrom<PrimitiveSolidKind> for PrimitiveSolid {
+    type Error = &'static str;
+
+    fn try_from(kind: PrimitiveSolidKind) -> Result<Self, Self::Error> {
+        Self::new(kind)
+    }
+}
+
+impl From<PrimitiveSolid> for PrimitiveSolidKind {
+    fn from(solid: PrimitiveSolid) -> Self {
+        solid.0
+    }
+}
+
 /// Canonical dimensions of an analytic solid primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum PrimitiveSolid {
+pub enum PrimitiveSolidKind {
     /// Rectangular solid aligned to its feature frame.
     Box {
         /// Size along the local x-axis.
@@ -3212,9 +4102,9 @@ pub enum RevolutionFuseOrder {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RevolutionAxis {
     /// A point on the axis.
-    pub origin: Point3,
+    pub origin: FinitePoint3,
     /// Unit axis direction.
-    pub direction: Vector3,
+    pub direction: FeatureDirection3,
     /// Native edge, datum, or sketch-axis selection used to resolve the axis.
     #[serde(skip)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -3230,10 +4120,10 @@ pub struct RibConstruction {
     pub profile: Option<ProfileRef>,
     /// Rib growth direction, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction: Option<Vector3>,
+    pub direction: Option<FeatureDirection3>,
     /// Finished rib thickness, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thickness: Option<Length>,
+    pub thickness: Option<PositiveLength>,
     /// Distribution of thickness around the profile, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<RibSide>,
@@ -3264,7 +4154,7 @@ pub enum RibDraft {
     /// Rib walls have no draft.
     None,
     /// Rib walls use the specified draft angle.
-    Angle(Angle),
+    Angle(SlopeAngle),
 }
 
 /// Canonical role of a non-modeling feature-tree node.
@@ -3334,7 +4224,7 @@ pub enum CosmeticThreadExtent {
     /// Fixed thread length along the cylindrical face.
     Blind {
         /// Positive axial thread length.
-        length: Length,
+        length: PositiveLength,
     },
     /// Thread annotation spans the complete cylindrical face.
     Through,
@@ -3470,7 +4360,7 @@ pub enum BodyTrimSide {
 /// Direction law for projected curves.
 pub enum CurveProjectionDirection {
     /// One explicit model-space vector.
-    Vector(Vector3),
+    Vector(FeatureDirection3),
     /// Direction state without one explicit vector.
     State(CurveProjectionDirectionState),
 }
@@ -3940,19 +4830,19 @@ pub enum RuledSurfaceMode {
     /// Extend normal to the support faces.
     Normal {
         /// Positive extension distance.
-        distance: Length,
+        distance: PositiveLength,
     },
     /// Extend tangent to the support faces.
     Tangent {
         /// Positive extension distance.
-        distance: Length,
+        distance: PositiveLength,
     },
     /// Extend along one explicit model-space direction.
     Direction {
         /// Extension direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
         /// Positive extension distance.
-        distance: Length,
+        distance: PositiveLength,
     },
 }
 
@@ -3977,7 +4867,7 @@ pub enum ScaleCenter {
     /// Model coordinate-system origin.
     ModelOrigin,
     /// Explicit model-space point.
-    Point(Point3),
+    Point(FinitePoint3),
     /// Format-native coordinate-system or reference identifier.
     Native(String),
 }
@@ -3990,9 +4880,9 @@ pub enum ScaleFactors {
     /// No complete scale factor is available.
     Unresolved,
     /// One factor applies on all three axes.
-    Uniform(f64),
+    Uniform(NonZeroReal),
     /// Independent factors apply on the model-space axes.
-    PerAxis(Vector3),
+    PerAxis([NonZeroReal; 3]),
 }
 
 impl ScaleFactors {
@@ -4001,8 +4891,12 @@ impl ScaleFactors {
     pub fn resolved(self) -> Option<Vector3> {
         match self {
             Self::Unresolved => None,
-            Self::Uniform(factor) => Some(Vector3::new(factor, factor, factor)),
-            Self::PerAxis(factors) => Some(factors),
+            Self::Uniform(factor) => Some(Vector3::new(factor.get(), factor.get(), factor.get())),
+            Self::PerAxis(factors) => Some(Vector3::new(
+                factors[0].get(),
+                factors[1].get(),
+                factors[2].get(),
+            )),
         }
     }
 }
@@ -4030,16 +4924,16 @@ impl From<ScaleFactors> for ScaleFactorsWire {
                 z: None,
             },
             ScaleFactors::Uniform(factor) => Self {
-                uniform: Some(factor),
+                uniform: Some(factor.get()),
                 x: None,
                 y: None,
                 z: None,
             },
             ScaleFactors::PerAxis(factors) => Self {
                 uniform: None,
-                x: Some(factors.x),
-                y: Some(factors.y),
-                z: Some(factors.z),
+                x: Some(factors[0].get()),
+                y: Some(factors[1].get()),
+                z: Some(factors[2].get()),
             },
         }
     }
@@ -4051,8 +4945,18 @@ impl TryFrom<ScaleFactorsWire> for ScaleFactors {
     fn try_from(value: ScaleFactorsWire) -> Result<Self, Self::Error> {
         match (value.uniform, value.x, value.y, value.z) {
             (None, None, None, None) => Ok(Self::Unresolved),
-            (Some(factor), None, None, None) => Ok(Self::Uniform(factor)),
-            (None, Some(x), Some(y), Some(z)) => Ok(Self::PerAxis(Vector3::new(x, y, z))),
+            (Some(factor), None, None, None) => Ok(Self::Uniform(
+                NonZeroReal::try_from(factor)
+                    .map_err(|_| "scale uniform factor must be finite and nonzero")?,
+            )),
+            (None, Some(x), Some(y), Some(z)) => Ok(Self::PerAxis([
+                NonZeroReal::try_from(x)
+                    .map_err(|_| "scale x factor must be finite and nonzero")?,
+                NonZeroReal::try_from(y)
+                    .map_err(|_| "scale y factor must be finite and nonzero")?,
+                NonZeroReal::try_from(z)
+                    .map_err(|_| "scale z factor must be finite and nonzero")?,
+            ])),
             _ => Err(
                 "scale factors must be uniformly resolved, resolved on all axes, or absent"
                     .to_string(),
@@ -4113,37 +5017,37 @@ pub enum SheetMetalHemForm {
     /// Flat hem with its developed length.
     Flat {
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
     },
     /// Open hem with a gap and a developed length.
     Open {
         /// Gap between the folded wall and its source.
-        gap: Length,
+        gap: NonNegativeLength,
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
     },
     /// Unresolved flat-or-open form with a gap and a length owner.
     GapLength {
         /// Gap between the folded wall and its source.
-        gap: Length,
+        gap: NonNegativeLength,
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
     },
     /// Rolled source form with radius and included-angle owners.
     Rolled {
         /// Rolled section radius.
-        radius: Length,
+        radius: PositiveLength,
         /// Included angle of the rolled section.
         angle: Angle,
     },
     /// Teardrop source form with gap, length, and radius owners.
     Teardrop {
         /// Gap between the folded wall and its source.
-        gap: Length,
+        gap: NonNegativeLength,
         /// Developed length of the hem.
-        length: Length,
+        length: PositiveLength,
         /// Teardrop section radius.
-        radius: Length,
+        radius: PositiveLength,
     },
 }
 
@@ -4177,7 +5081,7 @@ pub enum SheetMetalFlangeHeightTarget {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SheetMetalFlangeHeight {
     /// Fixed distance from the operation's height datum.
-    Distance(Length),
+    Distance(PositiveLength),
     /// Signed offset from a selected construction entity.
     ToObject {
         /// Construction entity that supplies the height reference.
@@ -4197,14 +5101,14 @@ pub enum SheetMetalFlangeWidth {
     /// The flange is centred on the edge with one width.
     Symmetric {
         /// Total width centred on the edge.
-        width: Length,
+        width: PositiveLength,
     },
     /// The flange is measured inward from each end of the edge.
     TwoSides {
         /// Distance measured from the edge's first end.
-        first: Length,
+        first: PositiveLength,
         /// Distance measured from the edge's second end.
-        second: Length,
+        second: PositiveLength,
     },
     /// Independent two-sided extents for each selected edge.
     ///
@@ -5006,16 +5910,16 @@ pub enum FaceMotion {
     /// Translation along one direction.
     Translate {
         /// Translation direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
         /// Signed translation distance.
         distance: Length,
     },
     /// Rotation about an axis.
     Rotate {
         /// Point on the rotation axis.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Rotation-axis direction.
-        axis_dir: Vector3,
+        axis_dir: FeatureDirection3,
         /// Signed rotation angle.
         angle: Angle,
     },
@@ -5026,9 +5930,9 @@ pub enum FaceMotion {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AxisAngle {
     /// Point on the rotation axis.
-    pub origin: Point3,
+    pub origin: FinitePoint3,
     /// Rotation-axis direction.
-    pub direction: Vector3,
+    pub direction: FeatureDirection3,
     /// Signed rotation angle.
     pub angle: Angle,
 }
@@ -5069,7 +5973,7 @@ pub enum LinearTermination {
     /// Fixed travel distance.
     Blind {
         /// Fixed travel distance.
-        length: Length,
+        length: NonZeroLength,
     },
     /// Extends through all material.
     ThroughAll,
@@ -5097,7 +6001,7 @@ pub enum LinearTermination {
         /// Face the termination is measured from.
         face: FaceSelection,
         /// Offset distance from the face.
-        offset: Length,
+        offset: PositiveLength,
     },
     /// Extends until one of the faces in a selected target shape.
     ToShape {
@@ -5140,7 +6044,7 @@ pub enum AngularTermination {
         /// Face the termination is measured from.
         face: FaceSelection,
         /// Offset distance from the face.
-        offset: Length,
+        offset: PositiveLength,
     },
     /// Extends until one of the faces in a selected target shape.
     ToShape {
@@ -5150,7 +6054,7 @@ pub enum AngularTermination {
     /// Fixed angular travel.
     Angle {
         /// Angular travel.
-        angle: Angle,
+        angle: PositiveAngle,
     },
 }
 
@@ -5164,7 +6068,7 @@ pub struct ExtrudeSide {
     pub termination: LinearTermination,
     /// Draft angle applied to this side's walls, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub draft: Option<Angle>,
+    pub draft: Option<SlopeAngle>,
 }
 
 /// Extrusion sidedness around the profile plane.
@@ -5392,51 +6296,20 @@ pub enum HelixShape {
     /// Constant-radius helix with signed axial rise per revolution.
     Cylindrical {
         /// Signed axial rise per revolution.
-        pitch: HelixPitch,
+        pitch: NonZeroLength,
     },
     /// Conical helix with signed axial rise and cone half-angle.
     Conical {
         /// Signed axial rise per revolution.
-        pitch: HelixPitch,
+        pitch: NonZeroLength,
         /// Cone half-angle.
-        cone_angle: Angle,
+        cone_angle: SlopeAngle,
     },
     /// Planar spiral with signed radial growth per revolution.
     Spiral {
         /// Signed radial growth per revolution.
         radial_growth: Length,
     },
-}
-
-/// Finite, nonzero signed axial rise per revolution.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct HelixPitch(Length);
-
-impl HelixPitch {
-    /// Construct a finite, nonzero axial pitch.
-    #[must_use]
-    pub fn new(value: Length) -> Option<Self> {
-        (value.0.is_finite() && value.0 != 0.0).then_some(Self(value))
-    }
-
-    /// Return the signed axial pitch.
-    #[must_use]
-    pub const fn get(self) -> Length {
-        self.0
-    }
-}
-
-impl<'de> Deserialize<'de> for HelixPitch {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = Length::deserialize(deserializer)?;
-        Self::new(value)
-            .ok_or_else(|| serde::de::Error::custom("helix pitch must be finite and nonzero"))
-    }
 }
 
 #[cfg(feature = "schema")]
@@ -5447,11 +6320,11 @@ struct HelixShapeSchemaWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     radial_growth: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cone_angle: Option<Angle>,
+    cone_angle: Option<SlopeAngle>,
 }
 
 mod helix_shape_wire {
-    use super::{Angle, HelixPitch, HelixShape, Length};
+    use super::{HelixShape, Length, NonZeroLength, SlopeAngle};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize, Deserialize)]
@@ -5460,7 +6333,7 @@ mod helix_shape_wire {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         radial_growth: Option<Length>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        cone_angle: Option<Angle>,
+        cone_angle: Option<SlopeAngle>,
     }
 
     pub fn serialize<S>(value: &HelixShape, serializer: S) -> Result<S::Ok, S::Error>
@@ -5468,9 +6341,11 @@ mod helix_shape_wire {
         S: Serializer,
     {
         let (pitch, radial_growth, cone_angle) = match value {
-            HelixShape::Cylindrical { pitch } => (pitch.get(), None, None),
-            HelixShape::Conical { pitch, cone_angle } => (pitch.get(), None, Some(*cone_angle)),
-            HelixShape::Spiral { radial_growth } => (Length(0.0), Some(*radial_growth), None),
+            HelixShape::Cylindrical { pitch } => (Length::from(*pitch), None, None),
+            HelixShape::Conical { pitch, cone_angle } => {
+                (Length::from(*pitch), None, Some(*cone_angle))
+            }
+            HelixShape::Spiral { radial_growth } => (Length::ZERO, Some(*radial_growth), None),
         };
         Wire {
             pitch,
@@ -5487,12 +6362,12 @@ mod helix_shape_wire {
         let wire = Wire::deserialize(deserializer)?;
         match (wire.pitch.0 == 0.0, wire.radial_growth, wire.cone_angle) {
             (false, None, None) => Ok(HelixShape::Cylindrical {
-                pitch: HelixPitch::new(wire.pitch).ok_or_else(|| {
+                pitch: NonZeroLength::new(wire.pitch.get()).ok_or_else(|| {
                     serde::de::Error::custom("helix pitch field must be finite and nonzero")
                 })?,
             }),
             (false, None, Some(cone_angle)) => Ok(HelixShape::Conical {
-                pitch: HelixPitch::new(wire.pitch).ok_or_else(|| {
+                pitch: NonZeroLength::new(wire.pitch.get()).ok_or_else(|| {
                     serde::de::Error::custom("helix pitch field must be finite and nonzero")
                 })?,
                 cone_angle,
@@ -5587,7 +6462,7 @@ pub struct CoilConstruction {
     /// Axis frame and angular origin.
     pub placement: CoilPlacement,
     /// Diameter of the reference trajectory at its start.
-    pub diameter: Length,
+    pub diameter: PositiveLength,
     /// Independent driving dimensions retained from the source feature.
     pub extent: CoilExtent,
     /// Generated section swept along the trajectory.
@@ -5603,22 +6478,61 @@ pub struct CoilConstruction {
 /// Geometric placement of a Coil trajectory.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(try_from = "CoilPlacementWire", into = "CoilPlacementWire")]
 pub enum CoilPlacement {
-    /// Complete right-handed model-space frame.
+    /// Complete model-space axis and radial frame.
     Explicit {
-        /// Center of the trajectory on its base plane.
+        /// Origin, positive trajectory axis, and angular-zero radial direction.
+        frame: FeatureUnitPlaneFrame,
+    },
+    /// Placement retained in one source-native construction aggregate.
+    Native {
+        /// Nonblank native record or scope containing the placement semantics.
+        native_ref: SelectionReference,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CoilPlacementWire {
+    Explicit {
         origin: Point3,
-        /// Positive trajectory-axis direction.
         axis: Vector3,
-        /// Direction from `origin` to angular position zero.
         radial: Vector3,
     },
-    /// Complete placement retained in one source-native construction aggregate.
     Native {
-        /// Native record or scope containing the placement semantics.
-        native_ref: String,
+        native_ref: SelectionReference,
     },
+}
+impl TryFrom<CoilPlacementWire> for CoilPlacement {
+    type Error = &'static str;
+    fn try_from(wire: CoilPlacementWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            CoilPlacementWire::Explicit {
+                origin,
+                axis,
+                radial,
+            } => Self::Explicit {
+                frame: FeatureUnitPlaneFrame::new(origin, axis, radial).ok_or(
+                    "coil placement requires finite origin and perpendicular unit directions",
+                )?,
+            },
+            CoilPlacementWire::Native { native_ref } => Self::Native { native_ref },
+        })
+    }
+}
+impl From<CoilPlacement> for CoilPlacementWire {
+    fn from(placement: CoilPlacement) -> Self {
+        match placement {
+            CoilPlacement::Explicit { frame } => Self::Explicit {
+                origin: frame.origin(),
+                axis: frame.u_axis(),
+                radial: frame.v_axis(),
+            },
+            CoilPlacement::Native { native_ref } => Self::Native { native_ref },
+        }
+    }
 }
 
 /// Independent driving dimensions of a Coil trajectory.
@@ -5629,30 +6543,30 @@ pub enum CoilExtent {
     /// Axial coil driven by revolution count and total signed height.
     RevolutionsHeight {
         /// Positive angular-turn count.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Signed axial travel.
         height: Length,
     },
     /// Axial coil driven by revolution count and signed pitch per revolution.
     RevolutionsPitch {
         /// Positive angular-turn count.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Signed axial travel per revolution.
-        pitch: Length,
+        pitch: NonZeroLength,
     },
     /// Axial coil driven by total signed height and signed pitch per revolution.
     HeightPitch {
         /// Signed axial travel.
-        height: Length,
+        height: NonZeroLength,
         /// Signed axial travel per revolution.
-        pitch: Length,
+        pitch: NonZeroLength,
     },
     /// Planar spiral driven by revolution count and signed radial pitch.
     Spiral {
         /// Positive angular-turn count.
-        revolutions: f64,
+        revolutions: PositiveReal,
         /// Signed radial growth per revolution.
-        radial_pitch: Length,
+        radial_pitch: NonZeroLength,
     },
 }
 
@@ -5664,22 +6578,22 @@ pub enum CoilSection {
     /// Circular section whose size is its diameter.
     Circular {
         /// Circle diameter.
-        diameter: Length,
+        diameter: PositiveLength,
     },
     /// Square section whose size is its edge length.
     Square {
         /// Edge length.
-        size: Length,
+        size: PositiveLength,
     },
     /// Equilateral triangle pointing radially away from the axis.
     ExternalTriangle {
         /// Edge length.
-        size: Length,
+        size: PositiveLength,
     },
     /// Equilateral triangle pointing radially toward the axis.
     InternalTriangle {
         /// Edge length.
-        size: Length,
+        size: PositiveLength,
     },
 }
 
@@ -5827,9 +6741,9 @@ impl JsonSchema for SweepMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SweepPathExtent {
     /// Fraction consumed in the path's forward traversal direction.
-    pub along_fraction: f64,
+    pub along_fraction: Fraction,
     /// Fraction consumed in the path's reverse traversal direction.
-    pub against_fraction: f64,
+    pub against_fraction: Fraction,
 }
 
 /// Guide rail controlling a sweep, with its directed consumed extent.
@@ -5881,10 +6795,10 @@ pub enum GeneratedSweepSection {
     /// Filled or hollow circular region centered on the sweep path.
     CircularRegion {
         /// Outer radius of the circular region.
-        outer_radius: Length,
+        outer_radius: PositiveLength,
         /// Inward radial wall thickness. Absence selects a filled disk.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        wall_thickness: Option<Length>,
+        wall_thickness: Option<PositiveLength>,
     },
 }
 
@@ -5957,7 +6871,7 @@ pub enum SweepOrientation {
     /// Frame constrained by a fixed binormal direction.
     Binormal {
         /// Unit binormal direction.
-        direction: Vector3,
+        direction: FeatureDirection3,
     },
 }
 
@@ -5991,6 +6905,50 @@ pub enum SweepTransformation {
     Interpolation,
 }
 
+/// Signed axial travel and radial growth with at least one nonzero component.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HelicalSweepTravelWire")]
+pub struct HelicalSweepTravel {
+    height: Length,
+    radial_growth: Length,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HelicalSweepTravelWire {
+    height: Length,
+    radial_growth: Length,
+}
+
+impl HelicalSweepTravel {
+    /// Admit finite signed travel with nonzero height or radial growth.
+    pub fn new(height: Length, radial_growth: Length) -> Option<Self> {
+        (height.get() != 0.0 || radial_growth.get() != 0.0).then_some(Self {
+            height,
+            radial_growth,
+        })
+    }
+
+    /// Return the total axial travel.
+    pub fn height(self) -> Length {
+        self.height
+    }
+
+    /// Return the radial change per turn.
+    pub fn radial_growth(self) -> Length {
+        self.radial_growth
+    }
+}
+
+impl TryFrom<HelicalSweepTravelWire> for HelicalSweepTravel {
+    type Error = &'static str;
+    fn try_from(wire: HelicalSweepTravelWire) -> Result<Self, Self::Error> {
+        Self::new(wire.height, wire.radial_growth)
+            .ok_or("helical-sweep height and radial_growth cannot both be zero")
+    }
+}
+
 /// Complete construction of a solid helical sweep.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5998,19 +6956,18 @@ pub struct HelicalSweepConstruction {
     /// Profile swept along the helical path.
     pub profile: ProfileRef,
     /// Point at the start of the helix axis.
-    pub axis_origin: Point3,
+    pub axis_origin: FinitePoint3,
     /// Unit direction of positive axial travel.
-    pub axis_direction: Vector3,
+    pub axis_direction: FeatureDirection3,
     /// Persisted authoring law identifying the independent parameters.
     pub law: HelicalSweepLaw,
     /// Positive axial advance per turn; zero is permitted for a planar spiral.
-    pub pitch: Length,
-    /// Signed total axial travel.
-    pub height: Length,
+    pub pitch: NonNegativeLength,
+    /// Signed axial travel and radial change per turn.
+    #[serde(flatten)]
+    pub travel: HelicalSweepTravel,
     /// Positive number of turns.
-    pub turns: f64,
-    /// Signed radial change per turn.
-    pub radial_growth: Length,
+    pub turns: PositiveReal,
     /// Cone half-angle corresponding to radial growth.
     pub cone_angle: Angle,
     /// Whether angular travel is left-handed along the positive axis.
@@ -6019,7 +6976,7 @@ pub struct HelicalSweepConstruction {
     pub reversed: bool,
     /// Relative tolerance used while joining the generated sweep, when persisted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    pub tolerance: Option<PositiveReal>,
     /// Whether a profile containing multiple faces is accepted as one operation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_multi_profile_faces: Option<bool>,
@@ -6154,7 +7111,7 @@ pub enum BinderCopyOnChange {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BinderOffset {
     /// Signed offset distance.
-    pub distance: Length,
+    pub distance: NonZeroLength,
     /// Join law at offset corners.
     pub join: BinderOffsetJoin,
     /// Whether to fill between original and offset wires.
@@ -6274,7 +7231,7 @@ pub enum LoftPointSection {
     #[serde(rename = "native_point")]
     Native(String),
     /// Solved model-space point section.
-    Point(Point3),
+    Point(FinitePoint3),
     /// Solved B-rep vertex section.
     Vertex(VertexId),
 }
@@ -6538,7 +7495,7 @@ pub struct FilletGroup {
     pub radius: RadiusSpec,
     /// Dimensionless tangency weight, when specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tangency_weight: Option<f64>,
+    pub tangency_weight: Option<FiniteReal>,
 }
 
 /// One full-round fillet face-set group.
@@ -6744,65 +7701,65 @@ pub enum HoleKind {
     /// Independently retained counterbore dimensions.
     PartialCounterbore {
         /// Counterbore diameter, when resolved.
-        diameter: Option<Length>,
+        diameter: Option<PositiveLength>,
         /// Counterbore depth, when resolved.
-        depth: Option<Length>,
+        depth: Option<PositiveLength>,
     },
     /// Independently retained countersink dimensions.
     PartialCountersink {
         /// Countersink diameter, when resolved.
-        diameter: Option<Length>,
+        diameter: Option<PositiveLength>,
         /// Countersink included angle, when resolved.
-        angle: Option<Angle>,
+        angle: Option<InteriorAngle>,
     },
     /// Plain cylindrical hole with no entry feature.
     Simple,
     /// Hole with a chamfered entry.
     Chamfer {
         /// Entry chamfer diameter.
-        diameter: Length,
+        diameter: PositiveLength,
         /// Included chamfer angle.
-        angle: Angle,
+        angle: InteriorAngle,
     },
     /// Plain cylindrical hole terminating in a conical drill point.
     SimpleDrilled {
         /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
+        drill_point_angle: InteriorAngle,
     },
     /// Hole with a wider, flat-bottomed counterbore at the entry.
     Counterbore {
         /// Counterbore diameter, wider than the hole diameter.
-        diameter: Length,
+        diameter: PositiveLength,
         /// Counterbore depth.
-        depth: Length,
+        depth: PositiveLength,
     },
     /// Counterbored hole terminating in a conical drill point.
     CounterboreDrilled {
         /// Counterbore diameter, wider than the hole diameter.
-        diameter: Length,
+        diameter: PositiveLength,
         /// Axial depth of the counterbore.
-        depth: Length,
+        depth: PositiveLength,
         /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
+        drill_point_angle: InteriorAngle,
     },
     /// Hole with a conical countersink at the entry.
     Countersink {
         /// Countersink diameter at the surface, wider than the hole diameter.
-        diameter: Length,
+        diameter: PositiveLength,
         /// Countersink included angle.
-        angle: Angle,
+        angle: InteriorAngle,
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
         /// Cylindrical entry-recess diameter.
-        diameter: Length,
+        diameter: PositiveLength,
         /// Diameter at the reference surface before the conical transition.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_diameter: Option<Length>,
+        entry_diameter: Option<PositiveLength>,
         /// Cylindrical recess depth.
-        depth: Length,
+        depth: PositiveLength,
         /// Included conical entry angle.
-        angle: Angle,
+        angle: InteriorAngle,
     },
 }
 
@@ -6821,13 +7778,13 @@ pub enum HoleConstruction {
     /// SLDPRT native thread geometry carried without a named standard specification.
     NativeThread {
         /// Nominal major diameter of the internal thread.
-        major_diameter: Length,
+        major_diameter: PositiveLength,
         /// Axial length over which the thread is cut.
-        thread_depth: Length,
+        thread_depth: PositiveLength,
         /// Thread pitch, when carried independently of a nominal designation.
-        pitch: Option<Length>,
+        pitch: Option<PositiveLength>,
         /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
+        drill_point_angle: InteriorAngle,
     },
 }
 
@@ -6872,48 +7829,48 @@ enum HoleKindWire {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         form: Option<HoleForm>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_diameter: Option<Length>,
+        counterbore_diameter: Option<PositiveLength>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        counterbore_depth: Option<Length>,
+        counterbore_depth: Option<PositiveLength>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_diameter: Option<Length>,
+        countersink_diameter: Option<PositiveLength>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        countersink_angle: Option<Angle>,
+        countersink_angle: Option<InteriorAngle>,
     },
     Simple,
     Chamfer {
-        diameter: Length,
-        angle: Angle,
+        diameter: PositiveLength,
+        angle: InteriorAngle,
     },
     SimpleDrilled {
-        drill_point_angle: Angle,
+        drill_point_angle: InteriorAngle,
     },
     Counterbore {
-        diameter: Length,
-        depth: Length,
+        diameter: PositiveLength,
+        depth: PositiveLength,
     },
     CounterboreDrilled {
-        diameter: Length,
-        depth: Length,
-        drill_point_angle: Angle,
+        diameter: PositiveLength,
+        depth: PositiveLength,
+        drill_point_angle: InteriorAngle,
     },
     Countersink {
-        diameter: Length,
-        angle: Angle,
+        diameter: PositiveLength,
+        angle: InteriorAngle,
     },
     Threaded {
-        major_diameter: Length,
-        thread_depth: Length,
+        major_diameter: PositiveLength,
+        thread_depth: PositiveLength,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        pitch: Option<Length>,
-        drill_point_angle: Angle,
+        pitch: Option<PositiveLength>,
+        drill_point_angle: InteriorAngle,
     },
     Counterdrill {
-        diameter: Length,
+        diameter: PositiveLength,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_diameter: Option<Length>,
-        depth: Length,
-        angle: Angle,
+        entry_diameter: Option<PositiveLength>,
+        depth: PositiveLength,
+        angle: InteriorAngle,
     },
 }
 
@@ -7110,13 +8067,66 @@ impl TryFrom<HoleConstructionWire> for HoleConstruction {
 /// Profile geometry families accepted as hole-location generators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct HoleProfileFilter {
-    /// Profile points generate holes.
-    pub points: bool,
-    /// Profile circles generate holes at their centers.
-    pub circles: bool,
-    /// Profile circular arcs generate holes at their centers.
-    pub arcs: bool,
+#[serde(try_from = "HoleProfileFilterWire", into = "HoleProfileFilterWire")]
+pub enum HoleProfileFilter {
+    /// Points generate holes.
+    Points,
+    /// Circles generate holes.
+    Circles,
+    /// Points and circles generate holes.
+    PointsAndCircles,
+    /// Arcs generate holes.
+    Arcs,
+    /// Points and arcs generate holes.
+    PointsAndArcs,
+    /// Circles and arcs generate holes.
+    CirclesAndArcs,
+    /// All profile families generate holes.
+    All,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HoleProfileFilterWire {
+    points: bool,
+    circles: bool,
+    arcs: bool,
+}
+
+impl TryFrom<HoleProfileFilterWire> for HoleProfileFilter {
+    type Error = &'static str;
+
+    fn try_from(value: HoleProfileFilterWire) -> Result<Self, Self::Error> {
+        match (value.points, value.circles, value.arcs) {
+            (true, false, false) => Ok(Self::Points),
+            (false, true, false) => Ok(Self::Circles),
+            (true, true, false) => Ok(Self::PointsAndCircles),
+            (false, false, true) => Ok(Self::Arcs),
+            (true, false, true) => Ok(Self::PointsAndArcs),
+            (false, true, true) => Ok(Self::CirclesAndArcs),
+            (true, true, true) => Ok(Self::All),
+            (false, false, false) => Err("hole profile filter requires points, circles, or arcs"),
+        }
+    }
+}
+
+impl From<HoleProfileFilter> for HoleProfileFilterWire {
+    fn from(value: HoleProfileFilter) -> Self {
+        let (points, circles, arcs) = match value {
+            HoleProfileFilter::Points => (true, false, false),
+            HoleProfileFilter::Circles => (false, true, false),
+            HoleProfileFilter::PointsAndCircles => (true, true, false),
+            HoleProfileFilter::Arcs => (false, false, true),
+            HoleProfileFilter::PointsAndArcs => (true, false, true),
+            HoleProfileFilter::CirclesAndArcs => (false, true, true),
+            HoleProfileFilter::All => (true, true, true),
+        };
+        Self {
+            points,
+            circles,
+            arcs,
+        }
+    }
 }
 
 /// Blind-end construction of a drilled hole.
@@ -7129,7 +8139,7 @@ pub enum HoleBottom {
     /// Conical drill point.
     Angled {
         /// Included drill-point angle.
-        included_angle: Angle,
+        included_angle: InteriorAngle,
         /// Whether the declared blind depth reaches the tip instead of the shoulder.
         depth_to_tip: bool,
     },
@@ -7172,9 +8182,9 @@ pub enum HoleSpecification {
         /// Whether cosmetic thread presentation is requested.
         cosmetic: bool,
         /// Thread pitch in canonical millimeters.
-        pitch: Option<Length>,
+        pitch: Option<PositiveLength>,
         /// Nominal major thread diameter.
-        major_diameter: Option<Length>,
+        major_diameter: Option<PositiveLength>,
         /// Thread handedness.
         hand: ThreadHand,
         /// Axial thread-depth construction.
@@ -7198,9 +8208,9 @@ struct HoleSpecificationWire {
     modeled: bool,
     cosmetic: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pitch: Option<Length>,
+    pitch: Option<PositiveLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    major_diameter: Option<Length>,
+    major_diameter: Option<PositiveLength>,
     hand: ThreadHand,
     depth: HoleThreadDepth,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -7338,7 +8348,7 @@ pub enum HoleThreadDepth {
     /// Explicit thread length.
     Blind {
         /// Explicit axial thread length.
-        depth: Length,
+        depth: PositiveLength,
     },
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard,
@@ -7379,7 +8389,7 @@ pub enum FlexMode {
     /// Scale transverse sections by a dimensionless factor.
     Tapering {
         /// End-to-start transverse scale ratio.
-        factor: f64,
+        factor: PositiveReal,
     },
     /// Extend or contract along the flex axis.
     Stretching {
@@ -7398,7 +8408,7 @@ enum FlexModeWire {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<Angle>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        factor: Option<f64>,
+        factor: Option<PositiveReal>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<Length>,
     },
@@ -7409,7 +8419,7 @@ enum FlexModeWire {
         angle: Angle,
     },
     Tapering {
-        factor: f64,
+        factor: PositiveReal,
     },
     Stretching {
         distance: Length,

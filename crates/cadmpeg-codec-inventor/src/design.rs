@@ -421,15 +421,20 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
         };
         let value = match unit.dimension {
             PmDcUnitDimension::Length => {
-                ParameterValue::Length(Length(parameter.model_value * 10.0))
+                Length::new(parameter.model_value * 10.0).map(ParameterValue::Length)
             }
-            PmDcUnitDimension::Angle => ParameterValue::Angle(Angle(parameter.model_value)),
-            PmDcUnitDimension::Dimensionless => ParameterValue::Real(parameter.model_value),
+            PmDcUnitDimension::Angle => {
+                Angle::new(parameter.model_value).map(ParameterValue::Angle)
+            }
+            PmDcUnitDimension::Dimensionless => parameter
+                .model_value
+                .is_finite()
+                .then_some(ParameterValue::Real(parameter.model_value)),
         };
-        if !parameter.model_value.is_finite() {
+        let Some(value) = value else {
             unresolved += 1;
             continue;
-        }
+        };
         projected.push(DesignParameter {
             id: parameter_id(parameter),
             owner: None,
@@ -1243,7 +1248,7 @@ mod tests {
         assert_eq!(parameters[1].dependencies, vec![parameters[0].id.clone()]);
         assert_eq!(
             parameters[0].value,
-            Some(ParameterValue::Length(Length(609.6)))
+            Some(ParameterValue::Length(Length::new(609.6).unwrap()))
         );
     }
 

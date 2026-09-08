@@ -250,7 +250,7 @@ pub(super) fn typed_linear_pattern_dimensions(
     let spacing = crate::history::parse_positive_dimension_length_mm(parameter(
         "ParallelPlaneDistanceDim_c",
     )?)?;
-    Some((Length(spacing), count))
+    Some((Length::new(spacing)?, count))
 }
 
 #[cfg(test)]
@@ -1119,7 +1119,7 @@ pub(crate) fn bind_profile_revolution_axes(
             construction.extent(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                 termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
-            }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
+            }) if (angle.get().abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
         ) {
             surfaces
         } else {
@@ -1241,8 +1241,12 @@ pub(super) fn profile_roster_construction_axis(
     let length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
     (length.is_finite() && length > EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9).then_some(
         cadmpeg_ir::features::RevolutionAxis {
-            origin: start,
-            direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+            origin: cadmpeg_ir::features::FinitePoint3::new(start)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                delta.x / length,
+                delta.y / length,
+                delta.z / length,
+            ))?,
             reference: None,
         },
     )
@@ -1277,16 +1281,16 @@ fn profile_generated_surface_axis(
         origin.y - axis.origin.y,
         origin.z - axis.origin.z,
     );
-    let perpendicular = origin_offset.cross(axis.direction);
+    let perpendicular = origin_offset.cross(axis.direction.get());
     if perpendicular.norm() <= LINE_TOLERANCE {
-        axis.origin = origin;
+        axis.origin = cadmpeg_ir::features::FinitePoint3::new(origin)?;
     } else {
-        let projection = origin_offset.dot(axis.direction);
-        axis.origin = Point3::new(
+        let projection = origin_offset.dot(axis.direction.get());
+        axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             axis.origin.x + projection * axis.direction.x,
             axis.origin.y + projection * axis.direction.y,
             axis.origin.z + projection * axis.direction.z,
-        );
+        ))?;
     }
     let curve_endpoints = markers
         .iter()
@@ -1403,8 +1407,8 @@ pub(super) fn common_generated_surface_axis(
         origin.z - origin_projection * direction.z,
     );
     Some(cadmpeg_ir::features::RevolutionAxis {
-        origin,
-        direction,
+        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
         reference: None,
     })
 }

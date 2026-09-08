@@ -46,16 +46,20 @@ fn encoder_writes_source_less_datum_features() {
         .for_each(|edge| edge.param_range = None);
     let definitions = [
         FeatureDefinition::DatumPlane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         },
         FeatureDefinition::DatumAxis {
-            origin: Point3::new(4.0, 5.0, 6.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .unwrap(),
         },
         FeatureDefinition::DatumPoint {
-            position: Point3::new(7.0, 8.0, 9.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
             construction: None,
         },
     ];
@@ -1628,7 +1632,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
             .find(|parameter| parameter.name == "Depth")
             .unwrap();
         parameter.expression = "20mm".into();
-        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -1678,7 +1682,7 @@ fn semantic_writer_preserves_dimension_attributes() {
         assert_eq!(parameter.properties["Driven"], "true");
         assert_eq!(parameter.properties["EquationId"], "D1@Boss");
         parameter.expression = "20mm".into();
-        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -1718,10 +1722,13 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
         assert_eq!(parameter.expression, "Width * 2");
-        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(24.0))));
+        assert_eq!(
+            parameter.value,
+            Some(ParameterValue::Length(Length::new(24.0).unwrap()))
+        );
         assert_eq!(parameter.properties["Value"], "24mm");
         parameter.expression = "Width * 3".into();
-        parameter.value = Some(ParameterValue::Length(Length(36.0)));
+        parameter.value = Some(ParameterValue::Length(Length::new(36.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -1736,7 +1743,10 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         .unwrap();
     let parameter = &regenerated.ir().model.parameters[0];
     assert_eq!(parameter.expression, "Width * 3");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(36.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(36.0).unwrap()))
+    );
     assert_eq!(parameter.properties["Value"], "36mm");
     assert_eq!(parameter.properties["EquationId"], "D1@Boss");
 }

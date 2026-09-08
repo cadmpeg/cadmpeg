@@ -131,7 +131,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(20.0, 20.0),
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         },
     ));
     let sketch = Sketch {
@@ -171,9 +171,9 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         incomplete.id.clone(),
         SketchGeometry::Ellipse {
             center: Point2::new(30.0, 30.0),
-            major_angle: Angle(0.0),
-            major_radius: Length(2.0),
-            minor_radius: Length(1.0),
+            major_angle: Angle::new(0.0).unwrap(),
+            major_radius: Length::new(2.0).unwrap(),
+            minor_radius: Length::new(1.0).unwrap(),
             bounds: None,
         },
     ));
@@ -387,16 +387,16 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
             arc_id.clone(),
             SketchGeometry::Arc {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(std::f64::consts::FRAC_PI_2),
-                end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).unwrap(),
             },
         ),
         entity(
             circle_id.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(1.0),
+                radius: Length::new(1.0).unwrap(),
             },
         ),
     ];
@@ -537,7 +537,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     ));
     let sketch = Sketch {
@@ -783,9 +783,9 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         |geometry| SketchEntity::new(SketchEntityId("curve".into()), sketch.clone(), geometry);
     let arc = entity(SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(2.0),
-        start_angle: cadmpeg_ir::features::Angle(0.0),
-        end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+        radius: Length::new(2.0).unwrap(),
+        start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
     });
     assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
     assert!(!point_on_sketch_entity(
@@ -795,9 +795,9 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     ));
     let clockwise_arc = entity(SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(2.0),
-        start_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
-        end_angle: cadmpeg_ir::features::Angle(0.0),
+        radius: Length::new(2.0).unwrap(),
+        start_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        end_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
     });
     assert!(point_lies_on_sketch_geometry(
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
@@ -810,12 +810,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
 
     let ellipse = entity(SketchGeometry::Ellipse {
         center: Point2::new(1.0, -1.0),
-        major_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
-        major_radius: Length(4.0),
-        minor_radius: Length(2.0),
+        major_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        major_radius: Length::new(4.0).unwrap(),
+        minor_radius: Length::new(2.0).unwrap(),
         bounds: Some([
-            cadmpeg_ir::features::Angle(0.0),
-            cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+            cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         ]),
     });
     assert!(point_on_sketch_entity(
@@ -897,7 +897,7 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
             sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(20.0, 20.0),
-                radius: Length(3.0),
+                radius: Length::new(3.0).unwrap(),
             },
         ),
     ];

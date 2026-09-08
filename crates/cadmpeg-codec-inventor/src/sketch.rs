@@ -1491,7 +1491,7 @@ fn project_geometry(
             let center = resolve_point(&entity.identity.segment_token, center.index, entities)?;
             Some(SketchGeometry::Circle {
                 center: neutral_point(center),
-                radius: Length(radius * 10.0),
+                radius: Length::new(radius * 10.0)?,
             })
         }
         PmDcSketchEntityKind::Ellipse {
@@ -1508,9 +1508,9 @@ fn project_geometry(
             }
             Some(SketchGeometry::Ellipse {
                 center: neutral_point(center),
-                major_angle: Angle(major_direction[1].atan2(major_direction[0])),
-                major_radius: Length(major_radius * 10.0),
-                minor_radius: Length(minor_radius * 10.0),
+                major_angle: Angle::new(major_direction[1].atan2(major_direction[0]))?,
+                major_radius: Length::new(major_radius * 10.0)?,
+                minor_radius: Length::new(minor_radius * 10.0)?,
                 bounds: None,
             })
         }

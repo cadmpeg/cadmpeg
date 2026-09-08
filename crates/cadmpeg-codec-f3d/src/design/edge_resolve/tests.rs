@@ -155,10 +155,10 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
         [cadmpeg_ir::features::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Historical { edges, .. },
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
-                radius: cadmpeg_ir::features::Length(3.0)
+                radius: actual_radius
             },
-            tangency_weight: Some(1.0),
-        }] if edges.len() == 2
+            tangency_weight: Some(weight),
+        }] if weight.get() == 1.0 && (edges.len() == 2) && actual_radius.get() == 3.0
     ));
 }
 

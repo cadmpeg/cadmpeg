@@ -340,13 +340,13 @@ fn generated_sketch_curve(
             })
         }
         SketchGeometry::Circle { center, radius } => {
-            let point = offset_point(*center, Point2::new(radius.0, 0.0));
+            let point = offset_point(*center, Point2::new(radius.get(), 0.0));
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Circle {
                     center: lift(*center),
                     axis: normal,
                     ref_direction: u_axis,
-                    radius: radius.0,
+                    radius: radius.get(),
                 },
                 start: point,
                 end: point,
@@ -363,11 +363,11 @@ fn generated_sketch_curve(
                 center: lift(*center),
                 axis: normal,
                 ref_direction: u_axis,
-                radius: radius.0,
+                radius: radius.get(),
             },
-            start: offset_point(*center, polar(radius.0, start_angle.0)),
-            end: offset_point(*center, polar(radius.0, end_angle.0)),
-            param_range: [start_angle.0, end_angle.0],
+            start: offset_point(*center, polar(radius.get(), start_angle.get())),
+            end: offset_point(*center, polar(radius.get(), end_angle.get())),
+            param_range: [start_angle.get(), end_angle.get()],
         }),
         SketchGeometry::Ellipse {
             center,
@@ -378,26 +378,26 @@ fn generated_sketch_curve(
         } => {
             let point = |parameter: f64| {
                 Point2::new(
-                    center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                        - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                    center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
+                        - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
                     center.v
-                        + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                        + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                        + major_angle.get().sin() * major_radius.get() * parameter.cos()
+                        + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                 )
             };
             let [start, end] = bounds
                 .as_ref()
                 .map_or([0.0, std::f64::consts::TAU], |[start, end]| {
-                    [start.0, end.0]
+                    [start.get(), end.get()]
                 });
             let full = bounds.is_none();
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Ellipse {
                     center: lift(*center),
                     axis: normal,
-                    major_direction: vector(major_angle.0.cos(), major_angle.0.sin()),
-                    major_radius: major_radius.0,
-                    minor_radius: minor_radius.0,
+                    major_direction: vector(major_angle.get().cos(), major_angle.get().sin()),
+                    major_radius: major_radius.get(),
+                    minor_radius: minor_radius.get(),
                 },
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
@@ -613,8 +613,8 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
             start_angle,
             end_angle,
         } => Some([
-            offset_point(*center, polar(radius.0, start_angle.0)),
-            offset_point(*center, polar(radius.0, end_angle.0)),
+            offset_point(*center, polar(radius.get(), start_angle.get())),
+            offset_point(*center, polar(radius.get(), end_angle.get())),
         ]),
         SketchGeometry::Ellipse {
             center,
@@ -625,14 +625,14 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
         } => {
             let point = |parameter: f64| {
                 Point2::new(
-                    center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                        - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                    center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
+                        - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
                     center.v
-                        + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                        + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                        + major_angle.get().sin() * major_radius.get() * parameter.cos()
+                        + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                 )
             };
-            Some([point(start.0), point(end.0)])
+            Some([point(start.get()), point(end.get())])
         }
         SketchGeometry::Nurbs { curve } if !curve.periodic() => {
             let control_points = curve.control_points();
@@ -672,7 +672,7 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
         match geometry {
             SketchGeometry::Circle { center, radius } => Ok(Self::Circle {
                 center: *center,
-                radius: radius.0,
+                radius: radius.get(),
             }),
             SketchGeometry::Arc {
                 center,
@@ -681,9 +681,9 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
                 end_angle,
             } => Ok(Self::Arc {
                 center: *center,
-                radius: radius.0,
-                start_angle: start_angle.0,
-                end_angle: end_angle.0,
+                radius: radius.get(),
+                start_angle: start_angle.get(),
+                end_angle: end_angle.get(),
             }),
             SketchGeometry::Ellipse {
                 center,
@@ -693,10 +693,10 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
                 bounds,
             } => Ok(Self::Ellipse(PatchEllipse {
                 center: *center,
-                major_angle: major_angle.0,
-                major_radius: major_radius.0,
-                minor_radius: minor_radius.0,
-                bounds: bounds.map(|[start, end]| [start.0, end.0]),
+                major_angle: major_angle.get(),
+                major_radius: major_radius.get(),
+                minor_radius: minor_radius.get(),
+                bounds: bounds.map(|[start, end]| [start.get(), end.get()]),
             })),
             SketchGeometry::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
             _ => Err(cadmpeg_core::CodecError::NotImplemented(

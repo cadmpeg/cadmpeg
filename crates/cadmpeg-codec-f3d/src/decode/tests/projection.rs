@@ -779,21 +779,24 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let construction = CoilConstruction {
         placement: CoilPlacement::Explicit {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radial: Vector3::new(1.0, 0.0, 0.0),
+            frame: cadmpeg_ir::features::FeatureUnitPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         },
-        diameter: Length(10.0),
+        diameter: cadmpeg_ir::features::PositiveLength::new(10.0).unwrap(),
         extent: CoilExtent::RevolutionsHeight {
-            revolutions: 2.0,
-            height: Length(5.0),
+            revolutions: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+            height: Length::new(5.0).unwrap(),
         },
         section: CoilSection::Circular {
-            diameter: Length(1.0),
+            diameter: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
         },
         section_placement: CoilSectionPlacement::Center,
         clockwise: false,
-        taper: Angle(0.0),
+        taper: Angle::new(0.0).unwrap(),
     };
     let definition = |construction, result| FeatureDefinition::Coil {
         construction,
@@ -807,7 +810,10 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut native_placement = construction.clone();
     native_placement.placement = CoilPlacement::Native {
-        native_ref: "native:placement".into(),
+        native_ref: cadmpeg_ir::features::SelectionReference::try_from(String::from(
+            "native:placement",
+        ))
+        .unwrap(),
     };
     assert!(feature_definition_is_incomplete(&definition(
         native_placement,

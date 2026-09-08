@@ -546,9 +546,9 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
             center: Point3::new(10.0, 10.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         },
     ));
     let sketch = SpatialSketch {
@@ -604,7 +604,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                 center: Point3::new(0.0, 0.0, 0.0),
                 normal,
                 reference_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             },
         )
     };
@@ -1519,7 +1519,7 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     );
     let sketch = Sketch {

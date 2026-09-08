@@ -222,10 +222,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: RadiusSpec::Constant {
-                radius: Length(2.0),
+                radius: actual_radius,
             },
             ..
-        }])
+        }] if actual_radius.get() == 2.0)
     ));
     assert_eq!(
         decoded.ir().model.features[2].dependencies,
@@ -245,10 +245,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: ChamferSpec::Distance {
-                distance: Length(3.0),
+                distance: actual_distance,
             },
             ..
-        }])
+        }] if actual_distance.get() == 3.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[4].definition,
@@ -257,9 +257,9 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 kind: HoleKind::Simple,
                 ..
             },
-            diameter: Some(Length(4.0)),
+            diameter: Some(actual_diameter),
             ..
-        }
+        } if actual_diameter.get() == 4.0
     ));
 
     {
@@ -270,7 +270,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
             panic!("constant fillet");
         };
-        *radius = Length(2.5);
+        *radius = Length::new(2.5).unwrap();
         ir.model.features[2]
             .source_properties
             .insert("Algorithm".into(), "FaceBlend".into());
@@ -522,7 +522,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
             op: BooleanOp::Cut,
         } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle },
-                }) if (angle.0 - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 
@@ -1024,7 +1024,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         &cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::Length(25.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(25.0).unwrap(),
                 },
                 draft: None,
             }
@@ -1041,7 +1041,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter
@@ -1143,7 +1143,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter

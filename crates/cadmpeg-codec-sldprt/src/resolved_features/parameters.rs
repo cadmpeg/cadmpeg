@@ -324,8 +324,8 @@ pub(crate) fn sync_changed_feature_scalars(
                 let value =
                     match crate::history::parse_native_parameter_literal(feature, name, expression)
                     {
-                        Some(ParameterValue::Length(value)) => value.0 / 1000.0,
-                        Some(ParameterValue::Angle(value)) => value.0,
+                        Some(ParameterValue::Length(value)) => value.get() / 1000.0,
+                        Some(ParameterValue::Angle(value)) => value.get(),
                         Some(ParameterValue::Real(value)) => value,
                         _ => continue,
                     };

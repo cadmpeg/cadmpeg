@@ -131,8 +131,8 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         &projected[1].definition,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
-            distance: Length(6.0),
-        } if reference == &projected[0].id
+            distance: actual_distance,
+        } if (reference == &projected[0].id) && actual_distance.get() == 6.0
     ));
     assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
 }
@@ -279,19 +279,19 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Dome {
-            height: Some(Length(2.0)),
+            height: Some(actual_height),
             ..
-        }
+        } if actual_height.get() == 2.0
     ));
     assert!(matches!(
         projected[1].definition,
         FeatureDefinition::Rib {
             construction: RibConstruction {
-                thickness: Some(Length(1.0)),
+                thickness: Some(actual_thickness),
                 ..
             },
             ..
-        }
+        } if actual_thickness.get() == 1.0
     ));
     assert!(matches!(
         projected[2].definition,
@@ -367,10 +367,10 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
                 plane: FaceSelection::Unresolved,
                 pull: None,
             },
-            angle: Some(Angle(value)),
+            angle: Some(value),
             outward: None,
             ..
-        } if (value - std::f64::consts::PI / 60.0).abs() < 1.0e-12
+        } if (value.get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
     ));
 }
 

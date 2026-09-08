@@ -50,23 +50,19 @@ fn decode_projects_fixed_reference_plane_frame() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].definition,
-        FeatureDefinition::DatumPlane {
-            origin: Point3 {
+        FeatureDefinition::DatumPlane { frame } if matches!(frame.origin(),  Point3 {
                 x: 2500.0,
                 y: -250.0,
                 z: 1500.0,
-            },
-            normal: Vector3 {
+            }) && matches!(frame.normal(),  Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0,
-            },
-            u_axis: Vector3 {
+            }) && matches!(frame.u_axis(),  Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: -1.0,
-            },
-        }
+            })
     ));
 }
 

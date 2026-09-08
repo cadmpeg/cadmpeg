@@ -14,8 +14,8 @@ pub(crate) mod operands;
 use operands::{
     body_selection_is_incomplete, body_selections_overlap, chamfer_spec_is_incomplete,
     edge_selection_is_incomplete, extrude_extent_is_incomplete, extrude_start_is_incomplete,
-    face_selection_is_incomplete, face_selections_overlap, hole_auxiliary_semantics_are_incomplete,
-    hole_feature_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
+    face_selection_is_incomplete, face_selections_overlap, hole_feature_is_incomplete,
+    hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, radius_spec_is_incomplete,
     resolved_body_selection_len, revolve_feature_is_incomplete, rib_feature_is_incomplete,
     sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
@@ -158,13 +158,6 @@ pub(crate) fn active_configuration_state_is_incomplete(
         })
 }
 
-pub(crate) fn datum_plane_is_incomplete(origin: Point3, normal: Vector3, u_axis: Vector3) -> bool {
-    !finite_feature_point(origin)
-        || !valid_feature_direction(normal)
-        || !valid_feature_direction(u_axis)
-        || !directions_are_perpendicular(normal, u_axis)
-}
-
 pub(crate) fn datum_coordinate_system_is_incomplete(
     origin: Point3,
     x_axis: Vector3,
@@ -187,7 +180,7 @@ pub(crate) fn datum_coordinate_system_is_incomplete(
 
 pub(crate) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
     match direction {
-        CurveProjectionDirection::Vector(direction) => !valid_feature_direction(direction),
+        CurveProjectionDirection::Vector(_) => false,
         CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => true,
         CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => false,
     }
@@ -290,9 +283,9 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                 (
                     Some("millimeter" | "inch"),
                     Some(cadmpeg_ir::features::ParameterValue::Length(value)),
-                ) => Some(value.0),
+                ) => Some(value.get()),
                 (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
-                    Some(value.0)
+                    Some(value.get())
                 }
                 (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => Some(*value),
                 (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
@@ -351,21 +344,16 @@ pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool
         return true;
     };
     face_selection_is_incomplete(faces)
-        || distance.is_none_or(|distance| !positive_feature_length(distance))
+        || distance.is_none()
         || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved)
 }
 
 pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::SewBodies {
-        bodies,
-        gap_tolerance,
-    } = &feature.definition
-    else {
+    let FeatureDefinition::SewBodies { bodies, .. } = &feature.definition else {
         return true;
     };
     body_selection_is_incomplete(bodies)
         || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
-        || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance))
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
@@ -403,15 +391,12 @@ pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
 pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Hole {
         profile,
-        profile_filter,
         face,
         placements,
         construction,
         exit_kind,
         diameter,
         extent,
-        bottom,
-        taper_angle,
         ..
     } = &feature.definition
     else {
@@ -427,16 +412,15 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
                 face.as_ref(),
                 placements.as_deref(),
                 (kind, exit_kind.as_ref()),
-                *diameter,
+                diameter.map(Into::into),
                 extent.as_ref(),
             ),
             specification.as_deref(),
         ),
         cadmpeg_ir::features::HoleConstruction::NativeThread {
             major_diameter,
-            thread_depth,
-            pitch,
             drill_point_angle,
+            ..
         } => {
             let kind = cadmpeg_ir::features::HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
@@ -447,23 +431,15 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
                     face.as_ref(),
                     placements.as_deref(),
                     (&kind, exit_kind.as_ref()),
-                    *diameter,
+                    diameter.map(Into::into),
                     extent.as_ref(),
-                ) || !positive_feature_length(*major_diameter)
-                    || !positive_feature_length(*thread_depth)
-                    || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
-                    || diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0),
+                ) || diameter.is_none_or(|diameter| major_diameter.get() <= diameter.get()),
                 None,
             )
         }
     };
     construction_incomplete
-        || hole_auxiliary_semantics_are_incomplete(
-            profile_filter.as_ref(),
-            bottom.as_ref(),
-            *taper_angle,
-            specification,
-        )
+        || hole_specification_is_incomplete(specification)
         || extent.as_ref().is_some_and(|extent| {
             termination_dependency_is_incomplete(extent, &feature.dependencies)
         })
@@ -488,11 +464,7 @@ pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
     };
     groups.is_empty()
         || groups.iter().any(|group| {
-            edge_selection_is_incomplete(&group.edges)
-                || radius_spec_is_incomplete(&group.radius)
-                || group
-                    .tangency_weight
-                    .is_some_and(|weight| !weight.is_finite())
+            edge_selection_is_incomplete(&group.edges) || radius_spec_is_incomplete(&group.radius)
         })
 }
 
@@ -527,7 +499,7 @@ pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> 
     };
     bodies.as_ref().is_some_and(body_selection_is_incomplete)
         || face_selection_is_incomplete(removed_faces)
-        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || thickness.is_none()
         || outward.is_none()
         || mode.is_none()
         || join.is_none()
@@ -539,16 +511,15 @@ pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool
     let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
         return true;
     };
-    face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
+    face_selection_is_incomplete(faces)
+        || distance.is_none_or(|distance| !distance.get().is_finite())
 }
 
 pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Sphere { center, radius, op } = &feature.definition else {
+    let FeatureDefinition::Sphere { op, .. } = &feature.definition else {
         return true;
     };
-    !finite_feature_point(*center)
-        || !positive_feature_length(*radius)
-        || matches!(op, BooleanOp::Unresolved)
+    matches!(op, BooleanOp::Unresolved)
 }
 
 pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
@@ -560,9 +531,7 @@ pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
     else {
         return true;
     };
-    face_selection_is_incomplete(faces)
-        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
-        || side.is_none()
+    face_selection_is_incomplete(faces) || thickness.is_none() || side.is_none()
 }
 
 pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
@@ -584,14 +553,12 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
                 face_selection_is_incomplete(tool)
             }
         }
-        || anchor
-            .pull()
-            .is_none_or(|pull| !valid_feature_direction(pull.direction))
+        || anchor.pull().is_none()
         || anchor
             .pull()
             .and_then(|pull| pull.plane.as_ref())
             .is_some_and(|plane| plane.as_str().is_empty())
-        || angle.is_none_or(|angle| !valid_draft_angle(angle))
+        || angle.is_none()
         || outward.is_none()
 }
 
@@ -613,7 +580,6 @@ pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
         sections,
         guidance,
         op,
-        max_degree,
         ..
     } = &feature.definition
     else {
@@ -636,7 +602,6 @@ pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
                 path_ref_is_incomplete(centerline)
             }
         }
-        || max_degree.is_some_and(|degree| degree == 0)
         || matches!(op, BooleanOp::Unresolved)
 }
 
@@ -658,11 +623,6 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         || matches!(
             direction,
             cadmpeg_ir::features::ExtrudeDirection::Unresolved
-        )
-        || matches!(
-            direction,
-            cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. }
-                if !valid_feature_direction(*vector)
         )
         || extrude_start_is_incomplete(start)
         || extrude_extent_is_incomplete(extent, &feature.dependencies)
@@ -704,8 +664,6 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
         orientation,
         transition,
         transformation,
-        twist,
-        scale,
         ..
     } = &feature.definition
     else {
@@ -736,16 +694,10 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
             .is_none_or(sweep_orientation_is_incomplete)
         || transition.is_none()
         || transformation.is_none()
-        || twist.is_some_and(|twist| !twist.0.is_finite())
-        || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0)
 }
 
 pub(crate) fn positive_feature_length(length: Length) -> bool {
-    length.0.is_finite() && length.0 > 0.0
-}
-
-pub(crate) fn valid_draft_angle(angle: cadmpeg_ir::features::Angle) -> bool {
-    angle.0.is_finite() && angle.0.abs() < std::f64::consts::FRAC_PI_2
+    length.get() > 0.0
 }
 
 pub(crate) fn valid_feature_direction(direction: Vector3) -> bool {

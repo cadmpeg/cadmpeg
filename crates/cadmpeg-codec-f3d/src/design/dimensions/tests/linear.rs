@@ -167,14 +167,14 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:circle#inner",
         SketchGeometry::Circle {
             center: Point2::new(3.0, -2.0),
-            radius: cadmpeg_ir::features::Length(4.0),
+            radius: cadmpeg_ir::features::Length::new(4.0).unwrap(),
         },
     );
     let outer_circle = entity(
         "generated:circle#outer",
         SketchGeometry::Circle {
             center: Point2::new(3.0, -2.0),
-            radius: cadmpeg_ir::features::Length(4.25),
+            radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
         },
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
@@ -193,7 +193,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:circle#displaced",
         SketchGeometry::Circle {
             center: Point2::new(3.001, -2.0),
-            radius: cadmpeg_ir::features::Length(4.25),
+            radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
         },
     );
     assert!(!crate::design::dimensions::concentric_circle_separation(
@@ -207,7 +207,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:circle#tolerant-center",
         SketchGeometry::Circle {
             center: Point2::new(3.000_000_5, -2.0),
-            radius: cadmpeg_ir::features::Length(4.25),
+            radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
         },
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
@@ -245,7 +245,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:circle#tolerant-outer",
         SketchGeometry::Circle {
             center: Point2::new(3.0, -2.0),
-            radius: cadmpeg_ir::features::Length(4.250_000_5),
+            radius: cadmpeg_ir::features::Length::new(4.250_000_5).unwrap(),
         },
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
@@ -284,25 +284,25 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         331,
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: cadmpeg_ir::features::Length(11.1125),
+            radius: cadmpeg_ir::features::Length::new(11.1125).unwrap(),
         },
     );
     let arc = entity(
         796,
         SketchGeometry::Arc {
             center: Point2::new(60.344_057_626_1, -19.05),
-            radius: cadmpeg_ir::features::Length(12.7),
-            start_angle: cadmpeg_ir::features::Angle(0.0),
-            end_angle: cadmpeg_ir::features::Angle(0.975_682_713_4),
+            radius: cadmpeg_ir::features::Length::new(12.7).unwrap(),
+            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::features::Angle::new(0.975_682_713_4).unwrap(),
         },
     );
     let outer_arc = entity(
         782,
         SketchGeometry::Arc {
             center: Point2::new(60.344_057_626_1, 19.05),
-            radius: cadmpeg_ir::features::Length(12.7),
-            start_angle: cadmpeg_ir::features::Angle(0.0),
-            end_angle: cadmpeg_ir::features::Angle(0.975_682_713_4),
+            radius: cadmpeg_ir::features::Length::new(12.7).unwrap(),
+            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::features::Angle::new(0.975_682_713_4).unwrap(),
         },
     );
     let first_point = entity(
@@ -659,9 +659,9 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
         "generated:arc#bounded",
         SketchGeometry::Arc {
             center: Point2::new(3.0, 0.0),
-            radius: cadmpeg_ir::features::Length(1.0),
-            start_angle: cadmpeg_ir::features::Angle(0.0),
-            end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            radius: cadmpeg_ir::features::Length::new(1.0).unwrap(),
+            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         },
     );
     let arc_start = entity(

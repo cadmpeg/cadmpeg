@@ -50,11 +50,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(thickness) = construction.thickness {
-                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                parameters.insert("Thickness".into(), format_length_mm(thickness.get()));
             }
             match construction.draft {
                 RibDraft::Angle(draft) => {
-                    parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                    parameters.insert("Draft".into(), format_angle_rad(draft.get()));
                 }
                 RibDraft::None => {
                     parameters.remove("Draft");
@@ -74,8 +74,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.insert("Profile".into(), profile_source);
             }
             if let Some(direction) = construction.direction {
-                require_direction(direction, &feature.id, "rib direction")?;
-                properties.insert("Direction".into(), format_vector3(direction));
+                properties.insert("Direction".into(), format_vector3(direction.get()));
             }
             if let Some(side) = construction.side {
                 properties.insert("BothSides".into(), (side == RibSide::Centered).to_string());
@@ -220,7 +219,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         }
                     }
                     require_count(*count, &feature.id)?;
-                    if !spacing.0.is_finite() || spacing.0 <= 0.0 {
+                    if !spacing.get().is_finite() || spacing.get() <= 0.0 {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid linear-pattern spacing",
                             feature.id
@@ -241,7 +240,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         spacing_key.into(),
                         format_length_like(
-                            spacing.0,
+                            spacing.get(),
                             existing
                                 .and_then(|record| record.parameters.get(spacing_key))
                                 .map(String::as_str),
@@ -251,14 +250,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     if let Some(second) = second {
                         require_direction(second.direction, &feature.id, "second pattern")?;
                         require_count(second.count, &feature.id)?;
-                        if !second.spacing.0.is_finite() || second.spacing.0 <= 0.0 {
+                        if !second.spacing.get().is_finite() || second.spacing.get() <= 0.0 {
                             return Err(CodecError::malformed(format_args!(
                                 "SLDPRT feature {} has invalid second linear-pattern spacing",
                                 feature.id
                             )));
                         }
                         properties.insert("Direction2".into(), format_vector3(second.direction));
-                        parameters.insert("D4".into(), format_length_like(second.spacing.0, None));
+                        parameters
+                            .insert("D4".into(), format_length_like(second.spacing.get(), None));
                         parameters.insert("D2".into(), second.count.to_string());
                     }
                 }
@@ -272,7 +272,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     require_count(*count, &feature.id)?;
                     properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
                     properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    parameters.insert("Angle".into(), format_angle_rad(angle.get()));
                     parameters.insert("Count".into(), count.to_string());
                 }
                 PatternKind::CurveDriven {
@@ -281,7 +281,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     count,
                 } => {
                     require_count(*count, &feature.id)?;
-                    if !spacing.0.is_finite() || spacing.0 <= 0.0 {
+                    if !spacing.get().is_finite() || spacing.get() <= 0.0 {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid curve-pattern spacing",
                             feature.id
@@ -321,7 +321,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         spacing_key.into(),
                         format_length_like(
-                            spacing.0,
+                            spacing.get(),
                             existing
                                 .and_then(|record| record.parameters.get(spacing_key))
                                 .map(String::as_str),

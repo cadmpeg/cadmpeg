@@ -43,11 +43,13 @@ pub(super) fn generated_marker_relations(
             SketchRelationKind::Fixed,
             entity,
         )],
-        SketchConstraintDefinition::ArcAngle { entity, angle } => arc_angle_relation_kind(angle.0)
-            .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
-            .unwrap_or_default(),
+        SketchConstraintDefinition::ArcAngle { entity, angle } => {
+            arc_angle_relation_kind(angle.get())
+                .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
+                .unwrap_or_default()
+        }
         SketchConstraintDefinition::EllipseAngle { entity, angle } => {
-            ellipse_angle_relation_kind(angle.0)
+            ellipse_angle_relation_kind(angle.get())
                 .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
                 .unwrap_or_default()
         }
@@ -470,8 +472,8 @@ pub(super) fn append_generated_sketch_markers(
                     parameter.id.as_str()
                 )));
             }
-            (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
-            (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.0 * 0.001,
+            (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.get(),
+            (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.get() * 0.001,
             _ => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",

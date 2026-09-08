@@ -90,7 +90,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
                 direction: None,
-                spacing: Length(10.0),
+                spacing: Length::new(10.0).unwrap(),
                 count: 2,
                 second: None,
             },
@@ -114,7 +114,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
         name: "D1".into(),
         expression: "12mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(12.0))),
+        value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -122,12 +122,15 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     }];
     let record = dimension("Linear", 0.034);
 
-    apply_to_parameters(&mut parameters, &[feature], &[record]);
+    apply_to_parameters(&mut parameters, &[feature], &[record]).unwrap();
 
     let parameter = &parameters[0];
     assert_eq!(parameter.expression, "12mm");
     assert_eq!(parameter.display, None);
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
+    );
     assert_eq!(parameter.native_ref.as_deref(), Some("keywords-dimension"));
     assert_eq!(
         parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
@@ -148,7 +151,7 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
     second.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    apply_to_parameters(&mut parameters, &[feature], &[first, second]);
+    apply_to_parameters(&mut parameters, &[feature], &[first, second]).unwrap();
 
     assert!(parameters.is_empty());
 }
@@ -162,7 +165,7 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     alias.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]);
+    apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
@@ -509,7 +512,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     let semantic = parameter.pmi.as_ref().expect("PMI semantics");
@@ -535,7 +538,7 @@ fn decode_extracts_pmi_semantic_dimension() {
             .expect("editable PMI-backed parameter");
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.0),
+            cadmpeg_ir::features::Length::new(50.0).unwrap(),
         ));
         let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
         semantic.precision = 4;
@@ -732,7 +735,7 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         let parameter = &mut ir.model.parameters[0];
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.0),
+            cadmpeg_ir::features::Length::new(50.0).unwrap(),
         ));
     }
 
@@ -813,13 +816,16 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
             .iter_mut()
             .find(|parameter| parameter.name == "D1")
             .expect("ordinate parameter");
-        assert_eq!(ordinate.value, Some(ParameterValue::Length(Length(25.0))));
+        assert_eq!(
+            ordinate.value,
+            Some(ParameterValue::Length(Length::new(25.0).unwrap()))
+        );
         assert_eq!(
             ordinate.pmi.as_ref().map(|pmi| &pmi.subtype),
             Some(&PmiDimensionSubtype::Ordinate)
         );
         ordinate.expression = "50mm".into();
-        ordinate.value = Some(ParameterValue::Length(Length(50.0)));
+        ordinate.value = Some(ParameterValue::Length(Length::new(50.0).unwrap()));
     }
 
     let mut encoded = Vec::new();
@@ -846,8 +852,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
-        ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -877,14 +882,14 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(25.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: BooleanOp::Unresolved,
             ..
-        }
+        } if actual_length.get() == 25.0
     ));
     let parameter = decoded
         .ir()

@@ -477,7 +477,7 @@ mod tests {
             FeatureDefinition::MoveFace {
                 faces: FaceSelection::Unresolved,
                 motion: FaceMotion::Translate { direction, distance },
-            } if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == Length(5.0)
+            } if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == Length::new(5.0).unwrap()
         ));
 
         for lane in [

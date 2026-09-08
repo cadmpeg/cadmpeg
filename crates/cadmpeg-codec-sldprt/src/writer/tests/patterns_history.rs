@@ -37,11 +37,11 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             seeds,
             pattern: PatternKind::Linear {
                 direction: Some(Vector3 { x: 1.0, y: 0.0, z: 0.0 }),
-                spacing: Length(10.0),
+                spacing: actual_spacing,
                 count: 3,
                 second: None,
             },
-        } if seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]
+        } if (seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0
     ));
     assert!(matches!(
         &decoded.ir().model.features[2].definition,
@@ -49,11 +49,11 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             pattern: PatternKind::Circular {
                 axis_origin: Point3 { x: 0.0, y: 0.0, z: 0.0 },
                 axis_dir: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-                angle: Angle(value),
+                angle: value,
                 count: 4,
             },
             ..
-        } if (*value - std::f64::consts::TAU).abs() < 1.0e-12
+        } if (value.get() - std::f64::consts::TAU).abs() < 1.0e-12
     ));
     assert!(matches!(
         &decoded.ir().model.features[3].definition,
@@ -90,7 +90,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             panic!("linear pattern");
         };
         *direction = Some(Vector3::new(0.0, 1.0, 0.0));
-        *spacing = Length(12.0);
+        *spacing = Length::new(12.0).unwrap();
         *count = 5;
         let FeatureDefinition::Pattern {
             pattern:
@@ -106,7 +106,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             panic!("circular pattern");
         };
         *axis_origin = Point3::new(1.0, 2.0, 3.0);
-        *angle = Angle(std::f64::consts::PI);
+        *angle = Angle::new(std::f64::consts::PI).unwrap();
         *count = 6;
         let FeatureDefinition::Pattern {
             pattern:
@@ -177,14 +177,14 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
             seeds,
             pattern: PatternKind::CurveDriven {
                 path: None,
-                spacing: Length(397.6),
+                spacing: actual_spacing,
                 count: 16,
             },
-        } if seeds.is_empty()
+        } if (seeds.is_empty()) && actual_spacing.get() == 397.6
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
-        Some(ParameterValue::Length(Length(397.6)))
+        Some(ParameterValue::Length(Length::new(397.6).unwrap()))
     );
     assert_eq!(
         decoded.ir().model.parameters[1].value,
@@ -200,7 +200,7 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         else {
             panic!("curve-driven pattern");
         };
-        *spacing = Length(250.0);
+        *spacing = Length::new(250.0).unwrap();
         *count = 8;
     }
 
@@ -227,11 +227,11 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         FeatureDefinition::Pattern {
             pattern: PatternKind::CurveDriven {
                 path: None,
-                spacing: Length(250.0),
+                spacing: actual_spacing,
                 count: 8,
             },
             ..
-        }
+        } if actual_spacing.get() == 250.0
     ));
 }
 
@@ -260,11 +260,11 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
             seeds,
             pattern: PatternKind::Linear {
                 direction: None,
-                spacing: Length(2.54),
+                spacing: actual_spacing,
                 count: 15,
                 second: None,
             },
-        } if seeds.is_empty()
+        } if (seeds.is_empty()) && actual_spacing.get() == 2.54
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -272,7 +272,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     );
     assert_eq!(
         decoded.ir().model.parameters[1].value,
-        Some(ParameterValue::Length(Length(2.54)))
+        Some(ParameterValue::Length(Length::new(2.54).unwrap()))
     );
 
     {
@@ -284,7 +284,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         else {
             panic!("localized linear pattern");
         };
-        *spacing = Length(3.5);
+        *spacing = Length::new(3.5).unwrap();
         *count = 12;
     }
 
@@ -312,12 +312,12 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         FeatureDefinition::Pattern {
             pattern: PatternKind::Linear {
                 direction: None,
-                spacing: Length(3.5),
+                spacing: actual_spacing,
                 count: 12,
                 second: None,
             },
             ..
-        }
+        } if actual_spacing.get() == 3.5
     ));
 }
 
@@ -502,7 +502,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
         else {
             panic!("generic linear pattern");
         };
-        *spacing = Length(6.0);
+        *spacing = Length::new(6.0).unwrap();
         *count = 3;
     }
 
@@ -551,12 +551,12 @@ fn semantic_writer_round_trips_typed_sweep() {
             section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
             mode: cadmpeg_ir::features::SweepMode::NewBody,
-            twist: Some(Angle(twist)),
-            scale: Some(1.5),
+            twist: Some(twist),
+            scale: Some(scale),
             ..
-        } if profile == &profile_a
+        } if scale.get() == 1.5 && profile == &profile_a
             && path_ref == &path
-            && (*twist - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+            && (twist.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 
     {
@@ -576,8 +576,8 @@ fn semantic_writer_round_trips_typed_sweep() {
         *mode = cadmpeg_ir::features::SweepMode::Solid {
             op: cadmpeg_ir::features::BooleanKind::Join,
         };
-        *twist = Some(Angle(std::f64::consts::PI));
-        *scale = Some(2.0);
+        *twist = Some(Angle::new(std::f64::consts::PI).unwrap());
+        *scale = Some(cadmpeg_ir::features::PositiveReal::new(2.0).unwrap());
         ir_edit.model.features[3]
             .dependencies
             .retain(|dependency| dependency != &profile_a);
@@ -657,7 +657,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         else {
             panic!("surface sweep");
         };
-        *twist = Some(Angle(0.5));
+        *twist = Some(Angle::new(0.5).unwrap());
     }
 
     let mut encoded = Vec::new();
@@ -682,10 +682,10 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
             section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
-            twist: Some(Angle(0.5)),
+            twist: Some(actual_twist),
             scale: None,
             ..
-        }
+        } if actual_twist.get() == 0.5
     ));
 }
 
@@ -978,22 +978,24 @@ fn semantic_writer_retains_partial_native_rib_construction() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
-        FeatureDefinition::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
-                profile: None,
-                direction: Some(Vector3 {
-                    x: 0.0,
-                    y: 1.0,
-                    z: 0.0
-                }),
-                thickness: None,
-                side: None,
-                draft: RibDraft::Unresolved,
-            },
-            op: BooleanOp::Unresolved,
-        }
-    ));
+       decoded.ir().model.features[0].definition,
+       FeatureDefinition::Rib {
+           construction: cadmpeg_ir::features::RibConstruction {
+               profile: None,
+               direction: Some(
+                   geometry_1
+               ),
+               thickness: None,
+               side: None,
+               draft: RibDraft::Unresolved,
+           },
+           op: BooleanOp::Unresolved,
+       }
+    if matches!(geometry_1.get(), Vector3 {
+                       x: 0.0,
+                       y: 1.0,
+                       z: 0.0
+                   })));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
     let error = crate::test_support::plan_inherited_write(
@@ -1027,9 +1029,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
 
 #[test]
 fn semantic_writer_round_trips_typed_rib() {
-    use cadmpeg_ir::features::{
-        Angle, BooleanOp, FeatureDefinition, Length, ProfileRef, RibDraft, RibSide,
-    };
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef, RibDraft, RibSide};
     use cadmpeg_ir::math::Vector3;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1048,13 +1048,13 @@ fn semantic_writer_round_trips_typed_rib() {
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some(ProfileRef::Feature(profile)),
-                direction: Some(Vector3 { x: 0.0, y: 1.0, z: 0.0 }),
-                thickness: Some(Length(2.0)),
+                direction: Some(geometry_1),
+                thickness: Some(actual_thickness),
                 side: Some(RibSide::OneSided),
-                draft: RibDraft::Angle(Angle(value)),
+                draft: RibDraft::Angle(value),
             },
             op: BooleanOp::Join,
-        } if profile == &profile_ref && (*value - 5f64.to_radians()).abs() < 1.0e-12
+        } if ( (profile == &profile_ref && (value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_thickness.get() == 2.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
     ));
 
     {
@@ -1063,8 +1063,10 @@ fn semantic_writer_round_trips_typed_rib() {
         else {
             panic!("typed rib");
         };
-        construction.direction = Some(Vector3::new(1.0, 0.0, 0.0));
-        construction.thickness = Some(Length(3.0));
+        construction.direction = Some(
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+        );
+        construction.thickness = Some(cadmpeg_ir::features::PositiveLength::new(3.0).unwrap());
         construction.side = Some(RibSide::Centered);
         construction.draft = RibDraft::None;
         *op = BooleanOp::NewBody;
@@ -1147,7 +1149,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::Length(18.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(18.0).unwrap(),
                 },
                 draft: None,
             },
@@ -1175,13 +1177,13 @@ fn semantic_writer_applies_neutral_feature_edits() {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(18.0),
+                        length: actual_length,
                     },
                     ..
                 }
             },
             ..
-        }
+        } if actual_length.get() == 18.0
     ));
 }
 
@@ -1204,7 +1206,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::Length(18.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(18.0).unwrap(),
                 },
                 draft: None,
             },
@@ -1252,7 +1254,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::Length(50.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(50.0).unwrap(),
                 },
                 draft: None,
             },
@@ -1283,13 +1285,13 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(50.0),
+                        length: actual_length,
                     },
                     ..
                 }
             },
             ..
-        }
+        } if actual_length.get() == 50.0
     ));
 }
 
@@ -1577,7 +1579,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
             .expect("projected D1 parameter");
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.0),
+            cadmpeg_ir::features::Length::new(50.0).unwrap(),
         ));
     }
 
@@ -1637,7 +1639,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::features::Length(50.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(50.0).unwrap(),
                 },
                 draft: None,
             },
@@ -1660,13 +1662,13 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(50.0),
+                        length: actual_length,
                     },
                     ..
                 }
             },
             ..
-        }
+        } if actual_length.get() == 50.0
     ));
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0].value,
@@ -1724,7 +1726,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(500.0)
+            cadmpeg_ir::features::Length::new(500.0).unwrap()
         ))
     );
     let native_ref = parameter.native_ref.as_deref().expect("linked scalar");

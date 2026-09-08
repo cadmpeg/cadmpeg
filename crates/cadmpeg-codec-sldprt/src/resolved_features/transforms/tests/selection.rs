@@ -503,7 +503,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(5.0, 6.0),
-                radius: Length(10.0),
+                radius: Length::new(10.0).unwrap(),
             },
         )
         .with_construction(true)
@@ -852,7 +852,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         name: "D1".into(),
         expression: format!("<MOD-DIAM>{diameter}"),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(diameter))),
+        value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -883,7 +883,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     )];
 

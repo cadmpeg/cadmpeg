@@ -3,7 +3,7 @@
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -307,18 +307,18 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             seeds,
             pattern: cadmpeg_ir::features::PatternKind::Linear {
                 direction: Some(direction),
-                spacing: cadmpeg_ir::features::Length(4.0),
+                spacing: actual_spacing,
                 count: 4,
                 ..
             },
-        } if seeds.len() == 1 && direction.y == 1.0
+        } if (seeds.len() == 1 && direction.y == 1.0) && actual_spacing.get() == 4.0
     ));
     assert!(matches!(
         &feature("Custom").definition,
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             pattern: cadmpeg_ir::features::PatternKind::LinearOffsets { direction: Some(direction), offsets },
             ..
-        } if direction.x == 1.0 && offsets.iter().map(|offset| offset.0).collect::<Vec<_>>() == [0.0, 2.0, 9.0]
+        } if direction.x == 1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 2.0, 9.0]
     ));
     let cadmpeg_ir::features::FeatureDefinition::Pattern {
         pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
@@ -335,7 +335,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     assert!(matches!(
         &*stages[1].pattern,
         cadmpeg_ir::features::PatternKind::LinearOffsets { direction: Some(direction), offsets }
-            if direction.y == -1.0 && offsets.iter().map(|offset| offset.0).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
+            if direction.y == -1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
     ));
     assert_eq!(
         stages[1].combination,
@@ -347,19 +347,19 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             pattern: cadmpeg_ir::features::PatternKind::CircularAngles { angles, .. },
             ..
         } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
-            (angle.0.to_degrees() - expected).abs() < 1.0e-12)
+            (angle.get().to_degrees() - expected).abs() < 1.0e-12)
     ));
     assert!(matches!(
         &feature("NativeDirection").definition,
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             pattern: cadmpeg_ir::features::PatternKind::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::features::Length(4.0),
+                spacing: actual_spacing,
                 count: 3,
                 ..
             },
             ..
-        }
+        } if actual_spacing.get() == 4.0
     ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -452,23 +452,23 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
         definition(&absent, "Linear"),
         FeatureDefinition::Pattern {
             pattern: cadmpeg_ir::features::PatternKind::Linear {
-                spacing: Length(4.0),
+                spacing: actual_spacing,
                 count: 3,
                 ..
             },
             ..
-        }
+        } if actual_spacing.get() == 4.0
     ));
     assert!(matches!(
         definition(&absent, "Polar"),
         FeatureDefinition::Pattern {
             pattern: cadmpeg_ir::features::PatternKind::Circular {
-                angle: Angle(angle),
+                angle,
                 count: 3,
                 ..
             },
             ..
-        } if (*angle - std::f64::consts::PI).abs() < EPS_PATTERN_ANGLE
+        } if (angle.get() - std::f64::consts::PI).abs() < EPS_PATTERN_ANGLE
     ));
     let FeatureDefinition::Pattern {
         pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
@@ -480,18 +480,18 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
     assert!(matches!(
         &*stages[0].pattern,
         cadmpeg_ir::features::PatternKind::Linear {
-            spacing: Length(4.0),
+            spacing: actual_spacing,
             count: 3,
             ..
-        }
+        } if actual_spacing.get() == 4.0
     ));
     assert!(matches!(
         &*stages[1].pattern,
         cadmpeg_ir::features::PatternKind::Linear {
-            spacing: Length(6.0),
+            spacing: actual_spacing,
             count: 2,
             ..
-        }
+        } if actual_spacing.get() == 6.0
     ));
     assert!(absent.report().losses.is_empty());
 
@@ -820,13 +820,13 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         FeatureDefinition::Pattern {
             pattern: cadmpeg_ir::features::PatternKind::Circular {
                 axis_dir,
-                angle: Angle(angle),
+                angle,
                 count: 4,
                 ..
             },
             ..
         } if *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
-            && (*angle - std::f64::consts::PI).abs() < EPS_PATTERN_ANGLE
+            && (angle.get() - std::f64::consts::PI).abs() < EPS_PATTERN_ANGLE
     ));
     let FeatureDefinition::Pattern {
         pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
@@ -1158,13 +1158,13 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
             pattern: cadmpeg_ir::features::PatternKind::Circular {
                 axis_origin,
                 axis_dir,
-                angle: cadmpeg_ir::features::Angle(angle),
+                angle,
                 count: 4,
             },
             ..
         } if *axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
             && *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-            && (*angle - std::f64::consts::TAU).abs() < 1.0e-12
+            && (angle.get() - std::f64::consts::TAU).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Mirror"),

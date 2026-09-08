@@ -129,12 +129,12 @@ pub(crate) fn sketch_arrangement_faces(
         let SketchGeometry::Circle { center, radius } = entity.geometry else {
             unreachable!("circle collection contains only circles")
         };
-        if !radius.0.is_finite() || radius.0 <= tolerance {
+        if !radius.get().is_finite() || radius.get() <= tolerance {
             return None;
         }
         let mut angles = nodes
             .iter()
-            .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
+            .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
             .map(|point| {
                 (point.v - center.v)
                     .atan2(point.u - center.u)
@@ -142,7 +142,7 @@ pub(crate) fn sketch_arrangement_faces(
             })
             .collect::<Vec<_>>();
         angles.sort_by(f64::total_cmp);
-        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
         if angles.len() < 2 {
             let additional = if angles.is_empty() {
                 vec![0.0, std::f64::consts::PI]
@@ -153,15 +153,15 @@ pub(crate) fn sketch_arrangement_faces(
                 arrangement_node(
                     &mut nodes,
                     Point2::new(
-                        center.u + radius.0 * angle.cos(),
-                        center.v + radius.0 * angle.sin(),
+                        center.u + radius.get() * angle.cos(),
+                        center.v + radius.get() * angle.sin(),
                     ),
                     tolerance,
                 );
             }
             angles = nodes
                 .iter()
-                .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
+                .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
                 .map(|point| {
                     (point.v - center.v)
                         .atan2(point.u - center.u)
@@ -169,7 +169,7 @@ pub(crate) fn sketch_arrangement_faces(
                 })
                 .collect::<Vec<_>>();
             angles.sort_by(f64::total_cmp);
-            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
         }
         if angles.len() < 2 {
             return None;
@@ -478,7 +478,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     };
     let (center, radius) = match arc_entity.geometry {
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            (center, radius.0)
+            (center, radius.get())
         }
         _ => return false,
     };
@@ -790,7 +790,7 @@ fn arrangement_split_parameters(
         }
         SketchGeometry::Arc { center, radius, .. } => {
             for point in nodes {
-                if (point_distance(*point, *center) - radius.0).abs() > tolerance {
+                if (point_distance(*point, *center) - radius.get()).abs() > tolerance {
                     continue;
                 }
                 let angle = (point.v - center.v).atan2(point.u - center.u);
@@ -956,11 +956,11 @@ fn arrangement_edges_coincident(
             },
         ) => {
             point_distance(*left_center, *right_center) <= tolerance
-                && (left_radius.0 - right_radius.0).abs() <= tolerance
+                && (left_radius.get() - right_radius.get()).abs() <= tolerance
                 && ((left.boundary.parameter_range[1] - left.boundary.parameter_range[0]).abs()
                     - (right.boundary.parameter_range[1] - right.boundary.parameter_range[0]).abs())
                 .abs()
-                    <= tolerance / left_radius.0
+                    <= tolerance / left_radius.get()
                 && sketch_geometry_point(
                     &left_entity.geometry,
                     (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
@@ -1044,7 +1044,7 @@ fn arrangement_edge_tubes(
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
             certified_arc_tubes(
                 *center,
-                radius.0,
+                radius.get(),
                 edge.boundary.parameter_range[0],
                 edge.boundary.parameter_range[1],
                 target_error,
@@ -1078,7 +1078,7 @@ fn arrangement_analytic_segment(
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
             Some(ProfileBoundarySegment::Arc {
                 center: *center,
-                radius: radius.0,
+                radius: radius.get(),
                 start_angle: edge.boundary.parameter_range[0],
                 end_angle: edge.boundary.parameter_range[1],
             })
@@ -1098,11 +1098,11 @@ fn sketch_geometry_parameter_range(
             start_angle,
             end_angle,
             ..
-        } => Some([start_angle.0, end_angle.0]),
+        } => Some([start_angle.get(), end_angle.get()]),
         SketchGeometry::Ellipse {
             bounds: Some([start, end]),
             ..
-        } => Some([start.0, end.0]),
+        } => Some([start.get(), end.get()]),
         SketchGeometry::Nurbs { curve } if !curve.periodic() => Some([
             curve.knots()[curve.degree() as usize],
             curve.knots()[curve.control_points().len()],
@@ -1153,13 +1153,13 @@ fn sketch_geometry_speed_bound(
     match geometry {
         SketchGeometry::Line { start, end } => Some(point_distance(*start, *end)),
         SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-            Some(radius.0)
+            Some(radius.get())
         }
         SketchGeometry::Ellipse {
             major_radius,
             minor_radius,
             ..
-        } => Some(major_radius.0.max(minor_radius.0)),
+        } => Some(major_radius.get().max(minor_radius.get())),
         SketchGeometry::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
         _ if range[0] == range[1] => None,
         _ => None,
@@ -1179,8 +1179,8 @@ fn sketch_geometry_point(
         )),
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
             Some(Point2::new(
-                center.u + radius.0 * parameter.cos(),
-                center.v + radius.0 * parameter.sin(),
+                center.u + radius.get() * parameter.cos(),
+                center.v + radius.get() * parameter.sin(),
             ))
         }
         SketchGeometry::Ellipse {
@@ -1190,13 +1190,13 @@ fn sketch_geometry_point(
             minor_radius,
             ..
         } => {
-            let (axis_sine, axis_cosine) = major_angle.0.sin_cos();
+            let (axis_sine, axis_cosine) = major_angle.get().sin_cos();
             Some(Point2::new(
-                center.u + major_radius.0 * parameter.cos() * axis_cosine
-                    - minor_radius.0 * parameter.sin() * axis_sine,
+                center.u + major_radius.get() * parameter.cos() * axis_cosine
+                    - minor_radius.get() * parameter.sin() * axis_sine,
                 center.v
-                    + major_radius.0 * parameter.cos() * axis_sine
-                    + minor_radius.0 * parameter.sin() * axis_cosine,
+                    + major_radius.get() * parameter.cos() * axis_sine
+                    + minor_radius.get() * parameter.sin() * axis_cosine,
             ))
         }
         SketchGeometry::Nurbs { curve } if !curve.periodic() => cadmpeg_ir::eval::nurbs_pcurve_uv(
@@ -1229,7 +1229,8 @@ fn point_on_profile_boundary_use(
             let angle = (point.v - center.v).atan2(point.u - center.u);
             directed_angle_parameter(angle, use_.parameter_range[0], use_.parameter_range[1])
                 .is_some_and(|parameter| {
-                    parameter >= -tolerance / radius.0 && parameter <= 1.0 + tolerance / radius.0
+                    parameter >= -tolerance / radius.get()
+                        && parameter <= 1.0 + tolerance / radius.get()
                 })
         }
         _ => true,
@@ -1603,7 +1604,7 @@ fn profile_boundary(
         if let SketchGeometry::Circle { center, radius } = entity.geometry {
             return Some(ProfileBoundary::Circle {
                 center,
-                radius: radius.0,
+                radius: radius.get(),
             });
         }
     }
@@ -1651,7 +1652,13 @@ fn certified_profile_loop(
                 radius,
                 start_angle,
                 end_angle,
-            } => certified_arc_tubes(*center, radius.0, start_angle.0, end_angle.0, target_error)?,
+            } => certified_arc_tubes(
+                *center,
+                radius.get(),
+                start_angle.get(),
+                end_angle.get(),
+                target_error,
+            )?,
             SketchGeometry::Nurbs { curve } if !curve.periodic() => {
                 certified_nurbs_tubes(curve, target_error)?
             }
@@ -1882,13 +1889,13 @@ fn circular_arc_profile_segments(
                 end_angle,
             } => {
                 let (start_angle, end_angle) = if use_.reversed {
-                    (end_angle.0, start_angle.0)
+                    (end_angle.get(), start_angle.get())
                 } else {
-                    (start_angle.0, end_angle.0)
+                    (start_angle.get(), end_angle.get())
                 };
                 ProfileBoundarySegment::Arc {
                     center,
-                    radius: radius.0,
+                    radius: radius.get(),
                     start_angle,
                     end_angle,
                 }
@@ -2564,7 +2571,7 @@ pub(crate) fn point_on_sketch_entity(
             point_distance(point, Point2::new(start.u + t * dx, start.v + t * dy)) <= tolerance
         }
         SketchGeometry::Circle { center, radius } => {
-            (point_distance(point, *center) - radius.0).abs() <= tolerance
+            (point_distance(point, *center) - radius.get()).abs() <= tolerance
         }
         SketchGeometry::Arc {
             center,
@@ -2572,12 +2579,17 @@ pub(crate) fn point_on_sketch_entity(
             start_angle,
             end_angle,
         } => {
-            let radial_error = (point_distance(point, *center) - radius.0).abs();
+            let radial_error = (point_distance(point, *center) - radius.get()).abs();
             if radial_error > tolerance {
                 return false;
             }
             let angle = (point.v - center.v).atan2(point.u - center.u);
-            angle_in_sweep(angle, start_angle.0, end_angle.0, tolerance / radius.0)
+            angle_in_sweep(
+                angle,
+                start_angle.get(),
+                end_angle.get(),
+                tolerance / radius.get(),
+            )
         }
         SketchGeometry::Ellipse {
             center,
@@ -2585,20 +2597,20 @@ pub(crate) fn point_on_sketch_entity(
             major_radius,
             minor_radius,
             bounds,
-        } if major_radius.0 > 0.0 && minor_radius.0 > 0.0 => {
+        } if major_radius.get() > 0.0 && minor_radius.get() > 0.0 => {
             let du = point.u - center.u;
             let dv = point.v - center.v;
-            let cosine = major_angle.0.cos();
-            let sine = major_angle.0.sin();
+            let cosine = major_angle.get().cos();
+            let sine = major_angle.get().sin();
             let local_u = du * cosine + dv * sine;
             let local_v = -du * sine + dv * cosine;
-            let parameter = (local_v / minor_radius.0).atan2(local_u / major_radius.0);
+            let parameter = (local_v / minor_radius.get()).atan2(local_u / major_radius.get());
             let boundary = Point2::new(
-                center.u + major_radius.0 * parameter.cos() * cosine
-                    - minor_radius.0 * parameter.sin() * sine,
+                center.u + major_radius.get() * parameter.cos() * cosine
+                    - minor_radius.get() * parameter.sin() * sine,
                 center.v
-                    + major_radius.0 * parameter.cos() * sine
-                    + minor_radius.0 * parameter.sin() * cosine,
+                    + major_radius.get() * parameter.cos() * sine
+                    + minor_radius.get() * parameter.sin() * cosine,
             );
             if point_distance(point, boundary) > tolerance {
                 return false;
@@ -2607,9 +2619,9 @@ pub(crate) fn point_on_sketch_entity(
                 None => true,
                 Some([start, end]) => angle_in_sweep(
                     parameter,
-                    start.0,
-                    end.0,
-                    tolerance / major_radius.0.min(minor_radius.0),
+                    start.get(),
+                    end.get(),
+                    tolerance / major_radius.get().min(minor_radius.get()),
                 ),
             }
         }
@@ -3154,12 +3166,12 @@ pub(crate) fn sketch_entity_endpoints(
             end_angle,
         } => Some([
             Point2::new(
-                center.u + radius.0 * start_angle.0.cos(),
-                center.v + radius.0 * start_angle.0.sin(),
+                center.u + radius.get() * start_angle.get().cos(),
+                center.v + radius.get() * start_angle.get().sin(),
             ),
             Point2::new(
-                center.u + radius.0 * end_angle.0.cos(),
-                center.v + radius.0 * end_angle.0.sin(),
+                center.u + radius.get() * end_angle.get().cos(),
+                center.v + radius.get() * end_angle.get().sin(),
             ),
         ]),
         SketchGeometry::Ellipse {
@@ -3170,14 +3182,14 @@ pub(crate) fn sketch_entity_endpoints(
             bounds: Some([start_angle, end_angle]),
         } => {
             let point_at = |parameter: f64| {
-                let x = major_radius.0 * parameter.cos();
-                let y = minor_radius.0 * parameter.sin();
+                let x = major_radius.get() * parameter.cos();
+                let y = minor_radius.get() * parameter.sin();
                 Point2::new(
-                    center.u + x * major_angle.0.cos() - y * major_angle.0.sin(),
-                    center.v + x * major_angle.0.sin() + y * major_angle.0.cos(),
+                    center.u + x * major_angle.get().cos() - y * major_angle.get().sin(),
+                    center.v + x * major_angle.get().sin() + y * major_angle.get().cos(),
                 )
             };
-            Some([point_at(start_angle.0), point_at(end_angle.0)])
+            Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometry::Nurbs { curve } if !curve.periodic() => {
             let start_parameter = curve.knots()[curve.degree() as usize];

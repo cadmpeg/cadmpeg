@@ -713,18 +713,21 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             if let Some([start, end]) = bounds {
                 let point = |parameter: f64| {
                     Point2::new(
-                        center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                            - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                        center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
+                            - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
                         center.v
-                            + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                            + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                            + major_angle.get().sin() * major_radius.get() * parameter.cos()
+                            + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                     )
                 };
                 loci.push(locus(
-                    point(start.0),
+                    point(start.get()),
                     SketchLocus::Start(entity.id().clone()),
                 ));
-                loci.push(locus(point(end.0), SketchLocus::End(entity.id().clone())));
+                loci.push(locus(
+                    point(end.get()),
+                    SketchLocus::End(entity.id().clone()),
+                ));
             }
             loci
         }
@@ -737,15 +740,15 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             locus(*center, SketchLocus::Center(entity.id().clone())),
             locus(
                 Point2::new(
-                    center.u + radius.0 * start_angle.0.cos(),
-                    center.v + radius.0 * start_angle.0.sin(),
+                    center.u + radius.get() * start_angle.get().cos(),
+                    center.v + radius.get() * start_angle.get().sin(),
                 ),
                 SketchLocus::Start(entity.id().clone()),
             ),
             locus(
                 Point2::new(
-                    center.u + radius.0 * end_angle.0.cos(),
-                    center.v + radius.0 * end_angle.0.sin(),
+                    center.u + radius.get() * end_angle.get().cos(),
+                    center.v + radius.get() * end_angle.get().sin(),
                 ),
                 SketchLocus::End(entity.id().clone()),
             ),
@@ -759,11 +762,11 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         } => {
             let mut loci = vec![locus(*center, SketchLocus::Center(entity.id().clone()))];
             let point = |parameter: f64| {
-                let x = major_radius.0 * parameter.cosh();
-                let y = minor_radius.0 * parameter.sinh();
+                let x = major_radius.get() * parameter.cosh();
+                let y = minor_radius.get() * parameter.sinh();
                 Point2::new(
-                    center.u + x * major_angle.0.cos() - y * major_angle.0.sin(),
-                    center.v + x * major_angle.0.sin() + y * major_angle.0.cos(),
+                    center.u + x * major_angle.get().cos() - y * major_angle.get().sin(),
+                    center.v + x * major_angle.get().sin() + y * major_angle.get().cos(),
                 )
             };
             if let Some([start, end]) = bounds {
@@ -782,10 +785,10 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             bounds,
         } => {
             let point = |parameter: f64| {
-                let x = parameter * parameter / (4.0 * focal_length.0);
+                let x = parameter * parameter / (4.0 * focal_length.get());
                 Point2::new(
-                    vertex.u + x * axis_angle.0.cos() - parameter * axis_angle.0.sin(),
-                    vertex.v + x * axis_angle.0.sin() + parameter * axis_angle.0.cos(),
+                    vertex.u + x * axis_angle.get().cos() - parameter * axis_angle.get().sin(),
+                    vertex.v + x * axis_angle.get().sin() + parameter * axis_angle.get().cos(),
                 )
             };
             match bounds {

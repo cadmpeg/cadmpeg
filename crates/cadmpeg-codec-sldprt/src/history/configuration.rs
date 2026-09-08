@@ -124,7 +124,7 @@ pub(crate) fn project_compact_and_generated(
     features: &mut [cadmpeg_ir::features::Feature],
     projection: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::resolved_features::projections::project_compact_body_selections(features, lanes);
     crate::resolved_features::terminations::project_compact_combine_paths(
         features, projection, lanes,
@@ -139,10 +139,12 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::terminations::project_surface_sweep_profiles(
         features, projection, lanes,
     );
-    crate::resolved_features::holes::project_helix_axes(features, projection, lanes);
+    crate::resolved_features::holes::project_helix_axes(features, projection, lanes)?;
     crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
         features, projection, lanes,
     );
+
+    Ok(())
 }
 
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
@@ -152,7 +154,7 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut resolved_base_features = ir.model.features.clone();
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut resolved_base_features,
@@ -224,8 +226,8 @@ pub(crate) fn project_configuration_design_states(
             &mut features,
             &projection,
             scoped_lanes,
-        );
-        project_compact_and_generated(&mut features, &projection, scoped_lanes);
+        )?;
+        project_compact_and_generated(&mut features, &projection, scoped_lanes)?;
         crate::resolved_features::operations::bind_extrusion_operations(
             &mut features,
             histories,
@@ -296,6 +298,8 @@ pub(crate) fn project_configuration_design_states(
             })
             .collect();
     }
+
+    Ok(())
 }
 
 /// Project edge operands carried only by supplemental config-object lanes into
@@ -437,7 +441,7 @@ pub(crate) fn project_configuration_sketch_states(
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     annotations: &mut cadmpeg_ir::Annotations,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -562,7 +566,7 @@ pub(crate) fn project_configuration_sketch_states(
             &mut features,
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
             &mut features,
             histories,
@@ -580,14 +584,14 @@ pub(crate) fn project_configuration_sketch_states(
             &features,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::dimensions::project_marker_dimensioned_circles(
             &mut ir.model.sketch_entities,
             &mut ir.model.sketches,
             &features,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::relation_geometry::project_relation_point_geometry(
             &mut ir.model.sketch_entities,
             &ir.model.sketches,
@@ -599,7 +603,7 @@ pub(crate) fn project_configuration_sketch_states(
             &features,
             &parameters,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
             &mut ir.model.sketch_entities,
             &ir.model.sketches,
@@ -654,7 +658,7 @@ pub(crate) fn project_configuration_sketch_states(
                 vertices: &ir.model.vertices,
                 points: &ir.model.points,
             },
-        );
+        )?;
         crate::resolved_features::holes::project_hole_axes(
             &mut features,
             &ir.model.sketch_entities,
@@ -722,6 +726,8 @@ pub(crate) fn project_configuration_sketch_states(
             }
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn inherit_configuration_shared_semantics(
@@ -952,11 +958,11 @@ fn configuration_feature_plane_frame(
         FeatureDefinition::DatumPrincipalPlane { plane } => {
             Some(configuration_principal_plane_frame(*plane))
         }
-        FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        } => valid_plane_frame(*normal, *u_axis).then_some((*origin, *normal, *u_axis)),
+        FeatureDefinition::DatumPlane { frame } => valid_plane_frame(
+            frame.normal(),
+            frame.u_axis(),
+        )
+        .then_some((frame.origin(), frame.normal(), frame.u_axis())),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(reference),
             distance,
@@ -965,12 +971,12 @@ fn configuration_feature_plane_frame(
                 let normal_length = normal.norm();
                 (normal_length.is_finite()
                     && normal_length > f64::EPSILON
-                    && distance.0.is_finite())
+                    && distance.get().is_finite())
                 .then_some((
                     Point3::new(
-                        origin.x + normal.x * distance.0 / normal_length,
-                        origin.y + normal.y * distance.0 / normal_length,
-                        origin.z + normal.z * distance.0 / normal_length,
+                        origin.x + normal.x * distance.get() / normal_length,
+                        origin.y + normal.y * distance.get() / normal_length,
+                        origin.z + normal.z * distance.get() / normal_length,
                     ),
                     normal,
                     u_axis,
@@ -992,11 +998,11 @@ fn configuration_reference_plane_frame(
         DatumPlaneReference::Feature(feature_id) => {
             configuration_feature_plane_frame(feature_id, features, visiting)
         }
-        DatumPlaneReference::ResolvedPlane {
-            origin,
-            normal,
-            u_axis,
-        } => valid_plane_frame(*normal, *u_axis).then_some((*origin, *normal, *u_axis)),
+        DatumPlaneReference::ResolvedPlane { frame } => valid_plane_frame(
+            frame.normal(),
+            frame.u_axis(),
+        )
+        .then_some((frame.origin(), frame.normal(), frame.u_axis())),
         DatumPlaneReference::Face(_) => None,
     }
 }
@@ -1030,14 +1036,11 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
                     reference: None, ..
                 } => None,
                 FeatureDefinition::DatumOffsetPlane {
-                    reference:
-                        Some(DatumPlaneReference::ResolvedPlane {
-                            origin,
-                            normal,
-                            u_axis,
-                        }),
+                    reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
                     ..
-                } if valid_plane_frame(*normal, *u_axis) => Some((*origin, *normal, *u_axis)),
+                } if valid_plane_frame(frame.normal(), frame.u_axis()) => {
+                    Some((frame.origin(), frame.normal(), frame.u_axis()))
+                }
                 _ => return None,
             };
             let base_frame = configuration_reference_plane_frame(
@@ -1171,16 +1174,20 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
         };
         let aligned = match (&**canonical, &*value) {
             (ParameterValue::Length(_), ParameterValue::Integer(integer)) => {
-                exact_integer_f64(*integer).map(|value| ParameterValue::Length(Length(value)))
+                exact_integer_f64(*integer)
+                    .and_then(Length::new)
+                    .map(ParameterValue::Length)
             }
             (ParameterValue::Length(_), ParameterValue::Real(real)) if real.is_finite() => {
-                Some(ParameterValue::Length(Length(*real)))
+                Length::new(*real).map(ParameterValue::Length)
             }
             (ParameterValue::Angle(_), ParameterValue::Integer(integer)) => {
-                exact_integer_f64(*integer).map(|value| ParameterValue::Angle(Angle(value)))
+                exact_integer_f64(*integer)
+                    .and_then(Angle::new)
+                    .map(ParameterValue::Angle)
             }
             (ParameterValue::Angle(_), ParameterValue::Real(real)) if real.is_finite() => {
-                Some(ParameterValue::Angle(Angle(*real)))
+                Angle::new(*real).map(ParameterValue::Angle)
             }
             (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer).map(ParameterValue::Real)
@@ -1191,7 +1198,9 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
             }
             // Configuration lanes can provisionally classify an untyped scalar
             // as a length. The canonical integer wins only when the values agree.
-            (ParameterValue::Integer(expected), ParameterValue::Length(Length(candidate))) => {
+            (ParameterValue::Integer(expected), ParameterValue::Length(candidate)) => {
+                let candidate = candidate.get();
+
                 exact_integer_f64(*expected)
                     .filter(|expected_value| {
                         (candidate - expected_value).abs()

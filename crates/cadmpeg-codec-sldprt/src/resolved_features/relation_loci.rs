@@ -195,7 +195,8 @@ pub(super) fn relation_constraint_is_inactive(
                 };
                 point_line(first, second).or_else(|| point_line(second, first))
             };
-            measured.is_some_and(|measured| !same_relation_dimension_length(measured, expected.0))
+            measured
+                .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
         }
         SketchConstraintDefinition::HorizontalDistance { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -209,7 +210,7 @@ pub(super) fn relation_constraint_is_inactive(
             ) else {
                 return false;
             };
-            !same_relation_dimension_length((second.u - first.u).abs(), expected.0)
+            !same_relation_dimension_length((second.u - first.u).abs(), expected.get())
         }
         SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -223,7 +224,7 @@ pub(super) fn relation_constraint_is_inactive(
             ) else {
                 return false;
             };
-            !same_relation_dimension_length((second.v - first.v).abs(), expected.0)
+            !same_relation_dimension_length((second.v - first.v).abs(), expected.get())
         }
         SketchConstraintDefinition::Distance { entities, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -244,7 +245,7 @@ pub(super) fn relation_constraint_is_inactive(
                     None => return false,
                 },
             )
-            .is_some_and(|measured| !same_relation_dimension_length(measured, expected.0))
+            .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
         }
         SketchConstraintDefinition::Angle { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) =
@@ -262,7 +263,7 @@ pub(super) fn relation_constraint_is_inactive(
                     None => return false,
                 },
             )
-            .is_some_and(|measured| !same_dimension_angle(measured, expected.0))
+            .is_some_and(|measured| !same_dimension_angle(measured, expected.get()))
         }
         SketchConstraintDefinition::Radius { entity: id, .. }
         | SketchConstraintDefinition::Diameter { entity: id, .. } => {
@@ -276,7 +277,7 @@ pub(super) fn relation_constraint_is_inactive(
             };
             let radius = match &entity.geometry {
                 SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-                    radius.0
+                    radius.get()
                 }
                 _ => return true,
             };
@@ -285,7 +286,7 @@ pub(super) fn relation_constraint_is_inactive(
             } else {
                 radius
             };
-            !same_dimension_length(measured, expected.0)
+            !same_dimension_length(measured, expected.get())
         }
         SketchConstraintDefinition::RepeatedRadius { entities, .. }
         | SketchConstraintDefinition::RepeatedDiameter { entities, .. } => {
@@ -305,7 +306,7 @@ pub(super) fn relation_constraint_is_inactive(
                     let entity = entity?;
                     match entity.geometry {
                         SketchGeometry::Circle { radius, .. }
-                        | SketchGeometry::Arc { radius, .. } => Some(radius.0),
+                        | SketchGeometry::Arc { radius, .. } => Some(radius.get()),
                         _ => None,
                     }
                 })
@@ -315,7 +316,7 @@ pub(super) fn relation_constraint_is_inactive(
             };
             !radii.into_iter().all(|radius| {
                 let measured = if diameter { radius * 2.0 } else { radius };
-                same_dimension_length(measured, expected.0)
+                same_dimension_length(measured, expected.get())
             })
         }
         _ => false,
@@ -538,7 +539,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let unique_partner = |known: &SketchEntityId| {
                 unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
                     line_line_distance(known, candidate).is_some_and(|measured| {
-                        same_relation_dimension_length(measured, expected.0)
+                        same_relation_dimension_length(measured, expected.get())
                     })
                 })
             };
@@ -714,15 +715,19 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 let second_point = profile_locus_point(&second, sketch_entities)?;
                 if !same_relation_dimension_length(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
-                    expected.0,
+                    expected.get(),
                 ) {
                     if dynamic {
                         return None;
                     }
-                    let horizontal =
-                        same_dimension_length((second_point.u - first_point.u).abs(), expected.0);
-                    let vertical =
-                        same_dimension_length((second_point.v - first_point.v).abs(), expected.0);
+                    let horizontal = same_dimension_length(
+                        (second_point.u - first_point.u).abs(),
+                        expected.get(),
+                    );
+                    let vertical = same_dimension_length(
+                        (second_point.v - first_point.v).abs(),
+                        expected.get(),
+                    );
                     let projected_distance_operands = relation
                         .operands
                         .iter()
@@ -820,7 +825,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 } else {
                     (second_point.v - first_point.v).abs()
                 };
-                if !same_relation_dimension_length(measured, expected.0) {
+                if !same_relation_dimension_length(measured, expected.get()) {
                     if dynamic {
                         return None;
                     }
@@ -884,7 +889,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let point_position = profile_locus_point(&point, sketch_entities)?;
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             if !point_line_distance_value(point_position, line_entity)
-                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
                     return None;
@@ -1015,7 +1020,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 .iter()
                 .find(|entity| entity.id() == &second)?;
             if !line_line_distance(first_line, second_line)
-                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
                     return None;
@@ -1084,7 +1089,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             } else {
                 line_line_angle(first_line, second_line)
             };
-            if !angle.is_some_and(|measured| same_dimension_angle(measured, expected.0)) {
+            if !angle.is_some_and(|measured| same_dimension_angle(measured, expected.get())) {
                 if dynamic {
                     return None;
                 }
@@ -1167,13 +1172,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     .geometry;
                 let radius = match geometry {
                     SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-                        radius.0
+                        radius.get()
                     }
                     _ => return None,
                 };
                 let expected_radius = match parameter.display {
-                    Some(cadmpeg_ir::features::DimensionDisplay::Radius) => expected.0,
-                    Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => expected.0 * 0.5,
+                    Some(cadmpeg_ir::features::DimensionDisplay::Radius) => expected.get(),
+                    Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => expected.get() * 0.5,
                     None => return None,
                 };
                 if !same_dimension_length(radius, expected_radius) && !authoritative {
@@ -1264,8 +1269,8 @@ fn repeated_dimensioned_circular_entities(
         return None;
     };
     let expected_radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     if !(expected_radius.is_finite() && expected_radius > 0.0) {
@@ -1280,7 +1285,7 @@ fn repeated_dimensioned_circular_entities(
         .filter_map(|entity| {
             let radius = match entity.geometry {
                 SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-                    radius.0
+                    radius.get()
                 }
                 _ => return None,
             };
@@ -1326,7 +1331,7 @@ fn unique_profile_measured_loci_pair(
     let mut candidates = Vec::new();
     for (first_index, (first_point, first)) in loci.iter().enumerate() {
         for (second_point, second) in &loci[first_index + 1..] {
-            if same_dimension_length(measure(first_point, second_point), distance.0) {
+            if same_dimension_length(measure(first_point, second_point), distance.get()) {
                 candidates.push((first.clone(), second.clone()));
             }
         }
@@ -1373,7 +1378,7 @@ fn unique_profile_measured_locus(
         .into_iter()
         .filter_map(|(candidate_point, candidate)| {
             (candidate != *known
-                && same_dimension_length(measure(&known_point, &candidate_point), distance.0))
+                && same_dimension_length(measure(&known_point, &candidate_point), distance.get()))
             .then_some(candidate)
         })
         .collect::<Vec<_>>();
@@ -1440,7 +1445,7 @@ pub(super) fn doubled_profile_distance_loci(
         (center_v - line_v).abs() * NATIVE_TO_IR * 2.0,
     ]
     .into_iter()
-    .any(|distance| same_dimension_length(distance, expected.0));
+    .any(|distance| same_dimension_length(distance, expected.get()));
     if !has_half_dimension {
         return None;
     }
@@ -1453,12 +1458,14 @@ pub(super) fn doubled_profile_distance_loci(
             let SketchGeometry::Line { start, end } = entity.geometry else {
                 return None;
             };
-            same_dimension_length((end.u - start.u).hypot(end.v - start.v), expected.0).then(|| {
-                (
-                    SketchLocus::Start(entity.id().clone()),
-                    SketchLocus::End(entity.id().clone()),
-                )
-            })
+            same_dimension_length((end.u - start.u).hypot(end.v - start.v), expected.get()).then(
+                || {
+                    (
+                        SketchLocus::Start(entity.id().clone()),
+                        SketchLocus::End(entity.id().clone()),
+                    )
+                },
+            )
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
@@ -1646,7 +1653,7 @@ pub(super) fn unique_profile_line_distance_entity(
     };
     unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
         line_line_distance(known, candidate)
-            .is_some_and(|measured| same_dimension_length(measured, distance.0))
+            .is_some_and(|measured| same_dimension_length(measured, distance.get()))
     })
 }
 
@@ -1673,7 +1680,7 @@ fn unique_marker_line_distance_entity(
             .filter(|candidate| sketch_entity_contains_point(candidate, marker_point))
             .filter(|candidate| {
                 line_line_distance(known, candidate)
-                    .is_some_and(|measured| same_dimension_length(measured, distance.0))
+                    .is_some_and(|measured| same_dimension_length(measured, distance.get()))
             })
             .map(|candidate| candidate.id().clone())
             .collect(),
@@ -1690,7 +1697,7 @@ pub(super) fn unique_profile_line_distance_pair(
     };
     unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
         line_line_distance(first, second)
-            .is_some_and(|measured| same_dimension_length(measured, distance.0))
+            .is_some_and(|measured| same_dimension_length(measured, distance.get()))
     })
 }
 
@@ -1758,7 +1765,7 @@ pub(super) fn unique_profile_line_angle_entity(
     };
     unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
         line_line_angle(known, candidate)
-            .is_some_and(|measured| same_dimension_angle(measured, angle.0))
+            .is_some_and(|measured| same_dimension_angle(measured, angle.get()))
     })
 }
 
@@ -1803,7 +1810,7 @@ fn unique_dynamic_marker_line_angle_pair(
                 .iter()
                 .find(|entity| entity.id() == second)?;
             if unoriented_line_line_angle(first_entity, second_entity)
-                .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+                .is_some_and(|measured| same_dimension_angle(measured, expected.get()))
             {
                 pairs.push((first.clone(), second.clone()));
             }
@@ -1823,7 +1830,7 @@ fn unique_dynamic_profile_line_angle_entity(
     };
     unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
         unoriented_line_line_angle(known, candidate)
-            .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+            .is_some_and(|measured| same_dimension_angle(measured, expected.get()))
     })
 }
 
@@ -1837,7 +1844,7 @@ fn unique_dynamic_roster_line_angle_pair(
     };
     unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
         unoriented_line_line_angle(first, second)
-            .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+            .is_some_and(|measured| same_dimension_angle(measured, expected.get()))
     })
 }
 
@@ -1882,7 +1889,7 @@ fn unique_dynamic_marker_point_pair(
     };
     if let (Some(first), Some(second)) = (&known_first, &known_second) {
         if measure(first, second)
-            .is_some_and(|value| same_relation_dimension_length(value, expected.0))
+            .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
         {
             return Some((first.clone(), second.clone()));
         }
@@ -1914,7 +1921,7 @@ fn unique_dynamic_marker_point_pair(
                 continue;
             }
             if measure(first, second)
-                .is_some_and(|value| same_relation_dimension_length(value, expected.0))
+                .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
             {
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
@@ -2001,7 +2008,7 @@ fn unique_dynamic_direct_point_roster_pair(
     for (first_index, first) in loci.iter().enumerate() {
         for second in &loci[first_index + 1..] {
             if measure(first, second)
-                .is_some_and(|value| same_relation_dimension_length(value, expected.0))
+                .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
             {
                 pairs.push((first.clone(), second.clone()));
             }
@@ -2073,7 +2080,7 @@ fn unique_dynamic_roster_point_line_pair(
             let position = profile_locus_point(&point, sketch_entities)?;
             candidates.extend(lines.iter().filter_map(|line| {
                 point_line_distance_value(position, line)
-                    .filter(|measured| same_dimension_length(*measured, distance.0))
+                    .filter(|measured| same_dimension_length(*measured, distance.get()))
                     .map(|_| (point.clone(), line.id().clone()))
             }));
         }
@@ -2082,7 +2089,7 @@ fn unique_dynamic_roster_point_line_pair(
             candidates.extend(points.into_iter().filter_map(|point| {
                 let position = profile_locus_point(&point, sketch_entities)?;
                 point_line_distance_value(position, line_entity)
-                    .filter(|measured| same_dimension_length(*measured, distance.0))
+                    .filter(|measured| same_dimension_length(*measured, distance.get()))
                     .map(|_| (point, line.clone()))
             }));
         }
@@ -2090,7 +2097,7 @@ fn unique_dynamic_roster_point_line_pair(
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             let position = profile_locus_point(&point, sketch_entities)?;
             if point_line_distance_value(position, line_entity)
-                .is_some_and(|measured| same_dimension_length(measured, distance.0))
+                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
             {
                 candidates.push((point, line));
             }
@@ -2141,7 +2148,7 @@ fn unique_roster_point_line_pair(
         };
         for line in &lines {
             if point_line_distance_value(point, line)
-                .is_some_and(|measured| same_dimension_length(measured, distance.0))
+                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
             {
                 candidates.push((locus.clone(), line.id().clone()));
             }
@@ -2204,7 +2211,7 @@ fn unique_dynamic_marker_point_line_pair(
         for line in &line_candidates {
             let line_entity = sketch_entities.iter().find(|entity| entity.id() == line)?;
             if point_line_distance_value(point_position, line_entity)
-                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 pairs.push((point.clone(), line.clone()));
             }
@@ -2265,7 +2272,7 @@ fn unique_dynamic_marker_line_distance_pair(
                 .iter()
                 .find(|entity| entity.id() == second)?;
             if line_line_distance(first_entity, second_entity)
-                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort();
@@ -2525,7 +2532,7 @@ pub(super) fn unique_profile_line_angle_pair(
     };
     unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
         line_line_angle(first, second)
-            .is_some_and(|measured| same_dimension_angle(measured, angle.0))
+            .is_some_and(|measured| same_dimension_angle(measured, angle.get()))
     })
 }
 
@@ -2599,7 +2606,7 @@ pub(super) fn unique_profile_point_line_entity(
         .filter(|entity| entity.sketch == *sketch)
         .filter_map(|line| {
             point_line_distance_value(point, line)
-                .filter(|measured| same_dimension_length(*measured, distance.0))
+                .filter(|measured| same_dimension_length(*measured, distance.get()))
                 .map(|_| line.id().clone())
         })
         .collect::<Vec<_>>();
@@ -2627,7 +2634,7 @@ pub(super) fn unique_profile_line_point_locus(
         .flat_map(sketch_entity_loci)
         .filter_map(|(point, locus)| {
             point_line_distance_value(point, line)
-                .filter(|measured| same_dimension_length(*measured, distance.0))
+                .filter(|measured| same_dimension_length(*measured, distance.get()))
                 .map(|_| locus)
         })
         .collect::<Vec<_>>();
@@ -2661,7 +2668,7 @@ pub(super) fn unique_profile_point_line_pair(
     for (point, locus) in loci {
         for line in &lines {
             if point_line_distance_value(point, line)
-                .is_some_and(|measured| same_dimension_length(measured, distance.0))
+                .is_some_and(|measured| same_dimension_length(measured, distance.get()))
             {
                 candidates.push((locus.clone(), line.id().clone()));
             }
@@ -2955,8 +2962,8 @@ fn marker_center_dimensioned_entity(
         return None;
     };
     let expected_radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     let centers = sketch_entities
@@ -2979,7 +2986,7 @@ fn marker_center_dimensioned_entity(
         .filter_map(|entity| {
             let (candidate_center, radius) = match entity.geometry {
                 SketchGeometry::Circle { center, radius }
-                | SketchGeometry::Arc { center, radius, .. } => (center, radius.0),
+                | SketchGeometry::Arc { center, radius, .. } => (center, radius.get()),
                 _ => return None,
             };
             (quantize(
@@ -3007,8 +3014,8 @@ fn unique_dimensioned_circle_entity(
         return None;
     };
     let expected_radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     let mut matches = sketch_entities.iter().filter_map(|entity| {
@@ -3016,7 +3023,9 @@ fn unique_dimensioned_circle_entity(
             return None;
         }
         let radius = match &entity.geometry {
-            SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
+            SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+                radius.get()
+            }
             _ => return None,
         };
         same_dimension_length(radius, expected_radius).then_some(entity.id().clone())

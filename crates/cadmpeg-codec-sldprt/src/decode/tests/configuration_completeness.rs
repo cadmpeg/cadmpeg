@@ -4,7 +4,7 @@
 
 use super::super::*;
 use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
+    BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
     DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
     ParameterId, ParameterValue, PatternKind, PatternSeed,
@@ -40,11 +40,14 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
             anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
                 tool: faces,
                 pull: cadmpeg_ir::features::DraftPull {
-                    direction: Vector3::new(1.0, 0.0, 0.0),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        1.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
                     plane: None,
                 },
             },
-            angle: Some(Angle(0.1)),
+            angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
             outward: None,
         },
         native_ref: None,
@@ -70,7 +73,8 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
             native: "native".into(),
         },
         pull: Some(cadmpeg_ir::features::DraftPull {
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
             plane: None,
         }),
     };
@@ -254,14 +258,16 @@ fn active_configuration_inherits_late_feature_resolutions() {
             face: None,
             direction: None,
             placements: Some(vec![HolePlacement::Axis {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             }]),
             construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,
-            diameter: Some(Length(4.0)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
             extent: Some(LinearTermination::Blind {
-                length: Length(12.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
             }),
             bottom: Some(HoleBottom::Flat),
             taper_angle: None,
@@ -336,13 +342,13 @@ fn active_configuration_inherits_late_feature_resolutions() {
         &ir.model.configurations[0].feature_states[&hole_id].definition,
         FeatureDefinition::Hole {
             placements,
-            diameter: Some(Length(4.0)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::Blind {
-                length: Length(12.0)
+                length: actual_length
             }),
             bottom: Some(HoleBottom::Flat),
             ..
-        } if placements.as_ref().is_some_and(|placements| placements.len() == 1)
+        } if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 4.0 && actual_length.get() == 12.0
     ));
 
     let FeatureDefinition::Hole {
@@ -360,7 +366,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         unreachable!();
     };
     *placements = None;
-    *diameter = Some(Length(8.0));
+    *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
     *extent = Some(LinearTermination::ThroughAll);
     *bottom = None;
     sync_active_configuration_resolutions(&mut ir);
@@ -368,11 +374,11 @@ fn active_configuration_inherits_late_feature_resolutions() {
         &ir.model.configurations[0].feature_states[&hole_id].definition,
         FeatureDefinition::Hole {
             placements,
-            diameter: Some(Length(8.0)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             ..
-        } if placements.as_ref().is_some_and(|placements| placements.len() == 1)
+        } if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 8.0
     ));
 }
 
@@ -490,7 +496,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ordinal: 0,
         name: "D1".into(),
         expression: "12mm".into(),
-        value: Some(ParameterValue::Length(Length(12.0))),
+        value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
         dependencies: Vec::new(),
         display: None,
         properties: BTreeMap::new(),
@@ -519,7 +525,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
-        ParameterValue::Length(Length(12.0))
+        ParameterValue::Length(Length::new(12.0).unwrap())
     );
     assert_eq!(
         ir.model.configurations[0].feature_states[&feature_id],
@@ -536,9 +542,10 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     assert!(ir.model.configurations[1].parameter_values.is_empty());
     assert!(ir.model.configurations[1].feature_states.is_empty());
 
-    ir.model.configurations[0]
-        .parameter_values
-        .insert(parameter_id.clone(), ParameterValue::Length(Length(25.0)));
+    ir.model.configurations[0].parameter_values.insert(
+        parameter_id.clone(),
+        ParameterValue::Length(Length::new(25.0).unwrap()),
+    );
     ir.model.configurations[0]
         .feature_states
         .get_mut(&feature_id)
@@ -549,7 +556,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     snapshot_active_configuration(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
-        ParameterValue::Length(Length(25.0))
+        ParameterValue::Length(Length::new(25.0).unwrap())
     );
     assert!(!ir.model.configurations[0].feature_states[&feature_id]
         .evaluation
@@ -578,17 +585,17 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     ir.model.parameters = vec![
         parameter(
             independent.clone(),
-            ParameterValue::Length(Length(12.0)),
+            ParameterValue::Length(Length::new(12.0).unwrap()),
             Vec::new(),
         ),
         parameter(
             overridden.clone(),
-            ParameterValue::Length(Length(20.0)),
+            ParameterValue::Length(Length::new(20.0).unwrap()),
             Vec::new(),
         ),
         parameter(
             dependent.clone(),
-            ParameterValue::Length(Length(24.0)),
+            ParameterValue::Length(Length::new(24.0).unwrap()),
             vec![independent.clone()],
         ),
     ];
@@ -609,7 +616,10 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     ir.model.configurations = vec![
         configuration(
             "resolved",
-            BTreeMap::from([(overridden.clone(), ParameterValue::Length(Length(25.0)))]),
+            BTreeMap::from([(
+                overridden.clone(),
+                ParameterValue::Length(Length::new(25.0).unwrap()),
+            )]),
         ),
         configuration("unresolved", BTreeMap::new()),
     ];
@@ -619,8 +629,14 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     assert_eq!(
         ir.model.configurations[0].parameter_values,
         BTreeMap::from([
-            (independent, ParameterValue::Length(Length(12.0))),
-            (overridden, ParameterValue::Length(Length(25.0))),
+            (
+                independent,
+                ParameterValue::Length(Length::new(12.0).unwrap())
+            ),
+            (
+                overridden,
+                ParameterValue::Length(Length::new(25.0).unwrap())
+            ),
         ])
     );
     assert!(!ir.model.configurations[0]

@@ -578,7 +578,7 @@ fn validate_generated_marker_constraint(
         SketchConstraintDefinition::Vertical { entity } => (entity, Some(true)),
         SketchConstraintDefinition::Fixed { entity } => (entity, None),
         SketchConstraintDefinition::ArcAngle { entity, angle } => {
-            if arc_angle_relation_kind(angle.0).is_none() {
+            if arc_angle_relation_kind(angle.get()).is_none() {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "source-less SLDPRT arc-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
@@ -587,7 +587,7 @@ fn validate_generated_marker_constraint(
             (entity, None)
         }
         SketchConstraintDefinition::EllipseAngle { entity, angle } => {
-            if ellipse_angle_relation_kind(angle.0).is_none() {
+            if ellipse_angle_relation_kind(angle.get()).is_none() {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "source-less SLDPRT ellipse-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
@@ -664,8 +664,8 @@ fn validate_solved_dimension(
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let expected = match parameter.value {
-        Some(cadmpeg_ir::features::ParameterValue::Length(value)) => value.0,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.0,
+        Some(cadmpeg_ir::features::ParameterValue::Length(value)) => value.get(),
+        Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.get(),
         _ => unreachable!("dimension parameter compatibility was checked by the caller"),
     };
     let mut measured = match &constraint.definition {
@@ -756,7 +756,7 @@ fn validate_solved_dimension(
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
             let radius = match &entity.geometry {
                 SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-                    radius.0
+                    radius.get()
                 }
                 _ => {
                     return Err(cadmpeg_core::CodecError::NotImplemented(format!(
@@ -1074,7 +1074,7 @@ pub(super) fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) ->
 fn circular_center_radius(geometry: &SketchGeometry) -> Option<(Point2, f64)> {
     match geometry {
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            Some((*center, radius.0))
+            Some((*center, radius.get()))
         }
         _ => None,
     }
@@ -1119,7 +1119,7 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
             | SketchGeometry::Arc { radius: first, .. },
             SketchGeometry::Circle { radius: second, .. }
             | SketchGeometry::Arc { radius: second, .. },
-        ) => close(first.0, second.0),
+        ) => close(first.get(), second.get()),
         (
             SketchGeometry::Ellipse {
                 major_radius: first_major,
@@ -1131,7 +1131,10 @@ fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<
                 minor_radius: second_minor,
                 ..
             },
-        ) => close(first_major.0, second_major.0) && close(first_minor.0, second_minor.0),
+        ) => {
+            close(first_major.get(), second_major.get())
+                && close(first_minor.get(), second_minor.get())
+        }
         _ => return None,
     })
 }

@@ -8,7 +8,7 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
+    BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
     Feature, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterId, ParameterValue,
     ProfileRef, RadiusSpec,
 };
@@ -71,7 +71,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         name: "width".into(),
         expression: "5".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -145,7 +145,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
             groups: vec![cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant {
-                    radius: Length(1.0),
+                    radius: Length::new(1.0).unwrap(),
                 },
                 tangency_weight: None,
             }],
@@ -567,13 +567,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         entities[3].geometry,
         SketchGeometry::Arc {
             center,
-            radius: Length(radius),
-            start_angle: Angle(start_angle),
-            end_angle: Angle(end_angle),
+            radius,
+            start_angle,
+            end_angle,
         } if center == Point2::new(0.0, 0.0)
-            && radius == 1.0
-            && start_angle == std::f64::consts::FRAC_PI_2
-            && end_angle == std::f64::consts::PI
+            && radius.get() == 1.0
+            && start_angle.get() == std::f64::consts::FRAC_PI_2
+            && end_angle.get() == std::f64::consts::PI
     ));
     assert_eq!(sketches[0].profiles.len(), 1);
     assert_eq!(sketches[0].profiles[0].len(), 3);
@@ -780,9 +780,9 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
             entity.geometry,
             SketchGeometry::Arc {
                 center,
-                radius: Length(2.0),
+                radius: actual_radius,
                 ..
-            } if center == Point2::new(0.0, 0.0)
+            } if (center == Point2::new(0.0, 0.0)) && actual_radius.get() == 2.0
         ));
     }
     for entity in &mut entities[3..] {
@@ -821,7 +821,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
             entities[0].sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(2.0),
+                radius: Length::new(2.0).unwrap(),
             },
         )
         .with_native_ref(Some("circle".into())),
@@ -873,7 +873,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         name: format!("D{}", ordinal + 1),
         ordinal,
         expression: diameter.to_string(),
-        value: Some(ParameterValue::Length(Length(diameter))),
+        value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
         display: Some(DimensionDisplay::Diameter),
         properties: BTreeMap::new(),
         pmi: None,
@@ -961,7 +961,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         std::slice::from_ref(&feature),
         &[parameter(0, 10.0), parameter(1, 16.0)],
         std::slice::from_ref(&invalid_lane),
-    );
+    )
+    .unwrap();
     assert_eq!(invalid_entities.len(), 3);
     assert!(invalid_sketches[0].profiles.is_empty());
 
@@ -971,7 +972,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         std::slice::from_ref(&feature),
         &[parameter(0, 10.0), parameter(1, 16.0)],
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert_eq!(entities.len(), 4);
     assert_eq!(sketches[0].profiles.len(), 2);
@@ -979,15 +981,15 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         entity.geometry,
         SketchGeometry::Circle {
             center,
-            radius: Length(5.0)
-        } if center == Point2::new(0.0, 0.0)
+            radius: actual_radius
+        } if (center == Point2::new(0.0, 0.0)) && actual_radius.get() == 5.0
     )));
     assert!(entities.iter().any(|entity| matches!(
         entity.geometry,
         SketchGeometry::Circle {
             center,
-            radius: Length(8.0)
-        } if center == Point2::new(0.0, 0.0)
+            radius: actual_radius
+        } if (center == Point2::new(0.0, 0.0)) && actual_radius.get() == 8.0
     )));
 }
 
@@ -1080,7 +1082,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length(1.0),
+                            length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
                         },
                         draft: None,
                     },

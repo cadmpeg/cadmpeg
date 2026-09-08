@@ -221,8 +221,8 @@ fn declared_entity_handle_circular_carriers(
                 continue;
             };
             let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
@@ -275,7 +275,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
                         ..
                     } => {
                         quantize(*existing, QUANTUM) == center
-                            && same_dimension_length(existing_radius.0, *radius)
+                            && same_dimension_length(existing_radius.get(), *radius)
                     }
                     _ => false,
                 }
@@ -1057,7 +1057,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         point.0 as f64 * QUANTUM,
                                         point.1 as f64 * QUANTUM,
                                     ),
-                                    radius: Length(radius * NATIVE_TO_IR),
+                                    radius: Length::new(radius * NATIVE_TO_IR)?,
                                 }
                             } else {
                                 let endpoints = output_curve_endpoint_markers(
@@ -1201,7 +1201,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         point.0 as f64 * QUANTUM,
                                         point.1 as f64 * QUANTUM,
                                     ),
-                                    radius: Length(radius * NATIVE_TO_IR),
+                                    radius: Length::new(radius * NATIVE_TO_IR)?,
                                 }
                             } else if let (Some(point), Some(radius)) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
@@ -1220,7 +1220,7 @@ pub(crate) fn project_marker_backed_sketches(
                             ) {
                                 SketchGeometry::Circle {
                                     center: point,
-                                    radius: Length(radius * NATIVE_TO_IR),
+                                    radius: Length::new(radius * NATIVE_TO_IR)?,
                                 }
                             } else if let (Some(center), Some((major_axis, major, minor))) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
@@ -1236,9 +1236,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 ))?;
                                 SketchGeometry::Ellipse {
                                     center,
-                                    major_angle: Angle((axis.1 as f64).atan2(axis.0 as f64)),
-                                    major_radius: Length(major * NATIVE_TO_IR),
-                                    minor_radius: Length(minor * NATIVE_TO_IR),
+                                    major_angle: Angle::new((axis.1 as f64).atan2(axis.0 as f64))?,
+                                    major_radius: Length::new(major * NATIVE_TO_IR)?,
+                                    minor_radius: Length::new(minor * NATIVE_TO_IR)?,
                                     bounds: None,
                                 }
                             } else if let Some([center, start, end]) =
@@ -2129,7 +2129,7 @@ fn transform_sketch_block_geometry(
 ) -> Option<SketchGeometry> {
     let point = |point| transform_sketch_block_point(point, transform, frame);
     let direction = |direction| transform_sketch_block_direction(direction, transform, frame);
-    let angle = |value: Angle| Angle(value.0 + rotation);
+    let angle = |value: Angle| Angle::new(value.get() + rotation);
     Some(match geometry {
         SketchGeometry::Point { position } => SketchGeometry::Point {
             position: point(*position)?,
@@ -2157,8 +2157,8 @@ fn transform_sketch_block_geometry(
         } => SketchGeometry::Arc {
             center: point(*center)?,
             radius: *radius,
-            start_angle: angle(*start_angle),
-            end_angle: angle(*end_angle),
+            start_angle: angle(*start_angle)?,
+            end_angle: angle(*end_angle)?,
         },
         SketchGeometry::Ellipse {
             center,
@@ -2168,10 +2168,13 @@ fn transform_sketch_block_geometry(
             bounds,
         } => SketchGeometry::Ellipse {
             center: point(*center)?,
-            major_angle: angle(*major_angle),
+            major_angle: angle(*major_angle)?,
             major_radius: *major_radius,
             minor_radius: *minor_radius,
-            bounds: bounds.map(|[start, end]| [angle(start), angle(end)]),
+            bounds: match bounds {
+                Some([start, end]) => Some([angle(*start)?, angle(*end)?]),
+                None => None,
+            },
         },
         SketchGeometry::Hyperbola {
             center,
@@ -2181,7 +2184,7 @@ fn transform_sketch_block_geometry(
             bounds,
         } => SketchGeometry::Hyperbola {
             center: point(*center)?,
-            major_angle: angle(*major_angle),
+            major_angle: angle(*major_angle)?,
             major_radius: *major_radius,
             minor_radius: *minor_radius,
             bounds: *bounds,
@@ -2193,7 +2196,7 @@ fn transform_sketch_block_geometry(
             bounds,
         } => SketchGeometry::Parabola {
             vertex: point(*vertex)?,
-            axis_angle: angle(*axis_angle),
+            axis_angle: angle(*axis_angle)?,
             focal_length: *focal_length,
             bounds: *bounds,
         },
@@ -2228,7 +2231,7 @@ fn transform_sketch_block_geometry(
             placement: match placement {
                 Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
                     anchor: point(placement.anchor)?,
-                    rotation: angle(placement.rotation),
+                    rotation: angle(placement.rotation)?,
                 }),
                 None => None,
             },
@@ -2500,7 +2503,7 @@ fn legacy_config_hex_sketch(
             sketch.id.clone(),
             SketchGeometry::Circle {
                 center,
-                radius: Length(circle_radius),
+                radius: Length::new(circle_radius)?,
             },
         )
         .with_native_ref(Some(circle.id.clone()))
@@ -2512,7 +2515,7 @@ fn legacy_config_hex_sketch(
             sketch.id.clone(),
             SketchGeometry::Circle {
                 center: construction_center,
-                radius: Length(construction_radius),
+                radius: Length::new(construction_radius)?,
             },
         )
         .with_construction(true)
@@ -3196,7 +3199,7 @@ mod detached_legacy_sketch_tests {
                 block_sketch_id.clone(),
                 SketchGeometry::Circle {
                     center: Point2::new(1.0, 2.0),
-                    radius: Length(3.0),
+                    radius: Length::new(3.0).unwrap(),
                 },
             )
             .with_native_ref(Some("circle".into())),
@@ -3265,8 +3268,8 @@ mod detached_legacy_sketch_tests {
         assert_eq!(
             circles,
             [
-                (Point2::new(1.0, 2.0), Length(3.0)),
-                (Point2::new(3.0, 1.0), Length(3.0)),
+                (Point2::new(1.0, 2.0), Length::new(3.0).unwrap()),
+                (Point2::new(3.0, 1.0), Length::new(3.0).unwrap()),
             ]
         );
         let lines = assembled

@@ -1073,16 +1073,18 @@ fn project_extrusion(
         direction = direction.scale(-1.0);
     }
     let length = length_parameter(source, 4, index)?;
-    let taper = angle_parameter(source, 5, index)?;
+    let taper = cadmpeg_ir::features::SlopeAngle::new(angle_parameter(source, 5, index)?.get())?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if length.0 > 0.0 => LinearTermination::Blind { length },
+        1 if length.get() > 0.0 => LinearTermination::Blind {
+            length: cadmpeg_ir::features::NonZeroLength::new(length.get())?,
+        },
         4 => LinearTermination::ThroughNext,
         5 => LinearTermination::ThroughAll,
         _ => return None,
     };
     let side = ExtrudeSide {
         termination,
-        draft: (taper.0 != 0.0).then_some(taper),
+        draft: (taper.get() != 0.0).then_some(taper),
     };
     let extent = if boolean(source, 7, index)? {
         ExtrudeExtent::Symmetric { side }
@@ -1107,7 +1109,7 @@ fn project_extrusion(
                 selections,
             },
             direction: ExtrudeDirection::Explicit {
-                vector: direction,
+                vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 source: Some(ExtrusionDirectionSource::Custom),
             },
             start: ExtrudeStart::ProfilePlane,
@@ -1271,27 +1273,29 @@ fn project_hole(
     let head_angle = angle_parameter(source, 5, index)?;
     let point_angle = angle_parameter(source, 6, index)?;
     let kind = match hole_form {
-        0 if point_angle.0 == 0.0 => HoleKind::Simple,
+        0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: point_angle,
+            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(point_angle.get())?,
         },
         1 => HoleKind::Countersink {
-            diameter: head_diameter,
-            angle: head_angle,
+            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
+            angle: cadmpeg_ir::features::InteriorAngle::new(head_angle.get())?,
         },
-        2 if point_angle.0 == 0.0 => HoleKind::Counterbore {
-            diameter: head_diameter,
-            depth: head_depth,
+        2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
+            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
+            depth: cadmpeg_ir::features::PositiveLength::new(head_depth.get())?,
         },
         2 => HoleKind::CounterboreDrilled {
-            diameter: head_diameter,
-            depth: head_depth,
-            drill_point_angle: point_angle,
+            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
+            depth: cadmpeg_ir::features::PositiveLength::new(head_depth.get())?,
+            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(point_angle.get())?,
         },
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if depth.0 > 0.0 => LinearTermination::Blind { length: depth },
+        1 if depth.get() > 0.0 => LinearTermination::Blind {
+            length: cadmpeg_ir::features::NonZeroLength::new(depth.get())?,
+        },
         4 => LinearTermination::ThroughNext,
         5 => LinearTermination::ThroughAll,
         _ => return None,
@@ -1349,19 +1353,19 @@ fn project_hole(
                 face: None,
                 direction: None,
                 placements: Some(vec![HolePlacement::Directed {
-                    position: Point3::new(
+                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                         transform.matrix[0][3] * 10.0,
                         transform.matrix[1][3] * 10.0,
                         transform.matrix[2][3] * 10.0,
-                    ),
-                    direction,
+                    ))?,
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 }]),
                 construction: cadmpeg_ir::features::HoleConstruction::Form {
                     kind,
                     specification: None,
                 },
                 exit_kind: None,
-                diameter: Some(diameter),
+                diameter: Some(cadmpeg_ir::features::PositiveLength::new(diameter.get())?),
                 extent: Some(extent),
                 bottom: None,
                 taper_angle: None,
@@ -1532,7 +1536,9 @@ fn length_parameter(
 fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Length> {
     let parameter = index.parameters.get(&(token, reference.checked_sub(1)?))?;
     match index.parameter_values.get(parameter.id().as_str())? {
-        ParameterValue::Length(value) if value.0.is_finite() && value.0 >= 0.0 => Some(*value),
+        ParameterValue::Length(value) if value.get().is_finite() && value.get() >= 0.0 => {
+            Some(*value)
+        }
         _ => None,
     }
 }
@@ -1548,7 +1554,7 @@ fn angle_parameter(
         reference.index.checked_sub(1)?,
     ))?;
     match index.parameter_values.get(parameter.id().as_str())? {
-        ParameterValue::Angle(value) if value.0.is_finite() => Some(*value),
+        ParameterValue::Angle(value) if value.get().is_finite() => Some(*value),
         _ => None,
     }
 }
@@ -2003,7 +2009,10 @@ mod tests {
     #[test]
     fn projects_generated_fillet_and_chamfer() {
         let raw_radius = raw_parameter(20);
-        let neutral_radius = neutral_parameter(&raw_radius, ParameterValue::Length(Length(2.5)));
+        let neutral_radius = neutral_parameter(
+            &raw_radius,
+            ParameterValue::Length(Length::new(2.5).unwrap()),
+        );
         let fillet_properties = vec![
             test_property(
                 1,
@@ -2094,13 +2103,15 @@ mod tests {
         assert!(matches!(
             projected.definition,
             FeatureDefinition::Fillet { groups }
-                if matches!(groups[0].radius, RadiusSpec::Constant { radius: Length(2.5) })
+                if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
         ));
         assert_eq!(result.bodies(), vec![fillet_properties[8].id()]);
 
         let raw_distance = raw_parameter(40);
-        let neutral_distance =
-            neutral_parameter(&raw_distance, ParameterValue::Length(Length(1.25)));
+        let neutral_distance = neutral_parameter(
+            &raw_distance,
+            ParameterValue::Length(Length::new(1.25).unwrap()),
+        );
         let chamfer_properties = vec![
             test_property(
                 31,
@@ -2170,7 +2181,7 @@ mod tests {
             FeatureDefinition::Chamfer {
                 groups,
                 flip_direction: true
-            } if matches!(groups[0].spec, ChamferSpec::Distance { distance: Length(1.25) })
+            } if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
         ));
     }
 
@@ -2179,8 +2190,11 @@ mod tests {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![
-            neutral_parameter(&raw_length, ParameterValue::Length(Length(12.0))),
-            neutral_parameter(&raw_taper, ParameterValue::Angle(Angle(0.1))),
+            neutral_parameter(
+                &raw_length,
+                ParameterValue::Length(Length::new(12.0).unwrap()),
+            ),
+            neutral_parameter(&raw_taper, ParameterValue::Angle(Angle::new(0.1).unwrap())),
         ];
         let raw_sketch = Located::new(
             crate::sketch::PmDcSketchPayload {
@@ -2337,21 +2351,21 @@ mod tests {
             projected.definition,
             FeatureDefinition::Extrude {
                 direction: ExtrudeDirection::Explicit {
-                    vector: Vector3 { z: -1.0, .. },
+                    vector: geometry_1,
                     ..
                 },
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length(12.0)
+                            length: actual_length
                         },
-                        draft: Some(Angle(0.1)),
+                        draft: Some(actual_draft),
                         ..
                     }
                 },
                 op: BooleanOp::NewBody,
                 ..
-            }
+            } if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
     }
 
@@ -2359,12 +2373,12 @@ mod tests {
     fn projects_generated_hole() {
         let raw_parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
         let neutral_parameters = [
-            ParameterValue::Length(Length(5.0)),
-            ParameterValue::Length(Length(20.0)),
-            ParameterValue::Length(Length(9.0)),
-            ParameterValue::Length(Length(3.0)),
-            ParameterValue::Angle(Angle(1.5)),
-            ParameterValue::Angle(Angle(2.0)),
+            ParameterValue::Length(Length::new(5.0).unwrap()),
+            ParameterValue::Length(Length::new(20.0).unwrap()),
+            ParameterValue::Length(Length::new(9.0).unwrap()),
+            ParameterValue::Length(Length::new(3.0).unwrap()),
+            ParameterValue::Angle(Angle::new(1.5).unwrap()),
+            ParameterValue::Angle(Angle::new(2.0).unwrap()),
         ]
         .into_iter()
         .zip(&raw_parameters)
@@ -2485,22 +2499,22 @@ mod tests {
                 placements,
                 construction: cadmpeg_ir::features::HoleConstruction::Form {
                     kind: HoleKind::CounterboreDrilled {
-                        diameter: Length(9.0),
-                        depth: Length(3.0),
-                        drill_point_angle: Angle(2.0)
+                        diameter: actual_diameter,
+                        depth: actual_depth,
+                        drill_point_angle: actual_drill_point_angle
                     },
                     ..
                 },
-                diameter: Some(Length(5.0)),
+                diameter: Some(actual_diameter_2),
                 extent: Some(LinearTermination::ThroughAll),
                 ..
-            } if matches!(
+            } if (matches!(
                 placements.as_deref(),
                 Some([HolePlacement::Directed {
-                    position: Point3 { x: 10.0, y: 20.0, z: 30.0 },
-                    direction: Vector3 { z: -1.0, .. }
+                    position: geometry_1,
+                    direction: geometry_2
                 }])
-            )
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0
         ));
     }
 

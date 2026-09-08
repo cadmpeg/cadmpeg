@@ -364,7 +364,7 @@ pub(super) fn draft_operand_candidates(
 mod tests {
     use super::*;
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
-    use cadmpeg_ir::features::{Angle, FaceSelection, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
 
     fn component(instance: u16, source: u32, identity: u32, local_id: u32) -> Vec<u8> {
@@ -655,7 +655,7 @@ mod tests {
                     plane: FaceSelection::Unresolved,
                     pull: None,
                 },
-                angle: Some(Angle(0.1)),
+                angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
                 outward: None,
             },
             native_ref: Some("draft".into()),
@@ -672,19 +672,20 @@ mod tests {
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                     plane: FaceSelection::Native(neutral_plane),
                     pull: Some(cadmpeg_ir::features::DraftPull {
-                        direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                        direction: geometry_1,
                         ..
                     }),
                 },
                 ..
-            } if faces.contains(":8") && neutral_plane.contains(":3")
+            } if ( faces.contains(":8") && neutral_plane.contains(":3")) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
         ));
 
         let FeatureDefinition::Draft { faces, anchor, .. } = &mut projected[0].definition else {
             panic!("typed draft");
         };
         *faces = FaceSelection::Native("explicit-faces".into());
-        anchor.pull_mut().unwrap().direction = Vector3::new(0.0, 1.0, 0.0);
+        anchor.pull_mut().unwrap().direction =
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         super::super::projections::project_draft_operands(&mut projected, &[history], &[lane]);
         assert!(matches!(
             &projected[0].definition,
@@ -692,13 +693,13 @@ mod tests {
                 faces: FaceSelection::Native(faces),
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                     pull: Some(cadmpeg_ir::features::DraftPull {
-                        direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                        direction: geometry_1,
                         ..
                     }),
                     ..
                 },
                 ..
-            } if faces == "explicit-faces"
+            } if ( faces == "explicit-faces") && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
         ));
     }
 }

@@ -52,13 +52,13 @@ fn solved_tangent_treats_arcs_as_bounded_circles() {
     };
     let arc = SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(1.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(1.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(std::f64::consts::PI).unwrap(),
     };
     let circle = SketchGeometry::Circle {
         center: Point2::new(2.0, 0.0),
-        radius: Length(1.0),
+        radius: Length::new(1.0).unwrap(),
     };
     assert_eq!(solved_tangent(&line, &arc), Some(true));
     assert_eq!(solved_tangent(&arc, &circle), Some(true));

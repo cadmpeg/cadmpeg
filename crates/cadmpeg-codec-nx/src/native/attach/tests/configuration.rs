@@ -162,7 +162,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
-    use cadmpeg_ir::features::{Angle, HoleKind, Length};
+    use cadmpeg_ir::features::{HoleKind, Length};
     use cadmpeg_ir::ids::BodyId;
 
     let operations = ["simple-a".to_string(), "simple-b".to_string()];
@@ -211,11 +211,11 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .collect();
     let diameters = operations
         .iter()
-        .map(|operation| (operation.clone(), Length(5.1)))
+        .map(|operation| (operation.clone(), Length::new(5.1).unwrap()))
         .collect();
     let chamfer = HoleKind::Chamfer {
-        diameter: Length(7.1),
-        angle: Angle(std::f64::consts::FRAC_PI_2),
+        diameter: cadmpeg_ir::features::PositiveLength::new(7.1).unwrap(),
+        angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
     };
     let chamfers = operations
         .iter()
@@ -236,7 +236,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         operations.iter().cloned().collect()
     );
     assert_eq!(projection.outputs["package"], std::slice::from_ref(&body));
-    assert_eq!(projection.diameters["package"], Length(5.1));
+    assert_eq!(projection.diameters["package"], Length::new(5.1).unwrap());
     assert_eq!(projection.chamfers["package"], chamfer);
 
     let untreated_templates = templates
@@ -262,7 +262,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         operations.iter().cloned().collect()
     );
     assert_eq!(projection.outputs["package"], [body]);
-    assert_eq!(projection.diameters["package"], Length(5.1));
+    assert_eq!(projection.diameters["package"], Length::new(5.1).unwrap());
     assert!(!projection.chamfers.contains_key("package"));
 
     let mut mixed_templates = untreated_templates.clone();
@@ -317,13 +317,15 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         parameter(
             "length",
             0,
-            Some(ParameterValue::Length(Length(25.4))),
+            Some(ParameterValue::Length(Length::new(25.4).unwrap())),
             Vec::new(),
         ),
         parameter(
             "angle",
             1,
-            Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
+            Some(ParameterValue::Angle(
+                Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            )),
             vec![ParameterId::mint("length").expect("identity grammar")],
         ),
     ];
@@ -350,11 +352,11 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         BTreeMap::from([
             (
                 ParameterId::mint("angle").expect("identity grammar"),
-                ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))
+                ParameterValue::Angle(Angle::new(std::f64::consts::FRAC_PI_2).unwrap())
             ),
             (
                 ParameterId::mint("length").expect("identity grammar"),
-                ParameterValue::Length(Length(25.4))
+                ParameterValue::Length(Length::new(25.4).unwrap())
             ),
         ])
     );
@@ -1072,8 +1074,8 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 None,
                 super::HoleProjection {
                     placements: vec![HolePlacement::Axis {
-                        origin: Point3::new(1.0, 2.0, 3.0),
-                        axis: Vector3::new(0.0, 0.0, 1.0),
+                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
                     }],
                     ..super::HoleProjection::default()
                 },
@@ -1083,8 +1085,8 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 placements,
                 ..
             } if placements.as_deref() == Some(&[HolePlacement::Axis {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             }][..])
         ));
     }
@@ -1305,13 +1307,13 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     assert_eq!(
         ir.model.parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(2.0 * 25.4)
+            cadmpeg_ir::features::Length::new(2.0 * 25.4).unwrap()
         ))
     );
     assert_eq!(
         ir.model.parameters[1].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(6.0 * 25.4)
+            cadmpeg_ir::features::Length::new(6.0 * 25.4).unwrap()
         ))
     );
     assert_eq!(

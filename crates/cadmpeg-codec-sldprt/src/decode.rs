@@ -1117,8 +1117,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             | FeatureDefinition::CircularArc { .. }
             | FeatureDefinition::EllipticArc { .. }
             | FeatureDefinition::PlanarPatch { .. } => false,
-            FeatureDefinition::Polyline { points, .. } => points.len() < 2,
-            FeatureDefinition::RegularPolygonCurve { sides, .. } => *sides < 3,
+            FeatureDefinition::Polyline { .. } => false,
+            FeatureDefinition::RegularPolygonCurve { .. } => false,
             FeatureDefinition::FaceFromShapes { sources, .. } => incomplete_body_selection(sources),
             FeatureDefinition::Block {
                 dimensions,
@@ -2233,7 +2233,7 @@ fn build_geometry_ir(
         &pmi_dimensions,
         scan,
         form_padding,
-    );
+    )?;
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -2244,13 +2244,13 @@ fn build_geometry_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
-    );
+    )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
         parameter_identity_lanes(&lanes),
-    );
+    )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -2260,7 +2260,7 @@ fn build_geometry_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &lanes,
-    );
+    )?;
     crate::history::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
@@ -2340,7 +2340,7 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
         &mut ir.model.features,
         &histories,
@@ -2353,14 +2353,14 @@ fn build_geometry_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
         &mut sketch_entities,
         &mut sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2372,7 +2372,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2533,7 +2533,7 @@ fn build_geometry_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    );
+    )?;
     crate::resolved_features::holes::project_hole_axes(
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -2584,7 +2584,7 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
         &mut annotations,
-    );
+    )?;
     crate::history::bind_configuration_topology_selections(
         &mut ir,
         &histories,
@@ -3276,7 +3276,7 @@ fn build_metadata_ir(
         &pmi_dimensions,
         scan,
         form_padding,
-    );
+    )?;
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
@@ -3287,13 +3287,13 @@ fn build_metadata_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
-    );
+    )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
         parameter_identity_lanes(&lanes),
-    );
+    )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -3303,7 +3303,7 @@ fn build_metadata_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &lanes,
-    );
+    )?;
     crate::history::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
@@ -3385,7 +3385,7 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
         &mut ir.model.features,
         &histories,
@@ -3398,7 +3398,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
         &mut ir.model.spatial_sketch_constraints,
         &mut ir.model.spatial_sketch_entities,
@@ -3418,7 +3418,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -3473,7 +3473,7 @@ fn build_metadata_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    );
+    )?;
     crate::resolved_features::holes::project_hole_axes(
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -3536,7 +3536,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
         &mut annotations,
-    );
+    )?;
     crate::history::inherit_configuration_reference_plane_states(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
@@ -3572,7 +3572,7 @@ fn project_design_history(
     pmi_dimensions: &[crate::records::PmiDimension],
     scan: &ContainerScan,
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
         &mut semantic_projection,
@@ -3590,12 +3590,12 @@ fn project_design_history(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
-    );
+    )?;
     crate::history::project_compact_and_generated(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
-    );
+    )?;
     ir.model.configurations = crate::history::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
@@ -3616,7 +3616,7 @@ fn project_design_history(
         lanes,
         pmi_dimensions,
         form_padding,
-    );
+    )?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_local_sha256".into(),
@@ -3639,6 +3639,8 @@ fn project_design_history(
             crate::history::native_parameter_hash(histories),
         );
     }
+
+    Ok(())
 }
 
 fn parameter_identity_lanes(

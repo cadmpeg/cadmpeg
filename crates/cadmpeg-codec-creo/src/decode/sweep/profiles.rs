@@ -28,21 +28,21 @@ pub(in super::super) fn sketch_geometry_endpoints(
             end_angle,
         } => Some((
             [
-                center.u + radius.0 * start_angle.0.cos(),
-                center.v + radius.0 * start_angle.0.sin(),
+                center.u + radius.get() * start_angle.get().cos(),
+                center.v + radius.get() * start_angle.get().sin(),
             ],
             [
-                center.u + radius.0 * end_angle.0.cos(),
-                center.v + radius.0 * end_angle.0.sin(),
+                center.u + radius.get() * end_angle.get().cos(),
+                center.v + radius.get() * end_angle.get().sin(),
             ],
         )),
         SketchGeometry::Circle { center, radius }
             if center.u.is_finite()
                 && center.v.is_finite()
-                && radius.0.is_finite()
-                && radius.0 > 0.0 =>
+                && radius.get().is_finite()
+                && radius.get() > 0.0 =>
         {
-            let seam = [center.u + radius.0, center.v];
+            let seam = [center.u + radius.get(), center.v];
             Some((seam, seam))
         }
         SketchGeometry::Nurbs { .. } => {
@@ -221,15 +221,15 @@ pub(in super::super) fn extrusion_cap_pcurve(
             end_angle,
         } => {
             let [start_angle, end_angle] = if reversed {
-                [end_angle.0, start_angle.0]
+                [end_angle.get(), start_angle.get()]
             } else {
-                [start_angle.0, end_angle.0]
+                [start_angle.get(), end_angle.get()]
             };
-            circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
+            circular_pcurve([center.u, center.v], radius.get(), start_angle, end_angle)
         }
         SketchGeometry::Circle { center, radius } => {
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
-            circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
+            circular_pcurve([center.u, center.v], radius.get(), start_angle, end_angle)
         }
         SketchGeometry::Nurbs { .. } => {
             sketch_nurbs_pcurve(geometry, reversed).unwrap_or_else(|| line_pcurve(start, end))
@@ -262,12 +262,12 @@ pub(in super::super) fn extrusion_side_uvs(
             start_angle,
             end_angle,
             ..
-        } if reversed => [end_angle.0, start_angle.0],
+        } if reversed => [end_angle.get(), start_angle.get()],
         SketchGeometry::Arc {
             start_angle,
             end_angle,
             ..
-        } => [start_angle.0, end_angle.0],
+        } => [start_angle.get(), end_angle.get()],
         SketchGeometry::Circle { .. } => oriented_full_turn_angles(reversed),
         _ => [0.0, (end[0] - start[0]).hypot(end[1] - start[1])],
     };
@@ -292,7 +292,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
                 start_angle,
                 end_angle,
             } => {
-                let forward_sweep = forward_arc_sweep(start_angle.0, end_angle.0);
+                let forward_sweep = forward_arc_sweep(start_angle.get(), end_angle.get());
                 let sweep = if *reversed {
                     -forward_sweep
                 } else {
@@ -300,7 +300,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
                 };
                 center.u.mul_add(
                     end[1] - start[1],
-                    -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
+                    -(center.v * (end[0] - start[0])) + radius.get() * radius.get() * sweep,
                 )
             }
             SketchGeometry::Circle { center, radius } => {
@@ -311,7 +311,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
                 };
                 center.u.mul_add(
                     end[1] - start[1],
-                    -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
+                    -(center.v * (end[0] - start[0])) + radius.get() * radius.get() * sweep,
                 )
             }
             _ => start[0].mul_add(end[1], -(start[1] * end[0])),
@@ -386,13 +386,16 @@ pub(in super::super) fn profile_arc(
             end_angle,
         } => (
             [center.u, center.v],
-            radius.0,
+            radius.get(),
             (segment.2[1] - center.v).atan2(segment.2[0] - center.u),
-            forward_arc_sweep(start_angle.0, end_angle.0),
+            forward_arc_sweep(start_angle.get(), end_angle.get()),
         ),
-        SketchGeometry::Circle { center, radius } => {
-            ([center.u, center.v], radius.0, 0.0, std::f64::consts::TAU)
-        }
+        SketchGeometry::Circle { center, radius } => (
+            [center.u, center.v],
+            radius.get(),
+            0.0,
+            std::f64::consts::TAU,
+        ),
         _ => return None,
     };
     let delta = if segment.1 {

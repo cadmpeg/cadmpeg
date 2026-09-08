@@ -577,7 +577,7 @@ offset: 30,
                 .definition,
             SketchConstraintDefinition::ArcAngle {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                angle: Angle(angle),
+                angle: Angle::new(angle).unwrap(),
             }
         );
         fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 34;
@@ -1224,9 +1224,9 @@ offset: 30,
             SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             SketchGeometry::Arc {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::FRAC_PI_2),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(0.0).unwrap(),
+                end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             },
         ),
     ]);

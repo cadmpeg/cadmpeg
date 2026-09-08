@@ -1375,13 +1375,13 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
-                along_fraction: 0.8,
-                against_fraction: 0.0,
+                along_fraction: fraction_0,
+                against_fraction: fraction_1,
             }),
-            twist: Some(cadmpeg_ir::features::Angle(6.632_251_157_578_453)),
+            twist: Some(actual_twist),
             taper: None,
             ..
-        })
+        }) if fraction_1.get() == 0.0 && fraction_0.get() == 0.8 && actual_twist.get() == 6.632_251_157_578_453
     ));
     let rail = sweep_group(2, DesignOperandRole::ROLE_0X5);
     {
@@ -1410,18 +1410,18 @@ pub(super) fn continue_fixed_kind_operations(
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
-                along_fraction: 0.0,
-                against_fraction: 1.0,
+                along_fraction: fraction_2,
+                against_fraction: fraction_3,
             }),
             guide_rail: Some(cadmpeg_ir::features::SweepGuideRail {
                 path: cadmpeg_ir::features::PathRef::Native(rail),
                 extent: cadmpeg_ir::features::SweepPathExtent {
-                    along_fraction: 0.0,
-                    against_fraction: 1.0,
+                    along_fraction: fraction_4,
+                    against_fraction: fraction_5,
                 },
             }),
             ..
-        }) if path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
+        }) if fraction_5.get() == 1.0 && fraction_4.get() == 0.0 && fraction_3.get() == 1.0 && fraction_2.get() == 0.0 && path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
     ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     {

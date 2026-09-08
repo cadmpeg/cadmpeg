@@ -15,10 +15,11 @@ use cadmpeg_ir::features::{
     HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleConstruction, HoleKind,
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length,
     LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter,
-    PatternSeed, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec,
-    RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RuledCurveOrientation,
-    ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode,
-    SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
+    PatternSeed, PatternStage, PatternStageCombination, PrimitiveSolid, PrimitiveSolidKind,
+    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction,
+    RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
+    SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
+    ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1162,11 +1163,11 @@ fn append_operation_parameters(
                 |(_, expression)| expression,
             ),
             display: None,
-            value: Some(if is_angle {
-                ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians()))
+            value: if is_angle {
+                cadmpeg_ir::features::Angle::new(value.to_radians()).map(ParameterValue::Angle)
             } else {
-                ParameterValue::Length(Length(value))
-            }),
+                Length::new(value).map(ParameterValue::Length)
+            },
             dependencies: Vec::new(),
             properties: retained,
             pmi: None,
@@ -2017,7 +2018,7 @@ fn direct_fuzzy_tolerance(property: &PropertyRecord) -> Option<FuzzyTolerance> {
     } else if value == 0.0 {
         FuzzyTolerance::KernelDefault
     } else {
-        FuzzyTolerance::Explicit(value)
+        FuzzyTolerance::Explicit(cadmpeg_ir::features::PositiveLength::new(value)?)
     })
 }
 
@@ -2086,7 +2087,7 @@ fn parse_constraints(
         let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
-                .map(|value| {
+                .and_then(|value| {
                     let id = ParameterId::mint(format!(
                         "fcstd:design:parameter#{}:constraint:{}",
                         object.name,
@@ -2094,9 +2095,9 @@ fn parse_constraints(
                     ))
                     .expect("identity grammar");
                     let value = match type_code {
-                        Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
+                        Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle::new(value)?),
                         Some(16 | 19) => ParameterValue::Real(value),
-                        _ => ParameterValue::Length(Length(value)),
+                        _ => ParameterValue::Length(Length::new(value)?),
                     };
                     let path = format!("Constraints[{index}]");
                     let expression = expression_binding(properties, &path);
@@ -2129,7 +2130,7 @@ fn parse_constraints(
                         pmi: None,
                         native_ref: Some(property.id.clone()),
                     });
-                    id
+                    Some(id)
                 })
         } else {
             None
@@ -2801,170 +2802,178 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
     let native = || SketchGeometry::Native {
         native_kind: kind.to_owned(),
     };
-    if matches!(
-        kind,
-        "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
-    ) {
-        match (
-            number("StartX"),
-            number("StartY"),
-            number("EndX"),
-            number("EndY"),
-        ) {
-            (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => SketchGeometry::Line {
-                start: Point2::new(start_x, start_y),
-                end: Point2::new(end_x, end_y),
-            },
-            _ => native(),
-        }
-    } else if matches!(
-        kind,
-        "Part::GeomEllipse" | "Part::GeomArcOfEllipse" | "Ellipse" | "ArcOfEllipse"
-    ) {
-        let major_angle = number("MajorAngle")
-            .or_else(|| number("AngleXU"))
-            .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
-        let bounds = if matches!(kind, "Part::GeomArcOfEllipse" | "ArcOfEllipse") {
-            number("StartAngle")
-                .or_else(|| number("FirstParameter"))
-                .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                .map(|(start, end)| Some([start, end]))
-        } else {
-            Some(None)
-        };
-        match (
-            number("CenterX"),
-            number("CenterY"),
-            major_angle,
-            number("MajorRadius"),
-            number("MinorRadius"),
-            bounds,
-        ) {
-            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
-                if major > 0.0 && minor > 0.0 =>
-            {
-                SketchGeometry::Ellipse {
-                    center: Point2::new(x, y),
-                    major_angle: cadmpeg_ir::features::Angle(angle),
-                    major_radius: Length(major),
-                    minor_radius: Length(minor),
-                    bounds: bounds.map(|[start, end]| {
-                        [
-                            cadmpeg_ir::features::Angle(start),
-                            cadmpeg_ir::features::Angle(end),
-                        ]
-                    }),
+    let project = || {
+        Some(
+            if matches!(
+                kind,
+                "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
+            ) {
+                match (
+                    number("StartX"),
+                    number("StartY"),
+                    number("EndX"),
+                    number("EndY"),
+                ) {
+                    (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => {
+                        SketchGeometry::Line {
+                            start: Point2::new(start_x, start_y),
+                            end: Point2::new(end_x, end_y),
+                        }
+                    }
+                    _ => native(),
                 }
-            }
-            _ => native(),
-        }
-    } else if matches!(
-        kind,
-        "Part::GeomHyperbola" | "Part::GeomArcOfHyperbola" | "Hyperbola" | "ArcOfHyperbola"
-    ) {
-        let bounds = if matches!(kind, "Part::GeomArcOfHyperbola" | "ArcOfHyperbola") {
-            number("StartAngle")
-                .or_else(|| number("FirstParameter"))
-                .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                .map(|(start, end)| Some([start, end]))
-        } else {
-            Some(None)
-        };
-        match (
-            number("CenterX"),
-            number("CenterY"),
-            number("AngleXU").or_else(|| number("MajorAngle")),
-            number("MajorRadius"),
-            number("MinorRadius"),
-            bounds,
-        ) {
-            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
-                if major > 0.0 && minor > 0.0 =>
-            {
-                SketchGeometry::Hyperbola {
-                    center: Point2::new(x, y),
-                    major_angle: cadmpeg_ir::features::Angle(angle),
-                    major_radius: Length(major),
-                    minor_radius: Length(minor),
+            } else if matches!(
+                kind,
+                "Part::GeomEllipse" | "Part::GeomArcOfEllipse" | "Ellipse" | "ArcOfEllipse"
+            ) {
+                let major_angle = number("MajorAngle")
+                    .or_else(|| number("AngleXU"))
+                    .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
+                let bounds = if matches!(kind, "Part::GeomArcOfEllipse" | "ArcOfEllipse") {
+                    number("StartAngle")
+                        .or_else(|| number("FirstParameter"))
+                        .zip(number("EndAngle").or_else(|| number("LastParameter")))
+                        .map(|(start, end)| Some([start, end]))
+                } else {
+                    Some(None)
+                };
+                match (
+                    number("CenterX"),
+                    number("CenterY"),
+                    major_angle,
+                    number("MajorRadius"),
+                    number("MinorRadius"),
                     bounds,
+                ) {
+                    (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
+                        if major > 0.0 && minor > 0.0 =>
+                    {
+                        SketchGeometry::Ellipse {
+                            center: Point2::new(x, y),
+                            major_angle: cadmpeg_ir::features::Angle::new(angle)?,
+                            major_radius: Length::new(major)?,
+                            minor_radius: Length::new(minor)?,
+                            bounds: match bounds {
+                                Some([start, end]) => Some([
+                                    cadmpeg_ir::features::Angle::new(start)?,
+                                    cadmpeg_ir::features::Angle::new(end)?,
+                                ]),
+                                None => None,
+                            },
+                        }
+                    }
+                    _ => native(),
                 }
-            }
-            _ => native(),
-        }
-    } else if matches!(
-        kind,
-        "Part::GeomParabola" | "Part::GeomArcOfParabola" | "Parabola" | "ArcOfParabola"
-    ) {
-        let bounds = if matches!(kind, "Part::GeomArcOfParabola" | "ArcOfParabola") {
-            number("StartAngle")
-                .or_else(|| number("FirstParameter"))
-                .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                .map(|(start, end)| Some([start, end]))
-        } else {
-            Some(None)
-        };
-        match (
-            number("CenterX"),
-            number("CenterY"),
-            number("AngleXU").or_else(|| number("AxisAngle")),
-            number("Focal"),
-            bounds,
-        ) {
-            (Some(x), Some(y), Some(angle), Some(focal), Some(bounds)) if focal > 0.0 => {
-                SketchGeometry::Parabola {
-                    vertex: Point2::new(x, y),
-                    axis_angle: cadmpeg_ir::features::Angle(angle),
-                    focal_length: Length(focal),
+            } else if matches!(
+                kind,
+                "Part::GeomHyperbola" | "Part::GeomArcOfHyperbola" | "Hyperbola" | "ArcOfHyperbola"
+            ) {
+                let bounds = if matches!(kind, "Part::GeomArcOfHyperbola" | "ArcOfHyperbola") {
+                    number("StartAngle")
+                        .or_else(|| number("FirstParameter"))
+                        .zip(number("EndAngle").or_else(|| number("LastParameter")))
+                        .map(|(start, end)| Some([start, end]))
+                } else {
+                    Some(None)
+                };
+                match (
+                    number("CenterX"),
+                    number("CenterY"),
+                    number("AngleXU").or_else(|| number("MajorAngle")),
+                    number("MajorRadius"),
+                    number("MinorRadius"),
                     bounds,
+                ) {
+                    (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
+                        if major > 0.0 && minor > 0.0 =>
+                    {
+                        SketchGeometry::Hyperbola {
+                            center: Point2::new(x, y),
+                            major_angle: cadmpeg_ir::features::Angle::new(angle)?,
+                            major_radius: Length::new(major)?,
+                            minor_radius: Length::new(minor)?,
+                            bounds,
+                        }
+                    }
+                    _ => native(),
                 }
-            }
-            _ => native(),
-        }
-    } else if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
-        let frame_angle = number("AngleXU").unwrap_or(0.0);
-        match (
-            number("CenterX"),
-            number("CenterY"),
-            number("Radius"),
-            number("StartAngle").or_else(|| number("FirstParameter")),
-            number("EndAngle").or_else(|| number("LastParameter")),
-        ) {
-            (Some(x), Some(y), Some(radius), Some(start), Some(end))
-                if radius > 0.0
-                    && [x, y, radius, start, end, frame_angle]
-                        .into_iter()
-                        .all(f64::is_finite) =>
-            {
-                SketchGeometry::Arc {
-                    center: Point2::new(x, y),
-                    radius: Length(radius),
-                    start_angle: cadmpeg_ir::features::Angle(start + frame_angle),
-                    end_angle: cadmpeg_ir::features::Angle(end + frame_angle),
+            } else if matches!(
+                kind,
+                "Part::GeomParabola" | "Part::GeomArcOfParabola" | "Parabola" | "ArcOfParabola"
+            ) {
+                let bounds = if matches!(kind, "Part::GeomArcOfParabola" | "ArcOfParabola") {
+                    number("StartAngle")
+                        .or_else(|| number("FirstParameter"))
+                        .zip(number("EndAngle").or_else(|| number("LastParameter")))
+                        .map(|(start, end)| Some([start, end]))
+                } else {
+                    Some(None)
+                };
+                match (
+                    number("CenterX"),
+                    number("CenterY"),
+                    number("AngleXU").or_else(|| number("AxisAngle")),
+                    number("Focal"),
+                    bounds,
+                ) {
+                    (Some(x), Some(y), Some(angle), Some(focal), Some(bounds)) if focal > 0.0 => {
+                        SketchGeometry::Parabola {
+                            vertex: Point2::new(x, y),
+                            axis_angle: cadmpeg_ir::features::Angle::new(angle)?,
+                            focal_length: Length::new(focal)?,
+                            bounds,
+                        }
+                    }
+                    _ => native(),
                 }
-            }
-            _ => native(),
-        }
-    } else if matches!(kind, "Part::GeomCircle" | "Circle") {
-        match (number("CenterX"), number("CenterY"), number("Radius")) {
-            (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometry::Circle {
-                center: Point2::new(x, y),
-                radius: Length(radius),
+            } else if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
+                let frame_angle = number("AngleXU").unwrap_or(0.0);
+                match (
+                    number("CenterX"),
+                    number("CenterY"),
+                    number("Radius"),
+                    number("StartAngle").or_else(|| number("FirstParameter")),
+                    number("EndAngle").or_else(|| number("LastParameter")),
+                ) {
+                    (Some(x), Some(y), Some(radius), Some(start), Some(end))
+                        if radius > 0.0
+                            && [x, y, radius, start, end, frame_angle]
+                                .into_iter()
+                                .all(f64::is_finite) =>
+                    {
+                        SketchGeometry::Arc {
+                            center: Point2::new(x, y),
+                            radius: Length::new(radius)?,
+                            start_angle: cadmpeg_ir::features::Angle::new(start + frame_angle)?,
+                            end_angle: cadmpeg_ir::features::Angle::new(end + frame_angle)?,
+                        }
+                    }
+                    _ => native(),
+                }
+            } else if matches!(kind, "Part::GeomCircle" | "Circle") {
+                match (number("CenterX"), number("CenterY"), number("Radius")) {
+                    (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometry::Circle {
+                        center: Point2::new(x, y),
+                        radius: Length::new(radius)?,
+                    },
+                    (Some(x), Some(y), Some(0.0)) => SketchGeometry::Point {
+                        position: Point2::new(x, y),
+                    },
+                    _ => native(),
+                }
+            } else if kind == "Part::GeomPoint" {
+                match (number("X"), number("Y")) {
+                    (Some(x), Some(y)) => SketchGeometry::Point {
+                        position: Point2::new(x, y),
+                    },
+                    _ => native(),
+                }
+            } else {
+                native()
             },
-            (Some(x), Some(y), Some(0.0)) => SketchGeometry::Point {
-                position: Point2::new(x, y),
-            },
-            _ => native(),
-        }
-    } else if kind == "Part::GeomPoint" {
-        match (number("X"), number("Y")) {
-            (Some(x), Some(y)) => SketchGeometry::Point {
-                position: Point2::new(x, y),
-            },
-            _ => native(),
-        }
-    } else {
-        native()
-    }
+        )
+    };
+    project().unwrap_or_else(native)
 }
 
 fn build_profiles(
@@ -3146,12 +3155,12 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
             end_angle,
         } => Some((
             Point2::new(
-                center.u + radius.0 * start_angle.0.cos(),
-                center.v + radius.0 * start_angle.0.sin(),
+                center.u + radius.get() * start_angle.get().cos(),
+                center.v + radius.get() * start_angle.get().sin(),
             ),
             Point2::new(
-                center.u + radius.0 * end_angle.0.cos(),
-                center.v + radius.0 * end_angle.0.sin(),
+                center.u + radius.get() * end_angle.get().cos(),
+                center.v + radius.get() * end_angle.get().sin(),
             ),
         )),
         SketchGeometry::Ellipse {
@@ -3161,20 +3170,20 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
             minor_radius,
             bounds: Some([start, end]),
         } => {
-            let major = Point2::new(major_angle.0.cos(), major_angle.0.sin());
+            let major = Point2::new(major_angle.get().cos(), major_angle.get().sin());
             let minor = Point2::new(-major.v, major.u);
             let point = |parameter: f64| {
                 let (along_major, along_minor) = (parameter.cos(), parameter.sin());
                 Point2::new(
                     center.u
-                        + major_radius.0 * along_major * major.u
-                        + minor_radius.0 * along_minor * minor.u,
+                        + major_radius.get() * along_major * major.u
+                        + minor_radius.get() * along_minor * minor.u,
                     center.v
-                        + major_radius.0 * along_major * major.v
-                        + minor_radius.0 * along_minor * minor.v,
+                        + major_radius.get() * along_major * major.v
+                        + minor_radius.get() * along_minor * minor.v,
                 )
             };
-            Some((point(start.0), point(end.0)))
+            Some((point(start.get()), point(end.get())))
         }
         _ => None,
     }
@@ -3229,11 +3238,15 @@ fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a Property
 
 fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
     Some(RevolutionAxis {
-        origin: vector_property(properties, "Base").map_or_else(
-            || Point3::new(0.0, 0.0, 0.0),
-            |vector| Point3::new(vector.x, vector.y, vector.z),
-        ),
-        direction: vector_property(properties, "Axis")?,
+        origin: cadmpeg_ir::features::FinitePoint3::new(
+            vector_property(properties, "Base").map_or_else(
+                || Point3::new(0.0, 0.0, 0.0),
+                |vector| Point3::new(vector.x, vector.y, vector.z),
+            ),
+        )?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(vector_property(
+            properties, "Axis",
+        )?)?,
         reference: None,
     })
 }
@@ -3249,11 +3262,11 @@ fn revolution_definition(
         profile => Some(profile),
     };
     let mut axis = revolution_axis(properties)?;
-    axis.direction = axis.direction.unit()?;
+    axis.direction = cadmpeg_ir::features::FeatureDirection3::new(axis.direction.unit()?)?;
     let angle = || {
         scalar_named(properties, "Angle")
             .filter(|angle| angle.is_finite() && *angle > 0.0)
-            .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()))
+            .and_then(|angle| cadmpeg_ir::features::PositiveAngle::new(angle.to_radians()))
     };
     let mode = enumeration_selector(properties, "Type", 0)?;
     let extent = if kind == "Part::Revolution" {
@@ -3298,11 +3311,11 @@ fn revolution_definition(
             4 => RevolveExtent::TwoSided {
                 first: AngularTermination::Angle { angle: angle()? },
                 second: AngularTermination::Angle {
-                    angle: cadmpeg_ir::features::Angle(
+                    angle: cadmpeg_ir::features::PositiveAngle::new(
                         scalar_named(properties, "Angle2")
                             .filter(|angle| angle.is_finite() && *angle > 0.0)?
                             .to_radians(),
-                    ),
+                    )?,
                 },
             },
             _ => return None,
@@ -3314,7 +3327,11 @@ fn revolution_definition(
         false
     };
     if reversed {
-        axis.direction = Vector3::new(-axis.direction.x, -axis.direction.y, -axis.direction.z);
+        axis.direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            -axis.direction.x,
+            -axis.direction.y,
+            -axis.direction.z,
+        ))?;
     }
     let axis_reference_properties = ["AxisLink", "ReferenceAxis"]
         .iter()
@@ -3454,59 +3471,77 @@ fn part_construction_geometry_definition(
     let angle = |name: &str| {
         scalar_named(properties, name)
             .filter(|value| value.is_finite())
-            .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+            .and_then(|value| cadmpeg_ir::features::Angle::new(value.to_radians()))
     };
     match kind {
         "Part::Vertex" => Some(FeatureDefinition::PointGeometry {
-            position: point("X", "Y", "Z")?,
+            position: cadmpeg_ir::features::FinitePoint3::new(point("X", "Y", "Z")?)?,
         }),
         "Part::Line" => Some(FeatureDefinition::LineSegment {
-            start: point("X1", "Y1", "Z1")?,
-            end: point("X2", "Y2", "Z2")?,
+            segment: cadmpeg_ir::features::FeatureLineSegment::new(
+                point("X1", "Y1", "Z1")?,
+                point("X2", "Y2", "Z2")?,
+            )?,
         }),
         "Part::Circle" => {
             let legacy_angles = property(properties, "Angle0").is_some();
             Some(FeatureDefinition::CircularArc {
-                center: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                radius: Length(scalar_named(properties, "Radius").filter(|value| *value > 0.0)?),
-                start_angle: angle(if legacy_angles { "Angle0" } else { "Angle1" })?,
-                end_angle: angle(if legacy_angles { "Angle1" } else { "Angle2" })?,
+                arc: cadmpeg_ir::features::FeatureCircularArc::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::features::PositiveLength::new(scalar_named(properties, "Radius")?)?,
+                    cadmpeg_ir::geometry::DirectedParameterRange::new([
+                        angle(if legacy_angles { "Angle0" } else { "Angle1" })?.get(),
+                        angle(if legacy_angles { "Angle1" } else { "Angle2" })?.get(),
+                    ])
+                    .ok()?,
+                )?,
             })
         }
-        "Part::Ellipse" => {
-            let major = scalar_named(properties, "MajorRadius").filter(|value| *value > 0.0)?;
-            let minor = scalar_named(properties, "MinorRadius")
-                .filter(|value| *value > 0.0 && *value <= major)?;
-            Some(FeatureDefinition::EllipticArc {
-                center: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                major_axis: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: Length(major),
-                minor_radius: Length(minor),
-                start_angle: angle("Angle1")?,
-                end_angle: angle("Angle2")?,
-            })
-        }
+        "Part::Ellipse" => Some(FeatureDefinition::EllipticArc {
+            arc: cadmpeg_ir::features::FeatureEllipticArc::new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                [
+                    cadmpeg_ir::features::PositiveLength::new(scalar_named(
+                        properties,
+                        "MajorRadius",
+                    )?)?,
+                    cadmpeg_ir::features::PositiveLength::new(scalar_named(
+                        properties,
+                        "MinorRadius",
+                    )?)?,
+                ],
+                cadmpeg_ir::geometry::DirectedParameterRange::new([
+                    angle("Angle1")?.get(),
+                    angle("Angle2")?.get(),
+                ])
+                .ok()?,
+            )?,
+        }),
         "Part::Polygon" => {
             let points = vector_list_property(properties, "Nodes", entries)?;
             let closed = bool_property(properties, "Close").unwrap_or(false);
-            if points.len() < 2 || (closed && points.len() < 3) {
-                return None;
-            }
-            Some(FeatureDefinition::Polyline { points, closed })
+            Some(FeatureDefinition::Polyline {
+                chain: cadmpeg_ir::features::FeaturePolyline::new(points, closed)?,
+            })
         }
         "Part::RegularPolygon" => Some(FeatureDefinition::RegularPolygonCurve {
-            sides: u32::try_from(integer_property(properties, "Polygon")?)
-                .ok()
-                .filter(|value| *value >= 3)?,
-            circumradius: Length(
+            sides: cadmpeg_ir::features::PolygonSideCount::new(
+                u32::try_from(integer_property(properties, "Polygon")?).ok()?,
+            )?,
+            circumradius: cadmpeg_ir::features::PositiveLength::new(
                 scalar_named(properties, "Circumradius").filter(|value| *value > 0.0)?,
-            ),
+            )?,
         }),
         "Part::Plane" => Some(FeatureDefinition::PlanarPatch {
-            length: Length(scalar_named(properties, "Length").filter(|value| *value > 0.0)?),
-            width: Length(scalar_named(properties, "Width").filter(|value| *value > 0.0)?),
+            length: cadmpeg_ir::features::PositiveLength::new(
+                scalar_named(properties, "Length").filter(|value| *value > 0.0)?,
+            )?,
+            width: cadmpeg_ir::features::PositiveLength::new(
+                scalar_named(properties, "Width").filter(|value| *value > 0.0)?,
+            )?,
         }),
         "Part::Face" => {
             let sources = property(properties, "Sources")?;
@@ -3539,7 +3574,10 @@ fn parametric_helix_definition(
     if segment_value < 0.0 {
         return None;
     }
-    let segment_turns = (segment_value > 0.0).then_some(segment_value);
+    let segment_turns = (segment_value > 0.0)
+        .then(|| cadmpeg_ir::features::PositiveReal::try_from(segment_value))
+        .transpose()
+        .ok()?;
     let (shape, revolutions, clockwise, construction_style) = if kind == "Part::Helix" {
         let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
         let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
@@ -3559,12 +3597,12 @@ fn parametric_helix_definition(
         };
         let shape = if angle == 0.0 {
             cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: cadmpeg_ir::features::HelixPitch::new(Length(pitch))?,
+                pitch: cadmpeg_ir::features::NonZeroLength::new(pitch)?,
             }
         } else {
             cadmpeg_ir::features::HelixShape::Conical {
-                pitch: cadmpeg_ir::features::HelixPitch::new(Length(pitch))?,
-                cone_angle: cadmpeg_ir::features::Angle(angle.to_radians()),
+                pitch: cadmpeg_ir::features::NonZeroLength::new(pitch)?,
+                cone_angle: cadmpeg_ir::features::SlopeAngle::new(angle.to_radians())?,
             }
         };
         (shape, height / pitch, clockwise, construction_style)
@@ -3573,20 +3611,20 @@ fn parametric_helix_definition(
         let revolutions = scalar_named(properties, "Rotations").filter(|value| *value > 0.0)?;
         (
             cadmpeg_ir::features::HelixShape::Spiral {
-                radial_growth: Length(growth),
+                radial_growth: Length::new(growth)?,
             },
             revolutions,
             false,
             None,
         )
     };
-    (revolutions.is_finite() && revolutions > 0.0).then_some(FeatureDefinition::Helix {
-        axis_origin: Point3::new(0.0, 0.0, 0.0),
-        axis_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: Length(radius),
+    Some(FeatureDefinition::Helix {
+        axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))?,
+        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))?,
+        radius: cadmpeg_ir::features::PositiveLength::new(radius)?,
         shape,
-        revolutions,
-        start_angle: cadmpeg_ir::features::Angle(0.0),
+        revolutions: cadmpeg_ir::features::PositiveReal::new(revolutions)?,
+        start_angle: cadmpeg_ir::features::Angle::new(0.0)?,
         clockwise,
         segment_turns,
         construction_style,
@@ -3652,7 +3690,11 @@ fn extrusion_definition(
             return None;
         }
         let to_draft = |degrees: f64| {
-            (degrees != 0.0).then_some(cadmpeg_ir::features::Angle(degrees.to_radians()))
+            if degrees == 0.0 {
+                Some(None)
+            } else {
+                cadmpeg_ir::features::SlopeAngle::new(degrees.to_radians()).map(Some)
+            }
         };
         let (extent, reverse_direction) = if symmetric {
             // A symmetric extent mirrors one side across the profile plane, so
@@ -3661,9 +3703,11 @@ fn extrusion_definition(
                 ExtrudeExtent::Symmetric {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length((forward != 0.0).then_some(forward.abs())?),
+                            length: cadmpeg_ir::features::NonZeroLength::new(
+                                (forward != 0.0).then_some(forward.abs())?,
+                            )?,
                         },
-                        draft: to_draft(forward_draft),
+                        draft: to_draft(forward_draft)?,
                     },
                 },
                 false,
@@ -3691,9 +3735,9 @@ fn extrusion_definition(
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: Length(length),
+                                length: cadmpeg_ir::features::NonZeroLength::new(length)?,
                             },
-                            draft: to_draft(draft),
+                            draft: to_draft(draft)?,
                         },
                     },
                     false,
@@ -3702,9 +3746,9 @@ fn extrusion_definition(
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: Length(-length),
+                                length: cadmpeg_ir::features::NonZeroLength::new(-length)?,
                             },
-                            draft: to_draft(draft),
+                            draft: to_draft(draft)?,
                         },
                     },
                     true,
@@ -3713,15 +3757,15 @@ fn extrusion_definition(
                     ExtrudeExtent::TwoSided {
                         first: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: Length(first),
+                                length: cadmpeg_ir::features::NonZeroLength::new(first)?,
                             },
-                            draft: to_draft(first_draft),
+                            draft: to_draft(first_draft)?,
                         },
                         second: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: Length(-second),
+                                length: cadmpeg_ir::features::NonZeroLength::new(-second)?,
                             },
-                            draft: to_draft(second_draft),
+                            draft: to_draft(second_draft)?,
                         },
                     },
                     false,
@@ -3756,7 +3800,7 @@ fn extrusion_definition(
         return Some(FeatureDefinition::Extrude {
             profile,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: direction,
+                vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 source: Some(direction_source),
             },
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
@@ -3784,15 +3828,15 @@ fn extrusion_definition(
             enumeration_selector(properties, &type_name, 0)?
         };
         let offset = if property(properties, &offset_name).is_some() {
-            Some(Length(scalar_named(properties, &offset_name)?))
+            Some(Length::new(scalar_named(properties, &offset_name)?)?)
         } else {
             None
         };
         match termination_type {
             0 => Some(LinearTermination::Blind {
-                length: Length(
+                length: cadmpeg_ir::features::NonZeroLength::new(
                     scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,
-                ),
+                )?,
             }),
             1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll),
             1 => Some(LinearTermination::ToLast),
@@ -3826,7 +3870,9 @@ fn extrusion_definition(
     // the native property remains retained but maps nowhere in the IR.
     let first_draft = scalar_named(properties, "TaperAngle")
         .filter(|angle| *angle != 0.0)
-        .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
+        .map(|angle| cadmpeg_ir::features::SlopeAngle::try_from(angle.to_radians()))
+        .transpose()
+        .ok()?;
     let extent = match side_type {
         0 => ExtrudeExtent::OneSided {
             side: ExtrudeSide {
@@ -3843,7 +3889,9 @@ fn extrusion_definition(
                 termination: termination(2)?,
                 draft: scalar_named(properties, "TaperAngle2")
                     .filter(|angle| *angle != 0.0)
-                    .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians())),
+                    .map(|angle| cadmpeg_ir::features::SlopeAngle::try_from(angle.to_radians()))
+                    .transpose()
+                    .ok()?,
             },
         },
         2 => ExtrudeExtent::Symmetric {
@@ -3871,48 +3919,47 @@ fn extrusion_definition(
     }
     let mut direction = if use_custom {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: vector_property(properties, "Direction")?.unit()?,
+            vector: cadmpeg_ir::features::FeatureDirection3::new(
+                vector_property(properties, "Direction")?.unit()?,
+            )?,
             source: Some(ExtrusionDirectionSource::Custom),
         }
     } else if let Some(reference_axis) = reference_axis {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: vector_property(properties, "Direction")?.unit()?,
+            vector: cadmpeg_ir::features::FeatureDirection3::new(
+                vector_property(properties, "Direction")?.unit()?,
+            )?,
             source: Some(ExtrusionDirectionSource::Edge {
                 reference: PathRef::Native(reference_axis.id.clone()),
             }),
         }
     } else {
-        match &profile {
+        let normal = match &profile {
             ProfileRef::Sketch(sketch_id) => sketches
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
                 .and_then(Sketch::resolved_placement)
                 .map(|(_, normal, _)| normal)
-                .or(profile_normal)
-                .and_then(Vector3::unit)
-                .map_or(
-                    cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                    |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                        vector,
-                        source: Some(ExtrusionDirectionSource::ProfileNormal),
-                    },
-                ),
-            ProfileRef::Native(_) => profile_normal.and_then(Vector3::unit).map_or(
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                    vector,
-                    source: Some(ExtrusionDirectionSource::ProfileNormal),
-                },
-            ),
-            ProfileRef::Unresolved(_) => return None,
+                .or(profile_normal),
+            ProfileRef::Native(_) => profile_normal,
             _ => return None,
+        }
+        .and_then(Vector3::unit);
+        match normal {
+            Some(vector) => cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::FeatureDirection3::new(vector)?,
+                source: Some(ExtrusionDirectionSource::ProfileNormal),
+            },
+            None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
         }
     };
     if bool_selector(properties, "Reversed", false)? {
         let cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } = &mut direction else {
             return None;
         };
-        *vector = Vector3::new(-vector.x, -vector.y, -vector.z);
+        *vector = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            -vector.x, -vector.y, -vector.z,
+        ))?;
     }
     let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
     let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);
@@ -3952,15 +3999,11 @@ fn dress_up_edge_selection(kind: &str, properties: &[&PropertyRecord]) -> Option
 fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let base = singular_operand(properties, "Base")?;
     let factor =
-        |name| scalar_named(properties, name).filter(|factor| factor.is_finite() && *factor != 0.0);
+        |name| scalar_named(properties, name).and_then(cadmpeg_ir::features::NonZeroReal::new);
     let factors = if bool_selector(properties, "Uniform", true)? {
         ScaleFactors::Uniform(factor("UniformScale")?)
     } else {
-        ScaleFactors::PerAxis(Vector3::new(
-            factor("XScale")?,
-            factor("YScale")?,
-            factor("ZScale")?,
-        ))
+        ScaleFactors::PerAxis([factor("XScale")?, factor("YScale")?, factor("ZScale")?])
     };
     Some(FeatureDefinition::Scale {
         bodies: BodySelection::Native(base.id.clone()),
@@ -3994,7 +4037,7 @@ fn fillet_definition(
         groups: vec![cadmpeg_ir::features::FilletGroup {
             edges,
             radius: RadiusSpec::Constant {
-                radius: Length(radius),
+                radius: Length::new(radius)?,
             },
             tangency_weight: None,
         }],
@@ -4024,12 +4067,12 @@ fn chamfer_definition(
         }
         if first == second {
             ChamferSpec::Distance {
-                distance: Length(first),
+                distance: Length::new(first)?,
             }
         } else {
             ChamferSpec::TwoDistances {
-                first: Length(first),
-                second: Length(second),
+                first: Length::new(first)?,
+                second: Length::new(second)?,
             }
         }
     } else {
@@ -4110,7 +4153,7 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     Some(FeatureDefinition::Shell {
         bodies: None,
         removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
-        thickness: Some(Length(thickness.abs())),
+        thickness: Some(cadmpeg_ir::features::PositiveLength::new(thickness.abs())?),
         outward: Some(if kind == "Part::Thickness" {
             thickness > 0.0
         } else {
@@ -4138,7 +4181,7 @@ fn offset_shape_definition(
     }
     Some(FeatureDefinition::OffsetShape {
         source: BodySelection::Native(source.id.clone()),
-        distance: Length(distance),
+        distance: cadmpeg_ir::features::NonZeroLength::new(distance)?,
         mode,
         join: shell_join(kind, properties)?,
         resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
@@ -4227,8 +4270,12 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
         .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
     Some(FeatureDefinition::MirrorShape {
         source: BodySelection::Native(source.id.clone()),
-        plane_origin: Point3::new(origin.x, origin.y, origin.z),
-        plane_normal: vector_property(properties, "Normal")?.unit()?,
+        plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            origin.x, origin.y, origin.z,
+        ))?,
+        plane_normal: cadmpeg_ir::features::FeatureDirection3::new(
+            vector_property(properties, "Normal")?.unit()?,
+        )?,
         plane_reference,
     })
 }
@@ -4261,10 +4308,12 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
     Some(FeatureDefinition::ProjectOnSurface {
         sources: PathRef::Native(sources.id.clone()),
         support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
-        direction: vector_property(properties, "Direction")?.unit()?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(
+            vector_property(properties, "Direction")?.unit()?,
+        )?,
         mode,
-        height: Length(height),
-        offset: Length(offset),
+        height: cadmpeg_ir::features::NonNegativeLength::new(height)?,
+        offset: Length::new(offset)?,
     })
 }
 
@@ -4294,14 +4343,17 @@ fn draft_definition(
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
             plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
-            pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
-                direction,
-                plane: None,
-            }),
+            pull: match pull_direction {
+                Some(direction) => Some(cadmpeg_ir::features::DraftPull {
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    plane: None,
+                }),
+                None => None,
+            },
         },
-        angle: Some(cadmpeg_ir::features::Angle(
+        angle: Some(cadmpeg_ir::features::SlopeAngle::new(
             if reversed { -angle } else { angle }.to_radians(),
-        )),
+        )?),
         outward: Some(reversed),
     })
 }
@@ -4315,21 +4367,25 @@ fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
         .filter(|value| value.is_finite() && *value > 0.0);
     match (mode, first) {
         (0, Some(distance)) => Some(ChamferSpec::Distance {
-            distance: Length(distance),
+            distance: Length::new(distance)?,
         }),
         (1, Some(first)) => property(properties, "Size2")
             .and_then(scalar_value)
             .filter(|value| value.is_finite() && *value > 0.0)
-            .map(|second| ChamferSpec::TwoDistances {
-                first: Length(first),
-                second: Length(second),
+            .and_then(|second| {
+                Some(ChamferSpec::TwoDistances {
+                    first: Length::new(first)?,
+                    second: Length::new(second)?,
+                })
             }),
         (2, Some(distance)) => property(properties, "Angle")
             .and_then(scalar_value)
             .filter(|angle| angle.is_finite() && *angle > 0.0 && *angle < 180.0)
-            .map(|angle| ChamferSpec::DistanceAngle {
-                distance: Length(distance),
-                angle: cadmpeg_ir::features::Angle(angle.to_radians()),
+            .and_then(|angle| {
+                Some(ChamferSpec::DistanceAngle {
+                    distance: Length::new(distance)?,
+                    angle: cadmpeg_ir::features::Angle::new(angle.to_radians())?,
+                })
             }),
         _ => None,
     }
@@ -4514,82 +4570,82 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         property(properties, name)
             .and_then(scalar_value)
             .filter(|value| value.is_finite() && *value >= 0.0)
-            .map(Length)
+            .and_then(Length::new)
     };
     let angle = |name: &str| {
         property(properties, name)
             .and_then(scalar_value)
             .filter(|value| value.is_finite())
-            .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+            .and_then(|value| cadmpeg_ir::features::Angle::new(value.to_radians()))
     };
     let signed_length = |name: &str| {
         property(properties, name)
             .and_then(scalar_value)
             .filter(|value| value.is_finite())
-            .map(Length)
+            .and_then(Length::new)
     };
     let solid = if kind.ends_with("Box") {
-        PrimitiveSolid::Box {
-            length: length("Length").filter(|value| value.0 > 0.0)?,
-            width: length("Width").filter(|value| value.0 > 0.0)?,
-            height: length("Height").filter(|value| value.0 > 0.0)?,
+        PrimitiveSolidKind::Box {
+            length: length("Length").filter(|value| value.get() > 0.0)?,
+            width: length("Width").filter(|value| value.get() > 0.0)?,
+            height: length("Height").filter(|value| value.get() > 0.0)?,
         }
     } else if kind.ends_with("Cylinder") {
-        PrimitiveSolid::Cylinder {
-            radius: length("Radius").filter(|value| value.0 > 0.0)?,
-            height: length("Height").filter(|value| value.0 > 0.0)?,
+        PrimitiveSolidKind::Cylinder {
+            radius: length("Radius").filter(|value| value.get() > 0.0)?,
+            height: length("Height").filter(|value| value.get() > 0.0)?,
             angle: angle("Angle")?,
         }
     } else if kind.ends_with("Cone") {
         let radius1 = length("Radius1")?;
         let radius2 = length("Radius2")?;
-        if radius1.0 == 0.0 && radius2.0 == 0.0 {
+        if radius1.get() == 0.0 && radius2.get() == 0.0 {
             return None;
         }
-        PrimitiveSolid::Cone {
+        PrimitiveSolidKind::Cone {
             radius1,
             radius2,
-            height: length("Height").filter(|value| value.0 > 0.0)?,
+            height: length("Height").filter(|value| value.get() > 0.0)?,
             angle: angle("Angle")?,
         }
     } else if kind.ends_with("Sphere") {
-        PrimitiveSolid::Sphere {
-            radius: length("Radius").filter(|value| value.0 > 0.0)?,
+        PrimitiveSolidKind::Sphere {
+            radius: length("Radius").filter(|value| value.get() > 0.0)?,
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
         }
     } else if kind.ends_with("Ellipsoid") {
-        let x_radius = length("Radius2").filter(|value| value.0 > 0.0)?;
+        let x_radius = length("Radius2").filter(|value| value.get() > 0.0)?;
         let y_radius = length("Radius3")?;
-        PrimitiveSolid::Ellipsoid {
+        PrimitiveSolidKind::Ellipsoid {
             x_radius,
-            y_radius: if y_radius.0 == 0.0 {
+            y_radius: if y_radius.get() == 0.0 {
                 x_radius
             } else {
                 y_radius
             },
-            z_radius: length("Radius1").filter(|value| value.0 > 0.0)?,
+            z_radius: length("Radius1").filter(|value| value.get() > 0.0)?,
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
         }
     } else if kind.ends_with("Torus") {
-        PrimitiveSolid::Torus {
-            major_radius: length("Radius1").filter(|value| value.0 > 0.0)?,
-            minor_radius: length("Radius2").filter(|value| value.0 > 0.0)?,
+        PrimitiveSolidKind::Torus {
+            major_radius: length("Radius1").filter(|value| value.get() > 0.0)?,
+            minor_radius: length("Radius2").filter(|value| value.get() > 0.0)?,
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
         }
     } else if kind.ends_with("Prism") {
-        PrimitiveSolid::Prism {
+        PrimitiveSolidKind::Prism {
             sides: u32::try_from(integer_property(properties, "Polygon")?).ok()?,
-            circumradius: length("Circumradius").filter(|value| value.0 > 0.0)?,
-            height: length("Height").filter(|value| value.0 > 0.0)?,
+            circumradius: length("Circumradius").filter(|value| value.get() > 0.0)?,
+            height: length("Height").filter(|value| value.get() > 0.0)?,
         }
     } else if kind.ends_with("Wedge") {
-        PrimitiveSolid::Wedge {
+        PrimitiveSolidKind::Wedge {
             xmin: signed_length("Xmin")?,
             ymin: signed_length("Ymin")?,
             zmin: signed_length("Zmin")?,
@@ -4611,30 +4667,30 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     } else {
         BooleanOp::NewBody
     };
-    Some(FeatureDefinition::Primitive { solid, op })
+    Some(FeatureDefinition::Primitive {
+        solid: PrimitiveSolid::new(solid).ok()?,
+        op,
+    })
 }
 
 fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let (origin, z_axis, x_axis, y_axis) = placement_frame(properties)?;
     Some(match kind {
         "PartDesign::Plane" => FeatureDefinition::DatumPlane {
-            origin,
-            normal: z_axis,
-            u_axis: x_axis,
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
         },
         "PartDesign::Line" => FeatureDefinition::DatumAxis {
-            origin,
-            direction: z_axis,
+            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
         },
         "PartDesign::Point" => FeatureDefinition::DatumPoint {
-            position: origin,
+            position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             construction: None,
         },
         "PartDesign::CoordinateSystem" => FeatureDefinition::DatumCoordinateSystem {
-            origin,
-            x_axis,
-            y_axis,
-            z_axis,
+            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                origin, x_axis, y_axis, z_axis,
+            )?,
         },
         _ => return None,
     })
@@ -4724,7 +4780,7 @@ fn loft_definition(
     }
     let max_degree = if property(properties, "MaxDegree").is_some() {
         let value = u32::try_from(integer_property(properties, "MaxDegree")?).ok()?;
-        Some((value > 0).then_some(value)?)
+        Some(std::num::NonZeroU32::new(value)?)
     } else {
         None
     };
@@ -4833,7 +4889,9 @@ fn sweep_definition(
                 }
             }
             4 => SweepOrientation::Binormal {
-                direction: vector_property(properties, "Binormal")?.unit()?,
+                direction: cadmpeg_ir::features::FeatureDirection3::new(
+                    vector_property(properties, "Binormal")?.unit()?,
+                )?,
             },
             _ => return None,
         }
@@ -4901,20 +4959,22 @@ fn hole_definition(
         return None;
     }
     let filter_bits = integer_selector(properties, "BaseProfileType", 6)?;
-    let profile_filter = HoleProfileFilter {
-        points: filter_bits & 1 != 0,
-        circles: filter_bits & 2 != 0,
-        arcs: filter_bits & 4 != 0,
+    let profile_filter = match filter_bits & 7 {
+        1 => HoleProfileFilter::Points,
+        2 => HoleProfileFilter::Circles,
+        3 => HoleProfileFilter::PointsAndCircles,
+        4 => HoleProfileFilter::Arcs,
+        5 => HoleProfileFilter::PointsAndArcs,
+        6 => HoleProfileFilter::CirclesAndArcs,
+        7 => HoleProfileFilter::All,
+        _ => return None,
     };
-    if !profile_filter.points && !profile_filter.circles && !profile_filter.arcs {
-        return None;
-    }
     let positive = |name| scalar_named(properties, name).filter(|value| *value > 0.0);
     let diameter = positive("Diameter")?;
     let cut_angle = || {
         positive("HoleCutCountersinkAngle")
             .filter(|value| *value < 180.0)
-            .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+            .and_then(|value| cadmpeg_ir::features::InteriorAngle::new(value.to_radians()))
     };
     let legacy_cut_types = program_version
         .and_then(freecad_program_version)
@@ -4922,32 +4982,32 @@ fn hole_definition(
     let kind = match enumeration_selector(properties, "HoleCutType", 0)? {
         0 => HoleKind::Simple,
         1 => HoleKind::Counterbore {
-            diameter: Length(positive("HoleCutDiameter")?),
-            depth: Length(positive("HoleCutDepth")?),
+            diameter: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
+            depth: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDepth")?)?,
         },
         2 => HoleKind::Countersink {
-            diameter: Length(positive("HoleCutDiameter")?),
+            diameter: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
             angle: cut_angle()?,
         },
         3 if !legacy_cut_types => HoleKind::Counterdrill {
-            diameter: Length(positive("HoleCutDiameter")?),
+            diameter: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
             entry_diameter: None,
-            depth: Length(positive("HoleCutDepth")?),
+            depth: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDepth")?)?,
             angle: cut_angle()?,
         },
         3 | 5 if legacy_cut_types => HoleKind::Counterbore {
-            diameter: Length(positive("HoleCutDiameter")?),
-            depth: Length(positive("HoleCutDepth")?),
+            diameter: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
+            depth: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDepth")?)?,
         },
         4 if legacy_cut_types => HoleKind::Countersink {
-            diameter: Length(positive("HoleCutDiameter")?),
+            diameter: cadmpeg_ir::features::PositiveLength::new(positive("HoleCutDiameter")?)?,
             angle: cut_angle()?,
         },
         _ => return None,
     };
     let extent = match enumeration_selector(properties, "DepthType", 0)? {
         0 => LinearTermination::Blind {
-            length: Length(positive("Depth")?),
+            length: cadmpeg_ir::features::NonZeroLength::new(positive("Depth")?)?,
         },
         1 => LinearTermination::ThroughAll,
         _ => return None,
@@ -4955,7 +5015,9 @@ fn hole_definition(
     let bottom = match enumeration_selector(properties, "DrillPoint", 1)? {
         0 => HoleBottom::Flat,
         1 => HoleBottom::Angled {
-            included_angle: cadmpeg_ir::features::Angle(positive("DrillPointAngle")?.to_radians()),
+            included_angle: cadmpeg_ir::features::InteriorAngle::new(
+                positive("DrillPointAngle")?.to_radians(),
+            )?,
             depth_to_tip: bool_selector(properties, "DrillForDepth", false)?,
         },
         _ => return None,
@@ -4965,7 +5027,7 @@ fn hole_definition(
         .then(|| {
             positive("TaperedAngle")
                 .filter(|value| *value < 180.0)
-                .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+                .and_then(|value| cadmpeg_ir::features::InteriorAngle::new(value.to_radians()))
         })
         .flatten();
     if tapered && taper_angle.is_none() {
@@ -4992,13 +5054,16 @@ fn hole_definition(
         let depth = match enumeration_selector(properties, "ThreadDepthType", 0)? {
             0 => HoleThreadDepth::HoleDepth,
             1 => HoleThreadDepth::Blind {
-                depth: Length(positive("ThreadDepth")?),
+                depth: cadmpeg_ir::features::PositiveLength::new(positive("ThreadDepth")?)?,
             },
             2 => HoleThreadDepth::TappedStandard,
             _ => return None,
         };
         let clearance = if bool_selector(properties, "UseCustomThreadClearance", false)? {
-            Some(Length(scalar_named(properties, "CustomThreadClearance")?))
+            Some(Length::new(scalar_named(
+                properties,
+                "CustomThreadClearance",
+            )?)?)
         } else {
             None
         };
@@ -5009,8 +5074,9 @@ fn hole_definition(
                 class: enumeration_label(properties, "ThreadClass"),
                 modeled,
                 cosmetic,
-                pitch: positive("ThreadPitch").map(Length),
-                major_diameter: positive("ThreadDiameter").map(Length),
+                pitch: positive("ThreadPitch").and_then(cadmpeg_ir::features::PositiveLength::new),
+                major_diameter: positive("ThreadDiameter")
+                    .and_then(cadmpeg_ir::features::PositiveLength::new),
                 hand,
                 depth,
                 clearance,
@@ -5041,7 +5107,7 @@ fn hole_definition(
             specification,
         },
         exit_kind: None,
-        diameter: Some(Length(diameter)),
+        diameter: Some(cadmpeg_ir::features::PositiveLength::new(diameter)?),
         extent: Some(extent),
         bottom: Some(bottom),
         taper_angle,
@@ -5105,20 +5171,22 @@ fn helical_sweep_definition(
     }
     let construction = HelicalSweepConstruction {
         profile,
-        axis_origin,
-        axis_direction: axis_direction.unit()?,
+        axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
+        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction.unit()?)?,
         law,
-        pitch: Length(scalar_named(properties, "Pitch")?),
-        height: Length(scalar_named(properties, "Height")?),
-        turns: scalar_named(properties, "Turns")?,
-        radial_growth: Length(scalar_named(properties, "Growth")?),
-        cone_angle: cadmpeg_ir::features::Angle(scalar_named(properties, "Angle")?.to_radians()),
+        pitch: cadmpeg_ir::features::NonNegativeLength::new(scalar_named(properties, "Pitch")?)?,
+        travel: cadmpeg_ir::features::HelicalSweepTravel::new(
+            Length::new(scalar_named(properties, "Height")?)?,
+            Length::new(scalar_named(properties, "Growth")?)?,
+        )?,
+        turns: cadmpeg_ir::features::PositiveReal::new(scalar_named(properties, "Turns")?)?,
+        cone_angle: cadmpeg_ir::features::Angle::new(
+            scalar_named(properties, "Angle")?.to_radians(),
+        )?,
         left_handed: bool_selector(properties, "LeftHanded", false)?,
         reversed: bool_selector(properties, "Reversed", false)?,
-        tolerance: Some(float_constraint_selector(
-            properties,
-            "Tolerance",
-            DEFAULT_HELICAL_SWEEP_TOLERANCE,
+        tolerance: Some(cadmpeg_ir::features::PositiveReal::new(
+            float_constraint_selector(properties, "Tolerance", DEFAULT_HELICAL_SWEEP_TOLERANCE)?,
         )?),
         allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     };
@@ -5164,7 +5232,7 @@ fn binder_definition(
             None
         } else {
             Some(BinderOffset {
-                distance: Length(distance),
+                distance: cadmpeg_ir::features::NonZeroLength::new(distance)?,
                 join: match offset_join {
                     0 => BinderOffsetJoin::Arcs,
                     1 => BinderOffsetJoin::Tangent,
@@ -5555,7 +5623,9 @@ fn pattern_kind(
             PatternKind::Circular {
                 axis_origin,
                 axis_dir,
-                angle: cadmpeg_ir::features::Angle((step * f64::from(count - 1)).to_radians()),
+                angle: cadmpeg_ir::features::Angle::new(
+                    (step * f64::from(count - 1)).to_radians(),
+                )?,
                 count,
             }
         } else {
@@ -5564,8 +5634,8 @@ fn pattern_kind(
                 axis_dir,
                 angles: angles
                     .into_iter()
-                    .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()))
-                    .collect(),
+                    .map(|angle| cadmpeg_ir::features::Angle::new(angle.to_radians()))
+                    .collect::<Option<Vec<_>>>()?,
             }
         }
     } else {
@@ -5595,14 +5665,17 @@ fn linear_pattern_axis(
     if let Some(spacing) = uniform_step(&offsets) {
         Some(PatternKind::Linear {
             direction,
-            spacing: Length(spacing),
+            spacing: Length::new(spacing)?,
             count,
             second: None,
         })
     } else {
         Some(PatternKind::LinearOffsets {
             direction,
-            offsets: offsets.into_iter().map(Length).collect(),
+            offsets: offsets
+                .into_iter()
+                .map(Length::new)
+                .collect::<Option<Vec<_>>>()?,
         })
     }
 }
@@ -6253,9 +6326,10 @@ mod profile_tests {
                 "test:entity#arc",
                 SketchGeometry::Arc {
                     center: Point2::new(0.0, 0.0),
-                    radius: Length(1.0),
-                    start_angle: cadmpeg_ir::features::Angle(0.0),
-                    end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                    radius: Length::new(1.0).unwrap(),
+                    start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+                    end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2)
+                        .unwrap(),
                 },
             ),
             entity(
@@ -6310,14 +6384,14 @@ mod profile_tests {
                 "test:entity#2",
                 SketchGeometry::Circle {
                     center: Point2::new(0.0, 0.0),
-                    radius: Length(2.0),
+                    radius: Length::new(2.0).unwrap(),
                 },
             ),
             entity(
                 "test:entity#3",
                 SketchGeometry::Circle {
                     center: Point2::new(10.0, 0.0),
-                    radius: Length(2.0),
+                    radius: Length::new(2.0).unwrap(),
                 },
             ),
         ];

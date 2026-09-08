@@ -339,8 +339,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     procedural_id,
                     ProceduralSurfaceDefinition::Revolution {
                         directrix: curve_id,
-                        axis_origin: axis.origin,
-                        axis_direction: axis.direction,
+                        axis_origin: axis.origin.get(),
+                        axis_direction: axis.direction.get(),
                         angular_interval: [0.0, std::f64::consts::TAU],
                         angular_parameter_interval: None,
                         parameter_interval: [

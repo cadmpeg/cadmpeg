@@ -882,10 +882,10 @@ fn decode_types_schema_datum_from_its_unique_plane_carrier() {
     assert_eq!(result.ir().model.features.len(), 1);
     assert!(matches!(
         &result.ir().model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { origin, normal, u_axis }
-            if *origin == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)
-                && *normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                && *u_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame }
+            if frame.origin() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)
+                && frame.normal() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && frame.u_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     ));
 }
 
@@ -1168,9 +1168,9 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
             && construction.axis().is_none()
             && matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: cadmpeg_ir::features::AngularTermination::Angle {
-                        angle: cadmpeg_ir::features::Angle(angle)
+                        angle
                     }
-                }) if (*angle - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
+                }) if (angle.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];

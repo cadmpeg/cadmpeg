@@ -156,7 +156,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             faces: FaceSelection::Native(scope_id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::features::Length(0.1)),
+            gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(0.1).unwrap()),
         },
     );
     feature.native_ref = Some(scope_id.clone());

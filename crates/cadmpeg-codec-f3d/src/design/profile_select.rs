@@ -1095,7 +1095,7 @@ pub(crate) fn inserted_cylindrical_profile_selection(
             };
             ((candidate_center.u - center.u).hypot(candidate_center.v - center.v)
                 <= linear_tolerance
-                && (candidate_radius.0 - cylinder.radius).abs() <= linear_tolerance
+                && (candidate_radius.get() - cylinder.radius).abs() <= linear_tolerance
                 && projected
                     .iter()
                     .all(|point| point_on_sketch_entity(*point, entity, linear_tolerance)))
@@ -2141,7 +2141,7 @@ fn coincident_spatial_profile_geometry(
         + center_delta.y * center_delta.y
         + center_delta.z * center_delta.z
         <= linear_tolerance * linear_tolerance
-        && (first_radius.0 - second_radius.0).abs() <= linear_tolerance
+        && (first_radius.get() - second_radius.get()).abs() <= linear_tolerance
         && normal_angle <= angular_tolerance
 }
 

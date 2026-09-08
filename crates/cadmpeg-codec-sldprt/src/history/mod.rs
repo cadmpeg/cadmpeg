@@ -336,20 +336,28 @@ mod literal_tests {
         let values = std::collections::HashMap::new();
         assert_eq!(
             ParameterExpressionParser::new_flat("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(2.0).unwrap()
+            ))
         );
         assert_eq!(
             ParameterExpressionParser::new_flat("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(5.0).unwrap()
+            ))
         );
         assert_eq!(
             ParameterExpressionParser::new_flat("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,)
                 .parse(),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(2.0).unwrap()
+            ))
         );
         assert_eq!(
             parse_parameter_literal("&lt;MOD-DIAM&gt;4.917"),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(4.917)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(4.917).unwrap()
+            ))
         );
     }
 
@@ -359,16 +367,22 @@ mod literal_tests {
         let values = std::collections::HashMap::new();
         assert_eq!(
             ParameterExpressionParser::new_flat("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(2.0).unwrap()
+            ))
         );
         assert_eq!(
             ParameterExpressionParser::new_flat("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,)
                 .parse(),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(5.0).unwrap()
+            ))
         );
         assert_eq!(
             parse_parameter_literal("<MOD-RHO>0.5"),
-            Some(ParameterValue::Length(cadmpeg_ir::features::Length(0.5)))
+            Some(ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(0.5).unwrap()
+            ))
         );
         assert_eq!(
             dimension_display("&lt;MOD-RHO&gt;0.5"),
@@ -388,17 +402,17 @@ mod literal_tests {
         ] {
             assert_eq!(
                 parse_parameter_literal(expression),
-                Some(ParameterValue::Length(cadmpeg_ir::features::Length(
-                    expected
-                ))),
+                Some(ParameterValue::Length(
+                    cadmpeg_ir::features::Length::new(expected).unwrap()
+                )),
                 "{expression}"
             );
             assert_eq!(dimension_display(expression), Some(display), "{expression}");
             assert_eq!(
                 ParameterExpressionParser::new_flat(expression, &aliases, &values).parse(),
-                Some(ParameterValue::Length(cadmpeg_ir::features::Length(
-                    expected
-                ))),
+                Some(ParameterValue::Length(
+                    cadmpeg_ir::features::Length::new(expected).unwrap()
+                )),
                 "{expression}"
             );
         }

@@ -598,9 +598,9 @@ pub(crate) fn section_segment_intersection_carrier_with_missing_line(
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
     Some(SketchGeometry::Arc {
         center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-        radius: Length(radius),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::TAU),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(0.0)?,
+        end_angle: Angle::new(std::f64::consts::TAU)?,
     })
 }
 

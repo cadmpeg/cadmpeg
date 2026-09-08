@@ -946,7 +946,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     definition: SketchConstraintDefinition::DistanceLociValue {
                         first,
                         second,
-                        distance: Length(distance),
+                        distance: Length::new(distance)?,
                         parameter,
                     },
                     name: None,
@@ -1002,7 +1002,7 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
                     first,
                     second,
                     axis,
-                    value: Length(value),
+                    value: Length::new(value)?,
                 },
                 name: None,
                 driving: None,
@@ -1053,7 +1053,7 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
                 sketch: sketch.clone(),
                 definition: SketchConstraintDefinition::PointCoordinateValues {
                     point,
-                    values: [Length(u), Length(v)],
+                    values: [Length::new(u)?, Length::new(v)?],
                 },
                 name: None,
                 driving: None,
@@ -1078,8 +1078,8 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
 ) -> Vec<(SketchConstraint, usize)> {
     section_equation_function_sixteen_angle_difference_rows(definition)
         .into_iter()
-        .map(|equation| {
-            (
+        .filter_map(|equation| {
+            Some((
                 SketchConstraint {
                     id: sketch_constraint_id(
                         sketch,
@@ -1090,7 +1090,7 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
                         first: equation.first.1,
                         second: equation.second.1,
                         difference: equation.difference.1,
-                        value: Angle(equation.value),
+                        value: Angle::new(equation.value)?,
                     },
                     name: None,
                     driving: None,
@@ -1104,7 +1104,7 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
                     native_ref: Some(sketch_native_ref(sketch)),
                 },
                 equation.offset,
-            )
+            ))
         })
         .collect()
 }
@@ -1166,7 +1166,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
             let angle = if distance <= EPS_POLAR_ZERO {
                 None
             } else {
-                Some(Angle(equation.angle_value?))
+                Some(Angle::new(equation.angle_value?)?)
             };
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
@@ -1185,7 +1185,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                     definition: SketchConstraintDefinition::PolarDistance {
                         first,
                         second,
-                        distance: Length(distance),
+                        distance: Length::new(distance)?,
                         angle,
                         distance_parameter,
                     },
@@ -2143,7 +2143,7 @@ mod tests {
                 first: 10,
                 second: 11,
                 difference: 20,
-                value: cadmpeg_ir::features::Angle(1.5),
+                value: cadmpeg_ir::features::Angle::new(1.5).unwrap(),
             }
         );
     }

@@ -681,13 +681,13 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         super::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0]), None, None,),
         cadmpeg_ir::features::FeatureDefinition::Block {
             dimensions: Some([
-                cadmpeg_ir::features::Length(10.0),
-                cadmpeg_ir::features::Length(20.0),
-                cadmpeg_ir::features::Length(30.0),
+                actual_dimensions,
+                actual_dimensions_2,
+                actual_dimensions_3,
             ]),
             placement: None,
             op: BooleanOp::Unresolved,
-        }
+        } if actual_dimensions.get() == 10.0 && actual_dimensions_2.get() == 20.0 && actual_dimensions_3.get() == 30.0
     ));
     assert_eq!(
         super::non_boolean_feature_definition("BLOCK", &[], None, None, None),
@@ -947,16 +947,16 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             &[],
             None,
             None,
-            Some(cadmpeg_ir::features::Length(8.0)),
+            Some(cadmpeg_ir::features::Length::new(8.0).unwrap()),
         ),
         FeatureDefinition::Hole {
-            diameter: Some(cadmpeg_ir::features::Length(8.0)),
+            diameter: Some(actual_diameter),
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
             },
             ..
-        }
+        } if actual_diameter.get() == 8.0
     ));
     assert!(matches!(
         super::non_boolean_feature_definition("RIB", &[], None, None, None),
@@ -1304,11 +1304,19 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
 
     assert_eq!(
         super::sphere_body_projection(&ir, &[]),
-        Some((body.clone(), Point3::new(1., 2., 3.), Length(f64::EPSILON)))
+        Some((
+            body.clone(),
+            Point3::new(1., 2., 3.),
+            Length::new(f64::EPSILON).unwrap()
+        ))
     );
     assert_eq!(
         super::sphere_body_projection(&ir, std::slice::from_ref(&body)),
-        Some((body.clone(), Point3::new(1., 2., 3.), Length(f64::EPSILON)))
+        Some((
+            body.clone(),
+            Point3::new(1., 2., 3.),
+            Length::new(f64::EPSILON).unwrap()
+        ))
     );
 
     let mut second_body = ir.model.bodies[0].clone();

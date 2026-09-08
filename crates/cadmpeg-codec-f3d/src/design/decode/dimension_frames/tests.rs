@@ -763,7 +763,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         SketchId("f3d:model:sketch#radial".into()),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: cadmpeg_ir::features::Length(1.000_000_014_901_161_2),
+            radius: cadmpeg_ir::features::Length::new(1.000_000_014_901_161_2).unwrap(),
         },
     );
     assert!(matches!(

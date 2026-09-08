@@ -553,7 +553,6 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
 
 #[test]
 fn decode_distinguishes_full_circle_sketch_geometry() {
-    use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::SketchGeometry;
 
     let decoded = SldprtCodec
@@ -567,14 +566,13 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
         decoded.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Circle {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
-            radius: Length(1000.0),
-        }
+            radius: actual_radius,
+        } if actual_radius.get() == 1000.0
     ));
 }
 
 #[test]
 fn decode_projects_full_ellipse_sketch_geometry() {
-    use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::SketchGeometry;
 
     let decoded = SldprtCodec
@@ -587,11 +585,11 @@ fn decode_projects_full_ellipse_sketch_geometry() {
         decoded.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Ellipse {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
-            major_angle: Angle(value),
-            major_radius: Length(2000.0),
-            minor_radius: Length(1000.0),
+            major_angle: value,
+            major_radius: actual_major_radius,
+            minor_radius: actual_minor_radius,
             bounds: None,
-        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        } if ((value.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_major_radius.get() == 2000.0 && actual_minor_radius.get() == 1000.0
     ));
 }
 

@@ -16,9 +16,9 @@ const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 fn trimmed_concentric_arcs_validate_as_offsets() {
     let arc = |radius, start, end| SketchGeometry::Arc {
         center: Point2::new(3.0, -4.0),
-        radius: Length(radius),
-        start_angle: Angle(start),
-        end_angle: Angle(end),
+        radius: Length::new(radius).unwrap(),
+        start_angle: Angle::new(start).unwrap(),
+        end_angle: Angle::new(end).unwrap(),
     };
     let source = arc(2.0, 0.0, std::f64::consts::FRAC_PI_2);
     let trimmed_result = arc(5.0, 0.1, 1.4);
@@ -42,13 +42,13 @@ fn trimmed_concentric_arcs_validate_as_offsets() {
 fn full_concentric_circles_validate_as_offsets() {
     let circle = |radius| SketchGeometry::Circle {
         center: Point2::new(3.0, -4.0),
-        radius: Length(radius),
+        radius: Length::new(radius).unwrap(),
     };
     let source = circle(5.0);
     let result = circle(3.5);
     let displaced = SketchGeometry::Circle {
         center: Point2::new(3.0, -3.9),
-        radius: Length(3.5),
+        radius: Length::new(3.5).unwrap(),
     };
 
     assert!(sketch_curve_offset_matches(
@@ -75,19 +75,19 @@ fn full_concentric_circles_validate_as_offsets() {
 fn mixed_full_circle_arc_validate_as_offsets() {
     let circle = SketchGeometry::Circle {
         center: Point2::new(3.0, -4.0),
-        radius: Length(5.0),
+        radius: Length::new(5.0).unwrap(),
     };
     let arc = SketchGeometry::Arc {
         center: Point2::new(3.0, -4.0),
-        radius: Length(3.5),
-        start_angle: Angle(0.1),
-        end_angle: Angle(1.4),
+        radius: Length::new(3.5).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(1.4).unwrap(),
     };
     let displaced = SketchGeometry::Arc {
         center: Point2::new(3.1, -4.0),
-        radius: Length(3.5),
-        start_angle: Angle(0.1),
-        end_angle: Angle(1.4),
+        radius: Length::new(3.5).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(1.4).unwrap(),
     };
 
     assert!(sketch_curve_offset_matches(
@@ -143,7 +143,7 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(-1.0),
+            radius: Length::new(-1.0).unwrap(),
         },
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
@@ -257,7 +257,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 result: result.clone(),
                 source_reversed: false,
             }],
-            distance: Length(2.0),
+            distance: Length::new(2.0).unwrap(),
             parameter: None,
         },
         name: None,
@@ -527,7 +527,7 @@ fn sketch_constraint_native_ref_must_resolve() {
 #[test]
 fn sketch_feature_ownership_and_order_are_validated() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         LinearTermination, ProfileRef,
     };
     use crate::sketches::{Sketch, SketchId};
@@ -565,7 +565,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(1.0),
+                        length: crate::features::NonZeroLength::new(1.0).unwrap(),
                     },
                     draft: None,
                 },
@@ -610,7 +610,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 #[test]
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         LinearTermination, ProfileRef, SketchProfileRegion,
     };
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
@@ -648,7 +648,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(1.0),
+                        length: crate::features::NonZeroLength::new(1.0).unwrap(),
                     },
                     draft: None,
                 },

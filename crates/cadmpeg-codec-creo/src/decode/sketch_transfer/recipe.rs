@@ -4,7 +4,7 @@
 use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
-use cadmpeg_ir::features::{Angle, AngularTermination, RevolveExtent};
+use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_recipe(
@@ -208,7 +208,7 @@ pub(in super::super) fn feature_revolution_extent(
     unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).map(|_| {
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: Angle(std::f64::consts::TAU),
+                angle: cadmpeg_ir::features::PositiveAngle::FULL_TURN,
             },
         }
     })

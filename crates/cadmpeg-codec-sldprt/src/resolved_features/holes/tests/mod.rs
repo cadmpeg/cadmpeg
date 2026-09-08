@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -65,7 +65,7 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
             placements: None,
             construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,
-            diameter: Some(Length(4.0)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
             extent: None,
             bottom: None,
             taper_angle: None,

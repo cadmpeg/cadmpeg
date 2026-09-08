@@ -42,7 +42,10 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
             }
         );
         assert_eq!(text.placement().map(|placement| placement.anchor), None);
-        assert_eq!(text.placement().map(|placement| placement.rotation.0), None);
+        assert_eq!(
+            text.placement().map(|placement| placement.rotation.get()),
+            None
+        );
         assert_eq!(
             (match text.layout {
                 crate::records::SketchTextLayout::TextexTag {
@@ -486,7 +489,7 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
     assert!(
         (text
             .placement()
-            .map(|placement| placement.rotation.0)
+            .map(|placement| placement.rotation.get())
             .expect("rotation")
             - rotation)
             .abs()
@@ -514,7 +517,10 @@ fn path_sketch_text_record_stores_neither_anchor_nor_rotation() {
     ))
     .expect("sketch text record");
     assert_eq!(text.placement().map(|placement| placement.anchor), None);
-    assert_eq!(text.placement().map(|placement| placement.rotation.0), None);
+    assert_eq!(
+        text.placement().map(|placement| placement.rotation.get()),
+        None
+    );
 }
 
 #[test]
@@ -567,7 +573,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.font_family, "Arial");
     assert_eq!(text.font_weight, 400);
     assert_eq!(
-        text.placement().map(|placement| placement.rotation.0),
+        text.placement().map(|placement| placement.rotation.get()),
         Some(0.0)
     );
     assert_eq!(text.height, 5.0);
@@ -624,7 +630,7 @@ fn txt_tag_sketch_text_record_decodes_stored_rotation() {
     ))
     .expect("rotated txt_tag");
     assert_eq!(
-        text.placement().map(|placement| placement.rotation.0),
+        text.placement().map(|placement| placement.rotation.get()),
         Some(stored_rotation)
     );
     assert_eq!(

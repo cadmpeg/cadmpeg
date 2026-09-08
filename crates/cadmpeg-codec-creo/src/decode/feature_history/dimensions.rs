@@ -287,10 +287,14 @@ pub(in super::super) fn transfer_feature_dimensions(
         let value = dimension
             .value
             .resolved()
-            .map(|value| match dimension.unit() {
-                crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
-                crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
-                crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
+            .and_then(|value| match dimension.unit() {
+                crate::feature::DimensionUnit::Radians => {
+                    Angle::new(value).map(ParameterValue::Angle)
+                }
+                crate::feature::DimensionUnit::Millimeters => {
+                    Length::new(value).map(ParameterValue::Length)
+                }
+                crate::feature::DimensionUnit::SchemaDefined => Some(ParameterValue::Real(value)),
             });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),

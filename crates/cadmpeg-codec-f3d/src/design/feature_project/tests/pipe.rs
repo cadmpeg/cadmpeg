@@ -14,9 +14,7 @@ use crate::records::topology::DesignOperandRole;
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     use crate::records::topology::DesignConstructionOperandGroupFrame;
 
-    use cadmpeg_ir::features::{
-        FeatureDefinition, GeneratedSweepSection, Length, PathRef, SweepSection,
-    };
+    use cadmpeg_ir::features::{FeatureDefinition, GeneratedSweepSection, PathRef, SweepSection};
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:pipe-scope#1",
@@ -124,12 +122,12 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         definition,
         FeatureDefinition::Sweep {
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                outer_radius: Length(3.0),
+                outer_radius: actual_outer_radius,
                 wall_thickness: None,
             }),
             path: Some(PathRef::Native(path)),
             ..
-        } if path == path_group.id
+        } if (path == path_group.id) && actual_outer_radius.get() == 3.0
     ));
 
     {
@@ -160,12 +158,12 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         hollow_definition,
         FeatureDefinition::Sweep {
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                outer_radius: Length(3.0),
-                wall_thickness: Some(Length(1.5)),
+                outer_radius: actual_outer_radius,
+                wall_thickness: Some(actual_wall_thickness),
             }),
             path: Some(PathRef::Native(path)),
             ..
-        } if path == path_group.id
+        } if (path == path_group.id) && actual_outer_radius.get() == 3.0 && actual_wall_thickness.get() == 1.5
     ));
 
     let mut too_thick_parameters = parameters.clone();

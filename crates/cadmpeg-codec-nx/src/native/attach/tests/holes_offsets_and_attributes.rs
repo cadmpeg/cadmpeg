@@ -224,11 +224,14 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     assert_eq!(projection.outputs, outputs);
     assert_eq!(
         projection.diameters,
-        BTreeMap::from([(operation.clone(), Length(4.0))])
+        BTreeMap::from([(operation.clone(), Length::new(4.0).unwrap())])
     );
     assert_eq!(
         projection.blind_depths,
-        BTreeMap::from([(operation.clone(), Length(3.0))])
+        BTreeMap::from([(
+            operation.clone(),
+            cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap()
+        )])
     );
     assert_eq!(
         super::blind_hole_axis_placements_for_operations(
@@ -239,8 +242,12 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         BTreeMap::from([(
             operation.clone(),
             HolePlacement::Directed {
-                position: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0
+                ))
+                .unwrap(),
             },
         )])
     );
@@ -251,12 +258,16 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         None,
         super::HoleProjection {
             placements: vec![HolePlacement::Directed {
-                position: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
             }],
-            diameter: Some(Length(4.0)),
+            diameter: Some(Length::new(4.0).unwrap()),
             extent: Some(LinearTermination::Blind {
-                length: Length(3.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap(),
             }),
             ..super::HoleProjection::default()
         },
@@ -269,14 +280,14 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 kind: HoleKind::Simple,
                 ..
             },
-            diameter: Some(Length(4.0)),
-            extent: Some(LinearTermination::Blind { length: Length(3.0) }),
+            diameter: Some(actual_diameter),
+            extent: Some(LinearTermination::Blind { length: actual_length }),
             placements,
             ..
-        } if placements.as_deref() == Some(&[HolePlacement::Directed {
-            position: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        }][..])
+        } if (placements.as_deref() == Some(&[HolePlacement::Directed {
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        }][..])) && actual_diameter.get() == 4.0 && actual_length.get() == 3.0
     ));
 
     let mut missing_cap = ir.clone();
@@ -558,15 +569,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     assert_eq!(projection.outputs, outputs);
     assert_eq!(
         projection.diameters,
-        BTreeMap::from([(operation.clone(), Length(4.0))])
+        BTreeMap::from([(operation.clone(), Length::new(4.0).unwrap())])
     );
     assert_eq!(
         projection.counterbores,
         BTreeMap::from([(
             operation.clone(),
             super::CounterboreDimensions {
-                diameter: Length(8.0),
-                depth: Length(2.0),
+                diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
+                depth: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
             },
         )])
     );
@@ -579,8 +590,10 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         BTreeMap::from([(
             operation.clone(),
             HolePlacement::Axis {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
         )])
     );
@@ -591,10 +604,12 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         None,
         super::HoleProjection {
             placements: vec![HolePlacement::Axis {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             }],
-            diameter: Some(Length(4.0)),
+            diameter: Some(Length::new(4.0).unwrap()),
             counterbore: projection.counterbores.get(&operation).copied(),
             ..super::HoleProjection::default()
         },
@@ -605,19 +620,19 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         FeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
-                    diameter: Length(8.0),
-                    depth: Length(2.0),
+                    diameter: actual_diameter,
+                    depth: actual_depth,
                 },
                 ..
             },
-            diameter: Some(Length(4.0)),
+            diameter: Some(actual_diameter_2),
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             placements,
             ..
-        } if placements.as_deref() == Some(&[HolePlacement::Axis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        }][..])
+        } if (placements.as_deref() == Some(&[HolePlacement::Axis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        }][..])) && actual_diameter.get() == 8.0 && actual_depth.get() == 2.0 && actual_diameter_2.get() == 4.0
     ));
 
     let mut missing_shoulder = ir.clone();
@@ -700,8 +715,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, .. },
-            distance: Some(cadmpeg_ir::features::Length(30.0)),
-        } if faces.len() == 2
+            distance: Some(actual_distance),
+        } if (faces.len() == 2) && actual_distance.get() == 30.0
     ));
 
     for face in ir.model.faces.iter_mut().filter(|face| {
@@ -716,9 +731,9 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     assert!(matches!(
         definition,
         FeatureDefinition::OffsetSurface {
-            distance: Some(cadmpeg_ir::features::Length(-30.0)),
+            distance: Some(actual_distance),
             ..
-        }
+        } if actual_distance.get() == -30.0
     ));
 
     ir.model
@@ -770,7 +785,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -810,9 +825,9 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Native(_),
-            thickness: Some(Length(12.5)),
+            thickness: Some(actual_thickness),
             side: None,
-        }
+        } if actual_thickness.get() == 12.5
     ));
 
     let mut sheet_output = ir.clone();
@@ -883,7 +898,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 
 #[test]
 fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -925,9 +940,9 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Resolved { faces, .. },
-            thickness: Some(Length(12.5)),
+            thickness: Some(actual_thickness),
             side: Some(ThickenSide::Both),
-        } if faces.len() == 1
+        } if (faces.len() == 1) && actual_thickness.get() == 12.5
     ));
 
     let mut mismatched_support = ir.clone();
@@ -1040,9 +1055,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         FeatureDefinition::Fillet {
             groups
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(5.0) },
+            radius: RadiusSpec::Constant { radius: actual_radius },
             ..
-        }])
+        }] if actual_radius.get() == 5.0)
     ));
     let (definition, _) = super::blend_feature_definition(
         &ir,
@@ -1132,9 +1147,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         FeatureDefinition::Fillet {
             groups
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::Constant { radius: cadmpeg_ir::features::Length(5.0) },
+            radius: RadiusSpec::Constant { radius: actual_radius },
             ..
-        }])
+        }] if actual_radius.get() == 5.0)
     ));
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();

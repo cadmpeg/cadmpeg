@@ -180,7 +180,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(25.0)
+            cadmpeg_ir::features::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter.native_ref.is_some());

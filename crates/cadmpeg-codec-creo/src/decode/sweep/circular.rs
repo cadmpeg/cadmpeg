@@ -332,7 +332,7 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
                     }))
                     .map(|entity| &entity.geometry)
                 {
-                    return Some(([center.u, center.v], radius.0));
+                    return Some(([center.u, center.v], radius.get()));
                 }
             }
         }

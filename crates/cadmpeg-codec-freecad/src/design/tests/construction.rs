@@ -4,10 +4,8 @@
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
-    FeatureDefinition, Length, ShellJoin, ShellMode, SweepOrientation, SweepTransformation,
-    SweepTransition,
+    FeatureDefinition, ShellJoin, ShellMode, SweepOrientation, SweepTransformation, SweepTransition,
 };
-use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -65,8 +63,8 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
         cadmpeg_ir::features::FeatureDefinition::PostProcess {
             operation,
             refine: false,
-            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(0.01),
-        } if matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(tolerance),
+        } if tolerance.get() == 0.01 && matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -159,7 +157,7 @@ fn retains_native_for_malformed_post_process_controls() {
             operation,
             refine: false,
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(value),
-        } if (*value - 0.01).abs() < f64::EPSILON
+        } if (value.get() - 0.01).abs() < f64::EPSILON
             && matches!(operation.as_ref(), FeatureDefinition::Primitive { .. })
     ));
     assert!(matches!(
@@ -243,42 +241,35 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         matches!(feature("Vertex").definition, FeatureDefinition::PointGeometry { position } if position == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     assert!(
-        matches!(feature("Line").definition, FeatureDefinition::LineSegment { start, end } if start == cadmpeg_ir::math::Point3::new(0.0, 1.0, 2.0) && end == cadmpeg_ir::math::Point3::new(3.0, 4.0, 5.0))
+        matches!(feature("Line").definition, FeatureDefinition::LineSegment { segment } if segment.start() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 2.0) && segment.end() == cadmpeg_ir::math::Point3::new(3.0, 4.0, 5.0))
     );
     assert!(matches!(
         feature("Circle").definition,
-        FeatureDefinition::CircularArc {
-            radius: cadmpeg_ir::features::Length(4.0),
-            start_angle: cadmpeg_ir::features::Angle(start),
-            end_angle: cadmpeg_ir::features::Angle(end),
-            ..
-        } if (start - 30_f64.to_radians()).abs() < 1.0e-12
-            && (end - 300_f64.to_radians()).abs() < 1.0e-12
+        FeatureDefinition::CircularArc { arc }
+            if ((arc.angles().endpoints()[0] - 30_f64.to_radians()).abs() < 1.0e-12
+            && (arc.angles().endpoints()[1] - 300_f64.to_radians()).abs() < 1.0e-12) && arc.radius().get() == 4.0
     ));
     assert!(matches!(
         feature("Ellipse").definition,
-        FeatureDefinition::EllipticArc {
-            major_radius: cadmpeg_ir::features::Length(6.0),
-            minor_radius: cadmpeg_ir::features::Length(2.0),
-            ..
-        }
+        FeatureDefinition::EllipticArc { arc }
+            if arc.radii()[0].get() == 6.0 && arc.radii()[1].get() == 2.0
     ));
     assert!(
-        matches!(&feature("Polyline").definition, FeatureDefinition::Polyline { points, closed: true } if points.len() == 3)
+        matches!(&feature("Polyline").definition, FeatureDefinition::Polyline { chain } if chain.closed() && chain.points().len() == 3)
     );
     assert!(matches!(
         feature("Regular").definition,
         FeatureDefinition::RegularPolygonCurve {
-            sides: 7,
-            circumradius: cadmpeg_ir::features::Length(8.0)
-        }
+            sides,
+            circumradius: actual_circumradius
+        } if sides.get() == 7 && actual_circumradius.get() == 8.0
     ));
     assert!(matches!(
         feature("Plane").definition,
         FeatureDefinition::PlanarPatch {
-            length: cadmpeg_ir::features::Length(9.0),
-            width: cadmpeg_ir::features::Length(10.0)
-        }
+            length: actual_length,
+            width: actual_width
+        } if actual_length.get() == 9.0 && actual_width.get() == 10.0
     ));
     assert!(
         matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker } if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
@@ -446,20 +437,16 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         definition("Uniform"),
         cadmpeg_ir::features::FeatureDefinition::Scale {
             center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
-            factors: cadmpeg_ir::features::ScaleFactors::Uniform(-2.0),
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform(factor),
             ..
-        }
+        } if factor.get() == -2.0
     ));
     assert!(matches!(
         definition("Anisotropic"),
         cadmpeg_ir::features::FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(Vector3 {
-                x: 2.0,
-                y: 3.0,
-                z: 4.0,
-            }),
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(factors),
             ..
-        }
+        } if factors.map(cadmpeg_ir::features::NonZeroReal::get) == [2.0, 3.0, 4.0]
     ));
 }
 
@@ -510,9 +497,9 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&absent, "Scale"),
         FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::Uniform(2.0),
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform(factor),
             ..
-        }
+        } if factor.get() == 2.0
     ));
     assert_valid_document(absent.ir());
 
@@ -527,13 +514,9 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&valid, "Scale"),
         FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(Vector3 {
-                x: 3.0,
-                y: 4.0,
-                z: 5.0,
-            }),
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(factors),
             ..
-        }
+        } if factors.map(cadmpeg_ir::features::NonZeroReal::get) == [3.0, 4.0, 5.0]
     ));
     assert_valid_document(valid.ir());
 
@@ -715,10 +698,10 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::MirrorShape {
             source: cadmpeg_ir::features::BodySelection::Native(source),
-            plane_origin: cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 },
-            plane_normal: cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+            plane_origin: geometry_1,
+            plane_normal: geometry_2,
             plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(reference)),
-        } if source.ends_with(":Source") && reference.ends_with(":MirrorPlane")
+        } if ( source.ends_with(":Source") && reference.ends_with(":MirrorPlane")) && matches!(geometry_1.get(), cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(geometry_2.get(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 2);
     assert!(result.report().losses.is_empty());
@@ -764,12 +747,12 @@ fn transfers_part_projection_on_surface_construction() {
         cadmpeg_ir::features::FeatureDefinition::ProjectOnSurface {
             sources: cadmpeg_ir::features::PathRef::Native(sources),
             support_face: cadmpeg_ir::features::FaceSelection::Native(support),
-            direction: cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+            direction: geometry_1,
             mode: cadmpeg_ir::features::SurfaceProjectionMode::Faces,
-            height: cadmpeg_ir::features::Length(8.0),
-            offset: cadmpeg_ir::features::Length(-1.5),
-        } if sources.ends_with(":Projection")
-            && support.ends_with(":SupportFace")
+            height: actual_height,
+            offset: actual_offset,
+        } if ( (sources.ends_with(":Projection")
+            && support.ends_with(":SupportFace")) && actual_height.get() == 8.0 && actual_offset.get() == -1.5) && matches!(geometry_1.get(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 3);
     assert!(result.report().losses.is_empty());
@@ -861,10 +844,10 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         cadmpeg_ir::features::FeatureDefinition::Loft {
             solid: false,
             ruled: false,
-            max_degree: Some(7),
+            max_degree: Some(degree),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
-        }
+        } if degree.get() == 7
     ));
     let native_properties = result
         .ir()
@@ -1390,7 +1373,7 @@ fn transfers_shape_and_subshape_binder_construction() {
         cadmpeg_ir::features::BinderCopyOnChange::Mutated
     );
     assert!(*claim_children && *fuse && !*make_face && *partial_load && !*refine);
-    assert_eq!(offset.distance.0, -2.5);
+    assert_eq!(offset.distance.get(), -2.5);
     assert_eq!(
         offset.join,
         cadmpeg_ir::features::BinderOffsetJoin::Intersection
@@ -1492,14 +1475,14 @@ fn transfers_complete_thickness_construction_controls() {
         &wall.definition,
         cadmpeg_ir::features::FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection),
-            thickness: Some(cadmpeg_ir::features::Length(2.5)),
+            thickness: Some(actual_thickness),
             outward: Some(false),
             mode: Some(cadmpeg_ir::features::ShellMode::BothSides),
             join: Some(cadmpeg_ir::features::ShellJoin::Intersection),
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        } if selection.ends_with(":Base")
+        } if (selection.ends_with(":Base")) && actual_thickness.get() == 2.5
     ));
     assert_eq!(wall.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -1565,19 +1548,19 @@ fn transfers_part_thickness_and_shape_offset_construction() {
     assert!(matches!(
         definition("Thickness"),
         FeatureDefinition::Shell {
-            thickness: Some(Length(2.0)),
+            thickness: Some(actual_thickness),
             outward: Some(false),
             mode: Some(ShellMode::Pipe),
             join: Some(ShellJoin::Intersection),
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        }
+        } if actual_thickness.get() == 2.0
     ));
     assert!(matches!(
         definition("Offset"),
         FeatureDefinition::OffsetShape {
-            distance: Length(-1.5),
+            distance: actual_distance,
             mode: ShellMode::BothSides,
             join: ShellJoin::Tangent,
             resolve_intersections: true,
@@ -1585,18 +1568,18 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             fill: true,
             planar: false,
             ..
-        }
+        } if actual_distance.get() == -1.5
     ));
     assert!(matches!(
         definition("Offset2D"),
         FeatureDefinition::OffsetShape {
-            distance: Length(3.0),
+            distance: actual_distance,
             mode: ShellMode::Pipe,
             join: ShellJoin::Arc,
             fill: true,
             planar: true,
             ..
-        }
+        } if actual_distance.get() == 3.0
     ));
 }
 
@@ -1853,14 +1836,14 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::features::Angle(angle)),
+            angle: Some(angle),
             outward: Some(true),
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
             && (pull_direction.x - 0.0).abs() < 1.0e-12
             && (pull_direction.y + 1.0).abs() < 1.0e-12
             && pull_direction.z.abs() < 1.0e-12
-            && (*angle + 5f64.to_radians()).abs() < 1.0e-12
+            && (angle.get() + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
     let face_draft = result

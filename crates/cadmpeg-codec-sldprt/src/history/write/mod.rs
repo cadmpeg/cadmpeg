@@ -153,6 +153,7 @@ pub fn prepare_features_for_write(
             let projected_model = native
                 .as_ref()
                 .map(project_feature_model_with_native_inputs)
+                .transpose()?
                 .map(FeatureProjection::into_model)
                 .unwrap_or_default();
             if feature_hash(&projected_model) == neutral_hash {
@@ -191,7 +192,7 @@ pub(crate) fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native)
+    let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
@@ -220,7 +221,7 @@ pub(crate) fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let expected = project_features_with_native_inputs(native)
+    let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sweep { section, .. } = feature.definition else {
@@ -265,13 +266,13 @@ pub(crate) fn validate_surface_sweep_profile_edits(
 
 pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
-) -> Vec<cadmpeg_ir::features::Feature> {
-    project_feature_model_with_native_inputs(native).features
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    Ok(project_feature_model_with_native_inputs(native)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
-) -> FeatureProjection {
+) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
         &mut histories,
@@ -285,14 +286,14 @@ fn project_feature_model_with_native_inputs(
         features,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::operations::bind_sweep_operations(
         features,
         &histories,
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(features, &histories, &native.feature_input_lanes);
+    project_compact_and_generated(features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,
@@ -304,7 +305,7 @@ fn project_feature_model_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
     );
-    projection
+    Ok(projection)
 }
 
 pub(crate) fn validate_compact_body_selection_edits(

@@ -39,9 +39,9 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
         entities[3].geometry,
         SketchGeometry::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::FRAC_PI_2),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::ZERO,
+            end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         }
     );
 }
@@ -165,9 +165,9 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
             "right",
             SketchGeometry::Arc {
                 center: Point2::new(2.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(std::f64::consts::FRAC_PI_2),
-                end_angle: Angle(-std::f64::consts::FRAC_PI_2),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                end_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
             },
             &["right-top", "right-bottom"],
         ),
@@ -190,8 +190,8 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         entities[9].geometry,
         SketchGeometry::Arc {
             center,
-            radius: Length(radius),
+            radius,
             ..
-        } if center == Point2::new(0.0, 0.0) && radius == 1.0
+        } if center == Point2::new(0.0, 0.0) && radius.get() == 1.0
     ));
 }

@@ -85,7 +85,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                     native: "edge:local".into(),
                 },
                 radius: RadiusSpec::Constant {
-                    radius: Length(1.0),
+                    radius: Length::new(1.0).unwrap(),
                 },
                 tangency_weight: None,
             }],

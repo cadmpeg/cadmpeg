@@ -35,14 +35,18 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         "complete-helix",
         0,
         FeatureDefinition::Helix {
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            radius: Length(1.0),
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
+            axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0,
+            ))
+            .unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: cadmpeg_ir::features::HelixPitch::new(Length(2.0)).unwrap(),
+                pitch: cadmpeg_ir::features::NonZeroLength::new(2.0).unwrap(),
             },
-            revolutions: 3.0,
-            start_angle: Angle(0.0),
+            revolutions: cadmpeg_ir::features::PositiveReal::new(3.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
             clockwise: false,
             segment_turns: None,
             construction_style: None,
@@ -131,8 +135,10 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::MirrorShape {
             source: BodySelection::Bodies(vec![body.clone()]),
-            plane_origin: Point3::new(0.0, 0.0, 0.0),
-            plane_normal: Vector3::new(0.0, 0.0, 1.0),
+            plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
+            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
             plane_reference: Some(FaceSelection::Native("plane".into())),
         },
     );
@@ -199,24 +205,23 @@ fn design_completeness_audits_typed_construction_families() {
     .expect("identity grammar")]);
     let definitions = [
         FeatureDefinition::PointGeometry {
-            position: Point3::new(0.0, 0.0, 0.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
         },
         FeatureDefinition::Primitive {
-            solid: cadmpeg_ir::features::PrimitiveSolid::Box {
-                length: Length(1.0),
-                width: Length(2.0),
-                height: Length(3.0),
-            },
+            solid: cadmpeg_ir::features::PrimitiveSolid::new(
+                cadmpeg_ir::features::PrimitiveSolidKind::Box {
+                    length: Length::new(1.0).unwrap(),
+                    width: Length::new(2.0).unwrap(),
+                    height: Length::new(3.0).unwrap(),
+                },
+            )
+            .unwrap(),
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::ProfileRef::Sketch(sketch),
-            thickness: Length(1.0),
+            thickness: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
-        },
-        FeatureDefinition::Polyline {
-            points: vec![Point3::new(0.0, 0.0, 0.0)],
-            closed: false,
         },
         FeatureDefinition::Block {
             dimensions: None,
@@ -226,33 +231,37 @@ fn design_completeness_audits_typed_construction_families() {
         FeatureDefinition::ProjectOnSurface {
             sources: PathRef::Native("sources".into()),
             support_face: face.clone(),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
             mode: cadmpeg_ir::features::SurfaceProjectionMode::All,
-            height: Length(0.0),
-            offset: Length(0.0),
+            height: cadmpeg_ir::features::NonNegativeLength::new(0.0).unwrap(),
+            offset: Length::new(0.0).unwrap(),
         },
         FeatureDefinition::Coil {
             construction: cadmpeg_ir::features::CoilConstruction {
                 placement: cadmpeg_ir::features::CoilPlacement::Native {
-                    native_ref: "placement".into(),
+                    native_ref: cadmpeg_ir::features::SelectionReference::try_from(String::from(
+                        "placement",
+                    ))
+                    .unwrap(),
                 },
-                diameter: Length(10.0),
+                diameter: cadmpeg_ir::features::PositiveLength::new(10.0).unwrap(),
                 extent: cadmpeg_ir::features::CoilExtent::RevolutionsHeight {
-                    revolutions: 2.0,
-                    height: Length(5.0),
+                    revolutions: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+                    height: Length::new(5.0).unwrap(),
                 },
                 section: cadmpeg_ir::features::CoilSection::Circular {
-                    diameter: Length(1.0),
+                    diameter: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
                 },
                 section_placement: cadmpeg_ir::features::CoilSectionPlacement::Center,
                 clockwise: false,
-                taper: Angle(0.0),
+                taper: Angle::new(0.0).unwrap(),
             },
             result: cadmpeg_ir::features::CoilResult::NewBody,
         },
         FeatureDefinition::Sphere {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: Length(1.0),
+            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             op: BooleanOp::Unresolved,
         },
         FeatureDefinition::FaceBlend {
@@ -388,14 +397,18 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     };
     for (ordinal, definition) in [
         post_process(FeatureDefinition::Helix {
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            radius: Length(1.0),
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
+            axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0,
+            ))
+            .unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-                pitch: cadmpeg_ir::features::HelixPitch::new(Length(2.0)).unwrap(),
+                pitch: cadmpeg_ir::features::NonZeroLength::new(2.0).unwrap(),
             },
-            revolutions: 3.0,
-            start_angle: Angle(0.0),
+            revolutions: cadmpeg_ir::features::PositiveReal::new(3.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
             clockwise: false,
             segment_turns: None,
             construction_style: None,
@@ -443,14 +456,14 @@ fn design_completeness_recurses_through_pattern_operands() {
             0,
             PatternKind::LinearOffsets {
                 direction: None,
-                offsets: vec![Length(0.0), Length(10.0)],
+                offsets: vec![Length::ZERO, Length::new(10.0).unwrap()],
             },
         ),
         (
             1,
             PatternKind::CurveDriven {
                 path: Some(PathRef::Native("path".into())),
-                spacing: Length(10.0),
+                spacing: Length::new(10.0).unwrap(),
                 count: 2,
             },
         ),
@@ -468,7 +481,7 @@ fn design_completeness_recurses_through_pattern_operands() {
                 stages: vec![cadmpeg_ir::features::PatternStage {
                     pattern: Box::new(PatternKind::CurveDriven {
                         path: None,
-                        spacing: Length(10.0),
+                        spacing: Length::new(10.0).unwrap(),
                         count: 2,
                     }),
                     combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
@@ -480,7 +493,7 @@ fn design_completeness_recurses_through_pattern_operands() {
             PatternKind::Circular {
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
                 axis_dir: Vector3::new(0.0, 0.0, 1.0),
-                angle: Angle(std::f64::consts::TAU),
+                angle: Angle::new(std::f64::consts::TAU).unwrap(),
                 count: 4,
             },
         ),
@@ -634,7 +647,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::Unresolved,
             cadmpeg_ir::features::LinearTermination::Blind {
-                length: Length(10.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
             },
         ),
         extrude(
@@ -655,7 +668,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         },
         FeatureDefinition::ExtendSurface {
             faces: face.clone(),
-            distance: Some(Length(10.0)),
+            distance: Some(cadmpeg_ir::features::PositiveLength::new(10.0).unwrap()),
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
         },
         FeatureDefinition::FilledSurface {
@@ -737,7 +750,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                 groups: vec![cadmpeg_ir::features::FilletGroup {
                     edges: EdgeSelection::Edges(Vec::new()),
                     radius: RadiusSpec::Constant {
-                        radius: Length(1.0),
+                        radius: Length::new(1.0).unwrap(),
                     },
                     tangency_weight: None,
                 }],
@@ -769,7 +782,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             FeatureDefinition::Shell {
                 bodies: None,
                 removed_faces: FaceSelection::Faces(Vec::new()),
-                thickness: Some(Length(1.0)),
+                thickness: Some(cadmpeg_ir::features::PositiveLength::new(1.0).unwrap()),
                 outward: Some(false),
                 mode: None,
                 join: None,
@@ -798,8 +811,11 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                 ]),
                 support_faces: FaceSelection::Faces(Vec::new()),
                 mode: RuledSurfaceMode::Direction {
-                    direction: Vector3::new(0.0, 0.0, 1.0),
-                    distance: Length(1.0),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
+                    distance: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
                 },
                 angle: None,
                 alternate_face: None,
@@ -838,14 +854,15 @@ fn hole_completeness_checks_optional_operands_when_present() {
         face: None,
         direction: None,
         placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
-            position: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         }]),
         construction: cadmpeg_ir::features::HoleConstruction::form(
             cadmpeg_ir::features::HoleKind::Simple,
         ),
         exit_kind,
-        diameter: Some(Length(5.0)),
+        diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
         extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
         bottom: None,
         taper_angle: None,
@@ -916,7 +933,9 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D0".into(),
         expression: "1mm".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Length(Length(1.0))),
+        value: Some(cadmpeg_ir::features::ParameterValue::Length(
+            Length::new(1.0).unwrap(),
+        )),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -995,7 +1014,9 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D6".into(),
         expression: "D0 + 1mm".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Length(Length(2.0))),
+        value: Some(cadmpeg_ir::features::ParameterValue::Length(
+            Length::new(2.0).unwrap(),
+        )),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,

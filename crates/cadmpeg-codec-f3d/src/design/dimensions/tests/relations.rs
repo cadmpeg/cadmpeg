@@ -93,7 +93,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
         "generated:circle#first",
         SketchGeometry::Circle {
             center: Point2::new(-3.0, 2.0),
-            radius: Length(1.5),
+            radius: Length::new(1.5).unwrap(),
         },
     );
     let axis = entity(
@@ -107,7 +107,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
         "generated:circle#second",
         SketchGeometry::Circle {
             center: Point2::new(3.0, 2.0),
-            radius: Length(1.5),
+            radius: Length::new(1.5).unwrap(),
         },
     );
 
@@ -123,7 +123,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     let mut mismatched = second.clone();
     mismatched.geometry = SketchGeometry::Circle {
         center: Point2::new(3.0, 2.0),
-        radius: Length(2.0),
+        radius: Length::new(2.0).unwrap(),
     };
     assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
@@ -141,9 +141,9 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
         "generated:arc#first",
         SketchGeometry::Arc {
             center: Point2::new(-3.0, 2.0),
-            radius: Length(1.5),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_4),
-            end_angle: Angle(std::f64::consts::FRAC_PI_3),
+            radius: Length::new(1.5).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_4).unwrap(),
+            end_angle: Angle::new(std::f64::consts::FRAC_PI_3).unwrap(),
         },
     );
     let axis = entity(
@@ -157,9 +157,9 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
         "generated:arc#second",
         SketchGeometry::Arc {
             center: Point2::new(3.0, 2.0),
-            radius: Length(1.5),
-            start_angle: Angle(2.0 * std::f64::consts::FRAC_PI_3),
-            end_angle: Angle(5.0 * std::f64::consts::FRAC_PI_4),
+            radius: Length::new(1.5).unwrap(),
+            start_angle: Angle::new(2.0 * std::f64::consts::FRAC_PI_3).unwrap(),
+            end_angle: Angle::new(5.0 * std::f64::consts::FRAC_PI_4).unwrap(),
         },
     );
 
@@ -175,9 +175,9 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     let mut mismatched = second.clone();
     mismatched.geometry = SketchGeometry::Arc {
         center: Point2::new(3.0, 2.0),
-        radius: Length(1.5),
-        start_angle: Angle(2.0 * std::f64::consts::FRAC_PI_3),
-        end_angle: Angle(5.0 * std::f64::consts::FRAC_PI_4 + 0.1),
+        radius: Length::new(1.5).unwrap(),
+        start_angle: Angle::new(2.0 * std::f64::consts::FRAC_PI_3).unwrap(),
+        end_angle: Angle::new(5.0 * std::f64::consts::FRAC_PI_4 + 0.1).unwrap(),
     };
     assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
@@ -195,16 +195,16 @@ fn counted_dimension_groups_resolve_centered_entities() {
         "generated:circle#first",
         SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
+            radius: Length::new(3.0).unwrap(),
         },
     );
     let arc = entity(
         "generated:arc#second",
         SketchGeometry::Arc {
             center: Point2::new(1.0, 2.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(1.0),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(1.0).unwrap(),
         },
     );
     assert!(matches!(
@@ -217,7 +217,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         "generated:circle#coradial",
         SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
+            radius: Length::new(3.0).unwrap(),
         },
     );
     assert!(matches!(
@@ -230,9 +230,9 @@ fn counted_dimension_groups_resolve_centered_entities() {
         "generated:ellipse#same-center",
         SketchGeometry::Ellipse {
             center: Point2::new(1.0, 2.0),
-            major_angle: Angle(0.25),
-            major_radius: Length(4.0),
-            minor_radius: Length(1.5),
+            major_angle: Angle::new(0.25).unwrap(),
+            major_radius: Length::new(4.0).unwrap(),
+            minor_radius: Length::new(1.5).unwrap(),
             bounds: None,
         },
     );
@@ -245,18 +245,18 @@ fn counted_dimension_groups_resolve_centered_entities() {
     let mut displaced = arc.clone();
     displaced.geometry = SketchGeometry::Arc {
         center: Point2::new(1.0, 2.1),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(1.0),
+        radius: Length::new(2.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(1.0).unwrap(),
     };
     assert!(exact_counted_dimension_relation(&[&circle, &displaced]).is_none());
 
     let mut invalid = arc;
     invalid.geometry = SketchGeometry::Arc {
         center: Point2::new(1.0, 2.0),
-        radius: Length(0.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(1.0),
+        radius: Length::new(0.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(1.0).unwrap(),
     };
     assert!(exact_counted_dimension_relation(&[&circle, &invalid]).is_none());
 }
@@ -444,7 +444,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert_eq!(pairs[0].result, result_horizontal.id().clone());
     assert_eq!(pairs[1].source, source_vertical.id().clone());
     assert_eq!(pairs[1].result, result_vertical.id().clone());
-    assert!((distance.0 - 2.0).abs() <= 1.0e-9);
+    assert!((distance.get() - 2.0).abs() <= 1.0e-9);
     assert!(pairs[0].source_reversed);
     assert!(!pairs[1].source_reversed);
     assert_eq!(parameter, None);
@@ -586,7 +586,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         definition,
         SketchConstraintDefinition::Offset {
             pairs,
-            distance: Length(distance),
+            distance,
             parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
                 id: actual_parameter,
                 negated: false,
@@ -595,7 +595,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: true,
-        }] && (distance - 2.0).abs() <= 1.0e-9
+        }] && (distance.get() - 2.0).abs() <= 1.0e-9
             && actual_parameter == parameter_id
     ));
 
@@ -693,13 +693,13 @@ fn single_curve_annotation_projects_parameterized_offset() {
 fn mixed_circle_arc_offset_uses_concentric_radius_difference() {
     let circle = SketchGeometry::Circle {
         center: Point2::new(0.0, 0.0),
-        radius: Length(20.0),
+        radius: Length::new(20.0).unwrap(),
     };
     let arc = SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(22.0),
-        start_angle: Angle(-0.2),
-        end_angle: Angle(0.1),
+        radius: Length::new(22.0).unwrap(),
+        start_angle: Angle::new(-0.2).unwrap(),
+        end_angle: Angle::new(0.1).unwrap(),
     };
     let distance = crate::design::dimensions::sketch_curve_offset(&circle, &arc)
         .expect("concentric circle-to-arc offset");
@@ -707,9 +707,9 @@ fn mixed_circle_arc_offset_uses_concentric_radius_difference() {
 
     let clockwise_arc = SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(22.0),
-        start_angle: Angle(0.1),
-        end_angle: Angle(-0.2),
+        radius: Length::new(22.0).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(-0.2).unwrap(),
     };
     let distance = crate::design::dimensions::sketch_curve_offset(&clockwise_arc, &circle)
         .expect("concentric arc-to-circle offset");
@@ -717,9 +717,9 @@ fn mixed_circle_arc_offset_uses_concentric_radius_difference() {
 
     let displaced_arc = SketchGeometry::Arc {
         center: Point2::new(1.0e-6, 0.0),
-        radius: Length(22.0),
-        start_angle: Angle(0.1),
-        end_angle: Angle(-0.2),
+        radius: Length::new(22.0).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(-0.2).unwrap(),
     };
     assert!(crate::design::dimensions::sketch_curve_offset(&circle, &displaced_arc).is_none());
 }

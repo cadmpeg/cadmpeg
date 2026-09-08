@@ -94,7 +94,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
         panic!("linear rectangular pattern");
     };
     assert!(direction.is_none());
-    assert!((spacing.0 - 50.0).abs() < EPS_SPACING);
+    assert!((spacing.get() - 50.0).abs() < EPS_SPACING);
     assert_eq!(count, 3);
     assert!(second.is_none());
 }

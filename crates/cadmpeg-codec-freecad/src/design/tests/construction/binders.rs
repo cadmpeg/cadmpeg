@@ -241,7 +241,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert!(offset.is_none());
         } else {
             let offset = offset.as_ref().expect("selected offset");
-            assert!((offset.distance.0 + 2.5).abs() <= f64::EPSILON);
+            assert!((offset.distance.get() + 2.5).abs() <= f64::EPSILON);
             assert_eq!(
                 offset.join,
                 if name == "OffsetJoinType" {

@@ -896,10 +896,7 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     assert!(entities
         .iter()
         .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Arc {
-                radius: Length(radius),
-                ..
-            } => Some(radius),
+            SketchGeometry::Arc { radius, .. } => Some(radius.get()),
             _ => None,
         })
         .all(|radius| (radius - 2.0).abs() < 1.0e-9));
@@ -934,9 +931,9 @@ fn compact_curve_detail_tangent_distinguishes_lines_and_arcs() {
         ),
         Some(SketchGeometry::Arc {
             center: Point2::new(0.0, 1.0),
-            radius: Length(1.0),
-            start_angle: Angle(std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(-std::f64::consts::FRAC_PI_2),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
     assert_eq!(
@@ -968,10 +965,10 @@ fn bounded_arc_normalization_uses_angular_tolerance() {
     else {
         panic!("valid bounded arc should resolve");
     };
-    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    let sweep = (end_angle.get() - start_angle.get()).rem_euclid(std::f64::consts::TAU);
     assert!(sweep <= std::f64::consts::PI + 1.0e-9);
-    assert!((start_angle.0 + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!(end_angle.0.abs() < 1.0e-12);
+    assert!((start_angle.get() + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!(end_angle.get().abs() < 1.0e-12);
 }
 
 #[test]
@@ -1057,9 +1054,9 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
             "start-arc",
             SketchGeometry::Arc {
                 center: Point2::new(2.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::PI),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::ZERO,
+                end_angle: Angle::new(std::f64::consts::PI).unwrap(),
             },
             &["start", "start-other"],
         ),
@@ -1067,9 +1064,9 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
             "end-arc",
             SketchGeometry::Arc {
                 center: Point2::new(0.0, 2.0),
-                radius: Length(1.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::PI),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::ZERO,
+                end_angle: Angle::new(std::f64::consts::PI).unwrap(),
             },
             &["end", "end-other"],
         ),
@@ -1144,9 +1141,9 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
         entities[3].geometry,
         SketchGeometry::Arc {
             center,
-            radius: Length(radius),
+            radius,
             ..
-        } if center == Point2::new(0.0, 0.0) && radius == 1.0
+        } if center == Point2::new(0.0, 0.0) && radius.get() == 1.0
     ));
 }
 
@@ -1235,9 +1232,9 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
             sketch.clone(),
             SketchGeometry::Arc {
                 center,
-                radius: Length(radius),
-                start_angle: Angle((2.0_f64).atan2(-9.5)),
-                end_angle: Angle((-2.0_f64).atan2(-9.5)),
+                radius: Length::new(radius).unwrap(),
+                start_angle: Angle::new((2.0_f64).atan2(-9.5)).unwrap(),
+                end_angle: Angle::new((-2.0_f64).atan2(-9.5)).unwrap(),
             },
         )
         .with_native_ref(Some("left-arc".into()))
@@ -1278,9 +1275,9 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
         entities[7].geometry,
         SketchGeometry::Arc {
             center: actual_center,
-            radius: Length(actual_radius),
+            radius: actual_radius,
             ..
-        } if actual_center == center && actual_radius == radius
+        } if actual_center == center && actual_radius.get() == radius
     ));
 }
 

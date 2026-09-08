@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length, PatternSeed,
+    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, PatternSeed,
     UnresolvedFamily,
 };
 use cadmpeg_ir::ids::BodyId;
@@ -318,10 +318,10 @@ fn rederived_body_census(
             FeatureDefinition::Native { kind, .. }
                 if kind.as_str() == "FSET" && feature.outputs.is_empty() => {}
             FeatureDefinition::Block {
-                dimensions: Some(dimensions),
-                placement: Some(placement),
+                dimensions: Some(_),
+                placement: Some(_),
                 op: BooleanOp::NewBody,
-            } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
+            } => {
                 let [output] = feature.outputs.as_slice() else {
                     return Err((
                         feature_boundary(feature),
@@ -336,20 +336,17 @@ fn rederived_body_census(
                 }
             }
             FeatureDefinition::Block {
-                dimensions: Some(dimensions),
-                placement: Some(placement),
+                dimensions: Some(_),
+                placement: Some(_),
                 op: BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
-            } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
+            } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Block {
-                dimensions: Some(dimensions),
-                placement: Some(placement),
+                dimensions: Some(_),
+                placement: Some(_),
                 op: BooleanOp::Unresolved,
-            } if dimensions.iter().copied().all(positive_length)
-                && placement.is_proper_rigid()
-                && matches!(feature.outputs.as_slice(), [output] if bodies.contains(output)) =>
-            {
+            } if matches!(feature.outputs.as_slice(), [output] if bodies.contains(output)) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Block { .. } => {
@@ -1161,10 +1158,6 @@ fn local_body_replacement_is_census_invariant(
                 && feature.outputs.iter().all(|output| bodies.contains(output))))
 }
 
-fn positive_length(length: Length) -> bool {
-    length.0.is_finite() && length.0 > 0.0
-}
-
 #[cfg(test)]
 mod tests {
     mod patterns;
@@ -1172,11 +1165,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        Angle, BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec, ConfigurationBodies,
+        BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec, ConfigurationBodies,
         ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-        HolePlacement, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
+        HolePlacement, Length, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
         RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection,
         ThickenSide, TrimRegion,
     };
@@ -1214,8 +1207,12 @@ mod tests {
             source_content: Vec::new(),
             outputs: vec![body],
             definition: FeatureDefinition::Block {
-                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                dimensions: Some([
+                    cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                ]),
+                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             },
             native_ref: None,
@@ -1283,12 +1280,16 @@ mod tests {
                 face: None,
                 direction: None,
                 placements: Some(vec![HolePlacement::Directed {
-                    position: Point3::new(0.0, 0.0, 0.0),
-                    direction: Vector3::new(0.0, 0.0, 1.0),
+                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                 }]),
                 construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
                 exit_kind: None,
-                diameter: Some(Length(0.5)),
+                diameter: Some(cadmpeg_ir::features::PositiveLength::new(0.5).unwrap()),
                 extent: Some(LinearTermination::ThroughAll),
                 bottom: None,
                 taper_angle: None,
@@ -1354,7 +1355,7 @@ mod tests {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length(1.0),
+                            length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1401,8 +1402,9 @@ mod tests {
             source_content: Vec::new(),
             outputs: vec![body.clone()],
             definition: FeatureDefinition::Sphere {
-                center: Point3::new(1.0, 2.0, 3.0),
-                radius: Length(4.0),
+                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .unwrap(),
+                radius: cadmpeg_ir::features::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
             },
             native_ref: None,
@@ -1560,8 +1562,12 @@ mod tests {
             1,
             body.clone(),
             FeatureDefinition::Block {
-                dimensions: Some([Length(0.5), Length(0.5), Length(0.5)]),
-                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                dimensions: Some([
+                    cadmpeg_ir::features::PositiveLength::new(0.5).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(0.5).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(0.5).unwrap(),
+                ]),
+                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::Join,
             },
         ));
@@ -1581,8 +1587,12 @@ mod tests {
             1,
             body.clone(),
             FeatureDefinition::Block {
-                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                dimensions: Some([
+                    cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                ]),
+                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::Unresolved,
             },
         ));
@@ -2558,7 +2568,7 @@ mod tests {
                 groups: vec![ChamferGroup {
                     edges: EdgeSelection::All,
                     spec: ChamferSpec::Distance {
-                        distance: Length(0.25),
+                        distance: Length::new(0.25).unwrap(),
                     },
                 }],
                 flip_direction: false,
@@ -2572,9 +2582,9 @@ mod tests {
                 groups: vec![FilletGroup {
                     edges: EdgeSelection::All,
                     radius: RadiusSpec::Constant {
-                        radius: Length(0.2),
+                        radius: Length::new(0.2).unwrap(),
                     },
-                    tangency_weight: Some(1.0),
+                    tangency_weight: Some(cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()),
                 }],
             },
         ));
@@ -2597,7 +2607,7 @@ mod tests {
                 groups: vec![ChamferGroup {
                     edges: EdgeSelection::Unresolved,
                     spec: ChamferSpec::Distance {
-                        distance: Length(0.25),
+                        distance: Length::new(0.25).unwrap(),
                     },
                 }],
                 flip_direction: false,
@@ -2629,16 +2639,16 @@ mod tests {
                 first_faces: first.clone(),
                 second_faces: second.clone(),
                 radius: RadiusSpec::Constant {
-                    radius: Length(0.2),
+                    radius: Length::new(0.2).unwrap(),
                 },
             },
             FeatureDefinition::OffsetSurface {
                 faces: first.clone(),
-                distance: Some(Length(0.1)),
+                distance: Some(Length::new(0.1).unwrap()),
             },
             FeatureDefinition::Thicken {
                 faces: first.clone(),
-                thickness: Some(Length(0.3)),
+                thickness: Some(cadmpeg_ir::features::PositiveLength::new(0.3).unwrap()),
                 side: Some(ThickenSide::Forward),
             },
             FeatureDefinition::Draft {
@@ -2646,11 +2656,14 @@ mod tests {
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                     plane: second.clone(),
                     pull: Some(cadmpeg_ir::features::DraftPull {
-                        direction: Vector3::new(0.0, 0.0, 1.0),
+                        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                            0.0, 0.0, 1.0,
+                        ))
+                        .unwrap(),
                         plane: None,
                     }),
                 },
-                angle: Some(Angle(0.1)),
+                angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
                 outward: Some(false),
             },
             FeatureDefinition::ReplaceFace {
@@ -2705,7 +2718,7 @@ mod tests {
             2,
             FeatureDefinition::ExtendSurface {
                 faces,
-                distance: Some(Length(0.5)),
+                distance: Some(cadmpeg_ir::features::PositiveLength::new(0.5).unwrap()),
                 method: SurfaceExtension::Natural,
             },
         );

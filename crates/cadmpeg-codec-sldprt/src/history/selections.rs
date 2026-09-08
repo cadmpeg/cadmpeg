@@ -62,9 +62,9 @@ pub(crate) fn offset_plane_support_origin(
         .unwrap_or(fallback_origin);
     if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
         return Point3::new(
-            origin.x + normal.x * distance.0,
-            origin.y + normal.y * distance.0,
-            origin.z + normal.z * distance.0,
+            origin.x + normal.x * distance.get(),
+            origin.y + normal.y * distance.get(),
+            origin.z + normal.z * distance.get(),
         );
     }
     origin
@@ -201,9 +201,9 @@ pub fn bind_topology_selections(
                 distance,
             } => match reference {
                 Some(DatumPlaneReference::Face(reference)) => resolve_face(reference),
-                Some(DatumPlaneReference::ResolvedPlane { origin, normal, .. }) => {
-                    let origin = *origin;
-                    let normal = *normal;
+                Some(DatumPlaneReference::ResolvedPlane { frame }) => {
+                    let origin = frame.origin();
+                    let normal = frame.normal();
                     let native = feature
                         .source_properties
                         .get("ReferenceFaceNative")

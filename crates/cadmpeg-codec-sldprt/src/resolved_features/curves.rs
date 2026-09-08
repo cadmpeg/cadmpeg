@@ -282,14 +282,16 @@ pub(super) fn resolve_two_center_semicircle_profile(
         } else {
             (&refs[0], &refs[1], endpoints[0], endpoints[1])
         };
+        let geometry = SketchGeometry::Arc {
+            center,
+            radius: Length::new(radius)?,
+            start_angle: Angle::new((start.v - center.v).atan2(start.u - center.u))?,
+            end_angle: Angle::new((end.v - center.v).atan2(end.u - center.u))?,
+        };
         entity.construction = false;
         entity.endpoint_refs = vec![start_ref.clone(), end_ref.clone()];
-        entity.geometry = SketchGeometry::Arc {
-            center,
-            radius: Length(radius),
-            start_angle: Angle((start.v - center.v).atan2(start.u - center.u)),
-            end_angle: Angle((end.v - center.v).atan2(end.u - center.u)),
-        };
+        entity.geometry = geometry;
+        Some(())
     };
     let Some(first_entity) = entities
         .iter_mut()
@@ -297,14 +299,18 @@ pub(super) fn resolve_two_center_semicircle_profile(
     else {
         return;
     };
-    set_arc(
+    if set_arc(
         first_entity,
         first.2,
         first.5,
         &first_refs,
         first_endpoints,
         false,
-    );
+    )
+    .is_none()
+    {
+        return;
+    }
     let sketch = first_entity.sketch.clone();
     let Some(second_entity) = entities
         .iter_mut()
@@ -312,14 +318,18 @@ pub(super) fn resolve_two_center_semicircle_profile(
     else {
         return;
     };
-    set_arc(
+    if set_arc(
         second_entity,
         second.2,
         second.5,
         &second_refs,
         second_endpoints,
         true,
-    );
+    )
+    .is_none()
+    {
+        return;
+    }
     let sketch_key = sketch
         .0
         .rsplit_once('#')
@@ -422,9 +432,9 @@ pub(super) fn tangent_bounded_curve(
     let (start_angle, end_angle, _) = minor_arc_angles(first, second);
     Some(SketchGeometry::Arc {
         center,
-        radius: Length(radius),
-        start_angle: Angle(start_angle),
-        end_angle: Angle(end_angle),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(start_angle)?,
+        end_angle: Angle::new(end_angle)?,
     })
 }
 
@@ -924,7 +934,7 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
                 sketch: entity.sketch.clone(),
                 endpoints: [start.clone(), end.clone()],
                 center,
-                radius: radius.0,
+                radius: radius.get(),
             })
         })
         .collect::<Vec<_>>();
@@ -1047,8 +1057,8 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             continue;
         };
         let geometry_start = Point2::new(
-            center.u + radius.0 * start_angle.0.cos(),
-            center.v + radius.0 * start_angle.0.sin(),
+            center.u + radius.get() * start_angle.get().cos(),
+            center.v + radius.get() * start_angle.get().sin(),
         );
         let first_distance = (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
         let second_distance = (geometry_start.u - second.u).hypot(geometry_start.v - second.v);
@@ -1250,14 +1260,12 @@ pub(super) fn sketch_plane_frames(
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
                     SketchPlaneFrame::native(principal_sketch_frame(plane))
                 }
-                cadmpeg_ir::features::FeatureDefinition::DatumPlane {
-                    origin,
-                    normal,
-                    u_axis,
-                } => SketchPlaneFrame::from_frame(
-                    (origin, normal, u_axis),
-                    feature_u_axis_source(feature),
-                ),
+                cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame } => {
+                    SketchPlaneFrame::from_frame(
+                        (frame.origin(), frame.normal(), frame.u_axis()),
+                        feature_u_axis_source(feature),
+                    )
+                }
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
@@ -1280,9 +1288,9 @@ pub(super) fn sketch_plane_frames(
                     feature.id.clone(),
                     SketchPlaneFrame {
                         origin: Point3::new(
-                            frame.origin.x + frame.normal.x * distance.0,
-                            frame.origin.y + frame.normal.y * distance.0,
-                            frame.origin.z + frame.normal.z * distance.0,
+                            frame.origin.x + frame.normal.x * distance.get(),
+                            frame.origin.y + frame.normal.y * distance.get(),
+                            frame.origin.z + frame.normal.z * distance.get(),
                         ),
                         ..frame
                     },
@@ -1321,12 +1329,8 @@ pub(super) fn lane_sketch_plane_frames(
             FeatureDefinition::DatumPrincipalPlane { plane } => {
                 SketchPlaneFrame::native(principal_sketch_frame(plane))
             }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => SketchPlaneFrame::from_frame(
-                (origin, normal, u_axis),
+            FeatureDefinition::DatumPlane { frame } => SketchPlaneFrame::from_frame(
+                (frame.origin(), frame.normal(), frame.u_axis()),
                 feature_u_axis_source(feature),
             ),
             _ => continue,

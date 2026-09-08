@@ -4,9 +4,8 @@
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef,
-    RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
-    SweepMode,
+    Angle, AngularTermination, BooleanOp, FeatureDefinition, PathRef, ProfileRef, RevolutionAxis,
+    RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
 };
 use std::collections::HashMap;
 
@@ -30,10 +29,11 @@ pub(crate) fn project_rib(
     let direction = feature
         .properties
         .get("Direction")
-        .and_then(|value| parse_valid_direction(value));
+        .and_then(|value| parse_valid_direction(value))
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
     let draft = match feature.parameters.get("Draft") {
         Some(value) => parse_angle_rad(value)
-            .map(Angle)
+            .and_then(cadmpeg_ir::features::SlopeAngle::new)
             .map_or(RibDraft::Unresolved, RibDraft::Angle),
         None => RibDraft::None,
     };
@@ -46,7 +46,7 @@ pub(crate) fn project_rib(
                 .get("Thickness")
                 .or_else(|| feature.parameters.get("D1"))
                 .and_then(|value| parse_positive_length_mm(value))
-                .map(Length),
+                .and_then(cadmpeg_ir::features::PositiveLength::new),
             side: feature
                 .properties
                 .get("BothSides")
@@ -184,7 +184,7 @@ pub(crate) fn project_sweep(
         SweepMode::Unresolved
     };
     let twist = match feature.parameters.get("Twist") {
-        Some(value) => Some(Angle(parse_angle_rad(value)?)),
+        Some(value) => Some(Angle::new(parse_angle_rad(value)?)?),
         None => None,
     };
     let scale = match feature.parameters.get("Scale") {
@@ -193,7 +193,7 @@ pub(crate) fn project_sweep(
                 .trim()
                 .parse::<f64>()
                 .ok()
-                .filter(|value| value.is_finite() && *value > 0.0)?,
+                .and_then(cadmpeg_ir::features::PositiveReal::new)?,
         ),
         None => None,
     };
@@ -286,7 +286,7 @@ pub(crate) fn project_revolve(
             })
             .and_then(|value| parse_positive_angle_rad(value))
             .or_else(|| ordered_angle(ordinal))
-            .map(Angle)
+            .and_then(cadmpeg_ir::features::PositiveAngle::new)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {
@@ -318,10 +318,12 @@ pub(crate) fn project_revolve(
                 .get("AxisDirection")
                 .and_then(|value| parse_valid_direction(value)),
         )
-        .map(|(origin, direction)| RevolutionAxis {
-            origin,
-            direction,
-            reference: None,
+        .and_then(|(origin, direction)| {
+            Some(RevolutionAxis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+                direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                reference: None,
+            })
         });
     let op = feature
         .properties

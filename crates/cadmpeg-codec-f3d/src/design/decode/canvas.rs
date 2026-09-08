@@ -89,10 +89,13 @@ pub fn project_canvas_images(
             visible: image.geometry().prologue.visible(),
             mirror_u,
             mirror_v,
-            origin,
-            u_axis,
-            v_axis,
-            bounds: [
+            frame: cadmpeg_ir::features::FeatureUnitPlaneFrame::new(origin, u_axis, v_axis)
+                .ok_or_else(|| {
+                    CodecError::malformed(
+                        "Canvas frame must have finite origin and perpendicular unit directions",
+                    )
+                })?,
+            bounds: cadmpeg_ir::features::FeatureImageBounds::new([
                 Point2::new(
                     minimum.u * DESIGN_LENGTH_TO_MM,
                     minimum.v * DESIGN_LENGTH_TO_MM,
@@ -101,8 +104,15 @@ pub fn project_canvas_images(
                     maximum.u * DESIGN_LENGTH_TO_MM,
                     maximum.v * DESIGN_LENGTH_TO_MM,
                 ),
-            ],
-            opacity: Some(f64::from(opacity)),
+            ])
+            .ok_or_else(|| {
+                CodecError::malformed("Canvas bounds must have finite corners and nonzero extents")
+            })?,
+            opacity: Some(
+                cadmpeg_ir::features::Fraction::new(f64::from(opacity)).ok_or_else(|| {
+                    CodecError::malformed("Canvas opacity must be finite and between zero and one")
+                })?,
+            ),
         };
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));

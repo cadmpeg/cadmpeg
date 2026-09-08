@@ -5,7 +5,7 @@
 use super::*;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
+    AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
     CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, HoleBottom, HoleKind, Length, LinearTermination, ParameterId,

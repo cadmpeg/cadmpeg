@@ -129,8 +129,8 @@ fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart
 #[test]
 fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FaceSelection, LinearTermination, ProfileRef,
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
+        LinearTermination, ProfileRef,
     };
 
     let parameter = |source_kind: &str, unit: &str, value| {
@@ -251,14 +251,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             direction: ExtrudeDirection::ProfileNormal,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(5.5) },
-                    draft: Some(Angle(0.2)),
+                    termination: LinearTermination::Blind { length: actual_length },
+                    draft: Some(actual_draft),
                 },
             },
             op: BooleanOp::NewBody,
             solid: Some(true),
             ..
-        } if profile == &neutral_sketch_id(&placement)
+        } if (profile == &neutral_sketch_id(&placement)) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
     ));
     let reference_aware_prologue = scope.extrude_prologue();
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -321,13 +321,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.5)
+                        length: actual_length
                     },
-                    draft: Some(Angle(0.2)),
+                    draft: Some(actual_draft),
                 },
             },
             ..
-        }
+        } if actual_length.get() == 5.5 && actual_draft.get() == 0.2
     ));
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedThroughAll);
     set_extrude_direction_reversed(&mut scope, true);
@@ -347,11 +347,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
-                    draft: Some(Angle(0.2)),
+                    draft: Some(actual_draft),
                 },
             },
             ..
-        }
+        } if actual_draft.get() == 0.2
     ));
     set_extrude_direction_reversed(&mut scope, false);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::SymmetricThroughAll);
@@ -371,11 +371,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
-                    draft: Some(Angle(0.2)),
+                    draft: Some(actual_draft),
                 },
             },
             ..
-        }
+        } if actual_draft.get() == 0.2
     ));
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     let selection = DesignExtrudeSelectionGroup {
@@ -1002,13 +1002,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.5)
+                        length: actual_length
                     },
                     ..
                 },
             },
             ..
-        }
+        } if actual_length.get() == 5.5
     ));
     set_extrude_direction_reversed(&mut scope, true);
     let reversed_hybrid = project_extrude(
@@ -1027,13 +1027,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.5)
+                        length: actual_length
                     },
                     ..
                 },
             },
             ..
-        }
+        } if actual_length.get() == 5.5
     ));
     set_extrude_direction_reversed(&mut scope, false);
     {
@@ -1074,14 +1074,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0)
+                        length: actual_length
                     },
                     ..
                 },
             },
             op: BooleanOp::Join,
             ..
-        } if native == &profile_group.id
+        } if (native == &profile_group.id) && actual_length.get() == 2.0
     ));
 
     let mut face_group = body_group.clone();
@@ -1136,10 +1136,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         offset_start,
         FeatureDefinition::Extrude {
             start: ExtrudeStart::OffsetProfilePlane {
-                offset: Length(1.0)
+                offset: actual_offset
             },
             ..
-        }
+        } if actual_offset.get() == 1.0
     ));
     set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
 
@@ -1170,20 +1170,20 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.5)
+                        length: actual_length
                     },
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(0.5)
+                        length: actual_length_2
                     },
-                    draft: Some(Angle(-0.3)),
+                    draft: Some(actual_draft),
                     ..
                 },
             },
             ..
-        }
+        } if actual_length.get() == 5.5 && actual_length_2.get() == 0.5 && actual_draft.get() == -0.3
     ));
     set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
@@ -1215,13 +1215,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0)
+                        length: actual_length
                     },
                     ..
                 },
             },
             ..
-        }
+        } if actual_length.get() == 6.0
     ));
 
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
@@ -1250,13 +1250,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
                         face: FaceSelection::Native(ref id),
-                        offset: Some(Length(0.25)),
+                        offset: Some(actual_offset),
                     },
                     ..
                 },
             },
             ..
-        } if id == &face_group.id
+        } if (id == &face_group.id) && actual_offset.get() == 0.25
     ));
 
     let mut omitted_zero_offset_scope = scope.clone();
@@ -1333,22 +1333,22 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 first: ExtrudeSide {
                     termination: LinearTermination::ToFace {
                         face: FaceSelection::Native(ref first_id),
-                        offset: Some(Length(0.25)),
+                        offset: Some(actual_offset),
                     },
-                    draft: Some(Angle(0.2)),
+                    draft: Some(actual_draft),
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::ToFace {
                         face: FaceSelection::Native(ref second_id),
-                        offset: Some(Length(0.5)),
+                        offset: Some(actual_offset_2),
                     },
-                    draft: Some(Angle(-0.3)),
+                    draft: Some(actual_draft_2),
                     ..
                 },
             },
             ..
-        } if first_id == &face_group.id && second_id == &second_face_group.id
+        } if (first_id == &face_group.id && second_id == &second_face_group.id) && actual_offset.get() == 0.25 && actual_draft.get() == 0.2 && actual_offset_2.get() == 0.5 && actual_draft_2.get() == -0.3
     ));
 
     set_extrude_direction_reversed(&mut scope, true);
@@ -1397,21 +1397,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.5)
+                        length: actual_length
                     },
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::ToFace {
                         face: FaceSelection::Native(ref id),
-                        offset: Some(Length(0.5)),
+                        offset: Some(actual_offset),
                     },
-                    draft: Some(Angle(-0.3)),
+                    draft: Some(actual_draft),
                     ..
                 },
             },
             ..
-        } if id == &face_group.id
+        } if (id == &face_group.id) && actual_length.get() == 5.5 && actual_offset.get() == 0.5 && actual_draft.get() == -0.3
     ));
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
@@ -1472,16 +1472,16 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             },
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(5.5) },
+                    termination: LinearTermination::Blind { length: actual_length },
                     ..
                 },
                 second: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(0.5) },
+                    termination: LinearTermination::Blind { length: actual_length_2 },
                     ..
                 },
             },
             ..
-        } if id == &start_group.id
+        } if (id == &start_group.id) && actual_length.get() == 5.5 && actual_length_2.get() == 0.5
     ));
 }
 
@@ -1525,7 +1525,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         2,
         FeatureDefinition::SheetMetalBaseFlange {
             profile: ProfileRef::Sketch(planar_sketch.clone()),
-            thickness: Length(1.0),
+            thickness: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         },
     );

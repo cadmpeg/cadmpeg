@@ -3,9 +3,7 @@
 use super::{lane_with_position_reference, model_hole, native_history, profile_line};
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, LinearTermination,
-};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleBottom, HoleKind, LinearTermination};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 
@@ -49,20 +47,23 @@ fn axial_profile_resolves_counterbore_roles() {
 
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
-    assert_eq!(construction.diameter, Length(5.5));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(5.5).unwrap()
+    );
     assert_eq!(
         construction.extent,
         LinearTermination::Blind {
-            length: Length(15.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(15.0).unwrap()
         }
     );
     assert!(matches!(
         construction.kind,
         HoleKind::CounterboreDrilled {
-            diameter: Length(10.0),
-            depth: Length(5.7),
-            drill_point_angle: Angle(angle),
-        } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
+            diameter: actual_diameter,
+            depth: actual_depth,
+            drill_point_angle: angle,
+        } if ((angle.get() - 118_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 10.0 && actual_depth.get() == 5.7
     ));
     assert_eq!(construction.bottom, None);
 
@@ -105,14 +106,14 @@ fn axial_profile_resolves_counterbore_roles() {
     assert_eq!(
         construction.extent,
         LinearTermination::Blind {
-            length: Length(15.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(15.0).unwrap()
         }
     );
     assert_eq!(
         construction.kind,
         HoleKind::Counterbore {
-            diameter: Length(10.0),
-            depth: Length(5.7),
+            diameter: cadmpeg_ir::features::PositiveLength::new(10.0).unwrap(),
+            depth: cadmpeg_ir::features::PositiveLength::new(5.7).unwrap(),
         }
     );
     assert_eq!(construction.bottom, Some(HoleBottom::Flat));
@@ -160,15 +161,18 @@ fn axial_profile_resolves_counterdrill_roles() {
 
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
-    assert_eq!(construction.diameter, Length(2.9));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(2.9).unwrap()
+    );
     assert_eq!(construction.extent, LinearTermination::ThroughAll);
     assert_eq!(
         construction.kind,
         HoleKind::Counterdrill {
-            diameter: Length(5.5),
-            entry_diameter: Some(Length(5.55)),
-            depth: Length(2.9),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
+            diameter: cadmpeg_ir::features::PositiveLength::new(5.5).unwrap(),
+            entry_diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.55).unwrap()),
+            depth: cadmpeg_ir::features::PositiveLength::new(2.9).unwrap(),
+            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         }
     );
 
@@ -210,11 +214,14 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     let sketch = SketchId("profile".into());
 
     let flat = profiled_hole_construction(&profile, &sketch, &[]).expect("exact flat profile");
-    assert_eq!(flat.diameter, Length(14.5));
+    assert_eq!(
+        flat.diameter,
+        cadmpeg_ir::features::PositiveLength::new(14.5).unwrap()
+    );
     assert_eq!(
         flat.extent,
         LinearTermination::Blind {
-            length: Length(15.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(15.0).unwrap()
         }
     );
     assert_eq!(flat.kind, HoleKind::Simple);
@@ -260,13 +267,13 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     assert!(matches!(
         drilled.kind,
         HoleKind::SimpleDrilled {
-            drill_point_angle: Angle(angle),
-        } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
+            drill_point_angle: angle,
+        } if (angle.get() - 118_f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(
         drilled.bottom,
         Some(HoleBottom::Angled {
-            included_angle: Angle(118_f64.to_radians()),
+            included_angle: cadmpeg_ir::features::InteriorAngle::new(118_f64.to_radians()).unwrap(),
             depth_to_tip: false,
         })
     );
@@ -310,16 +317,22 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
 
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("exact taper");
-    assert_eq!(construction.diameter, Length(12.2));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(12.2).unwrap()
+    );
     assert_eq!(
         construction.extent,
         LinearTermination::Blind {
-            length: Length(42.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(42.0).unwrap()
         }
     );
     assert_eq!(construction.kind, HoleKind::Simple);
     assert_eq!(construction.bottom, Some(HoleBottom::Flat));
-    let Angle(included_angle) = construction.taper_angle.expect("included taper angle");
+    let included_angle = construction
+        .taper_angle
+        .expect("included taper angle")
+        .get();
     assert!(
         (included_angle - 2.0 * ((terminal_radius - entry_radius) / 42.0_f64).atan()).abs()
             < 1.0e-12
@@ -360,16 +373,19 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
 
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("endpoint proof");
-    assert_eq!(construction.diameter, Length(12.2));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(12.2).unwrap()
+    );
     assert_eq!(
         construction.extent,
         LinearTermination::Blind {
-            length: Length(42.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(42.0).unwrap()
         }
     );
     assert_eq!(construction.kind, HoleKind::Simple);
     assert_eq!(construction.bottom, Some(HoleBottom::Flat));
-    let Angle(taper_angle) = construction.taper_angle.expect("taper angle");
+    let taper_angle = construction.taper_angle.expect("taper angle").get();
     assert!((taper_angle - 2.0 * ((6.833_115 - 6.1) / 42.0_f64).atan()).abs() < 1.0e-12);
 }
 
@@ -412,24 +428,27 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
 
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
-    assert_eq!(construction.diameter, Length(4.134));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(4.134).unwrap()
+    );
     assert_eq!(
         construction.extent,
         LinearTermination::Blind {
-            length: Length(5.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(5.0).unwrap()
         }
     );
     assert!(matches!(
         construction.kind,
         HoleKind::Countersink {
-            diameter: Length(5.0),
-            angle: Angle(angle),
-        } if (angle - 90_f64.to_radians()).abs() < 1.0e-12
+            diameter: actual_diameter,
+            angle,
+        } if ((angle.get() - 90_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 5.0
     ));
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: Angle(120_f64.to_radians()),
+            included_angle: cadmpeg_ir::features::InteriorAngle::new(120_f64.to_radians()).unwrap(),
             depth_to_tip: false,
         })
     );
@@ -500,13 +519,17 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         let exact_entities = entities(terminal, mirror_wall);
         let construction =
             profiled_hole_construction(&profile, &sketch, &exact_entities).expect("exact profile");
-        assert_eq!(construction.diameter, Length(6.4));
+        assert_eq!(
+            construction.diameter,
+            cadmpeg_ir::features::PositiveLength::new(6.4).unwrap()
+        );
         assert_eq!(construction.extent, LinearTermination::ThroughAll);
         assert_eq!(
             construction.kind,
             HoleKind::Countersink {
-                diameter: Length(13.2),
-                angle: Angle(std::f64::consts::FRAC_PI_2),
+                diameter: cadmpeg_ir::features::PositiveLength::new(13.2).unwrap(),
+                angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                    .unwrap(),
             }
         );
         assert_eq!(construction.bottom, None);
@@ -700,17 +723,17 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Hole {
-            diameter: Some(Length(9.0)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::ThroughAll),
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
-                    diameter: Length(15.0),
-                    depth: Length(8.6),
+                    diameter: actual_diameter_2,
+                    depth: actual_depth,
                 },
                 ..
             },
             ..
-        }
+        } if actual_diameter.get() == 9.0 && actual_diameter_2.get() == 15.0 && actual_depth.get() == 8.6
     ));
 }
 
@@ -823,21 +846,21 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Hole {
-            diameter: Some(Length(4.2)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::Blind {
-                length: Length(6.8)
+                length: actual_length
             }),
             ..
-        }
+        } if actual_diameter.get() == 4.2 && actual_length.get() == 6.8
     ));
     assert!(matches!(
         features[1].definition,
         FeatureDefinition::Hole {
-            diameter: Some(Length(6.0)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::Blind {
-                length: Length(14.0)
+                length: actual_length
             }),
             ..
-        }
+        } if actual_diameter.get() == 6.0 && actual_length.get() == 14.0
     ));
 }

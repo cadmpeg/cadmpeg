@@ -6,15 +6,10 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::features::{
-    BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FaceSelection,
-    FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind, PatternSeed,
-    PatternStageCombination, PrimitiveSolid, RadiusSpec, SplitFaceTool, UnresolvedFamily,
+    BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceSelection,
+    FeatureSourceContent, HoleKind, Length, PatternKind, PatternSeed, PatternStageCombination,
+    RadiusSpec, SplitFaceTool, UnresolvedFamily,
 };
-use crate::math::Point3;
-
-const EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9: f64 = 1.0e-9;
-
-const EPS_TORUS_AXES_ORTHO: f64 = 1.0e-9;
 
 fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
     match pattern {
@@ -42,7 +37,7 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
         }
         PatternKind::LinearOffsets { direction, offsets } => {
             direction.is_none_or(valid_feature_direction)
-                && valid_increasing_locations(offsets.iter().map(|offset| offset.0))
+                && valid_increasing_locations(offsets.iter().map(|offset| offset.get()))
         }
         PatternKind::Circular {
             axis_origin,
@@ -54,8 +49,7 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 && axis_origin.y.is_finite()
                 && axis_origin.z.is_finite()
                 && valid_feature_direction(*axis_dir)
-                && angle.0.is_finite()
-                && angle.0 > 0.0
+                && angle.get() > 0.0
                 && *count > 0
         }
         PatternKind::CircularAngles {
@@ -67,7 +61,7 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 && axis_origin.y.is_finite()
                 && axis_origin.z.is_finite()
                 && valid_feature_direction(*axis_dir)
-                && valid_increasing_locations(angles.iter().map(|angle| angle.0))
+                && valid_increasing_locations(angles.iter().map(|angle| angle.get()))
         }
         PatternKind::CurveDriven { spacing, count, .. } => {
             positive_feature_length(*spacing) && *count > 0
@@ -2123,9 +2117,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
 }
 
 fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
-    use crate::features::{
-        EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, ScaleCenter,
-    };
+    use crate::features::{EdgeSelection, FeatureDefinition, PathRef, ProfileRef, ScaleCenter};
 
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
@@ -2325,13 +2317,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             for termination in definition_terminations(&state.definition) {
-                if !termination_magnitude_is_valid(termination) {
-                    geometry_error(
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration feature extent magnitude is invalid",
-                    );
-                }
                 if matches!(
                     termination.vertex(),
                     Some(crate::features::VertexSelection::Generated { vertex, native })
@@ -2341,15 +2326,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         findings,
                         configuration.id.as_str(),
                         "configuration generated termination vertex is invalid",
-                    );
-                }
-            }
-            if let FeatureDefinition::DatumOffsetPlane { distance, .. } = &state.definition {
-                if !distance.0.is_finite() {
-                    geometry_error(
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration datum-plane offset is invalid",
                     );
                 }
             }
@@ -2623,30 +2599,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         let mut vertex_selections = Vec::new();
         let mut body_selections = Vec::new();
         let definition = match &feature.definition {
-            FeatureDefinition::PostProcess {
-                operation,
-                fuzzy_tolerance,
-                ..
-            } => {
-                if matches!(fuzzy_tolerance, crate::features::FuzzyTolerance::Explicit(value) if !value.is_finite() || *value <= 0.0)
-                {
-                    feature_geometry_error(findings, feature, "feature fuzzy tolerance is invalid");
-                }
-                operation.as_ref()
-            }
+            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
             definition => definition,
         };
         match definition {
-            FeatureDefinition::Unresolved { .. } => {}
-            FeatureDefinition::ReferenceImage {
-                asset,
-                origin,
-                u_axis,
-                v_axis,
-                bounds,
-                opacity,
-                ..
-            } => {
+            FeatureDefinition::Unresolved { .. }
+            | FeatureDefinition::Primitive { .. }
+            | FeatureDefinition::SheetMetalBaseFlange { .. }
+            | FeatureDefinition::PlanarPatch { .. } => {}
+            FeatureDefinition::ReferenceImage { asset, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
                     ref_error(
                         findings,
@@ -2655,61 +2616,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         asset.as_str(),
                     );
                 }
-                let frame_is_valid = [origin.x, origin.y, origin.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    && (u_axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    && (v_axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    && u_axis.dot(*v_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9;
-                let [first, second] = bounds;
-                let bounds_are_valid = [first.u, first.v, second.u, second.v]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    && first.u != second.u
-                    && first.v != second.v;
-                if !frame_is_valid
-                    || !bounds_are_valid
-                    || opacity
-                        .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
-                {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "reference-image placement is invalid",
-                    );
-                }
             }
-            FeatureDefinition::Decal {
-                asset,
-                faces,
-                opacity,
-                ..
-            } => {
+            FeatureDefinition::Decal { asset, faces, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
                     ref_error(findings, feature.id.as_str(), "decal asset", asset.as_str());
                 }
-                if opacity.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
-                {
-                    feature_geometry_error(findings, feature, "decal opacity is invalid");
-                }
                 face_selections.push(faces);
             }
-            FeatureDefinition::Block {
-                dimensions,
-                placement,
-                ..
-            } => {
-                if dimensions.is_some_and(|values| {
-                    values
-                        .into_iter()
-                        .any(|value| !positive_feature_length(value))
-                }) {
-                    feature_geometry_error(findings, feature, "block dimensions are invalid");
-                }
-                if placement.is_some_and(|placement| !placement.is_proper_rigid()) {
-                    feature_geometry_error(findings, feature, "block placement is invalid");
-                }
-            }
+            FeatureDefinition::Block { .. } => {}
+
             FeatureDefinition::ExtractBody { source } => body_selections.push(source),
             FeatureDefinition::FaceBlend {
                 first_faces,
@@ -2761,10 +2676,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
-            FeatureDefinition::SewBodies {
-                bodies,
-                gap_tolerance,
-            } => {
+            FeatureDefinition::SewBodies { bodies, .. } => {
                 body_selections.push(bodies);
                 let body_count = match bodies {
                     BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
@@ -2784,9 +2696,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 };
                 if body_count.is_some_and(|count| count < 2) {
                     feature_geometry_error(findings, feature, "sew requires at least two bodies");
-                }
-                if gap_tolerance.is_some_and(|value| !positive_feature_length(value)) {
-                    feature_geometry_error(findings, feature, "sew tolerance is invalid");
                 }
             }
             FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
@@ -2861,309 +2770,54 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     |identity| ids.subds(identity).is_some(),
                 );
             }
-            FeatureDefinition::CosmeticThread {
-                face,
-                diameter,
-                extent,
-            } => {
-                face_selections.push(face);
-                let extent_valid = extent.as_ref().is_none_or(|extent| match extent {
-                    crate::features::CosmeticThreadExtent::Blind { length } => {
-                        positive_feature_length(*length)
-                    }
-                    crate::features::CosmeticThreadExtent::Through => true,
-                });
-                if diameter.is_some_and(|value| !positive_feature_length(value)) || !extent_valid {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "cosmetic-thread geometry is invalid",
-                    );
-                }
-            }
-            FeatureDefinition::Primitive { solid, .. } => {
-                let positive = |value: Length| value.0.is_finite() && value.0 > 0.0;
-                let finite_angle = |value: crate::features::Angle| value.0.is_finite();
-                let valid = match solid {
-                    PrimitiveSolid::Box {
-                        length,
-                        width,
-                        height,
-                    } => positive(*length) && positive(*width) && positive(*height),
-                    PrimitiveSolid::Cylinder {
-                        radius,
-                        height,
-                        angle,
-                    } => positive(*radius) && positive(*height) && finite_angle(*angle),
-                    PrimitiveSolid::Cone {
-                        radius1,
-                        radius2,
-                        height,
-                        angle,
-                    } => {
-                        radius1.0.is_finite()
-                            && radius1.0 >= 0.0
-                            && radius2.0.is_finite()
-                            && radius2.0 >= 0.0
-                            && (radius1.0 > 0.0 || radius2.0 > 0.0)
-                            && positive(*height)
-                            && finite_angle(*angle)
-                    }
-                    PrimitiveSolid::Sphere {
-                        radius,
-                        latitude1,
-                        latitude2,
-                        longitude,
-                    } => {
-                        positive(*radius)
-                            && finite_angle(*latitude1)
-                            && finite_angle(*latitude2)
-                            && latitude1.0 < latitude2.0
-                            && finite_angle(*longitude)
-                    }
-                    PrimitiveSolid::Ellipsoid {
-                        x_radius,
-                        y_radius,
-                        z_radius,
-                        latitude1,
-                        latitude2,
-                        longitude,
-                    } => {
-                        positive(*x_radius)
-                            && positive(*y_radius)
-                            && positive(*z_radius)
-                            && finite_angle(*latitude1)
-                            && finite_angle(*latitude2)
-                            && latitude1.0 < latitude2.0
-                            && finite_angle(*longitude)
-                    }
-                    PrimitiveSolid::Torus {
-                        major_radius,
-                        minor_radius,
-                        latitude1,
-                        latitude2,
-                        longitude,
-                    } => {
-                        positive(*major_radius)
-                            && positive(*minor_radius)
-                            && finite_angle(*latitude1)
-                            && finite_angle(*latitude2)
-                            && latitude1.0 < latitude2.0
-                            && finite_angle(*longitude)
-                    }
-                    PrimitiveSolid::Prism {
-                        sides,
-                        circumradius,
-                        height,
-                    } => *sides >= 3 && positive(*circumradius) && positive(*height),
-                    PrimitiveSolid::Wedge {
-                        xmin,
-                        ymin,
-                        zmin,
-                        x2min,
-                        z2min,
-                        xmax,
-                        ymax,
-                        zmax,
-                        x2max,
-                        z2max,
-                    } => {
-                        [
-                            xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max,
-                        ]
-                        .into_iter()
-                        .all(|value| value.0.is_finite())
-                            && xmax.0 > xmin.0
-                            && ymax.0 > ymin.0
-                            && zmax.0 > zmin.0
-                            && x2max.0 >= x2min.0
-                            && z2max.0 >= z2min.0
-                    }
-                };
-                if !valid {
-                    feature_geometry_error(findings, feature, "primitive dimensions are invalid");
-                }
-            }
+            FeatureDefinition::CosmeticThread { face, .. } => face_selections.push(face),
             FeatureDefinition::Extrude {
-                direction,
-                start,
-                extent,
-                ..
+                direction, start, ..
             } => {
-                let sides = match extent {
-                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        vec![side]
-                    }
-                    ExtrudeExtent::TwoSided { first, second } => vec![first, second],
-                };
-                if let crate::features::ExtrudeDirection::Explicit { vector, source } = direction {
-                    if !valid_feature_direction(*vector) {
-                        feature_geometry_error(findings, feature, "extrusion direction is invalid");
-                    }
+                if let crate::features::ExtrudeDirection::Explicit { source, .. } = direction {
                     if let Some(crate::features::ExtrusionDirectionSource::Edge { reference }) =
                         source
                     {
                         paths.push(reference);
                     }
                 }
-                if sides.iter().any(|side| {
-                    side.draft.is_some_and(|angle| {
-                        !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
-                    })
-                }) {
-                    feature_geometry_error(findings, feature, "extrusion draft is invalid");
-                }
-                match start {
-                    ExtrudeStart::Unresolved => {}
-                    ExtrudeStart::ProfilePlane => {}
-                    ExtrudeStart::OffsetProfilePlane { offset } => {
-                        if !offset.0.is_finite() {
-                            feature_geometry_error(
-                                findings,
-                                feature,
-                                "extrusion start offset is invalid",
-                            );
-                        }
-                    }
-                    ExtrudeStart::FromFace { face, offset } => {
-                        face_selections.push(face);
-                        if offset.is_some_and(|offset| !offset.0.is_finite()) {
-                            feature_geometry_error(
-                                findings,
-                                feature,
-                                "extrusion start offset is invalid",
-                            );
-                        }
-                    }
-                }
-            }
-            FeatureDefinition::SheetMetalBaseFlange { thickness, .. } => {
-                if !positive_feature_length(*thickness) {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sheet-metal base-flange thickness is invalid",
-                    );
+                if let ExtrudeStart::FromFace { face, .. } = start {
+                    face_selections.push(face);
                 }
             }
             FeatureDefinition::SheetMetalEdgeFlange {
                 edges,
                 height,
-                angle,
                 width,
-                bend_radius,
                 ..
             } => {
                 edge_selections.push(edges);
-                let height_valid = match height {
-                    crate::features::SheetMetalFlangeHeight::Distance(height) => {
-                        positive_feature_length(*height)
-                    }
-                    crate::features::SheetMetalFlangeHeight::ToObject { target, offset } => {
-                        offset.0.is_finite()
-                            && !matches!(
-                                target,
-                                crate::features::SheetMetalFlangeHeightTarget::Native(native)
-                                    if native.is_empty()
-                            )
-                    }
-                };
-                if !height_valid {
+                if matches!(height, crate::features::SheetMetalFlangeHeight::ToObject {
+                    target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
+                } if native.is_empty())
+                {
                     feature_geometry_error(
                         findings,
                         feature,
                         "sheet-metal edge-flange height is invalid",
                     );
                 }
-                if !angle.0.is_finite() {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sheet-metal edge-flange angle is invalid",
-                    );
-                }
-                if !positive_feature_length(*bend_radius) {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sheet-metal edge-flange bend radius is invalid",
-                    );
-                }
-                let widths_valid = match width {
-                    crate::features::SheetMetalFlangeWidth::FullEdge => true,
-                    crate::features::SheetMetalFlangeWidth::Symmetric { width } => {
-                        positive_feature_length(*width)
+                if let crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } = width {
+                    if !widths.as_slice().iter().all(|width| {
+                        positive_feature_length(width.first)
+                            && positive_feature_length(width.second)
+                    }) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sheet-metal edge-flange width is invalid",
+                        );
                     }
-                    crate::features::SheetMetalFlangeWidth::TwoSides { first, second } => {
-                        positive_feature_length(*first) && positive_feature_length(*second)
-                    }
-                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
-                        widths.as_slice().iter().all(|width| {
-                            positive_feature_length(width.first)
-                                && positive_feature_length(width.second)
-                        })
-                    }
-                };
-                if !widths_valid {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sheet-metal edge-flange width is invalid",
-                    );
                 }
             }
-            FeatureDefinition::SheetMetalHem {
-                edges,
-                form,
-                bend_radius,
-                ..
-            } => {
-                edge_selections.push(edges);
-                if !positive_feature_length(*bend_radius) {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sheet-metal hem bend radius is invalid",
-                    );
-                }
-                let gap_is_valid = |gap: crate::features::Length| gap.0.is_finite() && gap.0 >= 0.0;
-                let form_is_valid = match form {
-                    crate::features::SheetMetalHemForm::Flat { length } => {
-                        positive_feature_length(*length)
-                    }
-                    crate::features::SheetMetalHemForm::Open { gap, length } => {
-                        gap_is_valid(*gap) && positive_feature_length(*length)
-                    }
-                    crate::features::SheetMetalHemForm::GapLength { gap, length } => {
-                        gap_is_valid(*gap) && positive_feature_length(*length)
-                    }
-                    crate::features::SheetMetalHemForm::Rolled { radius, angle } => {
-                        positive_feature_length(*radius) && angle.0.is_finite()
-                    }
-                    crate::features::SheetMetalHemForm::Teardrop {
-                        gap,
-                        length,
-                        radius,
-                    } => {
-                        gap_is_valid(*gap)
-                            && positive_feature_length(*length)
-                            && positive_feature_length(*radius)
-                    }
-                };
-                if !form_is_valid {
-                    feature_geometry_error(findings, feature, "sheet-metal hem form is invalid");
-                }
-            }
+            FeatureDefinition::SheetMetalHem { edges, .. } => edge_selections.push(edges),
             FeatureDefinition::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
-                if construction.axis().is_some_and(|axis| {
-                    !axis.origin.x.is_finite()
-                        || !axis.origin.y.is_finite()
-                        || !axis.origin.z.is_finite()
-                        || !valid_feature_direction(axis.direction)
-                }) {
-                    feature_geometry_error(findings, feature, "revolution axis is invalid");
-                }
             }
             FeatureDefinition::Sweep {
                 section,
@@ -3171,11 +2825,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 path,
                 mode,
                 orientation,
-                twist,
-                path_extent,
                 guide_rail,
-                taper,
-                scale,
                 ..
             } => {
                 paths.extend(path);
@@ -3191,11 +2841,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                     wall_thickness,
                                 },
                             ) => {
-                                !positive_feature_length(*outer_radius)
-                                    || wall_thickness.is_some_and(|thickness| {
-                                        !positive_feature_length(thickness)
-                                            || thickness.0 >= outer_radius.0
-                                    })
+                                wall_thickness
+                                    .is_some_and(|thickness| thickness.get() >= outer_radius.get())
                                     || !matches!(
                                         mode,
                                         crate::features::SweepMode::NewBody
@@ -3214,28 +2861,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 {
                     face_selections.push(faces);
                 }
-                if invalid_section
-                    || twist.is_some_and(|value| !value.0.is_finite())
-                    || taper.is_some_and(|value| !value.0.is_finite())
-                    || path_extent.is_some_and(|extent| {
-                        !(0.0..=1.0).contains(&extent.along_fraction)
-                            || !(0.0..=1.0).contains(&extent.against_fraction)
-                    })
-                    || guide_rail.as_ref().is_some_and(|guide| {
-                        !(0.0..=1.0).contains(&guide.extent.along_fraction)
-                            || !(0.0..=1.0).contains(&guide.extent.against_fraction)
-                    })
-                    || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
-                    || matches!(orientation, Some(crate::features::SweepOrientation::Binormal { direction }) if !valid_feature_direction(*direction))
-                {
+                if invalid_section {
                     feature_geometry_error(findings, feature, "sweep magnitude is invalid");
                 }
             }
             FeatureDefinition::Loft {
-                sections,
-                guidance,
-                max_degree,
-                ..
+                sections, guidance, ..
             } => {
                 for section in sections {
                     match section {
@@ -3252,18 +2883,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         crate::features::LoftSection::Point(
                             crate::features::LoftPointSection::Native(_),
                         ) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Point(point),
-                        ) if !point.x.is_finite()
-                            || !point.y.is_finite()
-                            || !point.z.is_finite() =>
-                        {
-                            feature_geometry_error(
-                                findings,
-                                feature,
-                                "loft point section is invalid",
-                            );
-                        }
                         crate::features::LoftSection::Point(
                             crate::features::LoftPointSection::Point(_),
                         ) => {}
@@ -3282,62 +2901,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     crate::features::LoftGuidance::Guides(guides) => paths.extend(guides),
                     crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline),
                 }
-                if max_degree.is_some_and(|value| value == 0) {
-                    feature_geometry_error(findings, feature, "loft maximum degree is invalid");
-                }
             }
-            FeatureDefinition::Rib { construction, .. } => {
-                if construction
-                    .direction
-                    .is_some_and(|value| !valid_feature_direction(value))
-                    || construction
-                        .thickness
-                        .is_some_and(|value| !positive_feature_length(value))
-                    || matches!(
-                        construction.draft,
-                        crate::features::RibDraft::Angle(value)
-                            if !valid_draft_angle(value)
-                    )
-                {
-                    feature_geometry_error(findings, feature, "rib geometry is invalid");
-                }
-            }
+            FeatureDefinition::Rib { .. } => {}
             FeatureDefinition::Fillet { groups } => {
                 let valid = !groups.is_empty()
                     && groups.iter().all(|group| {
                         edge_selections.push(&group.edges);
-                        group.tangency_weight.is_none_or(f64::is_finite)
-                            && match &group.radius {
-                                RadiusSpec::Unresolved
-                                | RadiusSpec::UnresolvedConstant
-                                | RadiusSpec::UnresolvedChordal
-                                | RadiusSpec::UnresolvedAsymmetric
-                                | RadiusSpec::UnresolvedVariable => true,
-                                RadiusSpec::Constant { radius } => positive_feature_length(*radius),
-                                RadiusSpec::Chordal { chord_length } => {
-                                    positive_feature_length(*chord_length)
-                                }
-                                RadiusSpec::Asymmetric {
-                                    offset_one,
-                                    offset_two,
-                                } => {
-                                    positive_feature_length(*offset_one)
-                                        && positive_feature_length(*offset_two)
-                                }
-                                RadiusSpec::Variable { points } => {
-                                    points.len() >= 2
-                                        && points.iter().all(|point| {
-                                            point.parameter.is_finite()
-                                                && (0.0..=1.0).contains(&point.parameter)
-                                                && point.radius.0.is_finite()
-                                                && point.radius.0 >= 0.0
-                                        })
-                                        && points.iter().any(|point| point.radius.0 > 0.0)
-                                        && points
-                                            .windows(2)
-                                            .all(|pair| pair[0].parameter < pair[1].parameter)
-                                }
+                        match &group.radius {
+                            RadiusSpec::Unresolved
+                            | RadiusSpec::UnresolvedConstant
+                            | RadiusSpec::UnresolvedChordal
+                            | RadiusSpec::UnresolvedAsymmetric
+                            | RadiusSpec::UnresolvedVariable => true,
+                            RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                            RadiusSpec::Chordal { chord_length } => {
+                                positive_feature_length(*chord_length)
                             }
+                            RadiusSpec::Asymmetric {
+                                offset_one,
+                                offset_two,
+                            } => {
+                                positive_feature_length(*offset_one)
+                                    && positive_feature_length(*offset_two)
+                            }
+                            RadiusSpec::Variable { points } => {
+                                points.len() >= 2
+                                    && points.iter().all(|point| {
+                                        point.parameter.is_finite()
+                                            && (0.0..=1.0).contains(&point.parameter)
+                                            && point.radius.get() >= 0.0
+                                    })
+                                    && points.iter().any(|point| point.radius.get() > 0.0)
+                                    && points
+                                        .windows(2)
+                                        .all(|pair| pair[0].parameter < pair[1].parameter)
+                            }
+                        }
                     });
                 if !valid {
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
@@ -3358,9 +2957,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             }
                             ChamferSpec::DistanceAngle { distance, angle } => {
                                 positive_feature_length(distance)
-                                    && angle.0.is_finite()
-                                    && angle.0 > 0.0
-                                    && angle.0 < std::f64::consts::PI
+                                    && angle.get() > 0.0
+                                    && angle.get() < std::f64::consts::PI
                             }
                         }
                     });
@@ -3371,25 +2969,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Shell {
                 bodies,
                 removed_faces,
-                thickness,
                 ..
             } => {
                 if let Some(bodies) = bodies {
                     body_selections.push(bodies);
                 }
                 face_selections.push(removed_faces);
-                if thickness.is_some_and(|value| !positive_feature_length(value)) {
-                    feature_geometry_error(findings, feature, "shell thickness is invalid");
-                }
             }
-            FeatureDefinition::OffsetShape {
-                source, distance, ..
-            } => {
-                body_selections.push(source);
-                if !distance.0.is_finite() || distance.0 == 0.0 {
-                    feature_geometry_error(findings, feature, "shape offset is invalid");
-                }
-            }
+            FeatureDefinition::OffsetShape { source, .. } => body_selections.push(source),
             FeatureDefinition::Compound { members } => body_selections.push(members),
             FeatureDefinition::RefineShape { source }
             | FeatureDefinition::ReverseShape { source } => body_selections.push(source),
@@ -3406,43 +2993,20 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::MirrorShape {
                 source,
-                plane_origin,
-                plane_normal,
                 plane_reference,
+                ..
             } => {
                 body_selections.push(source);
                 face_selections.extend(plane_reference);
-                if ![plane_origin.x, plane_origin.y, plane_origin.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    || !valid_feature_direction(*plane_normal)
-                {
-                    feature_geometry_error(findings, feature, "mirror plane is invalid");
-                }
             }
-            FeatureDefinition::Thicken {
-                faces, thickness, ..
-            } => {
+            FeatureDefinition::Thicken { faces, .. } => {
                 face_selections.push(faces);
-                if thickness.is_some_and(|value| !positive_feature_length(value)) {
-                    feature_geometry_error(findings, feature, "thicken thickness is invalid");
-                }
             }
-            FeatureDefinition::OffsetSurface { faces, distance } => {
+            FeatureDefinition::OffsetSurface { faces, .. } => {
                 face_selections.push(faces);
-                if distance.is_some_and(|value| !value.0.is_finite()) {
-                    feature_geometry_error(findings, feature, "surface offset is invalid");
-                }
             }
-            FeatureDefinition::KnitSurface {
-                faces,
-                gap_tolerance,
-                ..
-            } => {
+            FeatureDefinition::KnitSurface { faces, .. } => {
                 face_selections.push(faces);
-                if gap_tolerance.is_some_and(|value| !value.0.is_finite() || value.0 < 0.0) {
-                    feature_geometry_error(findings, feature, "knit tolerance is invalid");
-                }
             }
             FeatureDefinition::FilledSurface {
                 boundary,
@@ -3461,43 +3025,18 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 face_selections.push(faces);
                 paths.push(tool);
             }
-            FeatureDefinition::ExtendSurface {
-                faces, distance, ..
-            } => {
+            FeatureDefinition::ExtendSurface { faces, .. } => {
                 face_selections.push(faces);
-                if distance.is_some_and(|value| !positive_feature_length(value)) {
-                    feature_geometry_error(findings, feature, "surface extension is invalid");
-                }
             }
             FeatureDefinition::RuledSurface {
                 edges,
                 support_faces,
-                mode,
-                angle,
                 ..
             } => {
                 edge_selections.push(edges);
                 face_selections.push(support_faces);
-                let valid = match mode {
-                    crate::features::RuledSurfaceMode::Normal { distance }
-                    | crate::features::RuledSurfaceMode::Tangent { distance } => {
-                        positive_feature_length(*distance)
-                    }
-                    crate::features::RuledSurfaceMode::Direction {
-                        direction,
-                        distance,
-                    } => valid_feature_direction(*direction) && positive_feature_length(*distance),
-                };
-                if !valid || angle.is_some_and(|value| !value.0.is_finite()) {
-                    feature_geometry_error(findings, feature, "ruled surface is invalid");
-                }
             }
-            FeatureDefinition::Draft {
-                faces,
-                anchor,
-                angle,
-                ..
-            } => {
+            FeatureDefinition::Draft { faces, anchor, .. } => {
                 face_selections.push(faces);
                 match anchor {
                     crate::features::DraftAnchor::NeutralPlane { plane, .. } => {
@@ -3515,13 +3054,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         &feature_records,
                         "draft pull plane",
                     );
-                }
-                if anchor
-                    .pull()
-                    .is_some_and(|pull| !valid_feature_direction(pull.direction))
-                    || angle.is_some_and(|value| !valid_draft_angle(value))
-                {
-                    feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
             }
             FeatureDefinition::BoundaryFill { tools, cells } => {
@@ -3590,106 +3122,24 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "replacement face operands overlap");
                 }
             }
-            FeatureDefinition::MoveFace { faces, motion } => {
+            FeatureDefinition::MoveFace { faces, .. } => {
                 face_selections.push(faces);
-                let valid = match motion {
-                    FaceMotion::Offset { distance } => distance.0.is_finite(),
-                    FaceMotion::Translate {
-                        direction,
-                        distance,
-                    } => valid_feature_direction(*direction) && distance.0.is_finite(),
-                    FaceMotion::Rotate {
-                        axis_origin,
-                        axis_dir,
-                        angle,
-                    } => {
-                        axis_origin.x.is_finite()
-                            && axis_origin.y.is_finite()
-                            && axis_origin.z.is_finite()
-                            && valid_feature_direction(*axis_dir)
-                            && angle.0.is_finite()
-                    }
-                };
-                if !valid {
-                    feature_geometry_error(findings, feature, "face motion is invalid");
-                }
             }
-            FeatureDefinition::MoveBody {
-                bodies,
-                translation,
-                rotation,
-                ..
-            } => {
+            FeatureDefinition::MoveBody { bodies, .. } => {
                 body_selections.push(bodies);
-                let valid_translation = [translation.x, translation.y, translation.z]
-                    .into_iter()
-                    .all(f64::is_finite);
-                let valid_rotation = rotation.as_ref().is_none_or(|rotation| {
-                    [
-                        rotation.origin.x,
-                        rotation.origin.y,
-                        rotation.origin.z,
-                        rotation.angle.0,
-                    ]
-                    .into_iter()
-                    .all(f64::is_finite)
-                        && valid_feature_direction(rotation.direction)
-                });
-                if !valid_translation || !valid_rotation {
-                    feature_geometry_error(findings, feature, "body motion is invalid");
-                }
             }
-            FeatureDefinition::Dome { faces, height, .. } => {
+            FeatureDefinition::Dome { faces, .. } => {
                 face_selections.push(faces);
-                if height.is_some_and(|value| !positive_feature_length(value)) {
-                    feature_geometry_error(findings, feature, "dome height is invalid");
-                }
             }
-            FeatureDefinition::Flex { axis, mode } => {
-                if axis.is_some_and(|axis| !axis.norm().is_finite() || axis.norm() <= 0.0) {
-                    findings.push(Finding {
-                        check: Check::GeometricConsistency,
-                        severity: Severity::Error,
-                        message: "flex axis is degenerate".into(),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    });
-                }
-                let valid = match mode {
-                    FlexMode::Unresolved(_) => true,
-                    FlexMode::Bending { angle } | FlexMode::Twisting { angle } => {
-                        angle.0.is_finite()
-                    }
-                    FlexMode::Tapering { factor } => factor.is_finite() && *factor > 0.0,
-                    FlexMode::Stretching { distance } => distance.0.is_finite(),
-                };
-                if !valid {
-                    findings.push(Finding {
-                        check: Check::GeometricConsistency,
-                        severity: Severity::Error,
-                        message: "flex magnitude is invalid".into(),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    });
-                }
-            }
-            FeatureDefinition::Scale {
-                bodies,
-                center,
-                factors,
-            } => {
+            FeatureDefinition::Flex { .. } => {}
+            FeatureDefinition::Scale { bodies, center, .. } => {
                 body_selections.push(bodies);
                 let center_valid = center.as_ref().is_none_or(|center| match center {
-                    ScaleCenter::Point(point) => {
-                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                    }
+                    ScaleCenter::Point(_) => true,
                     ScaleCenter::Native(reference) => !reference.is_empty(),
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
                 });
-                let factors_valid = factors.resolved().is_none_or(|factors| {
-                    [factors.x, factors.y, factors.z]
-                        .into_iter()
-                        .all(|factor| factor.is_finite() && factor != 0.0)
-                });
-                if !center_valid || !factors_valid {
+                if !center_valid {
                     feature_geometry_error(findings, feature, "scale transform is invalid");
                 }
             }
@@ -3734,80 +3184,33 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 body_selections.push(bodies);
             }
             FeatureDefinition::Hole {
-                profile_filter,
                 face,
                 construction,
                 exit_kind,
                 diameter,
-                bottom,
-                taper_angle,
-                placements,
                 ..
             } => {
                 face_selections.extend(face);
-                let treatment_diameter_valid = |value: Length| {
-                    positive_feature_length(value) && diameter.is_some_and(|bore| value.0 > bore.0)
+                let treatment_diameter_valid = |value: crate::features::PositiveLength| {
+                    diameter.is_some_and(|bore| value.get() > bore.get())
                 };
                 let kind_valid = |kind: &HoleKind| match kind {
-                    HoleKind::Unresolved(_) => true,
-                    HoleKind::PartialCounterbore { diameter, depth } => {
-                        diameter.is_none_or(positive_feature_length)
-                            && depth.is_none_or(positive_feature_length)
-                    }
-                    HoleKind::PartialCountersink { diameter, angle } => {
-                        diameter.is_none_or(positive_feature_length)
-                            && angle.is_none_or(|value| {
-                                value.0.is_finite()
-                                    && value.0 > 0.0
-                                    && value.0 < std::f64::consts::PI
-                            })
-                    }
-                    HoleKind::Simple => true,
-                    HoleKind::Chamfer { diameter, angle } => {
-                        treatment_diameter_valid(*diameter)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && angle.0 < std::f64::consts::PI
-                    }
-                    HoleKind::SimpleDrilled { drill_point_angle } => {
-                        drill_point_angle.0.is_finite()
-                            && drill_point_angle.0 > 0.0
-                            && drill_point_angle.0 < std::f64::consts::PI
-                    }
-                    HoleKind::Counterbore { diameter, depth } => {
-                        treatment_diameter_valid(*diameter) && positive_feature_length(*depth)
-                    }
-                    HoleKind::CounterboreDrilled {
-                        diameter,
-                        depth,
-                        drill_point_angle,
-                    } => {
-                        treatment_diameter_valid(*diameter)
-                            && positive_feature_length(*depth)
-                            && drill_point_angle.0.is_finite()
-                            && drill_point_angle.0 > 0.0
-                            && drill_point_angle.0 < std::f64::consts::PI
-                    }
-                    HoleKind::Countersink { diameter, angle } => {
-                        treatment_diameter_valid(*diameter)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && angle.0 < std::f64::consts::PI
-                    }
+                    HoleKind::Unresolved(_)
+                    | HoleKind::PartialCounterbore { .. }
+                    | HoleKind::PartialCountersink { .. }
+                    | HoleKind::Simple
+                    | HoleKind::SimpleDrilled { .. } => true,
+                    HoleKind::Chamfer { diameter, .. }
+                    | HoleKind::Counterbore { diameter, .. }
+                    | HoleKind::CounterboreDrilled { diameter, .. }
+                    | HoleKind::Countersink { diameter, .. } => treatment_diameter_valid(*diameter),
                     HoleKind::Counterdrill {
                         diameter,
                         entry_diameter,
-                        depth,
-                        angle,
+                        ..
                     } => {
                         treatment_diameter_valid(*diameter)
-                            && entry_diameter.is_none_or(|entry| {
-                                positive_feature_length(entry) && entry.0 > diameter.0
-                            })
-                            && positive_feature_length(*depth)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && angle.0 < std::f64::consts::PI
+                            && entry_diameter.is_none_or(|entry| entry.get() > diameter.get())
                     }
                 };
                 let (construction_valid, specification) = match construction {
@@ -3815,81 +3218,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         kind,
                         specification,
                     } => (kind_valid(kind), specification.as_deref()),
-                    crate::features::HoleConstruction::NativeThread {
-                        major_diameter,
-                        thread_depth,
-                        pitch,
-                        drill_point_angle,
-                    } => (
-                        positive_feature_length(*major_diameter)
-                            && positive_feature_length(*thread_depth)
-                            && pitch.is_none_or(positive_feature_length)
-                            && drill_point_angle.0.is_finite()
-                            && drill_point_angle.0 > 0.0
-                            && drill_point_angle.0 < std::f64::consts::PI
-                            && diameter.is_some_and(|diameter| major_diameter.0 > diameter.0),
+                    crate::features::HoleConstruction::NativeThread { major_diameter, .. } => (
+                        diameter.is_some_and(|diameter| major_diameter.get() > diameter.get()),
                         None,
                     ),
                 };
-                let placements_valid = placements.iter().flatten().all(|placement| {
-                    let (point, direction) = match placement {
-                        crate::features::HolePlacement::Directed {
-                            position,
-                            direction,
-                        } => (position, direction),
-                        crate::features::HolePlacement::Axis { origin, axis } => (origin, axis),
-                    };
-                    finite_feature_point(*point) && valid_feature_direction(*direction)
-                });
-                let filter_valid = profile_filter
-                    .is_none_or(|filter| filter.points || filter.circles || filter.arcs);
-                let bottom_valid = bottom.is_none_or(|bottom| match bottom {
-                    crate::features::HoleBottom::Flat => true,
-                    crate::features::HoleBottom::Angled { included_angle, .. } => {
-                        included_angle.0.is_finite()
-                            && included_angle.0 > 0.0
-                            && included_angle.0 < std::f64::consts::PI
-                    }
-                });
-                let taper_valid = taper_angle.is_none_or(|angle| {
-                    angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
-                });
                 let specification_valid = specification.is_none_or(|specification| {
-                    let (standard, pitch, major_diameter, clearance, depth) = match specification {
-                        crate::features::HoleSpecification::Clearance {
-                            standard,
-                            clearance,
-                            depth,
-                            ..
-                        } => (standard, None, None, clearance, depth),
-                        crate::features::HoleSpecification::Threaded {
-                            standard,
-                            pitch,
-                            major_diameter,
-                            clearance,
-                            depth,
-                            ..
-                        } => (standard, *pitch, *major_diameter, clearance, depth),
-                    };
+                    let (crate::features::HoleSpecification::Clearance { standard, .. }
+                    | crate::features::HoleSpecification::Threaded { standard, .. }) =
+                        specification;
                     !standard.is_empty()
-                        && pitch.is_none_or(positive_feature_length)
-                        && major_diameter.is_none_or(positive_feature_length)
-                        && clearance.is_none_or(|value| value.0.is_finite())
-                        && match depth {
-                            crate::features::HoleThreadDepth::Blind { depth } => {
-                                positive_feature_length(*depth)
-                            }
-                            crate::features::HoleThreadDepth::HoleDepth
-                            | crate::features::HoleThreadDepth::TappedStandard => true,
-                        }
                 });
-                if diameter.is_some_and(|value| !positive_feature_length(value))
-                    || !construction_valid
+                if !construction_valid
                     || exit_kind.as_ref().is_some_and(|kind| !kind_valid(kind))
-                    || !placements_valid
-                    || !filter_valid
-                    || !bottom_valid
-                    || !taper_valid
                     || !specification_valid
                 {
                     feature_geometry_error(findings, feature, "hole geometry is invalid");
@@ -3995,87 +3336,24 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DatumCoordinateSystem {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            } => {
-                let dot = |left: crate::math::Vector3, right: crate::math::Vector3| {
-                    left.x * right.x + left.y * right.y + left.z * right.z
-                };
-                let cross = crate::math::Vector3::new(
-                    x_axis.y * y_axis.z - x_axis.z * y_axis.y,
-                    x_axis.z * y_axis.x - x_axis.x * y_axis.z,
-                    x_axis.x * y_axis.y - x_axis.y * y_axis.x,
-                );
-                let valid = [origin.x, origin.y, origin.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    && [x_axis, y_axis, z_axis].into_iter().all(|axis| {
-                        (axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    })
-                    && dot(*x_axis, *y_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    && dot(*x_axis, *z_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    && dot(*y_axis, *z_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    && dot(cross, *z_axis) >= 1.0 - EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9;
-                if !valid {
-                    feature_geometry_error(findings, feature, "coordinate-system frame is invalid");
-                }
-            }
-            FeatureDefinition::EquationCurve {
-                parameter,
-                x_expression,
-                y_expression,
-                z_expression,
-                start,
-                end,
-            } => {
-                if parameter.trim().is_empty()
-                    || x_expression.trim().is_empty()
-                    || y_expression.trim().is_empty()
-                    || z_expression.trim().is_empty()
-                    || !start.is_finite()
-                    || !end.is_finite()
-                    || start >= end
-                {
-                    feature_geometry_error(findings, feature, "equation curve is invalid");
-                }
-            }
+            FeatureDefinition::DatumCoordinateSystem { .. } => {}
+            FeatureDefinition::EquationCurve { .. } => {}
+
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
-                direction,
                 ..
             } => {
                 paths.push(source);
                 face_selections.push(target_faces);
-                if matches!(direction, crate::features::CurveProjectionDirection::Vector(value) if !valid_feature_direction(*value))
-                {
-                    feature_geometry_error(findings, feature, "projection direction is invalid");
-                }
             }
             FeatureDefinition::ProjectOnSurface {
                 sources,
                 support_face,
-                direction,
-                height,
-                offset,
                 ..
             } => {
                 paths.push(sources);
                 face_selections.push(support_face);
-                if !valid_feature_direction(*direction)
-                    || !height.0.is_finite()
-                    || height.0 < 0.0
-                    || !offset.0.is_finite()
-                {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "projection-on-surface construction is invalid",
-                    );
-                }
             }
             FeatureDefinition::CompositeCurve { segments, .. } => {
                 paths.extend(segments);
@@ -4083,148 +3361,23 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "composite curve is empty");
                 }
             }
-            FeatureDefinition::Helix {
-                axis_origin,
-                axis_direction,
-                radius,
-                shape,
-                revolutions,
-                segment_turns,
-                ..
-            } => {
-                let shape_valid = match shape {
-                    crate::features::HelixShape::Cylindrical { .. } => true,
-                    crate::features::HelixShape::Conical { cone_angle, .. } => {
-                        cone_angle.0.is_finite() && cone_angle.0.abs() < std::f64::consts::FRAC_PI_2
-                    }
-                    crate::features::HelixShape::Spiral { radial_growth } => {
-                        radial_growth.0.is_finite()
-                    }
-                };
-                let valid = [axis_origin.x, axis_origin.y, axis_origin.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    && valid_feature_direction(*axis_direction)
-                    && radius.0.is_finite()
-                    && radius.0 > 0.0
-                    && revolutions.is_finite()
-                    && *revolutions > 0.0
-                    && shape_valid
-                    && segment_turns.is_none_or(|value| value.is_finite() && value > 0.0);
-                if !valid {
-                    feature_geometry_error(findings, feature, "helix geometry is invalid");
-                }
-            }
+            FeatureDefinition::Helix { .. } => {}
             FeatureDefinition::HelixNativeAxis {
-                axis_native_ref,
-                axial_rise,
-                pitch,
-                revolutions,
-                start_angle,
-                ..
+                axis_native_ref, ..
             } => {
-                let valid = !axis_native_ref.is_empty()
-                    && axial_rise.0.is_finite()
-                    && pitch.0.is_finite()
-                    && revolutions.is_finite()
-                    && *revolutions > 0.0
-                    && start_angle.0.is_finite();
+                let valid = !axis_native_ref.is_empty();
                 if !valid {
                     feature_geometry_error(findings, feature, "native-axis helix is invalid");
                 }
             }
-            FeatureDefinition::Coil {
-                construction,
-                result,
-            } => {
-                use crate::features::{CoilExtent, CoilPlacement, CoilResult, CoilSection};
-
-                let placement_valid = match &construction.placement {
-                    CoilPlacement::Explicit {
-                        origin,
-                        axis,
-                        radial,
-                    } => {
-                        let dot = axis.x * radial.x + axis.y * radial.y + axis.z * radial.z;
-                        [origin.x, origin.y, origin.z]
-                            .into_iter()
-                            .all(f64::is_finite)
-                            && (axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                            && (radial.norm() - 1.0).abs()
-                                <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                            && dot.abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                    }
-                    CoilPlacement::Native { native_ref } => !native_ref.trim().is_empty(),
-                };
-                let extent_valid = match construction.extent {
-                    CoilExtent::RevolutionsHeight {
-                        revolutions,
-                        height,
-                    } => revolutions.is_finite() && revolutions > 0.0 && height.0.is_finite(),
-                    CoilExtent::RevolutionsPitch { revolutions, pitch } => {
-                        revolutions.is_finite()
-                            && revolutions > 0.0
-                            && pitch.0.is_finite()
-                            && pitch.0 != 0.0
-                    }
-                    CoilExtent::HeightPitch { height, pitch } => {
-                        height.0.is_finite()
-                            && height.0 != 0.0
-                            && pitch.0.is_finite()
-                            && pitch.0 != 0.0
-                    }
-                    CoilExtent::Spiral {
-                        revolutions,
-                        radial_pitch,
-                    } => {
-                        revolutions.is_finite()
-                            && revolutions > 0.0
-                            && radial_pitch.0.is_finite()
-                            && radial_pitch.0 != 0.0
-                    }
-                };
-                let section_size = match construction.section {
-                    CoilSection::Circular { diameter } => diameter,
-                    CoilSection::Square { size }
-                    | CoilSection::ExternalTriangle { size }
-                    | CoilSection::InternalTriangle { size } => size,
-                };
-                if !placement_valid
-                    || !positive_feature_length(construction.diameter)
-                    || !extent_valid
-                    || !positive_feature_length(section_size)
-                    || !construction.taper.0.is_finite()
-                {
-                    feature_geometry_error(findings, feature, "coil geometry is invalid");
-                }
+            FeatureDefinition::Coil { result, .. } => {
+                use crate::features::CoilResult;
                 if let CoilResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
             }
-            FeatureDefinition::HelicalSweep { construction, .. } => {
-                let valid = [
-                    construction.axis_origin.x,
-                    construction.axis_origin.y,
-                    construction.axis_origin.z,
-                    construction.pitch.0,
-                    construction.height.0,
-                    construction.radial_growth.0,
-                    construction.cone_angle.0,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
-                    && valid_feature_direction(construction.axis_direction)
-                    && construction.pitch.0 >= 0.0
-                    && construction.turns.is_finite()
-                    && construction.turns > 0.0
-                    && construction
-                        .tolerance
-                        .is_none_or(|tolerance| tolerance.is_finite() && tolerance > 0.0)
-                    && (construction.height.0 != 0.0 || construction.radial_growth.0 != 0.0);
-                if !valid {
-                    feature_geometry_error(findings, feature, "helical sweep is invalid");
-                }
-            }
+            FeatureDefinition::HelicalSweep { .. } => {}
+
             FeatureDefinition::Binder {
                 sources,
                 construction,
@@ -4279,13 +3432,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 let construction_valid = match construction {
                     crate::features::BinderConstruction::Shape { .. } => true,
-                    crate::features::BinderConstruction::SubShape {
-                        offset, context, ..
-                    } => {
+                    crate::features::BinderConstruction::SubShape { context, .. } => {
                         context.as_ref().is_none_or(target_valid)
-                            && offset.is_none_or(|offset| {
-                                offset.distance.0.is_finite() && offset.distance.0 != 0.0
-                            })
                     }
                 };
                 if !sources_valid || !construction_valid {
@@ -4295,106 +3443,18 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Wrap { face, .. } => {
                 face_selections.push(face);
             }
-            FeatureDefinition::Sphere { center, radius, .. } => {
-                if ![center.x, center.y, center.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    || !positive_feature_length(*radius)
-                {
-                    feature_geometry_error(findings, feature, "sphere primitive is invalid");
-                }
-            }
-            FeatureDefinition::Torus {
-                center,
-                axis,
-                major_radius,
-                minor_radius,
-                ..
-            } => {
-                if ![center.x, center.y, center.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    || !valid_feature_direction(*axis)
-                    || !positive_feature_length(*major_radius)
-                    || !positive_feature_length(*minor_radius)
-                {
-                    feature_geometry_error(findings, feature, "torus primitive is invalid");
-                }
-            }
-            FeatureDefinition::PointGeometry { position } => {
-                if !finite_feature_point(*position) {
-                    feature_geometry_error(findings, feature, "point geometry is invalid");
-                }
-            }
-            FeatureDefinition::LineSegment { start, end } => {
-                if !finite_feature_point(*start) || !finite_feature_point(*end) || *start == *end {
-                    feature_geometry_error(findings, feature, "line segment is invalid");
-                }
-            }
-            FeatureDefinition::CircularArc {
-                center,
-                normal,
-                radius,
-                start_angle,
-                end_angle,
-            } => {
-                if !finite_feature_point(*center)
-                    || !valid_feature_direction(*normal)
-                    || !positive_feature_length(*radius)
-                    || !start_angle.0.is_finite()
-                    || !end_angle.0.is_finite()
-                    || start_angle == end_angle
-                {
-                    feature_geometry_error(findings, feature, "circular arc is invalid");
-                }
-            }
-            FeatureDefinition::EllipticArc {
-                center,
-                normal,
-                major_axis,
-                major_radius,
-                minor_radius,
-                start_angle,
-                end_angle,
-            } => {
-                if !finite_feature_point(*center)
-                    || !valid_feature_direction(*normal)
-                    || !valid_feature_direction(*major_axis)
-                    || (normal.x * major_axis.x + normal.y * major_axis.y + normal.z * major_axis.z)
-                        .abs()
-                        > EPS_TORUS_AXES_ORTHO
-                    || !positive_feature_length(*major_radius)
-                    || !positive_feature_length(*minor_radius)
-                    || minor_radius.0 > major_radius.0
-                    || !start_angle.0.is_finite()
-                    || !end_angle.0.is_finite()
-                    || start_angle == end_angle
-                {
-                    feature_geometry_error(findings, feature, "elliptic arc is invalid");
-                }
-            }
-            FeatureDefinition::Polyline { points, closed } => {
-                if points.len() < 2
-                    || (*closed && points.len() < 3)
-                    || points.iter().any(|point| !finite_feature_point(*point))
-                    || points.windows(2).any(|pair| pair[0] == pair[1])
-                {
-                    feature_geometry_error(findings, feature, "polyline is invalid");
-                }
-            }
-            FeatureDefinition::RegularPolygonCurve {
-                sides,
-                circumradius,
-            } => {
-                if *sides < 3 || !positive_feature_length(*circumradius) {
-                    feature_geometry_error(findings, feature, "regular polygon is invalid");
-                }
-            }
-            FeatureDefinition::PlanarPatch { length, width } => {
-                if !positive_feature_length(*length) || !positive_feature_length(*width) {
-                    feature_geometry_error(findings, feature, "planar patch is invalid");
-                }
-            }
+            FeatureDefinition::Sphere { .. } => {}
+            FeatureDefinition::Torus { .. } => {}
+            FeatureDefinition::PointGeometry { .. } => {}
+            FeatureDefinition::LineSegment { .. } => {}
+
+            FeatureDefinition::CircularArc { .. } => {}
+
+            FeatureDefinition::EllipticArc { .. } => {}
+
+            FeatureDefinition::Polyline { .. } => {}
+
+            FeatureDefinition::RegularPolygonCurve { .. } => {}
             FeatureDefinition::FaceFromShapes { sources, .. } => {
                 body_selections.push(sources);
             }
@@ -4437,40 +3497,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                 }
             }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => {
-                let scale = normal.norm() * u_axis.norm();
-                if !finite_feature_point(*origin)
-                    || !valid_feature_direction(*normal)
-                    || !valid_feature_direction(*u_axis)
-                    || !scale.is_finite()
-                    || normal.dot(*u_axis).abs() > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9 * scale
-                {
-                    feature_geometry_error(findings, feature, "datum-plane frame is invalid");
-                }
-            }
-            FeatureDefinition::DatumThreePointPlane {
-                origin,
-                normal,
-                u_axis,
-                points,
-            } => {
-                let scale = normal.norm() * u_axis.norm();
-                if !finite_feature_point(*origin)
-                    || !valid_feature_direction(*normal)
-                    || !valid_feature_direction(*u_axis)
-                    || !scale.is_finite()
-                    || normal.dot(*u_axis).abs() > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9 * scale
-                {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "three-point datum-plane frame is invalid",
-                    );
-                }
+            FeatureDefinition::DatumPlane { .. } => {}
+            FeatureDefinition::DatumThreePointPlane { points, .. } => {
                 if same_vertex_target(&points[0], &points[1])
                     || same_vertex_target(&points[0], &points[2])
                     || same_vertex_target(&points[1], &points[2])
@@ -4498,18 +3526,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     vertex_selections.push((point, "three-point datum-plane"));
                 }
             }
-            FeatureDefinition::DatumAxis { origin, direction } => {
-                if !finite_feature_point(*origin) || !valid_feature_direction(*direction) {
-                    feature_geometry_error(findings, feature, "datum-axis frame is invalid");
-                }
-            }
-            FeatureDefinition::DatumPoint {
-                position,
-                construction,
-            } => {
-                if !finite_feature_point(*position) {
-                    feature_geometry_error(findings, feature, "datum-point position is invalid");
-                }
+            FeatureDefinition::DatumAxis { .. } => {}
+            FeatureDefinition::DatumPoint { construction, .. } => {
                 let mut plane_references = Vec::new();
                 if let Some(construction) = construction.as_deref() {
                     match construction {
@@ -4534,17 +3552,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             edge_selections.push(edge);
                             plane_references.push(plane);
                         }
-                    }
-                    if matches!(
-                        construction,
-                        crate::features::DatumPointConstruction::DistanceOnEdge { fraction, .. }
-                            if !fraction.is_finite() || !(0.0..=1.0).contains(fraction)
-                    ) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "datum-point path fraction is invalid",
-                        );
                     }
                 }
                 for plane in plane_references {
@@ -4596,26 +3603,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             }
                         }
                         DatumPlaneReference::Face(face) => face_selections.push(face),
-                        DatumPlaneReference::ResolvedPlane {
-                            origin,
-                            normal,
-                            u_axis,
-                        } => {
-                            if !finite_feature_point(*origin)
-                                || !valid_feature_direction(*normal)
-                                || !valid_feature_direction(*u_axis)
-                                || normal.dot(*u_axis).abs()
-                                    > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                                        * normal.norm()
-                                        * u_axis.norm()
-                            {
-                                feature_geometry_error(
-                                    findings,
-                                    feature,
-                                    "datum-point plane support frame is invalid",
-                                );
-                            }
-                        }
+                        DatumPlaneReference::ResolvedPlane { .. } => {}
                     }
                 }
             }
@@ -4707,10 +3695,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 feature,
                 "nested feature post-processing is invalid",
             ),
-            FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } => {
+            FeatureDefinition::DatumOffsetPlane { reference, .. } => {
                 if let Some(reference) = reference {
                     match reference {
                         DatumPlaneReference::Feature(reference) => {
@@ -4766,33 +3751,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             }
                         }
                         DatumPlaneReference::Face(face) => face_selections.push(face),
-                        DatumPlaneReference::ResolvedPlane {
-                            origin,
-                            normal,
-                            u_axis,
-                        } => {
-                            if !origin.x.is_finite()
-                                || !origin.y.is_finite()
-                                || !origin.z.is_finite()
-                                || !valid_feature_direction(*normal)
-                                || !valid_feature_direction(*u_axis)
-                                || (normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z)
-                                    .abs()
-                                    > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
-                                        * normal.norm()
-                                        * u_axis.norm()
-                            {
-                                feature_geometry_error(
-                                    findings,
-                                    feature,
-                                    "datum-plane face support frame is invalid",
-                                );
-                            }
-                        }
+                        DatumPlaneReference::ResolvedPlane { .. } => {}
                     }
-                }
-                if !distance.0.is_finite() {
-                    feature_geometry_error(findings, feature, "datum-plane offset is invalid");
                 }
             }
         }
@@ -4935,14 +3895,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
         for termination in definition_terminations(definition) {
-            if !termination_magnitude_is_valid(termination) {
-                findings.push(Finding {
-                    check: Check::GeometricConsistency,
-                    severity: Severity::Error,
-                    message: "feature extent magnitude is invalid".into(),
-                    entity: Some(feature.id.as_str().to_owned()),
-                });
-            }
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.face()
             {
@@ -5454,11 +4406,7 @@ fn check_historical_members<'a, I, F>(
 }
 
 fn positive_feature_length(value: Length) -> bool {
-    value.0.is_finite() && value.0 > 0.0
-}
-
-fn valid_draft_angle(value: crate::features::Angle) -> bool {
-    value.0.is_finite() && value.0.abs() < std::f64::consts::FRAC_PI_2
+    value.get() > 0.0
 }
 
 fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
@@ -5479,19 +4427,14 @@ fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
                 && points.iter().all(|point| {
                     point.parameter.is_finite()
                         && (0.0..=1.0).contains(&point.parameter)
-                        && point.radius.0.is_finite()
-                        && point.radius.0 >= 0.0
+                        && point.radius.get() >= 0.0
                 })
-                && points.iter().any(|point| point.radius.0 > 0.0)
+                && points.iter().any(|point| point.radius.get() > 0.0)
                 && points
                     .windows(2)
                     .all(|pair| pair[0].parameter < pair[1].parameter)
         }
     }
-}
-
-fn finite_feature_point(value: Point3) -> bool {
-    [value.x, value.y, value.z].into_iter().all(f64::is_finite)
 }
 
 fn valid_feature_direction(value: Vector3) -> bool {
@@ -5500,10 +4443,10 @@ fn valid_feature_direction(value: Vector3) -> bool {
 
 fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
     match value {
-        crate::features::ParameterValue::Length(value) => value.0.is_finite(),
-        crate::features::ParameterValue::Angle(value) => value.0.is_finite(),
         crate::features::ParameterValue::Real(value) => value.is_finite(),
-        crate::features::ParameterValue::Integer(_)
+        crate::features::ParameterValue::Length(_)
+        | crate::features::ParameterValue::Angle(_)
+        | crate::features::ParameterValue::Integer(_)
         | crate::features::ParameterValue::Boolean(_)
         | crate::features::ParameterValue::String(_) => true,
     }
@@ -5693,54 +4636,6 @@ fn definition_terminations(
     terminations.into_iter()
 }
 
-fn termination_magnitude_is_valid(termination: TerminationRef<'_>) -> bool {
-    match termination {
-        TerminationRef::Linear(crate::features::LinearTermination::Blind { length }) => {
-            length.0.is_finite() && length.0 != 0.0
-        }
-        TerminationRef::Angular(crate::features::AngularTermination::Angle { angle }) => {
-            angle.0.is_finite() && angle.0 > 0.0
-        }
-        TerminationRef::Linear(crate::features::LinearTermination::OffsetFromFace {
-            offset,
-            ..
-        })
-        | TerminationRef::Angular(crate::features::AngularTermination::OffsetFromFace {
-            offset,
-            ..
-        }) => offset.0.is_finite() && offset.0 > 0.0,
-        TerminationRef::Linear(crate::features::LinearTermination::ToFace { offset, .. })
-        | TerminationRef::Angular(crate::features::AngularTermination::ToFace { offset, .. }) => {
-            offset.is_none_or(|offset| offset.0.is_finite())
-        }
-        TerminationRef::Linear(
-            crate::features::LinearTermination::Unresolved
-            | crate::features::LinearTermination::ThroughAll
-            | crate::features::LinearTermination::ThroughNext
-            | crate::features::LinearTermination::ToFirst
-            | crate::features::LinearTermination::ToLast
-            | crate::features::LinearTermination::ToVertex { .. }
-            | crate::features::LinearTermination::ToShape { .. },
-        )
-        | TerminationRef::Angular(
-            crate::features::AngularTermination::Unresolved
-            | crate::features::AngularTermination::ThroughAll
-            | crate::features::AngularTermination::ThroughNext
-            | crate::features::AngularTermination::ToFirst
-            | crate::features::AngularTermination::ToLast
-            | crate::features::AngularTermination::ToVertex { .. }
-            | crate::features::AngularTermination::ToShape { .. },
-        ) => true,
-    }
-}
-
-/// Check that a configuration's stated design state is self-contained: every
-/// dependency an unsuppressed feature state names must itself have an
-/// unsuppressed state in the same configuration.
-///
-/// Does not check body-to-feature attribution. Sparse `feature_states` are
-/// allowed: a missing dependency state inherits the model-level one. Only an
-/// explicitly suppressed dependency is incoherent.
 fn check_configuration_state_closure(
     configuration: &crate::features::DesignConfiguration,
     findings: &mut Vec<Finding>,

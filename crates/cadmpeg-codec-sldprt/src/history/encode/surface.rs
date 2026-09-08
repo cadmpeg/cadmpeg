@@ -4,8 +4,8 @@
 use super::super::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_vector3};
 use super::support::{
-    edge_selection_value, face_selection_value, path_source, require_direction,
-    require_same_family, write_native_selection,
+    edge_selection_value, face_selection_value, path_source, require_same_family,
+    write_native_selection,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
@@ -82,7 +82,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extend_surface(
         &self,
         faces: &FaceSelection,
-        distance: &Option<Length>,
+        distance: &Option<cadmpeg_ir::features::PositiveLength>,
         method: &SurfaceExtension,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -101,7 +101,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !distance.0.is_finite() || distance.0 <= 0.0 {
+            if !distance.get().is_finite() || distance.get() <= 0.0 {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid surface extension",
                     feature.id
@@ -110,7 +110,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            parameters.insert("Distance".into(), format_length_mm(distance.0));
+            parameters.insert("Distance".into(), format_length_mm(distance.get()));
             let mut properties = feature.source_properties.clone();
             properties.insert("Faces".into(), faces);
             let method =
@@ -166,12 +166,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 RuledSurfaceMode::Direction {
                     direction,
                     distance,
-                } => {
-                    require_direction(*direction, &feature.id, "ruled-surface direction")?;
-                    ("Direction", Some(*direction), *distance)
-                }
+                } => ("Direction", Some(*direction), *distance),
             };
-            if !distance.0.is_finite() || distance.0 <= 0.0 {
+            if !distance.get().is_finite() || distance.get() <= 0.0 {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid ruled-surface distance",
                     feature.id
@@ -180,14 +177,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            parameters.insert("Distance".into(), format_length_mm(distance.0));
+            parameters.insert("Distance".into(), format_length_mm(distance.get()));
             let mut properties = feature.source_properties.clone();
             properties.insert("Edges".into(), edges);
             properties.insert("SupportFaces".into(), support_faces);
             properties.insert("Mode".into(), mode_name.into());
             match direction {
                 Some(direction) => {
-                    properties.insert("Direction".into(), format_vector3(direction));
+                    properties.insert("Direction".into(), format_vector3(direction.get()));
                 }
                 None => {
                     properties.remove("Direction");
@@ -205,7 +202,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         bodies: &Option<BodySelection>,
         removed_faces: &FaceSelection,
-        thickness: &Option<Length>,
+        thickness: &Option<cadmpeg_ir::features::PositiveLength>,
         outward: &Option<bool>,
         mode: &Option<ShellMode>,
         join: &Option<ShellJoin>,
@@ -260,7 +257,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.insert(
                     thickness_key.into(),
                     format_length_like(
-                        thickness.0,
+                        thickness.get(),
                         existing
                             .and_then(|record| record.parameters.get(thickness_key))
                             .map(String::as_str),
@@ -290,7 +287,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_thicken(
         &self,
         faces: &FaceSelection,
-        thickness: &Option<Length>,
+        thickness: &Option<cadmpeg_ir::features::PositiveLength>,
         side: &Option<ThickenSide>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -331,7 +328,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.insert(
                     thickness_key.into(),
                     format_length_like(
-                        thickness.0,
+                        thickness.get(),
                         existing
                             .and_then(|record| record.parameters.get(thickness_key))
                             .map(String::as_str),
@@ -386,7 +383,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !distance.0.is_finite() {
+            if !distance.get().is_finite() {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite surface offset",
                     feature.id
@@ -395,7 +392,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            parameters.insert("Distance".into(), format_length_mm(distance.0));
+            parameters.insert("Distance".into(), format_length_mm(distance.get()));
             let mut properties = feature.source_properties.clone();
             properties.insert("Faces".into(), selection);
             NeutralFeatureEncoding {
@@ -411,7 +408,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         merge_entities: &Option<bool>,
         create_solid: &Option<bool>,
-        gap_tolerance: &Option<Length>,
+        gap_tolerance: &Option<cadmpeg_ir::features::NonNegativeLength>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -439,14 +436,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             match gap_tolerance {
-                Some(value) if value.0.is_finite() && value.0 >= 0.0 => {
-                    parameters.insert("GapTolerance".into(), format_length_mm(value.0));
-                }
-                Some(_) => {
-                    return Err(CodecError::malformed(format_args!(
-                        "SLDPRT feature {} has an invalid knit tolerance",
-                        feature.id
-                    )));
+                Some(value) => {
+                    parameters.insert("GapTolerance".into(), format_length_mm(value.get()));
                 }
                 None => {
                     parameters.remove("GapTolerance");
@@ -534,7 +525,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         face_selection: &FaceSelection,
         anchor: &cadmpeg_ir::features::DraftAnchor,
-        angle: &Option<Angle>,
+        angle: &Option<cadmpeg_ir::features::SlopeAngle>,
         outward: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -571,20 +562,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if let Some(pull_direction) = pull_direction {
-                require_direction(*pull_direction, &feature.id, "draft direction")?;
-            }
-            if angle.is_some_and(|angle| !angle.0.is_finite()) {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has a non-finite draft angle",
-                    feature.id
-                )));
-            }
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(angle) = angle {
-                parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                parameters.insert("Angle".into(), format_angle_rad(angle.get()));
             }
             let mut properties = feature.source_properties.clone();
             let fallback = existing.map_or("", |record| record.id.as_str());
@@ -595,7 +577,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 write_native_selection(&mut properties, "NeutralPlane", &neutral_plane, fallback);
             }
             if let Some(pull_direction) = pull_direction {
-                properties.insert("Direction".into(), format_vector3(*pull_direction));
+                properties.insert("Direction".into(), format_vector3(pull_direction.get()));
             }
             if let Some(outward) = outward {
                 properties.insert("Outward".into(), outward.to_string());
