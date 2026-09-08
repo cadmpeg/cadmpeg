@@ -919,7 +919,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             document: None,
             object,
             subelements,
-        } if object.ends_with("Source") && subelements == &["Edge2"]
+        } if object.as_str().ends_with("Source") && subelements == &["Edge2"]
     ));
     assert!(matches!(
         constraint(2).definition.kind(),

@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+const EPS_PMI_NUMERIC: f64 = 1.0e-12;
+
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -49,9 +51,9 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     else {
         panic!("width is not a dimension")
     };
-    assert_eq!(nominal.value, 12.0);
-    assert_eq!(lower.value, -0.1);
-    assert_eq!(upper.value, 0.2);
+    assert_eq!(nominal.value.get(), 12.0);
+    assert_eq!(lower.value.get(), -0.1);
+    assert_eq!(upper.value.get(), 0.2);
     assert_eq!(fit.form_variance, "H");
     assert_eq!(fit.zone_variance, "");
     assert_eq!(fit.grade, "7");
@@ -81,21 +83,18 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(matches!(
         &datum_system.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].precedence.get() == 1
-                && references[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].precedence.get() == 1
+                && references.as_slice()[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
     ));
     assert!(matches!(
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::Flatness,
-            magnitude: cadmpeg_ir::PmiValue {
-                value: 0.05,
-                quantity: PmiQuantity::Length,
-            },
+            magnitude,
             datum_system: None,
             ..
-        }
+        } if magnitude.get().value.get() == 0.05 && magnitude.get().quantity == PmiQuantity::Length
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -131,8 +130,8 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].modifiers
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].modifiers
                     == ["maximum_material_requirement", "distance:0.2"]
     )));
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
@@ -154,16 +153,16 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         annotation.definition,
         PmiDefinition::Dimension {
             nominal: Some(cadmpeg_ir::PmiValue {
-                value: 12.0,
+                value: nominal,
                 quantity: PmiQuantity::Length,
             }),
             tolerance: Some(DimensionTolerance::PlusMinusFit {
-                lower: cadmpeg_ir::PmiValue { value: -0.1, .. },
-                upper: cadmpeg_ir::PmiValue { value: 0.2, .. },
+                lower: cadmpeg_ir::PmiValue { value: lower, .. },
+                upper: cadmpeg_ir::PmiValue { value: upper, .. },
                 ..
             }),
             ..
-        }
+        } if nominal.get() == 12.0 && lower.get() == -0.1 && upper.get() == 0.2
     )));
 }
 
@@ -196,7 +195,8 @@ fn complex_datum_feature_remains_a_dimension_target() {
     assert_eq!(
         dimension.targets,
         vec![PmiTarget::ShapeAspect {
-            source_id: "#6".into()
+            source_id: cadmpeg_ir::products::NonEmptyString::new("#6")
+                .expect("nonempty source identity")
         }]
     );
 }
@@ -229,7 +229,8 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
         assert_eq!(
             dimension.targets,
             vec![PmiTarget::ShapeAspect {
-                source_id: source_id.into()
+                source_id: cadmpeg_ir::products::NonEmptyString::new(source_id)
+                    .expect("nonempty source identity")
             }]
         );
     }
@@ -262,7 +263,8 @@ fn datum_target_transfers_form_and_identification() {
         assert_eq!(
             target.targets,
             [PmiTarget::ShapeAspect {
-                source_id: source_id.into()
+                source_id: cadmpeg_ir::products::NonEmptyString::new(source_id)
+                    .expect("nonempty source identity")
             }]
         );
         assert!(matches!(
@@ -303,16 +305,17 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
         PmiDefinition::Dimension {
             dimension: DimensionKind::Location,
             nominal: Some(cadmpeg_ir::pmi::PmiValue {
-                value: 5.0,
+                value,
                 quantity: PmiQuantity::Length,
             }),
             ..
-        }
+        } if value.get() == 5.0
     ));
     assert_eq!(
         dimension.targets,
         vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
-            source_id: "#6".into()
+            source_id: cadmpeg_ir::products::NonEmptyString::new("#6")
+                .expect("nonempty source identity")
         }]
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -344,7 +347,7 @@ fn dimensional_characteristic_selects_the_named_nominal_measure() {
             dimension: DimensionKind::Size,
             nominal: Some(PmiValue { value, quantity: PmiQuantity::Length }),
             ..
-        } if (value - 12.0).abs() < 1.0e-12
+        } if (value.get() - 12.0).abs() < EPS_PMI_NUMERIC
     )));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
@@ -370,7 +373,7 @@ fn dimensional_nominal_selection_ignores_set_order_and_rejects_ambiguity() {
             else {
                 return None;
             };
-            Some(*value)
+            Some(value.get())
         })
     };
 
@@ -441,12 +444,9 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::Flatness,
-            magnitude: cadmpeg_ir::PmiValue {
-                value: 0.05,
-                quantity: PmiQuantity::Length,
-            },
+            magnitude,
             ..
-        }
+        } if magnitude.get().value.get() == 0.05 && magnitude.get().quantity == PmiQuantity::Length
     ));
     let PmiDefinition::GeometricTolerance {
         defined_unit,
@@ -459,10 +459,7 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     };
     assert_eq!(
         defined_unit,
-        &Some(cadmpeg_ir::PmiValue {
-            value: 0.05,
-            quantity: PmiQuantity::Length,
-        })
+        &Some(cadmpeg_ir::PmiValue::new(0.05, PmiQuantity::Length).expect("finite value"))
     );
     assert_eq!(defined_area_unit.as_deref(), Some("circular"));
     assert!(defined_area_second_unit.is_none());
@@ -548,8 +545,8 @@ fn geometric_tolerance_kind_uses_exact_leaf_and_retains_abstract_base_opaque() {
             panic!("complex flatness tolerance has the wrong definition")
         };
         assert_eq!(kind, &GeometricToleranceKind::Flatness);
-        assert_eq!(magnitude.quantity, PmiQuantity::Length);
-        assert_eq!(magnitude.value, 0.05);
+        assert_eq!(magnitude.get().quantity, PmiQuantity::Length);
+        assert_eq!(magnitude.get().value.get(), 0.05);
         assert_eq!(modifiers, &["free_state"]);
         assert_eq!(
             result
@@ -1106,7 +1103,7 @@ pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
         PmiDefinition::Dimension {
             nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
             ..
-        } if (value - 127.0).abs() < 1.0e-12
+        } if (value.get() - 127.0).abs() < EPS_PMI_NUMERIC
     )));
 }
 
@@ -1138,7 +1135,7 @@ fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
         PmiDefinition::Dimension {
             nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
             ..
-        } if (value - 0.4).abs() < 1.0e-12
+        } if (value.get() - 0.4).abs() < EPS_PMI_NUMERIC
     )));
 }
 
@@ -1187,10 +1184,10 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     unsupported.id = PmiId::mint("test:pmi:tolerance#other").expect("identity grammar");
     unsupported.definition = PmiDefinition::GeometricTolerance {
         tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
-        magnitude: cadmpeg_ir::PmiValue {
-            value: 0.1,
-            quantity: cadmpeg_ir::PmiQuantity::Length,
-        },
+        magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(
+            cadmpeg_ir::PmiValue::new(0.1, cadmpeg_ir::PmiQuantity::Length).expect("finite value"),
+        )
+        .expect("nonnegative magnitude"),
         datum_system: None,
         defined_unit: None,
         defined_area_unit: None,
@@ -1272,21 +1269,23 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     let PmiDefinition::DatumSystem { references } = &mut system.definition else {
         unreachable!()
     };
-    let modifiers = references[0].modifiers.clone();
-    *references = vec![
-        DatumReference {
-            datum: datum_a.id,
-            precedence: std::num::NonZeroU32::MIN,
-            common_group: Some(7),
-            modifiers: modifiers.clone(),
-        },
-        DatumReference {
-            datum: datum_b.id,
-            precedence: std::num::NonZeroU32::MIN,
-            common_group: Some(7),
-            modifiers: vec!["least_material_requirement".into()],
-        },
-    ];
+    let modifiers = references.as_slice()[0].modifiers.clone();
+    references
+        .replace(vec![
+            DatumReference {
+                datum: datum_a.id,
+                precedence: std::num::NonZeroU32::MIN,
+                common_group: Some(7),
+                modifiers: modifiers.clone(),
+            },
+            DatumReference {
+                datum: datum_b.id,
+                precedence: std::num::NonZeroU32::MIN,
+                common_group: Some(7),
+                modifiers: vec!["least_material_requirement".into()],
+            },
+        ])
+        .expect("valid common datum compartment");
     let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
@@ -1305,13 +1304,67 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 2
+            if references.as_slice().len() == 2
             && references
+                .as_slice()
                 .iter()
                 .all(|reference| reference.precedence.get() == 1)
-                && references.iter().all(|reference| reference.common_group == Some(1))
-                && references[0].modifiers != references[1].modifiers
+                && references.as_slice().iter().all(|reference| reference.common_group == Some(1))
+                && references.as_slice()[0].modifiers != references.as_slice()[1].modifiers
     )));
+}
+
+#[test]
+fn invalid_datum_system_records_a_loss_and_preserves_good_annotations() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#4=DATUM_SYSTEM('first good system','',#5,.F.,(#20));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=(DATUM('A') SHAPE_ASPECT('','',#5,.F.));
+#7=(DATUM('B') SHAPE_ASPECT('','',#5,.F.));
+#8=DATUM_SYSTEM('bad system','',#5,.F.,(#24));
+#9=DATUM_SYSTEM('last good system','',#5,.F.,(#23));
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#6,());
+#21=DATUM_REFERENCE_ELEMENT('',$,#5,.F.,#6,());
+#22=DATUM_REFERENCE_ELEMENT('',$,#5,.F.,#5,());
+#23=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,());
+#24=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,COMMON_DATUM_LIST((#21,#22)),());
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let annotations = &result.ir().model.pmi;
+    assert_eq!(annotations.len(), 4);
+    for (system, datum) in [(4, 6), (9, 7)] {
+        let annotation = annotations
+            .iter()
+            .find(|annotation| annotation.id.as_str() == format!("step:presentation:pmi#{system}"))
+            .expect("valid datum system survives");
+        assert!(matches!(
+            &annotation.definition,
+            PmiDefinition::DatumSystem { references }
+                if references.as_slice().len() == 1
+                    && references.as_slice()[0].datum.as_str() == format!("step:presentation:pmi#{datum}")
+                    && references.as_slice()[0].common_group.is_none()
+        ));
+    }
+    for identification in ["A", "B"] {
+        assert!(annotations.iter().any(|annotation| matches!(
+            &annotation.definition,
+            PmiDefinition::Datum { identification: actual } if actual == identification
+        )));
+    }
+    assert!(!annotations
+        .iter()
+        .any(|annotation| annotation.id.as_str() == "step:presentation:pmi#8"));
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::PmiDatumSystemInvalid.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("DATUM_SYSTEM #8"));
+    assert!(losses[0].message.contains("common_group"));
 }
 
 #[test]
@@ -1377,7 +1430,8 @@ fn complex_datum_reads_identification_from_its_named_partial() {
     assert_eq!(
         datum.targets,
         vec![PmiTarget::ShapeAspect {
-            source_id: "#7".into()
+            source_id: cadmpeg_ir::products::NonEmptyString::new("#7")
+                .expect("nonempty source identity")
         }]
     );
 
@@ -1429,7 +1483,8 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         }
     ));
     assert!(dimension.targets.contains(&PmiTarget::ShapeAspect {
-        source_id: "#39".into()
+        source_id: cadmpeg_ir::products::NonEmptyString::new("#39")
+            .expect("nonempty source identity")
     }));
     assert!(dimension.targets.contains(&PmiTarget::Face {
         face: cadmpeg_ir::ids::FaceId::mint("step:data:face#29").expect("identity grammar")
@@ -1476,8 +1531,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         &datum_target.definition,
         PmiDefinition::DatumTarget { basis, .. }
             if basis.contains(&PmiTarget::ShapeAspect {
-                source_id: "#47".into()
-            })
+                source_id: cadmpeg_ir::products::NonEmptyString::new("#47").expect("nonempty source identity")})
     ));
     let point_dimension = result
         .ir()
@@ -1610,7 +1664,8 @@ fn datum_target_writes_and_round_trips() {
     assert_eq!(
         target.targets,
         [PmiTarget::ShapeAspect {
-            source_id: "#30".into()
+            source_id: cadmpeg_ir::products::NonEmptyString::new("#30")
+                .expect("nonempty source identity")
         }]
     );
     assert!(matches!(

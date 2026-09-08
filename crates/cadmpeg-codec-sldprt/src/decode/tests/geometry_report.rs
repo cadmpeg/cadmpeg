@@ -29,7 +29,10 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#planar-entity").unwrap(),
             SketchId::mint("synthetic:test:id#planar-sketch").unwrap(),
-            SketchGeometry::native("SplineHandle".into()),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("SplineHandle")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some("native:planar".into())),
     );
@@ -38,7 +41,8 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
             SpatialSketchEntityId::mint("synthetic:test:id#spatial-entity").unwrap(),
             SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Native {
-                native_kind: "ReferenceCurve".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("ReferenceCurve")
+                    .expect("nonempty source identity"),
             })
             .unwrap(),
         )
@@ -79,7 +83,10 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#represented-geometry").unwrap(),
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::native("UnknownGeometry".into()),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("UnknownGeometry")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some("geometry-marker".into())),
     );
@@ -193,7 +200,10 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::native("UnknownGeometry".into()),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("UnknownGeometry")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some(native_ref.into()))
     };

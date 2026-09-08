@@ -1587,7 +1587,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && native == &operand.id
                                 && ctx.ir.model.assets.iter().any(|candidate| {
                                     candidate.id == *asset
-                                        && candidate.name.as_deref() == Some(image.asset.name())
+                                        && candidate.name.as_ref().map(cadmpeg_ir::products::NonEmptyString::as_str) == Some(image.asset.name())
                                 })
                         )
                 })

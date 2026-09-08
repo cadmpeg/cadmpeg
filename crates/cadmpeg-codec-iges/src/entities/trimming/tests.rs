@@ -1284,19 +1284,22 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .find(|loop_| loop_.id == face.loops[0])
         .expect("bounded loop");
     assert_eq!(loop_.coedges().len(), 4);
-    assert_eq!(face.tolerance, Some(0.001));
+    assert_eq!(
+        face.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.001)
+    );
     assert!(result
         .ir()
         .model
         .vertices
         .iter()
-        .any(|vertex| vertex.tolerance == Some(0.001)));
+        .any(|vertex| vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) == Some(0.001)));
     assert!(result
         .ir()
         .model
         .edges
         .iter()
-        .any(|edge| edge.tolerance == Some(0.001)));
+        .any(|edge| edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) == Some(0.001)));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1358,19 +1361,22 @@ fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within the unit-converted resolution");
-    assert_eq!(face.tolerance, Some(0.01));
+    assert_eq!(
+        face.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.01)
+    );
     assert!(result
         .ir()
         .model
         .vertices
         .iter()
-        .any(|vertex| vertex.tolerance == Some(0.01)));
+        .any(|vertex| vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) == Some(0.01)));
     assert!(result
         .ir()
         .model
         .edges
         .iter()
-        .any(|edge| edge.tolerance == Some(0.01)));
+        .any(|edge| edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) == Some(0.01)));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1396,7 +1402,10 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within one declared coordinate quantum");
-    assert_eq!(face.tolerance, Some(0.01));
+    assert_eq!(
+        face.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.01)
+    );
     assert!(result
         .ir()
         .model

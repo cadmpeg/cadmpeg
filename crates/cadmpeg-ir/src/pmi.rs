@@ -61,7 +61,8 @@ pub enum PmiTarget {
     /// Source shape-aspect identity whose geometric target is not resolved.
     ShapeAspect {
         /// Stable source identity of the unresolved aspect.
-        source_id: String,
+        #[serde(deserialize_with = "deserialize_source_id")]
+        source_id: crate::products::NonEmptyString,
     },
 }
 
@@ -71,9 +72,51 @@ pub enum PmiTarget {
 pub struct PmiValue {
     /// Numeric value in millimeters, radians, or unitless ratio as selected by
     /// `quantity`.
-    pub value: f64,
+    #[serde(deserialize_with = "deserialize_pmi_value")]
+    pub value: crate::units::FiniteScalar,
     /// Physical quantity and canonical unit of `value`.
     pub quantity: PmiQuantity,
+}
+
+fn deserialize_pmi_value<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::units::FiniteScalar, D::Error> {
+    crate::units::deserialize_named(deserializer, "value")
+}
+
+impl PmiValue {
+    /// Construct a finite semantic quantity.
+    pub fn new(value: f64, quantity: PmiQuantity) -> Option<Self> {
+        Some(Self {
+            value: crate::units::FiniteScalar::new(value)?,
+            quantity,
+        })
+    }
+}
+
+/// A nonnegative finite geometric-tolerance magnitude.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct PmiMagnitude(PmiValue);
+
+impl PmiMagnitude {
+    /// Construct a nonnegative tolerance magnitude.
+    pub fn new(value: PmiValue) -> Option<Self> {
+        crate::units::NonNegativeScalar::new(value.value.get()).map(|_| Self(value))
+    }
+
+    /// Return the finite semantic quantity.
+    pub const fn get(self) -> PmiValue {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PmiMagnitude {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::new(crate::units::deserialize_named(deserializer, "magnitude")?)
+            .ok_or_else(|| serde::de::Error::custom("magnitude must be nonnegative"))
+    }
 }
 
 /// Physical quantity carried by a PMI value.
@@ -184,6 +227,68 @@ pub struct DatumReference {
     pub modifiers: Vec<String>,
 }
 
+/// Ordered datum references with consistent precedence compartments.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vec<DatumReference>", into = "Vec<DatumReference>")]
+pub struct DatumReferences(Vec<DatumReference>);
+
+impl DatumReferences {
+    /// Return the ordered datum references.
+    #[must_use]
+    pub fn as_slice(&self) -> &[DatumReference] {
+        &self.0
+    }
+
+    /// Replace the references after checking their precedence compartments.
+    pub fn replace(&mut self, references: Vec<DatumReference>) -> Result<(), String> {
+        let replacement = Self::try_from(references)?;
+        *self = replacement;
+        Ok(())
+    }
+}
+
+impl From<DatumReferences> for Vec<DatumReference> {
+    fn from(value: DatumReferences) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<Vec<DatumReference>> for DatumReferences {
+    type Error = String;
+
+    fn try_from(references: Vec<DatumReference>) -> Result<Self, Self::Error> {
+        let mut compartments = std::collections::BTreeMap::<_, (usize, Option<u32>)>::new();
+        let mut common_groups = std::collections::BTreeMap::new();
+        for reference in &references {
+            let (count, group) = compartments
+                .entry(reference.precedence)
+                .or_insert((0, reference.common_group));
+            if *group != reference.common_group {
+                return Err(
+                    "references: a precedence compartment must use one common_group".into(),
+                );
+            }
+            *count += 1;
+            if let Some(group) = reference.common_group {
+                if common_groups
+                    .insert(group, reference.precedence)
+                    .is_some_and(|precedence| precedence != reference.precedence)
+                {
+                    return Err("references: common_group spans precedence compartments".into());
+                }
+            }
+        }
+        if compartments
+            .values()
+            .any(|(count, group)| *count == 1 && group.is_some() || *count > 1 && group.is_none())
+        {
+            return Err("references: one datum must have no common_group and multiple datums must share a common_group".into());
+        }
+        Ok(Self(references))
+    }
+}
+
 fn deserialize_datum_precedence<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -241,7 +346,7 @@ pub enum PmiDefinition {
     /// Ordered collection of datum references.
     DatumSystem {
         /// Ordered datum references.
-        references: Vec<DatumReference>,
+        references: DatumReferences,
     },
     /// Datum target feature and its geometric form.
     DatumTarget {
@@ -257,7 +362,7 @@ pub enum PmiDefinition {
         /// Tolerance characteristic.
         tolerance: GeometricToleranceKind,
         /// Tolerance-zone magnitude.
-        magnitude: PmiValue,
+        magnitude: PmiMagnitude,
         /// Explicit tolerance-zone unit size.
         defined_unit: Option<PmiValue>,
         /// Explicit area-unit shape for the tolerance zone.
@@ -307,7 +412,7 @@ enum PmiDefinitionWire {
     },
     GeometricTolerance {
         tolerance: GeometricToleranceKind,
-        magnitude: PmiValue,
+        magnitude: PmiMagnitude,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         defined_unit: Option<PmiValue>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -344,7 +449,9 @@ impl From<PmiDefinition> for PmiDefinitionWire {
     fn from(value: PmiDefinition) -> Self {
         match value {
             PmiDefinition::Datum { identification } => Self::Datum { identification },
-            PmiDefinition::DatumSystem { references } => Self::DatumSystem { references },
+            PmiDefinition::DatumSystem { references } => Self::DatumSystem {
+                references: references.into(),
+            },
             PmiDefinition::DatumTarget {
                 form,
                 identification,
@@ -413,7 +520,9 @@ impl TryFrom<PmiDefinitionWire> for PmiDefinition {
     fn try_from(value: PmiDefinitionWire) -> Result<Self, Self::Error> {
         Ok(match value {
             PmiDefinitionWire::Datum { identification } => Self::Datum { identification },
-            PmiDefinitionWire::DatumSystem { references } => Self::DatumSystem { references },
+            PmiDefinitionWire::DatumSystem { references } => Self::DatumSystem {
+                references: references.try_into()?,
+            },
             PmiDefinitionWire::DatumTarget {
                 form,
                 identification,
@@ -532,6 +641,13 @@ pub struct PmiAnnotation {
     pub definition: PmiDefinition,
 }
 
+fn deserialize_source_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("source_id: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,7 +664,8 @@ mod tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![PmiTarget::ShapeAspect {
-                source_id: "#10".into(),
+                source_id: crate::products::NonEmptyString::new("#10")
+                    .expect("nonempty source identity"),
             }],
             definition: PmiDefinition::Datum {
                 identification: "A".into(),
@@ -565,7 +682,9 @@ mod tests {
                     precedence: NonZeroU32::MIN,
                     common_group: None,
                     modifiers: Vec::new(),
-                }],
+                }]
+                .try_into()
+                .expect("valid datum compartments"),
             },
         });
         ir.finalize();
@@ -590,19 +709,10 @@ mod tests {
     fn dimension_wire_keeps_the_flat_tolerance_fields() {
         let definition = PmiDefinition::Dimension {
             dimension: DimensionKind::Size,
-            nominal: Some(PmiValue {
-                value: 12.0,
-                quantity: PmiQuantity::Length,
-            }),
+            nominal: Some(PmiValue::new(12.0, PmiQuantity::Length).expect("finite value")),
             tolerance: Some(DimensionTolerance::PlusMinus {
-                lower: PmiValue {
-                    value: -0.1,
-                    quantity: PmiQuantity::Length,
-                },
-                upper: PmiValue {
-                    value: 0.2,
-                    quantity: PmiQuantity::Length,
-                },
+                lower: PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value"),
+                upper: PmiValue::new(0.2, PmiQuantity::Length).expect("finite value"),
             }),
         };
 
@@ -705,10 +815,7 @@ mod tests {
             targets: vec![PmiTarget::Curve { curve }],
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: Some(PmiValue {
-                    value: 1.0,
-                    quantity: PmiQuantity::Length,
-                }),
+                nominal: Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
                 tolerance: None,
             },
         });
@@ -750,10 +857,7 @@ mod tests {
             targets: Vec::new(),
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: Some(PmiValue {
-                    value: 1.0,
-                    quantity: PmiQuantity::Length,
-                }),
+                nominal: Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
                 tolerance: None,
             },
         });
@@ -768,7 +872,9 @@ mod tests {
                     precedence: NonZeroU32::MIN,
                     common_group: None,
                     modifiers: Vec::new(),
-                }],
+                }]
+                .try_into()
+                .expect("valid datum compartments"),
             },
         });
         ir.model.pmi.push(PmiAnnotation {
@@ -778,10 +884,10 @@ mod tests {
             targets: Vec::new(),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: GeometricToleranceKind::Position,
-                magnitude: PmiValue {
-                    value: 0.1,
-                    quantity: PmiQuantity::Length,
-                },
+                magnitude: PmiMagnitude::new(
+                    PmiValue::new(0.1, PmiQuantity::Length).expect("finite value"),
+                )
+                .expect("nonnegative magnitude"),
                 defined_unit: None,
                 defined_area_unit: None,
                 defined_area_second_unit: None,
@@ -798,5 +904,89 @@ mod tests {
                 .count()
                 >= 2
         );
+    }
+    #[test]
+    fn pmi_magnitude_admission_keeps_signed_dimensions_and_zero_angles() {
+        let negative = PmiValue::new(-1.0, PmiQuantity::Length).expect("signed dimension");
+        assert!(PmiMagnitude::new(negative).is_none());
+        assert!(PmiValue::new(f64::INFINITY, PmiQuantity::Length).is_none());
+        let zero = PmiMagnitude::new(PmiValue::new(0.0, PmiQuantity::Angle).expect("zero angle"))
+            .expect("zero magnitude");
+        let wire = serde_json::to_string(&zero).expect("serialize");
+        assert_eq!(wire, r#"{"value":0.0,"quantity":"angle"}"#);
+        assert_eq!(
+            serde_json::from_str::<PmiMagnitude>(&wire).expect("deserialize"),
+            zero
+        );
+        let error = serde_json::from_str::<PmiMagnitude>(r#"{"value":-1.0,"quantity":"length"}"#)
+            .expect_err("negative magnitude");
+        assert!(error.to_string().contains("magnitude"));
+    }
+
+    #[test]
+    fn source_identity_admission_preserves_nonempty_wire() {
+        let wire = serde_json::json!({"kind": "shape_aspect", "source_id": "#42"});
+        let value: PmiTarget = serde_json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let error = serde_json::from_value::<PmiTarget>(
+            serde_json::json!({"kind": "shape_aspect", "source_id": ""}),
+        )
+        .expect_err("empty source_id");
+        assert!(error.to_string().contains("source_id"));
+        assert!(crate::products::NonEmptyString::new("").is_none());
+    }
+
+    #[test]
+    fn datum_compartments_are_checked_at_construction_wire_and_replacement() {
+        let reference = |id: &str, precedence, common_group| DatumReference {
+            datum: PmiId::mint(format!("test:model:pmi#{id}")).expect("valid identity"),
+            precedence: NonZeroU32::new(precedence).expect("positive precedence"),
+            common_group,
+            modifiers: Vec::new(),
+        };
+        let valid = vec![
+            reference("c", 2, None),
+            reference("a", 1, Some(0)),
+            reference("b", 1, Some(0)),
+        ];
+        let mut admitted = DatumReferences::try_from(valid.clone()).expect("valid compartments");
+        assert_eq!(admitted.as_slice(), valid);
+        let wire = serde_json::json!({"kind": "datum_system", "references": valid});
+        let definition: PmiDefinition = serde_json::from_value(wire.clone()).expect("valid wire");
+        assert_eq!(serde_json::to_value(definition).expect("serialize"), wire);
+        assert!(DatumReferences::try_from(Vec::new())
+            .expect("empty system")
+            .as_slice()
+            .is_empty());
+        for invalid in [
+            vec![reference("a", 1, Some(7))],
+            vec![reference("a", 1, None), reference("b", 1, None)],
+            vec![reference("a", 1, Some(7)), reference("b", 1, None)],
+            vec![reference("a", 1, Some(7)), reference("b", 1, Some(8))],
+            vec![
+                reference("a", 1, Some(7)),
+                reference("b", 1, Some(7)),
+                reference("c", 2, Some(7)),
+                reference("d", 2, Some(7)),
+            ],
+        ] {
+            assert!(DatumReferences::try_from(invalid.clone()).is_err());
+            let error = serde_json::from_value::<PmiDefinition>(
+                serde_json::json!({"kind": "datum_system", "references": invalid}),
+            )
+            .expect_err("invalid compartments");
+            assert!(error.to_string().contains("references"));
+            assert!(serde_json::from_value::<DatumReferences>(
+                serde_json::to_value(&invalid).expect("serialize")
+            )
+            .is_err());
+            assert!(admitted.replace(invalid).is_err());
+            assert_eq!(admitted.as_slice(), valid);
+        }
+        let replacement = vec![reference("z", 3, None)];
+        admitted
+            .replace(replacement.clone())
+            .expect("valid replacement");
+        assert_eq!(admitted.as_slice(), replacement);
     }
 }

@@ -299,7 +299,7 @@ fn decode_exchange_mode(
 
     session.semantic_input_work = semantic_input_work(exchange);
     session.charge_stage("step_geometry_decode")?;
-    let mut geometry = geometry::decode(exchange, &mut session.ir);
+    let mut geometry = geometry::decode(exchange, &mut session.ir)?;
     session.charge_stage("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange);
     session.charge_stage("step_carrier_index")?;
@@ -319,11 +319,11 @@ fn decode_exchange_mode(
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-    );
+    )?;
     session.charge_stage("step_replica_association")?;
-    geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index);
+    geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index)?;
     session.charge_stage("step_pcurve_association")?;
-    geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index);
+    geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index)?;
     session.charge_stage("step_geometric_set_association")?;
     geometry::associate_free_geometric_set_members(
         exchange,
@@ -331,7 +331,7 @@ fn decode_exchange_mode(
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+    )?;
     session.charge_stage("step_representation_association")?;
     geometry::associate_free_representation_members(
         exchange,
@@ -339,7 +339,7 @@ fn decode_exchange_mode(
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+    )?;
     session.charge_stage("step_presentation_carrier_association")?;
     geometry::associate_free_presentation_carriers(
         exchange,
@@ -347,14 +347,14 @@ fn decode_exchange_mode(
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+    )?;
     session.charge_stage("step_surface_curve_association")?;
     geometry::associate_surface_curve_supports(
         exchange,
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-    );
+    )?;
     session.charge_stage("step_product_decode")?;
     let mut product = product::decode(
         exchange,
@@ -374,7 +374,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         Some(session.ctx),
-    );
+    )?;
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,
@@ -382,7 +382,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
         Some(session.ctx),
-    );
+    )?;
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
     if !session.ir.model.points.is_empty()
@@ -427,7 +427,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &mut session.typed_records,
         &mut post_decode_warnings,
-    );
+    )?;
     session.absorb_warnings(post_decode_warnings);
 
     session.charge_stage("step_opaque_record_retention")?;
@@ -694,7 +694,7 @@ fn retain_unowned_carriers(
     ir: &mut CadIr,
     typed_records: &mut HashSet<u64>,
     warnings: &mut Vec<String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let owned = ir
         .model
         .coedges
@@ -764,9 +764,9 @@ fn retain_unowned_carriers(
         .filter_map(step_id_from_ir)
         .filter(|id| exchange.records.contains_key(id) && !referenced.contains(id))
         .collect::<BTreeSet<_>>();
-    associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
+    associate_unowned_direct_carriers(ir, &unowned_direct_carriers)?;
     if unowned_pcurves.is_empty() {
-        return;
+        return Ok(());
     }
     let mut roots = BTreeSet::new();
     for identity in ir
@@ -902,51 +902,54 @@ fn retain_unowned_carriers(
     warnings.push(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
     ));
+    Ok(())
 }
 
-fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
+fn associate_unowned_direct_carriers(
+    ir: &mut CadIr,
+    ids: &BTreeSet<u64>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for point in &mut ir.model.points {
         let Some(id) = step_id_from_ir(point.id.as_str()) else {
             continue;
         };
-        if ids.contains(&id) {
-            point
-                .source_object
-                .get_or_insert_with(|| direct_carrier_association(id));
+        if ids.contains(&id) && point.source_object.is_none() {
+            point.source_object = Some(direct_carrier_association(id)?);
         }
     }
     for curve in &mut ir.model.curves {
         let Some(id) = step_id_from_ir(curve.id.as_str()) else {
             continue;
         };
-        if ids.contains(&id) {
-            curve
-                .source_object
-                .get_or_insert_with(|| direct_carrier_association(id));
+        if ids.contains(&id) && curve.source_object.is_none() {
+            curve.source_object = Some(direct_carrier_association(id)?);
         }
     }
     for surface in &mut ir.model.surfaces {
         let Some(id) = step_id_from_ir(surface.id.as_str()) else {
             continue;
         };
-        if ids.contains(&id) {
-            surface
-                .source_object
-                .get_or_insert_with(|| direct_carrier_association(id));
+        if ids.contains(&id) && surface.source_object.is_none() {
+            surface.source_object = Some(direct_carrier_association(id)?);
         }
     }
+    Ok(())
 }
 
-fn direct_carrier_association(id: u64) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+fn direct_carrier_association(
+    id: u64,
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-        object_id: format!("#{id}"),
+        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}")).ok_or_else(
+            || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
+        )?,
         name: None,
         color: None,
         visible: None,
         layer: None,
         instance_path: Vec::new(),
-    }
+    })
 }
 
 fn retains_carrier(

@@ -22,12 +22,7 @@ fn appearance_asset_and_binding_round_trip() {
         physical_token: Some("physical-token".into()),
         schema: Some("GenericSchema".into()),
         category: None,
-        base_color: Some(crate::topology::Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        }),
+        base_color: Some(crate::topology::Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color")),
         properties: std::collections::BTreeMap::new(),
         textures: vec![TextureRef {
             asset_guid: "texture-guid".into(),

@@ -4625,7 +4625,6 @@ path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
 contains = '744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),'
 note = "The class-430/262 744-byte Assemble form uses the compact locator-reference offsets."
 
-
 [[record]]
 name = "assembly_as_built_421_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs"

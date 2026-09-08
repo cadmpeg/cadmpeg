@@ -2,6 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -479,7 +480,10 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
+    pub(crate) fn new(
+        scan: &'a Scan<'a>,
+        expand: crate::mesh::MeshExpand<'a>,
+    ) -> Result<Self, CodecError> {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = object.identity() {
@@ -492,7 +496,7 @@ impl<'a> DecodeContext<'a> {
         let mut context = Self {
             scan,
             expand,
-            ir: build_ir(scan),
+            ir: build_ir(scan)?,
             annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             opaque_records: Vec::new(),
@@ -517,7 +521,7 @@ impl<'a> DecodeContext<'a> {
         };
         context.retain_object_records();
         context.retain_opaque_records();
-        context
+        Ok(context)
     }
 
     #[cfg(test)]
@@ -843,7 +847,14 @@ impl<'a> DecodeContext<'a> {
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
-                        association: Some(self.source_association(identity)),
+                        association: Some(match self.source_association(identity) {
+                            Ok(source) => source,
+                            Err(error) => {
+                                self.scan_warning(source_order, &error.to_string());
+                                self.mark_failed(source_order);
+                                continue;
+                            }
+                        }),
                         id: format!("rhino:object:tessellation#{key}"),
                         scale,
                         userdata: &object.userdata,
@@ -1056,13 +1067,19 @@ impl<'a> DecodeContext<'a> {
                         continue;
                     };
                     let object = Self::mint_unknown_id(source_order).to_string();
-                    let (annotation, unresolved) = crate::dimensions::project(
+                    let (annotation, unresolved) = match crate::dimensions::project(
                         &dimension,
                         &key,
                         (!identity.name.is_empty()).then(|| identity.name.clone()),
                         &object,
                         order,
-                    );
+                    ) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.scan_warning(source_order, &error.to_string());
+                            continue;
+                        }
+                    };
                     if dimension.override_present {
                         self.report.typed_losses.push(
                             RhinoLossCode::DimensionOverrideDropped.note(format!(
@@ -1159,7 +1176,14 @@ impl<'a> DecodeContext<'a> {
             );
         }
         let key = self.object_key(identity, source_order);
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         let feature_id =
             FeatureId::mint(format!("rhino:hatch:feature#{key}")).expect("identity grammar");
         let transform = hatch_plane_transform(&hatch.plane, scale);
@@ -1365,7 +1389,14 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
         let feature_id =
             FeatureId::mint(format!("rhino:detail:feature#{key}")).expect("identity grammar");
@@ -1640,7 +1671,14 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
         let model_id = construction
             .model_curve
@@ -1789,7 +1827,7 @@ impl<'a> DecodeContext<'a> {
     fn source_association(
         &self,
         identity: &crate::objects::SourceIdentity,
-    ) -> SourceObjectAssociation {
+    ) -> Result<SourceObjectAssociation, CodecError> {
         source_association(
             identity,
             self.instance_selection
@@ -2205,7 +2243,14 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return false;
         };
-        surface.source_object = Some(self.source_association(identity));
+        surface.source_object = Some(match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return false;
+            }
+        });
         let id = surface.id.to_string();
         let result = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
@@ -2586,7 +2631,14 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         let key = self.object_key(identity, source_order);
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return false;
+            }
+        };
         let Some(unknown) = self
             .unknowns
             .get(source_order)
@@ -2894,7 +2946,14 @@ impl<'a> DecodeContext<'a> {
         if extrusion.boundaries.is_empty() {
             return false;
         }
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return false;
+            }
+        };
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let mut links = Vec::new();
             let mut boundaries = Vec::with_capacity(extrusion.boundaries.len());
@@ -3003,7 +3062,14 @@ impl<'a> DecodeContext<'a> {
         let id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
             .try_into()
             .expect("valid identity");
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         let validation = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
                 id: id.clone(),
@@ -3074,7 +3140,14 @@ impl<'a> DecodeContext<'a> {
         );
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
-        tessellation.source_object = Some(self.source_association(identity));
+        tessellation.source_object = Some(match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return false;
+            }
+        });
         self.ir.model.tessellations.push(tessellation);
         set_exactness(
             &mut self.annotations,
@@ -3164,7 +3237,14 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        let association = self.source_association(identity);
+        let association = match self.source_association(identity) {
+            Ok(source) => source,
+            Err(error) => {
+                self.scan_warning(source_order, &error.to_string());
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         let key = self.object_key(identity, source_order);
         let unknown = self.unknowns[source_order].id().clone();
         self.ir
@@ -4380,7 +4460,7 @@ pub(crate) fn embedded_brep_json(
     };
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "embedded-history-brep".to_string(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("embedded-history-brep".to_string())?,
         name: None,
         color: None,
         visible: None,
@@ -4807,13 +4887,20 @@ fn finite_tolerance(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
-fn scaled_tolerance(value: f64, scale: f64) -> Result<Option<f64>, crate::curves::GeometryError> {
+fn scaled_tolerance(
+    value: f64,
+    scale: f64,
+) -> Result<Option<cadmpeg_ir::units::PositiveScalar>, crate::curves::GeometryError> {
     if !value.is_finite() || value <= 0.0 {
         return Ok(None);
     }
     let scaled = crate::wire::scaled_coordinate(value, scale)
         .ok_or_else(|| crate::curves::error(0, "scaled tolerance is invalid"))?;
-    Ok(Some(scaled))
+    Ok(Some(
+        cadmpeg_ir::units::PositiveScalar::new(scaled).ok_or_else(|| {
+            crate::curves::error(0, "scaled tolerance must be positive and finite")
+        })?,
+    ))
 }
 
 fn face_components(raw: &crate::brep::RawBrep) -> Vec<usize> {
@@ -5314,10 +5401,13 @@ fn source_association(
     instance_path: &[String],
     parent_color: Option<Color>,
     parent_visible: Option<bool>,
-) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: identity.object_id.to_string(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new(identity.object_id.to_string())
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+            })?,
         name: (!identity.name.is_empty()).then(|| identity.name.clone()),
         color: identity.effective_color.map(color).or(parent_color),
         visible: Some(parent_visible.unwrap_or(true) && identity.effective_visible),
@@ -5328,16 +5418,11 @@ fn source_association(
                 .or_else(|| Some(layer.name.clone()))
         }),
         instance_path: instance_path.to_vec(),
-    }
+    })
 }
 
 fn color(value: [u8; 4]) -> Color {
-    Color {
-        r: f32::from(value[0]) / 255.0,
-        g: f32::from(value[1]) / 255.0,
-        b: f32::from(value[2]) / 255.0,
-        a: 1.0 - f32::from(value[3]) / 255.0,
-    }
+    Color::from_rgba8(value[0], value[1], value[2], value[3]).invert_alpha()
 }
 
 fn body(
@@ -5368,8 +5453,11 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome<'_>) -> SourceProvenance 
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> Decoded {
-    let mut context = DecodeContext::new(scan, expand);
+pub(crate) fn decode(
+    scan: &Scan<'_>,
+    expand: crate::mesh::MeshExpand<'_>,
+) -> Result<Decoded, CodecError> {
+    let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
@@ -5422,7 +5510,7 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             &format!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    context.commit()
+    Ok(context.commit())
 }
 
 #[cfg(test)]
@@ -5447,7 +5535,9 @@ pub(crate) fn with_expand<R>(
 
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
-    with_expand(scan, |expand| seal_for_test(decode(scan, expand), false))
+    with_expand(scan, |expand| {
+        seal_for_test(decode(scan, expand).expect("valid tolerances"), false)
+    })
 }
 
 #[cfg(test)]
@@ -5495,15 +5585,21 @@ pub(crate) fn seal_for_test(
     .expect("test decode result satisfies the sealed codec contract")
 }
 
-fn build_ir(scan: &Scan<'_>) -> CadIr {
+fn build_ir(scan: &Scan<'_>) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
-            ir.tolerances.linear = linear;
+            ir.tolerances.linear =
+                cadmpeg_ir::units::PositiveScalar::new(linear).ok_or_else(|| {
+                    CodecError::malformed("linear tolerance must be positive and finite")
+                })?;
         }
-        ir.tolerances.angular = source_units.angular_tolerance;
+        ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(
+            source_units.angular_tolerance,
+        )
+        .ok_or_else(|| CodecError::malformed("angular tolerance must be positive and finite"))?;
     }
-    ir
+    Ok(ir)
 }
 
 /// Builds the path-specific facts available after full decoding.

@@ -58,12 +58,8 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    });
+    decoded.ir_mut().model.appearances[0].base_color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -121,12 +117,15 @@ fn semantic_writer_emits_face_records_deterministically() {
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
     for (index, face) in ir.model.faces.iter_mut().enumerate() {
-        face.color = Some(Color {
-            r: index as f32 / 10.0,
-            g: (index + 1) as f32 / 10.0,
-            b: (index + 2) as f32 / 10.0,
-            a: 1.0,
-        });
+        face.color = Some(
+            Color::new(
+                index as f32 / 10.0,
+                (index + 1) as f32 / 10.0,
+                (index + 2) as f32 / 10.0,
+                1.0,
+            )
+            .expect("valid color"),
+        );
     }
 
     let mut expected = None;

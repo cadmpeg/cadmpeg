@@ -1373,10 +1373,13 @@ pub(crate) fn project(
     name: Option<String>,
     object: &str,
     order: u32,
-) -> (
-    cadmpeg_ir::semantic_annotations::SemanticAnnotation,
-    Vec<crate::loss::RhinoLossCode>,
-) {
+) -> Result<
+    (
+        cadmpeg_ir::semantic_annotations::SemanticAnnotation,
+        Vec<crate::loss::RhinoLossCode>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     use crate::loss::RhinoLossCode;
     use cadmpeg_ir::semantic_annotations::{
         SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -1674,6 +1677,15 @@ pub(crate) fn project(
         RhinoLossCode::DimensionDetailReferenceUnresolved,
     );
 
+    let value = cadmpeg_ir::units::FiniteScalar::new(value)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("dimension value must be finite"))?;
+    let position = position
+        .map(|value| {
+            cadmpeg_ir::units::FiniteVector::new(value).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("dimension position must be finite")
+            })
+        })
+        .transpose()?;
     let annotation = SemanticAnnotation {
         id: SemanticAnnotationId::mint(format!("rhino:dimension:annotation#{key}"))
             .expect("identity grammar"),
@@ -1693,12 +1705,12 @@ pub(crate) fn project(
         assets: Vec::new(),
         native_ref: object.to_string(),
     };
-    (annotation, unresolved)
+    Ok((annotation, unresolved))
 }
 
 /// Serializes one decoded dimension without source-record identity.
 pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
-    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0);
+    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0).ok()?;
     serde_json::to_string(&serde_json::json!({
         "kind": "dimension",
         "runtime_type": annotation.runtime_type,

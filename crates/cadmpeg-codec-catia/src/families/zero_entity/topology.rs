@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::Point3;
+use serde::{Deserialize, Serialize};
 
 use super::records::ZeroEntitySupportRun;
 
@@ -30,10 +31,51 @@ pub(crate) struct ZeroEntityEndpointPairCandidate {
     pub(crate) model_midpoint: Point3,
 }
 
+/// Start or end of an oriented endpoint pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum EdgeEnd {
+    /// First oriented endpoint.
+    Start,
+    /// Second oriented endpoint.
+    End,
+}
+
+impl From<EdgeEnd> for u8 {
+    fn from(value: EdgeEnd) -> Self {
+        match value {
+            EdgeEnd::Start => 0,
+            EdgeEnd::End => 1,
+        }
+    }
+}
+
+impl TryFrom<u8> for EdgeEnd {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Start),
+            1 => Ok(Self::End),
+            other => Err(format!("endpoint_index {other} is not start or end")),
+        }
+    }
+}
+
+/// Ordinal of an enumerated endpoint-pair candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EndpointPairIndex(usize);
+
+impl EndpointPairIndex {
+    pub(crate) fn ordinal(self) -> usize {
+        self.0
+    }
+}
+
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ZeroEntityEndpointLocusCandidate {
-    pub(crate) incident_endpoint_pair_endpoints: Vec<(usize, u8)>,
+    pub(crate) incident_endpoint_pair_endpoints: Vec<(EndpointPairIndex, EdgeEnd)>,
     pub(crate) representative_point: Point3,
     pub(crate) maximum_deviation: f64,
 }
@@ -215,11 +257,10 @@ fn endpoint_locus_candidates_inner(
         .iter()
         .enumerate()
         .flat_map(|(endpoint_pair, candidate)| {
-            candidate
-                .model_endpoints
+            [EdgeEnd::Start, EdgeEnd::End]
                 .into_iter()
-                .enumerate()
-                .map(move |(endpoint, point)| (endpoint_pair, endpoint as u8, point))
+                .zip(candidate.model_endpoints)
+                .map(move |(endpoint, point)| (EndpointPairIndex(endpoint_pair), endpoint, point))
         })
         .collect::<Vec<_>>();
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
@@ -580,7 +621,11 @@ mod tests {
         let candidates = endpoint_locus_candidates(&pairs);
         assert_eq!(candidates.len(), 3);
         assert_eq!(
-            candidates[0].incident_endpoint_pair_endpoints,
+            candidates[0]
+                .incident_endpoint_pair_endpoints
+                .iter()
+                .map(|(pair, end)| (pair.ordinal(), u8::from(*end)))
+                .collect::<Vec<_>>(),
             [(0, 0), (1, 0)]
         );
         assert_eq!(candidates[0].maximum_deviation, 0.001);

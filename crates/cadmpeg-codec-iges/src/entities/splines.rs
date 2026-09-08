@@ -211,7 +211,7 @@ fn add_edge(
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Nurbs(nurbs),
-        source_object: Some(source_object(entry)),
+        source_object: Some(source_object(entry).ok()?),
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
@@ -874,7 +874,7 @@ pub(super) fn project(
             id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(nurbs),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         losses.push(
             IgesLossCode::SplineHeaderNotTransferred

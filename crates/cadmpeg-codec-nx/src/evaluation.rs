@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 /// Why a saved-body census cannot yet be evaluated exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum UnsupportedBodyCensusReason {
     /// A feature's active or suppressed state is unresolved.
     UnresolvedSuppression,
@@ -569,7 +568,11 @@ fn rederived_body_census(
                     &mut bodies,
                     target,
                     tools,
-                    *keep_tools,
+                    if *keep_tools {
+                        ToolRetention::Keep
+                    } else {
+                        ToolRetention::Delete
+                    },
                     feature_completeness::combine_definition_is_incomplete(feature),
                 )?;
             }
@@ -606,8 +609,9 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     selection,
-                    *mode,
-                    feature_completeness::delete_body_definition_is_incomplete(feature),
+                    ResolvedBodyRetentionMode::try_from(*mode)
+                        .map_err(|reason| (feature_boundary(feature), reason))?,
+                    feature_completeness::operands::body_selection_is_incomplete(selection),
                 )?;
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
@@ -900,12 +904,18 @@ fn apply_complete_boolean_outputs(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ToolRetention {
+    Keep,
+    Delete,
+}
+
 fn apply_complete_body_combine(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &mut BTreeSet<BodyId>,
     target: &BodySelection,
     tools: &BodySelection,
-    keep_tools: bool,
+    tool_retention: ToolRetention,
     incomplete: bool,
 ) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
@@ -938,7 +948,7 @@ fn apply_complete_body_combine(
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
-    if !keep_tools {
+    if tool_retention == ToolRetention::Delete {
         for tool in tools {
             bodies.remove(&tool);
         }
@@ -985,11 +995,31 @@ fn apply_complete_body_replacement(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResolvedBodyRetentionMode {
+    DeleteSelected,
+    KeepSelected,
+}
+
+impl TryFrom<BodyRetentionMode> for ResolvedBodyRetentionMode {
+    type Error = UnsupportedBodyCensusReason;
+
+    fn try_from(mode: BodyRetentionMode) -> Result<Self, Self::Error> {
+        match mode {
+            BodyRetentionMode::DeleteSelected => Ok(Self::DeleteSelected),
+            BodyRetentionMode::KeepSelected => Ok(Self::KeepSelected),
+            BodyRetentionMode::Unresolved => {
+                Err(UnsupportedBodyCensusReason::IncompleteFeatureDefinition)
+            }
+        }
+    }
+}
+
 fn apply_complete_body_retention(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &mut BTreeSet<BodyId>,
     selection: &BodySelection,
-    mode: BodyRetentionMode,
+    mode: ResolvedBodyRetentionMode,
     incomplete: bool,
 ) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
@@ -998,7 +1028,7 @@ fn apply_complete_body_retention(
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
-    if mode == BodyRetentionMode::DeleteSelected
+    if mode == ResolvedBodyRetentionMode::DeleteSelected
         && matches!(selection, BodySelection::Local { .. })
         && feature.outputs.is_empty()
     {
@@ -1017,13 +1047,12 @@ fn apply_complete_body_retention(
         ));
     }
     match mode {
-        BodyRetentionMode::DeleteSelected => {
+        ResolvedBodyRetentionMode::DeleteSelected => {
             for body in selected {
                 bodies.remove(&body);
             }
         }
-        BodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
-        BodyRetentionMode::Unresolved => unreachable!("incomplete retention mode returned above"),
+        ResolvedBodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
     }
     Ok(())
 }

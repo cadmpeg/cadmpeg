@@ -433,7 +433,7 @@ pub fn decode_with_purpose(
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
-) -> AsmBrep {
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let header = asm_header::parse(bytes);
     decode_with_header(records, bytes, header, stream, format, purpose)
 }
@@ -451,7 +451,7 @@ pub fn decode_with_header(
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
-) -> AsmBrep {
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
@@ -518,7 +518,7 @@ pub fn decode_with_header(
     );
     emit_pcurves(&mut out, records, &mut carriers, &reach, format);
     emit_points(&mut out, records, &reach, format);
-    emit_vertices(&mut out, records, &by_index, &reach, format);
+    emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(
         &mut out,
         records,
@@ -527,7 +527,7 @@ pub fn decode_with_header(
         &reversed_curve_refs,
         &forward_curve_refs,
         format,
-    );
+    )?;
     emit_coedges(
         &mut out,
         records,
@@ -567,7 +567,7 @@ pub fn decode_with_header(
         clamp_edge_ranges_to_carrier_domains(&mut out);
     }
 
-    out
+    Ok(out)
 }
 
 pub(crate) fn inherited_attribute_target(

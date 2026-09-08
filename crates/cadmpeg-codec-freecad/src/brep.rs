@@ -4885,7 +4885,7 @@ pub(crate) struct CurveTransfer {
 pub(crate) fn transfer_text_curves(
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
-) -> CurveTransfer {
+) -> Result<CurveTransfer, CodecError> {
     let mut transfer = CurveTransfer::default();
     for payload in payloads {
         let Some(curves) = payload.payload.shape_set().map(|set| &set.curves) else {
@@ -4900,7 +4900,8 @@ pub(crate) fn transfer_text_curves(
             );
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id,
+            object_id: cadmpeg_ir::products::NonEmptyString::new(object_id)
+                .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
             visible: None,
@@ -4917,7 +4918,7 @@ pub(crate) fn transfer_text_curves(
             append_text_curve(curve, id, &association, &mut transfer);
         }
     }
-    transfer
+    Ok(transfer)
 }
 
 pub(crate) fn append_text_curve(
@@ -5055,7 +5056,7 @@ pub(crate) fn transfer_text_surfaces(
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
     curve_transfer: &mut CurveTransfer,
-) -> SurfaceTransfer {
+) -> Result<SurfaceTransfer, CodecError> {
     let mut transfer = SurfaceTransfer::default();
     for payload in payloads {
         let Some(surfaces) = payload.payload.shape_set().map(|set| &set.surfaces) else {
@@ -5070,7 +5071,8 @@ pub(crate) fn transfer_text_surfaces(
             );
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id,
+            object_id: cadmpeg_ir::products::NonEmptyString::new(object_id)
+                .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
             visible: None,
@@ -5092,7 +5094,7 @@ pub(crate) fn transfer_text_surfaces(
             );
         }
     }
-    transfer
+    Ok(transfer)
 }
 
 pub(crate) fn append_text_surface(
@@ -6141,7 +6143,8 @@ pub(crate) mod tests {
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: "object".into(),
+            object_id: cadmpeg_ir::products::NonEmptyString::new("object")
+                .expect("nonempty source identity"),
             name: None,
             color: None,
             visible: None,
@@ -6177,7 +6180,8 @@ pub(crate) mod tests {
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: "fcstd:native:object#Surface".into(),
+            object_id: cadmpeg_ir::products::NonEmptyString::new("fcstd:native:object#Surface")
+                .expect("nonempty source identity"),
             name: None,
             color: None,
             visible: None,

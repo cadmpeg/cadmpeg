@@ -166,12 +166,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         font_family: "Arial".into(),
         font_weight: 400,
         height: 10.0,
-        color: cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        },
+        color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
         layout: crate::records::SketchTextLayout::TextexTag {
             width_factor: 1.0,
             alignment: Some(crate::records::SketchTextAlignment {

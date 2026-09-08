@@ -738,7 +738,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         &mut annotations,
         &std::collections::BTreeMap::new(),
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
     assert!(!ir
         .model
         .pcurves
@@ -757,7 +758,8 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         &mut annotations,
         &std::collections::BTreeMap::new(),
         &geometry_budget,
-    );
+    )
+    .expect("valid exactness fields");
 
     let completed = ir
         .model
@@ -765,7 +767,10 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .iter()
         .find(|pcurve| pcurve.id.as_str().contains("intersection-pcurve-completed"))
         .expect("validated completed support lane attaches");
-    assert_eq!(completed.fit_tolerance(), edge_tolerance);
+    assert_eq!(
+        completed.fit_tolerance(),
+        edge_tolerance.map(cadmpeg_ir::units::PositiveScalar::get)
+    );
     assert!(ir.model.coedges.iter().any(|coedge| coedge
         .pcurves
         .iter()

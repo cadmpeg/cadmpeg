@@ -199,7 +199,7 @@ pub fn saved_toggle_records(
     if candidates.next().is_some() || entry.name != ENTRY_NAME {
         return (Vec::new(), Vec::new());
     }
-    let Some((source_offset, byte_len)) = entry.file_span else {
+    let Some((source_offset, byte_len)) = entry.file_span() else {
         return (Vec::new(), Vec::new());
     };
     let (Ok(start), Ok(byte_len)) = (usize::try_from(source_offset), usize::try_from(byte_len))

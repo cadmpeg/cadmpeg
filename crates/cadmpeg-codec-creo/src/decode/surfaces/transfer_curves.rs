@@ -84,7 +84,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-) -> BTreeSet<CurveId> {
+) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
     let solved_vertices =
@@ -151,7 +151,13 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -161,7 +167,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         });
         transferred.insert(id);
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) struct TransferredNurbsBoundaryCurves {
@@ -278,7 +284,13 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -458,7 +470,8 @@ mod tests {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &BTreeSet::new(),
-        );
+        )
+        .expect("valid source object identity");
         assert_eq!(
             transferred,
             BTreeSet::from([

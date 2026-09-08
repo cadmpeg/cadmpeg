@@ -1036,6 +1036,12 @@ fn spreadsheet_dimensions(
                         ))
                     })?
             };
+            let index = std::num::NonZeroU32::new(index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} dimension index must be nonzero",
+                    property.id
+                ))
+            })?;
             Ok(SpreadsheetDimension { index, pixels })
         })
         .collect()
@@ -1530,7 +1536,10 @@ fn parse_sketch(
                     id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
-                        object: target_object,
+                        object: cadmpeg_ir::products::NonEmptyString::new(target_object)
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed("object must not be empty")
+                            })?,
                         subelements: reference.subelements.clone(),
                     })
                     .map_err(CodecError::malformed)?,
@@ -2832,9 +2841,11 @@ fn sketch_geometry(
     kind: &str,
     attributes: &BTreeMap<String, String>,
 ) -> Result<SketchGeometry, CodecError> {
+    let native_kind = cadmpeg_ir::products::NonEmptyString::new(kind)
+        .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || SketchGeometryDefinition::Native {
-        native_kind: kind.to_owned(),
+        native_kind: native_kind.clone(),
     };
     let definition = if matches!(
         kind,

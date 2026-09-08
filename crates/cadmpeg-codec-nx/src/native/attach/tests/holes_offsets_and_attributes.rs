@@ -1334,7 +1334,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         &sources,
         &topology_attribute_index,
         &mut annotations,
-    );
+    )
+    .expect("valid exactness fields");
 
     let attributes = ir
         .model
@@ -1789,7 +1790,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         &sources,
         &index,
         &mut annotations,
-    );
+    )
+    .expect("valid exactness fields");
     let attributes = ir
         .model
         .attributes
@@ -1929,7 +1931,8 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         &sources,
         &topology_attribute_index,
         &mut annotations,
-    );
+    )
+    .expect("valid exactness fields");
 
     let attributes = ir
         .model

@@ -114,16 +114,17 @@ fn validate_value_root(
         .map(str::to_owned))
 }
 
-fn association(property: &PropertyRecord) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, CodecError> {
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: property.owner.clone(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new(property.owner.clone())
+            .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
         name: Some(property.name.clone()),
         color: None,
         visible: None,
         layer: None,
         instance_path: Vec::new(),
-    }
+    })
 }
 
 fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, CodecError> {
@@ -173,14 +174,14 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))?
-    .with_source_object(Some(association(property))))
+    .with_source_object(Some(association(property)?)))
 }
 
 fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, CodecError> {
     let mut reader = Reader::new(bytes);
     let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
     let transform = point_transform(property)?;
-    let source_object = association(property);
+    let source_object = association(property)?;
     let points = (0..count)
         .map(|index| {
             let position = reader.point3(ByteOrder::Little, "point-cloud point")?;

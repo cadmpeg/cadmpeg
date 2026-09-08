@@ -1967,3 +1967,33 @@ fn decode_does_not_promote_field_class_names_to_features() {
 }
 
 mod parentage;
+
+#[test]
+fn normalizes_scopes_containing_only_unnamed_parameters() {
+    let mut ir = CadIr::empty();
+    for owner in [
+        None,
+        Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
+    ] {
+        for id in ["first", "second"] {
+            let mut value = parameter(id, "native");
+            value.owner = owner.clone();
+            value.name.clear();
+            ir.model.parameters.push(value);
+        }
+    }
+    normalize_parameter_names(&mut ir);
+    assert_eq!(
+        ir.model
+            .parameters
+            .iter()
+            .map(|value| value.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Parameter#1", "Parameter#2", "Parameter#1", "Parameter#2"]
+    );
+    assert!(ir.model.parameters.iter().all(|value| value
+        .properties
+        .get("source_name")
+        .map(String::as_str)
+        == Some("")));
+}

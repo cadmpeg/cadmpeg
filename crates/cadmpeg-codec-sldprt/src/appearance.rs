@@ -51,12 +51,7 @@ pub(crate) struct ResolvedDisplayAppearances {
 }
 
 pub(crate) fn packed_rgb(packed: u32) -> Color {
-    Color {
-        r: (packed & 0xff) as f32 / 255.0,
-        g: ((packed >> 8) & 0xff) as f32 / 255.0,
-        b: ((packed >> 16) & 0xff) as f32 / 255.0,
-        a: 1.0,
-    }
+    Color::from_rgba8(packed as u8, (packed >> 8) as u8, (packed >> 16) as u8, 255)
 }
 
 pub(crate) fn definitions(scan: &ContainerScan) -> Vec<AppearanceDefinition> {

@@ -158,10 +158,7 @@ fn slot_value(slot: &RangeIntervalSlot) -> DeviationSlot {
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
     let value = f64::from_bits(bits);
-    value.is_finite().then_some(PmiValue {
-        value,
-        quantity: PmiQuantity::Length,
-    })
+    PmiValue::new(value, PmiQuantity::Length)
 }
 
 #[cfg(test)]
@@ -273,9 +270,8 @@ mod tests {
         };
         range.incoming_references = vec![CatiaEntityIncomingReference {
             object_record: "catia:object#owner".to_string(),
-            source_entity: Some(CatiaEntityReference::from_parts(
+            source_entity: Some(CatiaEntityReference::resolved_or_unresolved(
                 2,
-                false,
                 Some("catia:entity#owner".to_string()),
                 None,
             )),
@@ -332,9 +328,9 @@ mod tests {
                     ..
                 } => (
                     dimension,
-                    nominal.value,
-                    lower_deviation.value,
-                    upper_deviation.value,
+                    nominal.value.get(),
+                    lower_deviation.value.get(),
+                    upper_deviation.value.get(),
                 ),
                 _ => panic!("dimension annotation"),
             })

@@ -42,7 +42,7 @@ fn standard_color(number: i64) -> Option<Color> {
         8 => (1.0, 1.0, 1.0),
         _ => return None,
     };
-    Some(Color { r, g, b, a: 1.0 })
+    Color::new(r, g, b, 1.0)
 }
 
 fn text_font_definition_pointer_valid(
@@ -447,11 +447,17 @@ pub(super) fn project(
             losses.push(loss(entry, "color definition Directory fields are invalid"));
             continue;
         }
-        let color = Color {
-            r: (components[0] / 100.0) as f32,
-            g: (components[1] / 100.0) as f32,
-            b: (components[2] / 100.0) as f32,
-            a: 1.0,
+        let Some(color) = Color::new(
+            (components[0] / 100.0) as f32,
+            (components[1] / 100.0) as f32,
+            (components[2] / 100.0) as f32,
+            1.0,
+        ) else {
+            losses.push(loss(
+                entry,
+                "color definition components are outside [0, 100]",
+            ));
+            continue;
         };
         defined.insert(entry.sequence, color);
         names.insert(entry.sequence, name.clone());
@@ -525,7 +531,7 @@ pub(super) fn project(
 
     for curve in &mut ir.model.curves {
         if let Some(source) = &mut curve.source_object {
-            source.color = source_sequence(&source.object_id)
+            source.color = source_sequence(source.object_id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
@@ -533,7 +539,7 @@ pub(super) fn project(
     }
     for surface in &mut ir.model.surfaces {
         if let Some(source) = &mut surface.source_object {
-            source.color = source_sequence(&source.object_id)
+            source.color = source_sequence(source.object_id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);

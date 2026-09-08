@@ -1688,7 +1688,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
     }
     *cursor = view.position();
     let [r, g, b, a] = components;
-    Some(Color { r, g, b, a })
+    Color::new(r, g, b, a)
 }
 
 /// Read the row-major 4×4 f64 placement transform a frame-text record stores,

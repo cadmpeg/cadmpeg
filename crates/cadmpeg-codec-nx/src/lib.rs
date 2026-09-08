@@ -155,7 +155,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
         attributes.insert("region".to_string(), entry.region.label().to_string());
-        let (compressed, uncompressed) = match entry.file_span {
+        let (compressed, uncompressed) = match entry.file_span() {
             Some((off, size)) => {
                 attributes.insert("file_offset".to_string(), off.to_string());
                 (size, size)
@@ -301,8 +301,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     }
 
     let (classification, notes) = decode::summarize(scan);
-    let container_kind = cadmpeg_ir::ContainerKind::parse(classification.container_kind())
-        .expect("nx container kind is a closed label");
+    let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
     ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
 }

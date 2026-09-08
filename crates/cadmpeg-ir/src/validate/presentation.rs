@@ -21,29 +21,11 @@ pub(super) fn check_presentation(
             .as_ref()
             .is_none_or(|native| all_ids.contains(native));
         let assets_valid = document
-            .states
+            .states()
             .iter()
             .flat_map(|state| &state.assets)
             .all(|asset| all_ids.contains(asset));
-        let orders = document
-            .states
-            .iter()
-            .map(|state| state.order)
-            .collect::<HashSet<_>>();
-        let camera_valid = document.camera().is_none_or(|camera| {
-            let finite = camera
-                .position
-                .iter()
-                .flatten()
-                .chain(camera.orientation.iter().flatten())
-                .all(|value| value.is_finite());
-            let orientation_valid = camera.orientation.is_none_or(|orientation| {
-                orientation.iter().map(|value| value * value).sum::<f64>() > f64::EPSILON
-            });
-            finite && orientation_valid
-        });
-        if !native_valid || !assets_valid || orders.len() != document.states.len() || !camera_valid
-        {
+        if !native_valid || !assets_valid {
             invalid_state(
                 findings,
                 Some(document.id.as_str().to_owned()),
@@ -62,11 +44,7 @@ pub(super) fn check_presentation(
                 .native_ref
                 .as_ref()
                 .is_none_or(|native| all_ids.contains(native));
-        let sizes_valid = [view.line_width, view.point_size]
-            .into_iter()
-            .flatten()
-            .all(|value| value.is_finite() && value >= 0.0);
-        if !references_valid || !sizes_valid || !orders.insert(view.order) {
+        if !references_valid || !orders.insert(view.order) {
             invalid_state(
                 findings,
                 Some(view.id.as_str().to_owned()),
@@ -104,7 +82,7 @@ pub(super) fn check_presentation(
                 PresentationItem::Tessellation { tessellation } => {
                     tessellations.contains(tessellation.as_str())
                 }
-                PresentationItem::Source { source_id } => !source_id.is_empty(),
+                PresentationItem::Source { .. } => true,
             };
             if !resolved {
                 invalid_layer(

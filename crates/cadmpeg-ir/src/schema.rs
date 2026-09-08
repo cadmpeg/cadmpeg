@@ -601,12 +601,17 @@ impl_entity_schema!(
     id, object, kind, runtime_type, order, text, references, value, format, position,
     parameters, assets, native_ref
 );
-impl_entity_schema!(
-    crate::presentation::PresentationDocument,
-    PresentationDocument,
-    id;
-    id, schema_version, active_view, states, native_ref
-);
+impl EntitySchema for crate::presentation::PresentationDocument {
+    const KIND: EntityKind = EntityKind::PresentationDocument;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
 impl_entity_schema!(
     crate::presentation::ViewPresentation,
     ViewPresentation,

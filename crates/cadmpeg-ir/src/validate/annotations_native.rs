@@ -93,7 +93,7 @@ pub(super) fn check_annotations(
             continue;
         };
         for path in note.fields().keys() {
-            if path.is_empty() || !field_path_resolves(entity, path) {
+            if !field_path_resolves(entity, path) {
                 annotation_finding(
                     findings,
                     Severity::Warning,

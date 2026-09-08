@@ -97,6 +97,8 @@ pub enum StepLossCode {
     PmiLengthUnitUnresolved,
     /// A PMI angle measure unit scale did not resolve.
     PmiAngleUnitUnresolved,
+    /// A datum system has inconsistent precedence compartments.
+    PmiDatumSystemInvalid,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
@@ -343,6 +345,7 @@ impl StepLossCode {
         Self::DimensionalUnnamedMeasureAmbiguous,
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
+        Self::PmiDatumSystemInvalid,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
@@ -496,6 +499,7 @@ impl StepLossCode {
             Self::DimensionalUnnamedMeasureAmbiguous => "pmi.dimensional-unnamed-measure-ambiguous",
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
+            Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
@@ -803,9 +807,9 @@ impl StepLossCode {
             Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
                 LossTaxonomy::ParametricRecordOmitted
             }
-            Self::SemanticAnnotationOmitted | Self::PmiAnnotationNotWritten => {
-                LossTaxonomy::PmiOmitted
-            }
+            Self::SemanticAnnotationOmitted
+            | Self::PmiAnnotationNotWritten
+            | Self::PmiDatumSystemInvalid => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -893,6 +897,7 @@ mod tests {
                 "pmi.dimensional-unnamed-measure-ambiguous",
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
+                "pmi.datum-system-invalid",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",

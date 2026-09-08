@@ -50,12 +50,12 @@ pub(super) fn transfer_and_record_scanned_geometry(
     coverage: &mut cadmpeg_ir::Coverage,
     brep_diagnostics: &mut BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
-    let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations);
+    let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations)?;
     let first_instance_prototype_surface_count =
-        transfer_first_instance_prototype_surfaces(scan, ir, annotations);
-    let positional_spline_replay_count = transfer_positional_spline_replays(scan, ir, annotations);
+        transfer_first_instance_prototype_surfaces(scan, ir, annotations)?;
+    let positional_spline_replay_count = transfer_positional_spline_replays(scan, ir, annotations)?;
     let legacy_ascii_surface_carrier_count =
-        transfer_legacy_ascii_surface_carriers(scan, ir, annotations);
+        transfer_legacy_ascii_surface_carriers(scan, ir, annotations)?;
     let legacy_torus_sphere_carrier_count = scan
         .surfaces
         .legacy_carriers
@@ -68,36 +68,36 @@ pub(super) fn transfer_and_record_scanned_geometry(
             )
         })
         .count();
-    let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
-    let positional_torus_count = transfer_positional_tori(scan, ir, annotations);
+    let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations)?;
+    let positional_torus_count = transfer_positional_tori(scan, ir, annotations)?;
     let positional_line_extrusion_plane_count =
-        transfer_positional_line_extrusion_planes(scan, ir, annotations);
+        transfer_positional_line_extrusion_planes(scan, ir, annotations)?;
     let tabulated_cylinder_spline_extrusion_count =
-        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations);
-    transfer_fc05_cap_circles(scan, ir, annotations);
-    transfer_cap_pair_cylinders(scan, ir, annotations);
-    let saved_spline_curve_count = transfer_saved_spline_curves(scan, ir, annotations);
+        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations)?;
+    transfer_fc05_cap_circles(scan, ir, annotations)?;
+    transfer_cap_pair_cylinders(scan, ir, annotations)?;
+    let saved_spline_curve_count = transfer_saved_spline_curves(scan, ir, annotations)?;
     let sketch_segment_coverage = transfer_sketches(scan, ir, annotations)?;
     let feature_revolution_surface_count =
-        transfer_resolved_revolution_surfaces(scan, ir, annotations);
+        transfer_resolved_revolution_surfaces(scan, ir, annotations)?;
     let feature_revolution_vertex_orbit_curve_count =
-        transfer_resolved_revolution_vertex_orbit_curves(scan, ir, annotations);
+        transfer_resolved_revolution_vertex_orbit_curves(scan, ir, annotations)?;
     let feature_extrusion_surface_count =
-        transfer_feature_extrusion_surfaces(scan, ir, annotations);
+        transfer_feature_extrusion_surfaces(scan, ir, annotations)?;
     let feature_extrusion_vertex_orbit_curve_count =
-        transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations);
-    let active_datum_cylinder_count = transfer_active_datum_cylinders(scan, ir, annotations);
-    let circular_sweep_cylinder_count = transfer_circular_sweep_cylinders(scan, ir, annotations);
-    let positional_cylinders = transfer_positional_cylinders(scan, ir, annotations);
-    let positional_cone_count = transfer_positional_cones(scan, ir, annotations);
-    let split_outline_cylinder_count = transfer_split_outline_cylinders(scan, ir, annotations);
-    let hole_cylinder_count = transfer_hole_cylinders(scan, ir, annotations);
+        transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations)?;
+    let active_datum_cylinder_count = transfer_active_datum_cylinders(scan, ir, annotations)?;
+    let circular_sweep_cylinder_count = transfer_circular_sweep_cylinders(scan, ir, annotations)?;
+    let positional_cylinders = transfer_positional_cylinders(scan, ir, annotations)?;
+    let positional_cone_count = transfer_positional_cones(scan, ir, annotations)?;
+    let split_outline_cylinder_count = transfer_split_outline_cylinders(scan, ir, annotations)?;
+    let hole_cylinder_count = transfer_hole_cylinders(scan, ir, annotations)?;
     let constrained_slot_fillet_cylinder_count =
-        transfer_constrained_slot_fillet_cylinders(scan, ir, annotations);
-    let rowless_round_cylinder_count = transfer_rowless_round_cylinders(scan, ir, annotations);
+        transfer_constrained_slot_fillet_cylinders(scan, ir, annotations)?;
+    let rowless_round_cylinder_count = transfer_rowless_round_cylinders(scan, ir, annotations)?;
     let support_apex_cone_branch_count =
         reconcile_support_apex_cone_parameter_branches(scan, ir, annotations);
-    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations);
+    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(ctx, scan, ir, annotations)?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
@@ -110,20 +110,20 @@ pub(super) fn transfer_and_record_scanned_geometry(
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
-    );
+    )?;
     derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
     let topology_bound_plane_count = transfer_topology_bound_planes(
         scan,
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
-    );
+    )?;
     derived_intersection_curves.extend(transfer_carrier_intersection_curves(
         scan,
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
-    ));
+    )?);
     let NativeBrepTransferSummary {
         topological_point_count,
         native_topological_edge_count,
@@ -135,14 +135,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &derived_intersection_curves,
         &analytic_pcurve_carriers,
         &nurbs_boundary_curves.endpoint_witnesses,
-    );
+    )?;
     diagnostics.record_coverage(coverage);
     *brep_diagnostics = diagnostics;
     let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations);
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, ir, annotations);
     let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations);
-    retain_unresolved_surface_carriers(scan, ir, annotations);
+    retain_unresolved_surface_carriers(scan, ir, annotations)?;
     let transferred_part_product = transfer_part_product(scan, ir, annotations);
     let decoded_feature_skamp_count = scan
         .features

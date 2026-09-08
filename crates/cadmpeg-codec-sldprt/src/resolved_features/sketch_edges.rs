@@ -113,7 +113,10 @@ pub(super) fn project_edge(
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     let tolerance = edge
         .tolerance
-        .unwrap_or(EPS_SKETCH_EDGES_PROJECT_EDGE_E9)
+        .map_or(
+            EPS_SKETCH_EDGES_PROJECT_EDGE_E9,
+            cadmpeg_ir::units::PositiveScalar::get,
+        )
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve.as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle { center, radius, .. }) => {
@@ -229,7 +232,9 @@ pub(super) fn project_edge(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
         Some(CurveGeometry::Line { .. }) | None => line(),
-        Some(other) => Some(SketchGeometry::native(format!("{other:?}"))),
+        Some(other) => Some(SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new(format!("{other:?}"))?,
+        )),
     }
 }
 

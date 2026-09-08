@@ -1,59 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Validation for `SubD` cages and free-carrier source associations.
+//! Validation for procedural surface payloads.
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
 use crate::validate::geometry_payloads::bounds_err;
 
 const EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9: f64 = 1.0e-9;
-
-fn check_source(
-    source: Option<&crate::provenance::SourceObjectAssociation>,
-    owner: &str,
-    findings: &mut Vec<Finding>,
-) {
-    let Some(source) = source else { return };
-    if source.object_id.is_empty() {
-        bounds_err(
-            findings,
-            owner,
-            "source association object_id must not be empty",
-        );
-    }
-    if source.color.is_some_and(|color| {
-        [color.r, color.g, color.b, color.a]
-            .iter()
-            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
-    }) {
-        bounds_err(
-            findings,
-            owner,
-            "source association color is not finite or outside [0, 1]",
-        );
-    }
-}
-
-pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for surface in &ir.model.surfaces {
-        check_source(
-            surface.source_object.as_ref(),
-            surface.id.as_str(),
-            findings,
-        );
-    }
-    for curve in &ir.model.curves {
-        check_source(curve.source_object.as_ref(), curve.id.as_str(), findings);
-    }
-    for point in &ir.model.points {
-        check_source(point.source_object.as_ref(), point.id.as_str(), findings);
-    }
-    for mesh in &ir.model.tessellations {
-        check_source(mesh.source_object.as_ref(), mesh.id.as_str(), findings);
-    }
-    for subd in &ir.model.subds {
-        check_source(subd.source_object.as_ref(), subd.id.as_str(), findings);
-    }
-}
 
 pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>) {
     for procedural in &ir.model.procedural_surfaces {

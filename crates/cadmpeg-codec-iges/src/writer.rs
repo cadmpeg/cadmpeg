@@ -3776,7 +3776,9 @@ fn same_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f6
 }
 
 fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
-    let mut tolerance = edge.tolerance.unwrap_or(0.0);
+    let mut tolerance = edge
+        .tolerance
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get);
     for vertex_id in [&edge.start, &edge.end] {
         if let Some(vertex) = ir
             .model
@@ -3784,7 +3786,11 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
         {
-            tolerance = tolerance.max(vertex.tolerance.unwrap_or(0.0));
+            tolerance = tolerance.max(
+                vertex
+                    .tolerance
+                    .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+            );
         }
     }
     tolerance
@@ -3802,7 +3808,7 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
                 .iter()
                 .filter_map(|vertex| vertex.tolerance),
         )
-        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
+        .map(cadmpeg_ir::units::PositiveScalar::get)
         .map(effective_topology_tolerance)
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
     let endpoint_scale = generated_endpoint_coordinate_scale(ir);
@@ -3811,17 +3817,13 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
 
 fn minimum_resolution_for_output(ir: &CadIr) -> f64 {
     let generated = generated_minimum_resolution(ir);
-    if ir.tolerances.linear.is_finite() && ir.tolerances.linear > 0.0 {
-        generated.max(ir.tolerances.linear)
-    } else {
-        generated
-    }
+    generated.max(ir.tolerances.linear.get())
 }
 
 fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
     ir.source.as_ref()?;
-    let declared = ir.tolerances.linear;
-    if declared.is_finite() && declared > 0.0 && emitted <= declared {
+    let declared = ir.tolerances.linear.get();
+    if emitted <= declared {
         return None;
     }
     Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
@@ -4081,7 +4083,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = format!("D{sequence}");
         if !ir.model.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges && source.object_id == object_id
+                source.format == cadmpeg_ir::CodecFormat::Iges
+                    && source.object_id.as_str() == object_id
             })
         }) {
             return Err(CodecError::NotImplemented(format!(
@@ -4141,7 +4144,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = format!("D{sequence}");
         if !ir.model.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges && source.object_id == object_id
+                source.format == cadmpeg_ir::CodecFormat::Iges
+                    && source.object_id.as_str() == object_id
             })
         }) {
             return Err(CodecError::NotImplemented(format!(
@@ -5489,7 +5493,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
-    let mut tolerance = edge.tolerance.unwrap_or(0.0);
+    let mut tolerance = edge
+        .tolerance
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get);
     for vertex_id in [&edge.start, &edge.end] {
         let vertex = ir
             .model
@@ -5502,7 +5508,11 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
                     edge.id, vertex_id
                 ))
             })?;
-        tolerance = tolerance.max(vertex.tolerance.unwrap_or(0.0));
+        tolerance = tolerance.max(
+            vertex
+                .tolerance
+                .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+        );
     }
     Ok(tolerance)
 }
