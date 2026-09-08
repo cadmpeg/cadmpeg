@@ -19,7 +19,7 @@ use crate::nurbs::proc_surface::{
     EmbeddedCompoundLoftDirection, EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail,
     EmbeddedDeformableSurface, EmbeddedDeformableSurfaceData, EmbeddedG2Blend,
     EmbeddedG2FirstShape, EmbeddedG2Side, EmbeddedLawExpression, EmbeddedLawFormula,
-    EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftLayout, EmbeddedLoftPath,
+    EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftLayout, EmbeddedLoftPath, EmbeddedLoftPathLayout,
     EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedOffsetLayout,
     EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
     EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
@@ -594,6 +594,7 @@ fn emit_loft_member_form(
             }
         }
         LoftProfileData::RevisionSupport {
+            endpoints: _,
             type_code,
             surface,
             support_bounds,
@@ -624,6 +625,7 @@ fn emit_loft_member_form(
             }
         }
         LoftProfileData::RevisionPcurvePair {
+            endpoints: _,
             pcurve,
             secondary_pcurve,
             asm_extension,
@@ -637,6 +639,27 @@ fn emit_loft_member_form(
             direction,
         },
     }
+}
+
+fn emit_loft_path_curve(
+    out: &mut AsmBrep,
+    layout: EmbeddedLoftPathLayout,
+    id: String,
+) -> Option<LoftPathCurve> {
+    let (geometry, endpoints) = match layout {
+        EmbeddedLoftPathLayout::Legacy(curve) => (curve, None),
+        EmbeddedLoftPathLayout::Revision(curve) => {
+            let curve = curve?;
+            (curve.geometry, Some(curve.endpoints))
+        }
+    };
+    let id = CurveId::mint(id).expect("identity grammar");
+    out.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Nurbs(geometry),
+        source_object: None,
+    });
+    Some(LoftPathCurve { id, endpoints })
 }
 
 fn emit_loft_surface(
@@ -666,7 +689,7 @@ fn emit_loft_surface(
                                                     cadmpeg_ir::geometry::LoftProfileMember {
                                                         curve: LoftPathCurve {
                                                             id: curve,
-                                                            endpoints: member.endpoints,
+                                                            endpoints: member.data.endpoints(),
                                                         },
                                                         form: emit_loft_member_form(
                                                             out,
@@ -678,17 +701,10 @@ fn emit_loft_surface(
                                                     }
                                                 },
                                             ).collect();
-                                            let path_curve = entry.path.curve.map(|curve| {
-                                                let path_curve = CurveId::mint(format!(
-                                                    "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
-                                                )).expect("identity grammar");
-                                                out.curves.push(Curve {
-                                                    id: path_curve.clone(),
-                                                    geometry: CurveGeometry::Nurbs(curve.geometry),
-                                                    source_object: None,
-                                                });
-                                                LoftPathCurve { id: path_curve, endpoints: curve.endpoints }
-                                            });
+                                            let path_curve = emit_loft_path_curve(
+                                                out, entry.path.layout,
+                                                format!("{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"),
+                                            );
                                             let auxiliaries = entry.path.auxiliaries.into_iter().enumerate().map(
                                                 |(auxiliary_index, geometry)| {
                                                     let id = CurveId::mint(format!(
@@ -1498,7 +1514,7 @@ fn emit_net_surface(
                                                     cadmpeg_ir::geometry::LoftProfileMember {
                                                         curve: LoftPathCurve {
                                                             id: curve,
-                                                            endpoints: member.endpoints,
+                                                            endpoints: member.data.endpoints(),
                                                         },
                                                         form: emit_loft_member_form(
                                                             out,
@@ -1510,17 +1526,10 @@ fn emit_net_surface(
                                                     }
                                                 })
                                                 .collect();
-                                            let path = entry.path.curve.map(|curve| {
-                                                let path = CurveId::mint(format!(
-                                                    "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
-                                                )).expect("identity grammar");
-                                                out.curves.push(Curve {
-                                                    id: path.clone(),
-                                                    geometry: CurveGeometry::Nurbs(curve.geometry),
-                                                    source_object: None,
-                                                });
-                                                LoftPathCurve { id: path, endpoints: curve.endpoints }
-                                            });
+                                            let path = emit_loft_path_curve(
+                                                out, entry.path.layout,
+                                                format!("{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"),
+                                            );
                                             let auxiliaries = entry
                                                 .path
                                                 .auxiliaries
@@ -2157,7 +2166,7 @@ fn emit_revision_compound_loft_surface(
                 cadmpeg_ir::geometry::LoftProfileMember {
                     curve: LoftPathCurve {
                         id: curve,
-                        endpoints: member.endpoints,
+                        endpoints: member.data.endpoints(),
                     },
                     form: emit_loft_member_form(
                         out,
@@ -2172,18 +2181,7 @@ fn emit_revision_compound_loft_surface(
                         path: EmbeddedLoftPath,
                         out: &mut AsmBrep|
      -> cadmpeg_ir::geometry::LoftPath {
-        let curve = path.curve.map(|curve| {
-            let id = CurveId::mint(format!("{scope}:path")).expect("identity grammar");
-            out.curves.push(Curve {
-                id: id.clone(),
-                geometry: CurveGeometry::Nurbs(curve.geometry),
-                source_object: None,
-            });
-            LoftPathCurve {
-                id,
-                endpoints: curve.endpoints,
-            }
-        });
+        let curve = emit_loft_path_curve(out, path.layout, format!("{scope}:path"));
         let auxiliaries = path
             .auxiliaries
             .into_iter()
