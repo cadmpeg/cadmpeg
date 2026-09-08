@@ -36,7 +36,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     };
     let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
         let mut owner = parse_parameter_owner(&parameter_owner_frame())
-            .expect("generated parameter owner is canonical");
+            .expect("generated parameter owner is canonical")
+            .into_record("Design/BulkStream.dat", 0)
+            .unwrap();
         owner.id = format!("f3d:native:owner#{record_index}");
         owner.record_index = record_index;
         owner.scope_record_index = scope_record_index;
@@ -1035,7 +1037,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         parameter
     };
     let owner = |record_index, parameter_record_index, local_ordinal| {
-        let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+            .unwrap()
+            .into_record("Design/BulkStream.dat", 0)
+            .unwrap();
         owner.id = format!("f3d:native:owner#{record_index}");
         owner.record_index = record_index;
         owner.scope_record_index = 12;

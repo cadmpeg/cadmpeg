@@ -347,21 +347,15 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
 
 pub(in super::super) fn circular_section_profile_from_cylinder(
     transform: &crate::placement::FeatureSectionTransform,
-    geometry: &SurfaceGeometry,
+    geometry: &super::super::holes::placement::HoleCylinder,
 ) -> Option<([f64; 2], f64)> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        radius,
-        ..
-    } = geometry
-    else {
-        return None;
-    };
+    let origin = geometry.origin;
+    let axis = geometry.axis;
+    let radius = geometry.radius;
     let axis = normalized([axis.x, axis.y, axis.z])?;
     (dot(axis, transform.normal).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
         && radius.is_finite()
-        && *radius > 0.0)
+        && radius > 0.0)
         .then_some(())?;
     let delta = [
         origin.x - transform.origin[0],
@@ -370,6 +364,6 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
     ];
     Some((
         [dot(delta, transform.u_axis), dot(delta, transform.v_axis)],
-        *radius,
+        radius,
     ))
 }

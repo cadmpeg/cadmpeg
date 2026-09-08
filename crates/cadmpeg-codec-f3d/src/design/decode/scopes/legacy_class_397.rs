@@ -3,10 +3,32 @@
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_utf16_bounded};
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
-use crate::records::feature::{
-    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
-};
+use crate::records::feature::{DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart};
 use cadmpeg_core::decode::View;
+
+use super::extrude_sheet_metal::{exact_extrude_extent, ExtrudeExtentContext};
+
+/// Checked class, frame length, and reference-run layout for the class-397 grammar.
+#[derive(Clone, Copy)]
+pub(crate) struct Class397SymmetricFrame(());
+
+impl Class397SymmetricFrame {
+    /// Admit the fixed class-397 symmetric-distance frame layout.
+    pub(crate) fn new(
+        class_tag: &str,
+        paired_class_tag: &str,
+        frame_length: u64,
+        reference_count_offset: u64,
+        reference_count: usize,
+    ) -> Option<Self> {
+        (class_tag == "397"
+            && paired_class_tag == "262"
+            && frame_length == symmetric::LEN as u64
+            && reference_count_offset == symmetric::REFERENCE_COUNT as u64
+            && reference_count == symmetric::REFERENCE_COUNT_VALUE as usize)
+            .then_some(Self(()))
+    }
+}
 
 pub(crate) fn exact_symmetric_extrude_prologue(
     bytes: &[u8],
@@ -19,13 +41,15 @@ pub(crate) fn exact_symmetric_extrude_prologue(
 ) -> Option<DesignExtrudePrologue> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
-    if class_tag != "397"
-        || paired_class_tag != "262"
-        || paired_at.checked_sub(start)? != symmetric::LEN
-        || reference_count_at.checked_sub(start)? != symmetric::REFERENCE_COUNT
-        || reference_members.len() != symmetric::REFERENCE_COUNT_VALUE as usize
-        || View::u32_le_at(bytes, start.checked_add(symmetric::PREFIX_CONSTANT)?)?
-            != symmetric::PREFIX_CONSTANT_VALUE
+    let frame = Class397SymmetricFrame::new(
+        class_tag,
+        paired_class_tag,
+        u64::try_from(paired_at.checked_sub(start)?).ok()?,
+        u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
+        reference_members.len(),
+    )?;
+    if View::u32_le_at(bytes, start.checked_add(symmetric::PREFIX_CONSTANT)?)?
+        != symmetric::PREFIX_CONSTANT_VALUE
         || bytes.get(
             start.checked_add(symmetric::PREFIX_CONSTANT + 4)?
                 ..start.checked_add(symmetric::OPERATION)?,
@@ -113,10 +137,16 @@ pub(crate) fn exact_symmetric_extrude_prologue(
 
     let first_side_extent_offset = start.checked_add(symmetric::FIRST_SIDE_EXTENT)?;
     let second_side_extent_offset = start.checked_add(symmetric::SECOND_SIDE_EXTENT)?;
-    if View::u32_le_at(bytes, first_side_extent_offset)? != symmetric::FIRST_SIDE_EXTENT_VALUE
-        || bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9]
-        || View::u32_le_at(bytes, second_side_extent_offset)? != symmetric::SECOND_SIDE_EXTENT_VALUE
-    {
+    let side_extent_discriminators = [
+        View::u32_le_at(bytes, first_side_extent_offset)?,
+        View::u32_le_at(bytes, second_side_extent_offset)?,
+    ];
+    let extent = exact_extrude_extent(
+        ExtrudeExtentContext::Class397Symmetric(frame),
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+    )?;
+    if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9] {
         return None;
     }
 
@@ -136,15 +166,12 @@ pub(crate) fn exact_symmetric_extrude_prologue(
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         direction_face_extend_values,
-        side_extent_discriminators: [
-            symmetric::FIRST_SIDE_EXTENT_VALUE,
-            symmetric::SECOND_SIDE_EXTENT_VALUE,
-        ],
+        side_extent_discriminators,
         side_extent_discriminator_offsets: [
             u64::try_from(first_side_extent_offset).ok()?,
             u64::try_from(second_side_extent_offset).ok()?,
         ],
-        extent: Some(DesignExtrudeExtent::SymmetricDistance),
+        extent: Some(extent),
         direction_face_extend_offsets: [
             u64::try_from(direction_face_extend_offsets[0]).ok()?,
             u64::try_from(direction_face_extend_offsets[1]).ok()?,

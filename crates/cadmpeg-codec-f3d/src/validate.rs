@@ -10,10 +10,12 @@
 //! generic IR validation report.
 
 use crate::design::decode::scopes::extrude_sheet_metal::{
-    is_class_296_legacy_one_sided_distance_layout, is_class_296_legacy_one_sided_to_face_layout,
-    is_class_296_one_sided_to_face_layout, is_class_296_symmetric_distance_layout,
-    is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
+    exact_extrude_extent, is_class_296_legacy_one_sided_distance_layout,
+    is_class_296_legacy_one_sided_to_face_layout, is_class_296_one_sided_to_face_layout,
+    is_class_296_symmetric_distance_layout, is_class_296_two_sided_to_faces_layout,
+    is_class_296_two_sided_to_faces_scope, ExtrudeExtentContext,
 };
+use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
 use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
@@ -28,6 +30,7 @@ use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_t
 use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
 use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_two_faces;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
+use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
@@ -3499,7 +3502,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     } else {
                         None
                     };
-                let extent_valid = if compact_extent_offsets.is_some() {
+                let class_397_frame = Class397SymmetricFrame::new(
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
+                    scope.frame_length,
+                    scope
+                        .reference_count_offset
+                        .saturating_sub(scope.byte_offset),
+                    scope.reference_members.len(),
+                );
+                let extent_valid = if let Some(frame) = class_397_frame {
+                    operation_prefix_marker_offset.is_none()
+                        && operation_offset
+                            == scope
+                                .byte_offset
+                                .saturating_add(class_397::OPERATION as u64)
+                        && direction_face_extend_values
+                            == [class_397::DIRECTION_VALUE, class_397::FACE_EXTEND_VALUE]
+                        && extent.is_some()
+                        && extent
+                            == exact_extrude_extent(
+                                ExtrudeExtentContext::Class397Symmetric(frame),
+                                direction_face_extend_values[0],
+                                side_extent_discriminators,
+                            )
+                } else if compact_extent_offsets.is_some() {
                     matches!(
                         (
                             direction_face_extend_values,
@@ -3581,70 +3608,85 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             )
                         )
                 };
-                let side_offsets_valid = compact_extent_offsets
-                    .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
-                    || class_296_extent_offsets
+                let side_offsets_valid = if class_397_frame.is_some() {
+                    side_extent_discriminator_offsets
+                        == [
+                            scope
+                                .byte_offset
+                                .saturating_add(class_397::FIRST_SIDE_EXTENT as u64),
+                            scope
+                                .byte_offset
+                                .saturating_add(class_397::SECOND_SIDE_EXTENT as u64),
+                        ]
+                } else {
+                    compact_extent_offsets
                         .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
-                    || class_296_symmetric_extent_offsets
-                        .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
-                    || class_296_two_faces_extent_offsets
-                        .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
-                    || class_296_legacy_to_face_extent_offsets
-                        .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
-                    || class_296_legacy_distance_extent_offsets
-                        .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
-                    || field_shift.is_some_and(|field_shift| {
-                        side_extent_discriminator_offsets
-                            == if direction_face_extend_values[0] == 2 {
-                                if scope
-                                    .reference_count_offset
-                                    .checked_sub(scope.byte_offset)
-                                    .and_then(|offset| offset.checked_sub(field_shift))
-                                    == Some(283)
+                        || class_296_extent_offsets
+                            .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || class_296_symmetric_extent_offsets
+                            .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || class_296_two_faces_extent_offsets
+                            .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || class_296_legacy_to_face_extent_offsets
+                            .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || class_296_legacy_distance_extent_offsets
+                            .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || field_shift.is_some_and(|field_shift| {
+                            side_extent_discriminator_offsets
+                                == if direction_face_extend_values[0] == 2 {
+                                    if scope
+                                        .reference_count_offset
+                                        .checked_sub(scope.byte_offset)
+                                        .and_then(|offset| offset.checked_sub(field_shift))
+                                        == Some(283)
+                                    {
+                                        [
+                                            scope.byte_offset.saturating_add(166 + field_shift),
+                                            scope.byte_offset.saturating_add(181 + field_shift),
+                                        ]
+                                    } else {
+                                        [
+                                            scope.byte_offset.saturating_add(155 + field_shift),
+                                            scope.byte_offset.saturating_add(178 + field_shift),
+                                        ]
+                                    }
+                                } else if side_extent_discriminators[0] == 2 {
+                                    let first_offset = side_extent_discriminator_offsets[0];
+                                    if matches!(
+                                        first_offset
+                                            .checked_sub(scope.byte_offset)
+                                            .and_then(|offset| offset.checked_sub(field_shift)),
+                                        Some(106 | 116)
+                                    ) {
+                                        [
+                                            first_offset,
+                                            scope.reference_count_offset.saturating_sub(4),
+                                        ]
+                                    } else {
+                                        [0, 0]
+                                    }
+                                } else if side_extent_discriminator_offsets
+                                    == [
+                                        scope.byte_offset.saturating_add(116 + field_shift),
+                                        scope.byte_offset.saturating_add(129 + field_shift),
+                                    ]
+                                {
+                                    side_extent_discriminator_offsets
+                                } else if side_extent_discriminator_offsets[0]
+                                    == scope.byte_offset.saturating_add(116 + field_shift)
                                 {
                                     [
-                                        scope.byte_offset.saturating_add(166 + field_shift),
-                                        scope.byte_offset.saturating_add(181 + field_shift),
+                                        scope.byte_offset.saturating_add(116 + field_shift),
+                                        scope.byte_offset.saturating_add(130 + field_shift),
                                     ]
                                 } else {
                                     [
-                                        scope.byte_offset.saturating_add(155 + field_shift),
-                                        scope.byte_offset.saturating_add(178 + field_shift),
+                                        scope.byte_offset.saturating_add(106 + field_shift),
+                                        scope.byte_offset.saturating_add(110 + field_shift),
                                     ]
                                 }
-                            } else if side_extent_discriminators[0] == 2 {
-                                let first_offset = side_extent_discriminator_offsets[0];
-                                if matches!(
-                                    first_offset
-                                        .checked_sub(scope.byte_offset)
-                                        .and_then(|offset| offset.checked_sub(field_shift)),
-                                    Some(106 | 116)
-                                ) {
-                                    [first_offset, scope.reference_count_offset.saturating_sub(4)]
-                                } else {
-                                    [0, 0]
-                                }
-                            } else if side_extent_discriminator_offsets
-                                == [
-                                    scope.byte_offset.saturating_add(116 + field_shift),
-                                    scope.byte_offset.saturating_add(129 + field_shift),
-                                ]
-                            {
-                                side_extent_discriminator_offsets
-                            } else if side_extent_discriminator_offsets[0]
-                                == scope.byte_offset.saturating_add(116 + field_shift)
-                            {
-                                [
-                                    scope.byte_offset.saturating_add(116 + field_shift),
-                                    scope.byte_offset.saturating_add(130 + field_shift),
-                                ]
-                            } else {
-                                [
-                                    scope.byte_offset.saturating_add(106 + field_shift),
-                                    scope.byte_offset.saturating_add(110 + field_shift),
-                                ]
-                            }
-                    });
+                        })
+                };
                 (field_shift.is_some()
                     || compact_extent_offsets.is_some()
                     || class_296_extent_offsets.is_some()
@@ -7240,8 +7282,8 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             header.byte_offset == group.carrier_span.end()
                 && header.class_tag == group.paired_class_tag
         });
-        let source_offsets_valid = source_spec.is_some_and(|(_, source_reference_offset, _, _)| {
-            let Ok(source_reference_offset) = u64::try_from(source_reference_offset) else {
+        let source_offsets_valid = source_spec.is_some_and(|layout| {
+            let Ok(source_reference_offset) = u64::try_from(layout.source_reference_offset) else {
                 return false;
             };
             group
@@ -7261,8 +7303,8 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
         });
         let mut source_records = HashSet::new();
-        let source_members_valid = source_spec.is_some_and(|(source_count, _, _, _)| {
-            group.source_members.len() == source_count
+        let source_members_valid = source_spec.is_some_and(|layout| {
+            group.source_members.len() == layout.source_count
                 && group
                     .source_members
                     .iter()

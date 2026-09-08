@@ -46,21 +46,22 @@ pub(crate) fn exact_surface_trim_operation(
         &selection_class_tag,
     )?;
 
-    let mut chain_records = Vec::with_capacity(2);
     let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
-    for _ in 0..2 {
+    let mut next_chain_record = || {
         let record_index = indexed_record_index(bytes, chain_start)?;
         let class_tag = exact_indexed_header_at(bytes, chain_start, record_index)?;
         let frame_end = next_indexed_record_offset(bytes, chain_start.checked_add(11)?)?;
         let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
-        chain_records.push(DesignSurfaceTrimChainRecord {
+        let record = DesignSurfaceTrimChainRecord {
             record_index,
             byte_offset: u64::try_from(chain_start).ok()?,
             class_tag: class_tag.try_into().ok()?,
             frame_length,
-        });
+        };
         chain_start = frame_end;
-    }
+        Some(record)
+    };
+    let chain_records = [next_chain_record()?, next_chain_record()?];
 
     let cell_table_byte_offset = chain_start;
     let cell_table_record_index = indexed_record_index(bytes, cell_table_byte_offset)?;

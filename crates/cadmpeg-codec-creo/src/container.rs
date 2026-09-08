@@ -2191,14 +2191,17 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
             let Some(body_end) = recipe_end(payload, operation.offset, *recipe) else {
                 continue;
             };
-            if body_start >= body_end {
+            let Some(body) = payload
+                .get(body_start..body_end)
+                .and_then(|bytes| bytes.to_vec().try_into().ok())
+            else {
                 continue;
-            }
+            };
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
                 root_schema_class: operation.root_schema_class(),
                 stream_offset: section.offset,
-                body: payload[body_start..body_end].to_vec(),
+                body,
                 body_offset: section.offset + body_start,
                 offset: section.offset + operation.offset,
             });
@@ -2983,7 +2986,7 @@ mod feature_row_definition_tests {
             feature_id,
             root_schema_class: Some(crate::feature::schema::SchemaClass::from(root_schema_class)),
             stream_offset: 0,
-            body: Vec::new(),
+            body: vec![0; 2].try_into().expect("row body"),
             body_offset: 0,
             offset: 0,
         };
@@ -3027,7 +3030,10 @@ mod feature_row_definition_tests {
             feature_id: 42,
             root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 100,
-            body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0".to_vec(),
+            body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0"
+                .to_vec()
+                .try_into()
+                .expect("row body"),
             body_offset: 120,
             offset: 118,
         };
@@ -3050,7 +3056,9 @@ mod feature_row_definition_tests {
                     \xe0\x00gsec3d_ptr\0\xf1\xe3\
                     \xe0\x01plane_id\0\x80\xf9\
                     \xe0\x00p_saved_result\0"
-                .to_vec(),
+                .to_vec()
+                .try_into()
+                .expect("row body"),
             body_offset: 120,
             offset: 118,
         };

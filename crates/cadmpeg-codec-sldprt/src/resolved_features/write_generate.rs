@@ -163,7 +163,7 @@ pub(super) fn append_generated_sketch_markers(
         return Ok(());
     }
 
-    let mut marker_ids = HashMap::<SketchEntityId, Vec<u16>>::new();
+    let mut marker_ids = HashMap::<SketchEntityId, (u16, Option<u16>)>::new();
     let mut marker_loci = Vec::<(SketchLocus, Point2, SketchInputKind, u16)>::new();
     let mut next_id = 1u32;
     for entity in ir
@@ -187,8 +187,10 @@ pub(super) fn append_generated_sketch_markers(
             );
             marker_ids
                 .entry(entity.id().clone())
-                .or_default()
-                .push(local_id);
+                .and_modify(|(_, second)| {
+                    second.get_or_insert(local_id);
+                })
+                .or_insert((local_id, None));
             marker_loci.push((
                 locus,
                 point,
@@ -219,11 +221,7 @@ pub(super) fn append_generated_sketch_markers(
                 })?;
                 let links = match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
                     Ok(unique) => [unique, unique],
-                    Err(_) => match ids.as_slice() {
-                        [only] => [*only, *only],
-                        [first, second, ..] => [*first, *second],
-                        [] => unreachable!("empty marker-id vectors are never inserted"),
-                    },
+                    Err(_) => [ids.0, ids.1.unwrap_or(ids.0)],
                 };
                 (kind, links)
             }

@@ -903,11 +903,8 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     let cages = [cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     }];
 
     crate::with_scan(&archive, |scan| {
@@ -983,11 +980,8 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     let cages = [cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     }];
 
     crate::with_scan(&archive, |scan| {

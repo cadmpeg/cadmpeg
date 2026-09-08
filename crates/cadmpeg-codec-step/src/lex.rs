@@ -3,6 +3,13 @@
 
 use std::ops::Range;
 
+/// The entity or value occurrence class.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum OccurrencePrefix {
+    Entity,
+    Value,
+}
+
 /// A lexical token with its exact source-byte extent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
@@ -352,8 +359,8 @@ impl<'a> Lexer<'a> {
             b':' => self.one(TokenKind::Colon),
             b'$' => self.one(TokenKind::Omitted),
             b'*' => self.one(TokenKind::Derived),
-            b'#' => self.occurrence(b'#')?,
-            b'@' => self.occurrence(b'@')?,
+            b'#' => self.occurrence(OccurrencePrefix::Entity)?,
+            b'@' => self.occurrence(OccurrencePrefix::Value)?,
             b'\'' => self.string()?,
             b'"' => self.binary()?,
             b'<' => self.resource()?,
@@ -428,7 +435,7 @@ impl<'a> Lexer<'a> {
         Ok(TokenKind::UserName(name))
     }
 
-    fn occurrence(&mut self, prefix: u8) -> Result<TokenKind, LexError> {
+    fn occurrence(&mut self, prefix: OccurrencePrefix) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
         self.skip_ignored();
@@ -451,9 +458,8 @@ impl<'a> Lexer<'a> {
                     return Err(Self::error(start, "instance name must not be zero"));
                 }
                 match prefix {
-                    b'#' => Ok(TokenKind::Instance(value)),
-                    b'@' => Ok(TokenKind::ValueInstance(value)),
-                    _ => unreachable!("occurrence prefixes are fixed by the lexer"),
+                    OccurrencePrefix::Entity => Ok(TokenKind::Instance(value)),
+                    OccurrencePrefix::Value => Ok(TokenKind::ValueInstance(value)),
                 }
             }
             Some(byte) if byte.is_ascii_alphabetic() || byte == b'_' => {
@@ -468,9 +474,8 @@ impl<'a> Lexer<'a> {
                 }
                 let name = self.normalized(name_start, self.at).to_ascii_uppercase();
                 match prefix {
-                    b'#' => Ok(TokenKind::ConstantEntity(name)),
-                    b'@' => Ok(TokenKind::ConstantValue(name)),
-                    _ => unreachable!("occurrence prefixes are fixed by the lexer"),
+                    OccurrencePrefix::Entity => Ok(TokenKind::ConstantEntity(name)),
+                    OccurrencePrefix::Value => Ok(TokenKind::ConstantValue(name)),
                 }
             }
             _ => Err(Self::error(start, "occurrence name has no identifier")),

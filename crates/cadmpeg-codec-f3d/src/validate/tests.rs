@@ -136,6 +136,132 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
 }
 
 #[test]
+fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
+    use crate::records::feature::{
+        DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeScope,
+        DesignExtrudeStart, DesignFeatureKind, DesignParameterScope,
+    };
+    use crate::records::{DesignRecordHeader, ReferenceRun};
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope_id = format!("{stream}:design-parameter-scope#0");
+    let mut scope = DesignParameterScope::empty(&scope_id, DesignFeatureKind::Extrude, 3970);
+    scope.class_tag = "397".to_owned().try_into().unwrap();
+    scope.paired_class_tag = "262".to_owned().try_into().unwrap();
+    scope.frame_length = 473;
+    scope.paired_byte_offset = 473;
+    scope.reference_count_offset = 282;
+    scope.reference_members = ReferenceRun::from_columns(
+        vec![11, 22, 33, 44, 55, 66, 77, 88],
+        vec![287, 298, 309, 320, 331, 342, 353, 364],
+        "reference_members",
+    )
+    .unwrap();
+    scope.kind_offset = 382;
+    scope.feature_ordinal_offset = 395;
+    scope.payload = DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+        extrude_prologue: Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: 27,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminators: [1, 1],
+            side_extent_discriminator_offsets: [126, 139],
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_face_extend_offsets: [31, 35],
+            direction_reversed: false,
+            direction_reversed_offset: 39,
+            solid_operation: true,
+            solid_operation_offset: 40,
+            start: DesignExtrudeStart::OffsetProfilePlane,
+            start_offset: 41,
+        }),
+        ..DesignExtrudeScope::default()
+    }));
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        for record_index in [11, 22, 33, 44, 55, 66, 77, 88, 3970] {
+            native.design_record_headers.push(DesignRecordHeader {
+                id: format!("{stream}:design-record-header#{record_index}"),
+                record_index,
+                class_tag: "397".to_owned().try_into().unwrap(),
+                byte_offset: 0,
+            });
+        }
+        native.design_parameter_scopes.push(scope.clone());
+    }
+    let has_invalid_frame = |ir: &cadmpeg_ir::CadIr| {
+        crate::validate::validate_native(ir).iter().any(|finding| {
+            finding.entity.as_deref() == Some(scope_id.as_str())
+                && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+        })
+    };
+    assert!(!has_invalid_frame(&ir));
+
+    let mutations: &[fn(&mut DesignParameterScope)] = &[
+        |scope| scope.class_tag = "338".to_owned().try_into().unwrap(),
+        |scope| scope.paired_class_tag = "261".to_owned().try_into().unwrap(),
+        |scope| {
+            scope.frame_length += 1;
+            scope.paired_byte_offset += 1;
+        },
+        |scope| scope.reference_count_offset += 1,
+        |scope| {
+            scope.reference_members = ReferenceRun::from_columns(
+                vec![11, 22, 33, 44, 55, 66, 77],
+                vec![287, 298, 309, 320, 331, 342, 353],
+                "reference_members",
+            )
+            .unwrap();
+        },
+        |scope| {
+            if let Some(DesignExtrudePrologue::LegacyShifted {
+                side_extent_discriminators,
+                ..
+            }) = scope.extrude_prologue_mut()
+            {
+                *side_extent_discriminators = [1, 0];
+            }
+        },
+        |scope| {
+            if let Some(DesignExtrudePrologue::LegacyShifted {
+                direction_face_extend_values,
+                ..
+            }) = scope.extrude_prologue_mut()
+            {
+                *direction_face_extend_values = [3, 1];
+            }
+        },
+        |scope| {
+            if let Some(DesignExtrudePrologue::LegacyShifted {
+                side_extent_discriminator_offsets,
+                ..
+            }) = scope.extrude_prologue_mut()
+            {
+                *side_extent_discriminator_offsets = [116, 129];
+            }
+        },
+        |scope| {
+            if let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
+                scope.extrude_prologue_mut()
+            {
+                *extent = Some(DesignExtrudeExtent::TwoSidedDistance);
+            }
+        },
+    ];
+    for (index, mutate) in mutations.iter().enumerate() {
+        let mut invalid = scope.clone();
+        mutate(&mut invalid);
+        f3d_native_mut(&mut ir).design_parameter_scopes[0] = invalid;
+        assert!(
+            has_invalid_frame(&ir),
+            "accepted invalid frame mutation {index}"
+        );
+    }
+}
+
+#[test]
 fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
     let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
