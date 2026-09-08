@@ -139,6 +139,6 @@ fn move_body_selection_uses_unique_owning_history() {
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Historical { ref bodies, ref native, .. },
             ..
-        } if bodies == &[expected_body] && native == group_id
+        } if bodies.as_slice() == [expected_body] && native.as_str() == group_id
     ));
 }

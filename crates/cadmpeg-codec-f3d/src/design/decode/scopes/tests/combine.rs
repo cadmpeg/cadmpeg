@@ -131,10 +131,14 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             target: cadmpeg_ir::features::BodySelection::Native(
                 "Design1/BulkStream.dat:design-record#96".into(),
             ),
-            tools: cadmpeg_ir::features::BodySelection::NativeSet(vec![
-                "Design1/BulkStream.dat:design-record#92".into(),
-                "Design1/BulkStream.dat:design-record#94".into(),
-            ]),
+            tools: cadmpeg_ir::features::BodySelection::NativeSet(
+                vec![
+                    "Design1/BulkStream.dat:design-record#92".into(),
+                    "Design1/BulkStream.dat:design-record#94".into(),
+                ]
+                .try_into()
+                .unwrap()
+            ),
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
         })

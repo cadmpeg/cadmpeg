@@ -4346,6 +4346,143 @@ pub enum FaceSelection {
     Native(String),
 }
 
+/// A nonblank persistent selection reference.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SelectionReference(String);
+
+impl TryFrom<String> for SelectionReference {
+    type Error = BodySelectionError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.trim().is_empty() {
+            return Err(BodySelectionError::BlankNativeMember);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl SelectionReference {
+    /// The retained reference text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SelectionReference {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<str> for SelectionReference {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for SelectionReference {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl<'de> Deserialize<'de> for SelectionReference {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Nonempty distinct selection members in source order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SelectionMembers<T>(Vec<T>);
+
+impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
+    type Error = BodySelectionError;
+    fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        if value.iter().collect::<HashSet<_>>().len() != value.len() {
+            return Err(BodySelectionError::RepeatedBody);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl<T> SelectionMembers<T> {
+    /// The selected members in source order.
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<T> std::ops::Deref for SelectionMembers<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a SelectionMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for SelectionMembers<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Nonempty distinct nonblank native selection names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct NativeSelections(Vec<String>);
+
+impl TryFrom<Vec<String>> for NativeSelections {
+    type Error = BodySelectionError;
+    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        if value.iter().any(|name| name.trim().is_empty()) {
+            return Err(BodySelectionError::BlankNativeMember);
+        }
+        if value.iter().collect::<HashSet<_>>().len() != value.len() {
+            return Err(BodySelectionError::RepeatedNativeMember);
+        }
+        Ok(Self(value))
+    }
+}
+
+impl NativeSelections {
+    /// The native names in source order.
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for NativeSelections {
+    type Target = [String];
+    fn deref(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for NativeSelections {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<String>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Failure to construct a body-selection member set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum BodySelectionError {
@@ -4607,9 +4744,9 @@ pub enum BodySelection {
         /// Input topology containing every selected body.
         state: FeatureInputTopologyId,
         /// State-local body identities in operand order.
-        bodies: Vec<HistoricalBodyId>,
+        bodies: SelectionMembers<HistoricalBodyId>,
         /// Format-native selection expression.
-        native: String,
+        native: SelectionReference,
     },
     /// Bodies resolved in the containing feature's input topology from
     /// independently retained native selection members.
@@ -4631,32 +4768,76 @@ pub enum BodySelection {
     /// format-native selection required for rewrite.
     Generated {
         /// Feature-local body identities.
-        bodies: Vec<GeneratedBodyRef>,
+        bodies: SelectionMembers<GeneratedBodyRef>,
         /// Format-native persistent selection reference.
-        native: String,
+        native: SelectionReference,
     },
     /// Persistent bodies in the consuming feature's regeneration input state.
     Local {
         /// Ordered feature-input-local body identities.
-        bodies: Vec<String>,
+        bodies: NativeSelections,
         /// Format-native persistent selection reference.
-        native: String,
+        native: SelectionReference,
     },
     /// Format-native selection expression.
     Native(String),
     /// Ordered format-native selection members that have no enclosing native
     /// group record.
-    NativeSet(Vec<String>),
+    NativeSet(NativeSelections),
+}
+
+impl BodySelection {
+    /// Checked local body operands with their native reference.
+    pub fn local(bodies: Vec<String>, native: String) -> Result<Self, BodySelectionError> {
+        Ok(Self::Local {
+            bodies: bodies.try_into()?,
+            native: native.try_into()?,
+        })
+    }
+
+    /// Checked historical body operands with their native reference.
+    pub fn historical(
+        state: FeatureInputTopologyId,
+        bodies: Vec<HistoricalBodyId>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Historical {
+            state,
+            bodies: bodies.try_into()?,
+            native: native.try_into()?,
+        })
+    }
+
+    /// Checked generated body operands with their native reference.
+    pub fn generated(
+        bodies: Vec<GeneratedBodyRef>,
+        native: String,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::Generated {
+            bodies: bodies.try_into()?,
+            native: native.try_into()?,
+        })
+    }
 }
 
 /// Persistent identity of a body in one regenerated feature result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct GeneratedBodyRef {
     /// Feature whose regenerated result owns the body.
     pub feature: FeatureId,
     /// Feature-local persistent body identity.
-    pub local_id: String,
+    pub local_id: SelectionReference,
+}
+
+impl GeneratedBodyRef {
+    /// A feature-local body identity with a nonblank local name.
+    pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
+        Ok(Self {
+            feature,
+            local_id: local_id.try_into()?,
+        })
+    }
 }
 
 /// Direct face-motion law.

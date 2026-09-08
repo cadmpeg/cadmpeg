@@ -5331,18 +5331,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 BodySelection::Historical {
                     state,
                     bodies,
-                    native,
+                    native: _,
                 } => {
-                    check_historical_selection(
+                    check_historical_members(
                         findings,
                         &feature.id,
                         (
                             state,
                             bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
-                            native,
                         ),
                         "body",
-                        false,
                         &input_topologies,
                         |topology| {
                             topology
@@ -5354,16 +5352,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
                 BodySelection::HistoricalSet { state, members } => {
-                    check_historical_selection(
+                    check_historical_members(
                         findings,
                         &feature.id,
                         (
                             state,
                             members.bodies().map(crate::ids::HistoricalBodyId::as_str),
-                            members.native().next().unwrap_or(""),
                         ),
                         "body",
-                        false,
                         &input_topologies,
                         |topology| {
                             topology
@@ -5375,7 +5371,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
                 BodySelection::HistoricalUnorderedSet { state, selection } => {
-                    check_historical_selection(
+                    check_historical_members(
                         findings,
                         &feature.id,
                         (
@@ -5384,10 +5380,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 .bodies()
                                 .iter()
                                 .map(crate::ids::HistoricalBodyId::as_str),
-                            selection.native().first().map_or("", String::as_str),
                         ),
                         "body",
-                        false,
                         &input_topologies,
                         |topology| {
                             topology
@@ -5398,17 +5392,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
-                BodySelection::Generated { bodies, native } => {
-                    if bodies.is_empty()
-                        || native.trim().is_empty()
-                        || bodies.iter().any(|body| {
-                            body.local_id.trim().is_empty()
-                                || !feature.dependencies.contains(&body.feature)
-                                || result_topologies_by_feature
-                                    .get(body.feature.as_str())
-                                    .is_some_and(|state| !state.bodies.contains(&body.local_id))
-                        })
-                    {
+                BodySelection::Generated { bodies, .. } => {
+                    if bodies.iter().any(|body| {
+                        !feature.dependencies.contains(&body.feature)
+                            || result_topologies_by_feature
+                                .get(body.feature.as_str())
+                                .is_some_and(|state| {
+                                    !state.bodies.iter().any(|id| id == body.local_id.as_str())
+                                })
+                    }) {
                         feature_geometry_error(
                             findings,
                             feature,
@@ -5416,28 +5408,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         );
                     }
                 }
-                BodySelection::Local { bodies, native } => {
-                    if bodies.is_empty()
-                        || native.trim().is_empty()
-                        || bodies.iter().any(|body| body.trim().is_empty())
-                    {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "local body selection is invalid",
-                        );
-                    }
-                }
-                BodySelection::NativeSet(members) => {
-                    if members.is_empty() || members.iter().any(|member| member.trim().is_empty()) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "native body selection set is invalid",
-                        );
-                    }
-                }
-                BodySelection::Unresolved | BodySelection::Native(_) => {}
+                BodySelection::Local { .. }
+                | BodySelection::NativeSet(_)
+                | BodySelection::Unresolved
+                | BodySelection::Native(_) => {}
             }
         }
     }
@@ -5485,6 +5459,56 @@ fn check_historical_selection<'a, I, F>(
     F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
 {
     let (state_id, selected, native) = selection;
+    if native.is_empty() {
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection has an empty native reference"),
+            entity: Some(feature.as_str().to_owned()),
+        });
+    }
+    let selected = selected.into_iter().collect::<Vec<_>>();
+    if selected.is_empty() && !allow_empty {
+        findings.push(Finding {
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection is empty"),
+            entity: Some(feature.as_str().to_owned()),
+        });
+    }
+    let mut seen = HashSet::new();
+    for id in &selected {
+        if !seen.insert(id) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!("historical {kind} selection repeats `{id}`"),
+                entity: Some(feature.as_str().to_owned()),
+            });
+        }
+    }
+    check_historical_members(
+        findings,
+        feature,
+        (state_id, selected),
+        kind,
+        states,
+        members,
+    );
+}
+
+fn check_historical_members<'a, I, F>(
+    findings: &mut Vec<Finding>,
+    feature: &crate::features::FeatureId,
+    selection: (&crate::ids::FeatureInputTopologyId, I),
+    kind: &str,
+    states: &HashMap<&str, &crate::features::FeatureInputTopology>,
+    members: F,
+) where
+    I: IntoIterator<Item = &'a str>,
+    F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
+{
+    let (state_id, selected) = selection;
     let Some(state) = states.get(state_id.as_str()) else {
         ref_error(
             findings,
@@ -5502,34 +5526,9 @@ fn check_historical_selection<'a, I, F>(
             entity: Some(feature.as_str().to_owned()),
         });
     }
-    if native.is_empty() {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!("historical {kind} selection has an empty native reference"),
-            entity: Some(feature.as_str().to_owned()),
-        });
-    }
     let available = members(state).into_iter().collect::<HashSet<_>>();
     let selected = selected.into_iter().collect::<Vec<_>>();
-    if selected.is_empty() && !allow_empty {
-        findings.push(Finding {
-            check: Check::Counts,
-            severity: Severity::Error,
-            message: format!("historical {kind} selection is empty"),
-            entity: Some(feature.as_str().to_owned()),
-        });
-    }
-    let mut seen = HashSet::new();
     for id in selected {
-        if !seen.insert(id) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: format!("historical {kind} selection repeats `{id}`"),
-                entity: Some(feature.as_str().to_owned()),
-            });
-        }
         if !available.contains(id) {
             ref_error(
                 findings,

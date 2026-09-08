@@ -1986,10 +1986,11 @@ mod tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::ExtractBody {
-                source: BodySelection::Local {
-                    bodies: vec!["nx:om-data-blocks-2:block#736".to_string()],
-                    native: "nx:om-object-index#736".to_string(),
-                },
+                source: BodySelection::local(
+                    vec!["nx:om-data-blocks-2:block#736".to_string()],
+                    "nx:om-object-index#736".to_string(),
+                )
+                .unwrap(),
             },
             native_ref: None,
         });
@@ -2045,10 +2046,11 @@ mod tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::DeleteBody {
-                bodies: BodySelection::Local {
-                    bodies: vec!["input-body".to_string()],
-                    native: "native-selection".to_string(),
-                },
+                bodies: BodySelection::local(
+                    vec!["input-body".to_string()],
+                    "native-selection".to_string(),
+                )
+                .unwrap(),
                 mode: BodyRetentionMode::DeleteSelected,
             },
             native_ref: None,
@@ -2193,10 +2195,11 @@ mod tests {
             target.clone(),
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![target.clone()]),
-                tools: BodySelection::Local {
-                    bodies: vec!["local-tool".to_string()],
-                    native: "native-tools".to_string(),
-                },
+                tools: BodySelection::local(
+                    vec!["local-tool".to_string()],
+                    "native-tools".to_string(),
+                )
+                .unwrap(),
                 op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
@@ -2213,39 +2216,6 @@ mod tests {
     }
 
     #[test]
-    fn combine_with_invalid_local_tool_identity_is_not_admitted() {
-        let mut ir = complete_block_ir();
-        let target = ir.model.bodies[0].id.clone();
-        ir.model.features.push(body_preserving_feature(
-            "combine",
-            1,
-            target.clone(),
-            FeatureDefinition::Combine {
-                target: BodySelection::Bodies(vec![target]),
-                tools: BodySelection::Local {
-                    bodies: vec![String::new()],
-                    native: "native-tools".to_string(),
-                },
-                op: cadmpeg_ir::features::BooleanKind::Cut,
-                keep_tools: false,
-            },
-        ));
-
-        assert_eq!(
-            evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: FeatureBoundary {
-                    id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
-                    name: None,
-                    family: Some("combine".to_string()),
-                    ordinal: 1
-                },
-                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-            }
-        );
-    }
-
-    #[test]
     fn output_free_combine_with_exact_native_operands_is_local_to_history() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
@@ -2254,7 +2224,9 @@ mod tests {
             1,
             FeatureDefinition::Combine {
                 target: BodySelection::Native("native-target".to_string()),
-                tools: BodySelection::NativeSet(vec!["native-tool".to_string()]),
+                tools: BodySelection::NativeSet(
+                    vec!["native-tool".to_string()].try_into().unwrap(),
+                ),
                 op: cadmpeg_ir::features::BooleanKind::Intersect,
                 keep_tools: false,
             },
@@ -2443,10 +2415,11 @@ mod tests {
             source_content: Vec::new(),
             outputs: vec![output.clone()],
             definition: FeatureDefinition::SewBodies {
-                bodies: BodySelection::Local {
-                    bodies: vec!["historical-sheet".to_string()],
-                    native: "native-selection".to_string(),
-                },
+                bodies: BodySelection::local(
+                    vec!["historical-sheet".to_string()],
+                    "native-selection".to_string(),
+                )
+                .unwrap(),
                 gap_tolerance: None,
             },
             native_ref: None,

@@ -115,7 +115,10 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         regions: &regions,
         shells: &shells,
     };
-    let mut selection = BodySelection::NativeSet(vec![native.clone()]);
+    let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(&mut selection, &scope, &inputs);
-    assert_eq!(selection, BodySelection::NativeSet(vec![native]));
+    assert_eq!(
+        selection,
+        BodySelection::NativeSet(vec![native].try_into().unwrap())
+    );
 }

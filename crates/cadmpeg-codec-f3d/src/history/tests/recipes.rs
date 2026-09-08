@@ -984,7 +984,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         "{}:design-record#21",
         crate::ids::native_stream(&scope.id).expect("test scope stream")
     );
-    let mut selection = BodySelection::NativeSet(vec![native.clone()]);
+    let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     super::super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &direct_inputs);
     assert_eq!(
         selection,

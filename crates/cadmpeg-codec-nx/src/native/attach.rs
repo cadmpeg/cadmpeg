@@ -7910,11 +7910,15 @@ enum FeatureBodySelection {
     },
 }
 
+fn local_body_selection(bodies: Vec<String>, native: String) -> BodySelection {
+    BodySelection::local(bodies, native.clone()).unwrap_or(BodySelection::Native(native))
+}
+
 impl FeatureBodySelection {
     fn into_selection(self) -> BodySelection {
         match self {
             Self::Native(native) => BodySelection::Native(native),
-            Self::Local { bodies, native, .. } => BodySelection::Local { bodies, native },
+            Self::Local { bodies, native, .. } => local_body_selection(bodies, native),
             Self::Resolved { bodies, native, .. } => BodySelection::Resolved { bodies, native },
         }
     }
@@ -8070,13 +8074,13 @@ fn feature_body_set_selection(
     {
         return BodySelection::Resolved { bodies, native };
     }
-    BodySelection::Local {
-        bodies: roots
+    local_body_selection(
+        roots
             .iter()
             .map(|root| format!("nx:om-body-object#{root}"))
             .collect(),
         native,
-    }
+    )
 }
 
 fn atomic_disjoint_body_selections(
@@ -8282,19 +8286,18 @@ fn delete_body_feature_definition(
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
         ) {
-            FeatureBodySelection::Native(native) => BodySelection::Local {
-                bodies: vec![format!("nx:om-body-object#{body}")],
-                native,
-            },
+            FeatureBodySelection::Native(native) => {
+                local_body_selection(vec![format!("nx:om-body-object#{body}")], native)
+            }
             selection => selection.into_selection(),
         },
         DeleteBodyField::OffsetStore {
             object_index,
             data_block,
-        } => BodySelection::Local {
-            bodies: vec![data_block.to_string()],
-            native: format!("nx:om-object-index#{object_index}"),
-        },
+        } => local_body_selection(
+            vec![data_block.to_string()],
+            format!("nx:om-object-index#{object_index}"),
+        ),
     };
     FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
@@ -8313,10 +8316,10 @@ fn extract_body_feature_definition(
 ) -> FeatureDefinition {
     let source = body_object_index.map_or_else(
         || match offset_store_bodies {
-            [(object_index, data_block)] => BodySelection::Local {
-                bodies: vec![data_block.clone()],
-                native: format!("nx:om-object-index#{object_index}"),
-            },
+            [(object_index, data_block)] => local_body_selection(
+                vec![data_block.clone()],
+                format!("nx:om-object-index#{object_index}"),
+            ),
             _ => BodySelection::Unresolved,
         },
         |body| {
@@ -8371,9 +8374,9 @@ fn offset_store_trim_body_feature_definition(
                 && distinct_tool_blocks
                 && no_target_alias
             {
-                BodySelection::Local {
-                    bodies: tool_data_blocks,
-                    native: format!(
+                local_body_selection(
+                    tool_data_blocks,
+                    format!(
                         "nx:om-object-indices#{}",
                         operands
                             .iter()
@@ -8381,17 +8384,17 @@ fn offset_store_trim_body_feature_definition(
                             .collect::<Vec<_>>()
                             .join(",")
                     ),
-                }
+                )
             } else {
                 BodySelection::Unresolved
             }
         }
     };
     Some(FeatureDefinition::TrimBodies {
-        targets: BodySelection::Local {
-            bodies: vec![data_block.clone()],
-            native: format!("nx:om-object-index#{object_index}"),
-        },
+        targets: local_body_selection(
+            vec![data_block.clone()],
+            format!("nx:om-object-index#{object_index}"),
+        ),
         tools,
         keep: BodyTrimSide::Unresolved,
     })
@@ -8459,12 +8462,12 @@ fn sew_body_feature_definition(
                 && !blocks.contains(&primary_data_block)
         });
         if let Some(blocks) = offset_store_participants {
-            BodySelection::Local {
-                bodies: std::iter::once(primary_data_block.to_string())
+            local_body_selection(
+                std::iter::once(primary_data_block.to_string())
                     .chain(blocks.iter().map(|block| (*block).to_string()))
                     .collect(),
-                native: native.clone(),
-            }
+                native,
+            )
         } else {
             BodySelection::Native(native.clone())
         }

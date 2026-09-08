@@ -1053,11 +1053,12 @@ pub(crate) fn bind_feature_body_selections(
                 &feature_id,
                 previous_state_id,
             );
-            *target = BodySelection::Historical {
-                state: input_state.clone(),
-                bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
-                native: native.clone(),
-            };
+            *target = BodySelection::historical(
+                input_state.clone(),
+                vec![crate::ids::history_input_body_id(&prefix, body)],
+                native.clone(),
+            )
+            .unwrap_or_else(|_| BodySelection::Native(native.clone()));
             let Some(stream) = crate::ids::native_stream(&scope.id) else {
                 continue;
             };
@@ -1324,14 +1325,12 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         };
         let prefix = feature_input_prefix(&feature.id, previous_state_id);
-        *bodies = BodySelection::Historical {
-            state: crate::design::edge_resolve::feature_input_topology_id(
-                &feature.id,
-                previous_state_id,
-            ),
-            bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
-            native: group_id.clone(),
-        };
+        *bodies = BodySelection::historical(
+            crate::design::edge_resolve::feature_input_topology_id(&feature.id, previous_state_id),
+            vec![crate::ids::history_input_body_id(&prefix, body)],
+            group_id.clone(),
+        )
+        .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
     }
 }
 
@@ -1477,10 +1476,7 @@ fn combine_external_local_tools(
     if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
         return None;
     }
-    Some(cadmpeg_ir::features::BodySelection::Local {
-        bodies,
-        native: scope.id.clone(),
-    })
+    Some(cadmpeg_ir::features::BodySelection::local(bodies, scope.id.clone()).ok()?)
 }
 
 fn historical_body_slot(id: &str) -> Option<i64> {
@@ -1672,17 +1668,15 @@ fn bind_body_recipe_body_selection(
         }
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *selection = BodySelection::Historical {
-        state: crate::design::edge_resolve::feature_input_topology_id(
-            feature_id,
-            previous_state_id,
-        ),
-        bodies: body_slots
+    *selection = BodySelection::historical(
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        body_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
             .collect(),
-        native: group_id.clone(),
-    };
+        group_id.clone(),
+    )
+    .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
 }
 
 fn bind_direct_body_recipe_body_selection(
@@ -1759,7 +1753,7 @@ fn bind_direct_body_recipe_body_selection(
             };
             return;
         }
-        BodySelection::NativeSet(native) => native.clone(),
+        BodySelection::NativeSet(native) => native.to_vec(),
         _ => return,
     };
     if native_members.is_empty()

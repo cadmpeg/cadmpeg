@@ -640,7 +640,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     assert_eq!(bodies.len(), 2);
     assert_ne!(bodies[0], bodies[1]);
-    assert_eq!(native, scope.id);
+    assert_eq!(native.as_str(), scope.id);
 
     scope
         .combine_operation_mut()

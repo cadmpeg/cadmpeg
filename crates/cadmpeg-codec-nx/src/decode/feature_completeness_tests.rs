@@ -640,14 +640,18 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     assert!(body_selection_is_incomplete(&BodySelection::Bodies(
         Vec::new()
     )));
-    assert!(!body_selection_is_incomplete(&BodySelection::Local {
-        bodies: vec!["nx:om-body-object#12".into()],
-        native: "nx:om-object-index#12".into(),
-    }));
-    assert!(body_selection_is_incomplete(&BodySelection::Local {
-        bodies: vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
-        native: "nx:om-object-indices#12,13".into(),
-    }));
+    assert!(!body_selection_is_incomplete(
+        &BodySelection::local(
+            vec!["nx:om-body-object#12".into()],
+            "nx:om-object-index#12".into()
+        )
+        .unwrap()
+    ));
+    assert!(BodySelection::local(
+        vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
+        "nx:om-object-indices#12,13".into()
+    )
+    .is_err());
     assert!(face_selection_is_incomplete(&FaceSelection::Resolved {
         faces: Vec::new(),
         native: "nx:faces".into(),
@@ -1309,14 +1313,16 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
         &BodySelection::Unresolved,
     ));
     assert!(body_selections_overlap(
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#10".into()],
-            native: "nx:om-object-index#10".into(),
-        },
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#10".into()],
-            native: "nx:om-object-index#20".into(),
-        },
+        &BodySelection::local(
+            vec!["nx:om-body-object#10".into()],
+            "nx:om-object-index#10".into()
+        )
+        .unwrap(),
+        &BodySelection::local(
+            vec!["nx:om-body-object#10".into()],
+            "nx:om-object-index#20".into()
+        )
+        .unwrap(),
     ));
 }
 
@@ -1671,10 +1677,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert!(losses[0].message.contains("sew bodies (1)"));
 
     ir.model.features[0].definition = FeatureDefinition::SewBodies {
-        bodies: cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec![output.as_str().to_owned()],
-            native: "nx:body-selection#sew".into(),
-        },
+        bodies: cadmpeg_ir::features::BodySelection::local(
+            vec![output.as_str().to_owned()],
+            "nx:body-selection#sew".into(),
+        )
+        .unwrap(),
         gap_tolerance: Some(Length(0.01)),
     };
     losses.clear();
@@ -1683,14 +1690,16 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert!(losses[0].message.contains("sew bodies (1)"));
 
     ir.model.features[0].definition = FeatureDefinition::Combine {
-        target: cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec!["target-a".into(), "target-b".into()],
-            native: "nx:body-selection#targets".into(),
-        },
-        tools: cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec!["tool".into()],
-            native: "nx:body-selection#tools".into(),
-        },
+        target: cadmpeg_ir::features::BodySelection::local(
+            vec!["target-a".into(), "target-b".into()],
+            "nx:body-selection#targets".into(),
+        )
+        .unwrap(),
+        tools: cadmpeg_ir::features::BodySelection::local(
+            vec!["tool".into()],
+            "nx:body-selection#tools".into(),
+        )
+        .unwrap(),
         op: cadmpeg_ir::features::BooleanKind::Join,
         keep_tools: false,
     };
