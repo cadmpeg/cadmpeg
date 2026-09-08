@@ -800,13 +800,13 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     assert_eq!(annotation.native_ref, "nx:test:text#1");
     assert_eq!(annotation.order, 7);
 
-    let empty = super::text_semantic_annotation("nx:text#empty", 8, &["", ""])
+    let empty = super::text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
         .expect("empty text fields remain a valid annotation");
     assert_eq!(empty.text, [""]);
     assert_eq!(empty.parameters["font_family"], "");
 
     assert!(
-        super::text_semantic_annotation("nx:text#2", 0, &["ambiguous", "Arial", "extra"],)
+        super::text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],)
             .is_none()
     );
 }

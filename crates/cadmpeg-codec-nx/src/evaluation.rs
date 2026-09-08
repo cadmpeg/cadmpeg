@@ -1602,7 +1602,7 @@ mod tests {
         let profile =
             FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
-            profile.as_str(),
+            "profile",
             1,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -1640,7 +1640,7 @@ mod tests {
         let profile =
             FeatureId::mint("synthetic:test:id#profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
-            profile.as_str(),
+            "profile",
             1,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -1756,7 +1756,8 @@ mod tests {
                 evaluate_saved_body_census(&ir),
                 BodyCensusEvaluation::Unsupported {
                     feature: FeatureBoundary {
-                        id: FeatureId::mint(id).expect("identity grammar"),
+                        id: FeatureId::mint(format!("synthetic:test:id#{id}"))
+                            .expect("identity grammar"),
                         name: None,
                         family: Some(
                             ["loft", "extrude", "revolve", "rib", "sweep"][index].to_string()
