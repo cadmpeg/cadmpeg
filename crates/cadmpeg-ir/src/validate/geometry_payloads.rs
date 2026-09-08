@@ -1391,26 +1391,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
-    for c in &ir.model.curves {
-        match c.geometry.wire_geometry() {
-            CurveGeometry::Line(_) => {}
-            CurveGeometry::Circle(_) => {}
-            CurveGeometry::Ellipse(_) => {}
-            CurveGeometry::Parabola(_) => {}
-            CurveGeometry::Hyperbola(_) => {}
-            CurveGeometry::Degenerate(_) => {}
-            CurveGeometry::Composite { segments, .. } => {
-                if segments.is_empty() {
-                    bounds_err(findings, c.id.as_str(), "composite curve has no segments");
-                }
-            }
-            CurveGeometry::Nurbs(_) => {}
-            CurveGeometry::Procedural { .. } => {}
-            CurveGeometry::Polyline(_) => {}
-            CurveGeometry::Transformed { .. } => {}
-            CurveGeometry::Unknown { .. } => {}
-        }
-    }
     for pcurve in &ir.model.pcurves {
         if pcurve
             .parameter_range()

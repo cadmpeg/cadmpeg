@@ -5083,20 +5083,14 @@ impl CurveEntityEmitter<'_> {
         }
         let result = match geometry {
             CurveGeometry::Composite { segments, .. } => {
-                if segments.is_empty() {
-                    Err(CodecError::malformed(format_args!(
-                        "IGES composite curve {curve_id} has no segments"
-                    )))
-                } else {
-                    let children = self.append_composite_constituents(segments, sense)?;
-                    push_composite_entity_with_reference_offset(
-                        self.entities,
-                        &children,
-                        "COMPOSIT",
-                        status,
-                        self.reference_offset,
-                    )
-                }
+                let children = self.append_composite_constituents(segments, sense)?;
+                push_composite_entity_with_reference_offset(
+                    self.entities,
+                    &children,
+                    "COMPOSIT",
+                    status,
+                    self.reference_offset,
+                )
             }
             _ => {
                 let mut entity = match sense {
@@ -5208,108 +5202,102 @@ fn curve_reference_span_inner(
     }
     let result = match geometry {
         CurveGeometry::Composite { segments, .. } => {
-            if segments.is_empty() {
-                Err(CodecError::malformed(format_args!(
-                    "IGES composite curve {curve_id} has no segments"
-                )))
-            } else {
-                let mut child_spans = Vec::with_capacity(segments.len());
-                let mut total = 0.0;
-                for segment in segments {
-                    let child = ir
-                        .model
-                        .curves
-                        .iter()
-                        .find(|curve| curve.id == segment.curve)
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "IGES composite curve {curve_id} references missing child {}",
-                                segment.curve
-                            ))
-                        })?;
-                    let child_geometry = flatten_curve(&child.geometry)?;
-                    let child_span =
-                        curve_reference_span_inner(ir, &segment.curve, &child_geometry, active)?;
-                    let width = child_span.range[1] - child_span.range[0];
-                    if !width.is_finite() || width <= 0.0 {
-                        return Err(CodecError::malformed(format_args!(
+            let mut child_spans = Vec::with_capacity(segments.len());
+            let mut total = 0.0;
+            for segment in segments {
+                let child = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == segment.curve)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "IGES composite curve {curve_id} references missing child {}",
+                            segment.curve
+                        ))
+                    })?;
+                let child_geometry = flatten_curve(&child.geometry)?;
+                let child_span =
+                    curve_reference_span_inner(ir, &segment.curve, &child_geometry, active)?;
+                let width = child_span.range[1] - child_span.range[0];
+                if !width.is_finite() || width <= 0.0 {
+                    return Err(CodecError::malformed(format_args!(
                             "IGES composite curve {curve_id} has a child with an invalid parameter span"
                         )));
-                    }
-                    total += width;
-                    if !total.is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "IGES composite curve {curve_id} parameter span overflows"
-                        )));
-                    }
-                    child_spans.push(child_span);
                 }
-                let first = &child_spans[0];
-                let last = &child_spans[child_spans.len() - 1];
-                let derived_start = if segments[0].same_sense {
-                    first.start
-                } else {
-                    first.end
-                };
-                let derived_end = if segments[segments.len() - 1].same_sense {
-                    last.end
-                } else {
-                    last.start
-                };
-                let derived_range = [0.0, total];
-                let matching_edges = ir
-                    .model
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.curve.as_ref() == Some(curve_id))
-                    .collect::<Vec<_>>();
-                if matching_edges.is_empty() {
-                    Ok(CurveSpan {
-                        range: derived_range,
-                        start: derived_start,
-                        end: derived_end,
-                    })
-                } else {
-                    let mut selected = None;
-                    let mut tolerance: f64 = 0.0;
-                    for edge in matching_edges {
-                        if let Some(range) = edge.param_range {
-                            if !same_range(range, derived_range) {
-                                return Err(CodecError::NotImplemented(format!(
+                total += width;
+                if !total.is_finite() {
+                    return Err(CodecError::malformed(format_args!(
+                        "IGES composite curve {curve_id} parameter span overflows"
+                    )));
+                }
+                child_spans.push(child_span);
+            }
+            let first = &child_spans[0];
+            let last = &child_spans[child_spans.len() - 1];
+            let derived_start = if segments[0].same_sense {
+                first.start
+            } else {
+                first.end
+            };
+            let derived_end = if segments[segments.len() - 1].same_sense {
+                last.end
+            } else {
+                last.start
+            };
+            let derived_range = [0.0, total];
+            let matching_edges = ir
+                .model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                .collect::<Vec<_>>();
+            if matching_edges.is_empty() {
+                Ok(CurveSpan {
+                    range: derived_range,
+                    start: derived_start,
+                    end: derived_end,
+                })
+            } else {
+                let mut selected = None;
+                let mut tolerance: f64 = 0.0;
+                for edge in matching_edges {
+                    if let Some(range) = edge.param_range {
+                        if !same_range(range, derived_range) {
+                            return Err(CodecError::NotImplemented(format!(
                                     "IGES composite curve {curve_id} has an edge parameter range that cannot be represented by Type 102"
                                 )));
-                            }
-                        }
-                        let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?;
-                        let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?;
-                        let edge_tolerance = edge_topology_tolerance(ir, edge)?;
-                        tolerance = tolerance.max(edge_tolerance);
-                        if !close_point_with_tolerance(start, derived_start, edge_tolerance)
-                            || !close_point_with_tolerance(end, derived_end, edge_tolerance)
-                        {
-                            return Err(CodecError::malformed(format_args!(
-                                "IGES composite curve {curve_id} endpoints disagree with its child sequence"
-                            )));
-                        }
-                        if let Some((selected_start, selected_end)) = selected {
-                            if !close_point_with_tolerance(start, selected_start, tolerance)
-                                || !close_point_with_tolerance(end, selected_end, tolerance)
-                            {
-                                return Err(CodecError::NotImplemented(format!(
-                                    "IGES composite curve {curve_id} has ambiguous edge endpoints"
-                                )));
-                            }
-                        } else {
-                            selected = Some((start, end));
                         }
                     }
-                    let (start, end) = selected.expect("matching composite edge is nonempty");
-                    Ok(CurveSpan {
-                        range: derived_range,
-                        start,
-                        end,
-                    })
+                    let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?;
+                    let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?;
+                    let edge_tolerance = edge_topology_tolerance(ir, edge)?;
+                    tolerance = tolerance.max(edge_tolerance);
+                    if !close_point_with_tolerance(start, derived_start, edge_tolerance)
+                        || !close_point_with_tolerance(end, derived_end, edge_tolerance)
+                    {
+                        return Err(CodecError::malformed(format_args!(
+                                "IGES composite curve {curve_id} endpoints disagree with its child sequence"
+                            )));
+                    }
+                    if let Some((selected_start, selected_end)) = selected {
+                        if !close_point_with_tolerance(start, selected_start, tolerance)
+                            || !close_point_with_tolerance(end, selected_end, tolerance)
+                        {
+                            return Err(CodecError::NotImplemented(format!(
+                                "IGES composite curve {curve_id} has ambiguous edge endpoints"
+                            )));
+                        }
+                    } else {
+                        selected = Some((start, end));
+                    }
                 }
+                let (start, end) = selected.expect("matching composite edge is nonempty");
+                Ok(CurveSpan {
+                    range: derived_range,
+                    start,
+                    end,
+                })
             }
         }
         _ => {

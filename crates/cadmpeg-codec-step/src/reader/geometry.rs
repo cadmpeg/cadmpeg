@@ -1052,7 +1052,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Composite {
-                    segments: segments.into_iter().map(|(_, segment)| segment).collect(),
+                    segments: match cadmpeg_ir::geometry::CompositeCurveSegments::try_from(
+                        segments
+                            .into_iter()
+                            .map(|(_, segment)| segment)
+                            .collect::<Vec<_>>(),
+                    ) {
+                        Ok(segments) => segments,
+                        Err(_) => continue,
+                    },
                     self_intersect,
                 },
                 source_object: None,
@@ -3866,7 +3874,7 @@ fn composite_curve(
             ))
         })
         .collect::<Option<Vec<_>>>()?;
-    (!segments.is_empty()).then_some((
+    Some((
         segments,
         parameters
             .get(offset + 1)
