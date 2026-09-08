@@ -488,7 +488,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     CurveId::mint(format!(
                         "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
                     )).expect("identity grammar"),
-                    CurveGeometry::from(geometry),
+                    geometry,
                     transform.offset,
                     format!(
                         "FeatDefs:extrusion#{feature_id}:profile{profile_index}:vertex{vertex_index}"

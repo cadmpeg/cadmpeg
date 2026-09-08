@@ -15,6 +15,20 @@ pub fn stored_unit_vector(vector: [f64; 3]) -> Option<[f64; 3]> {
     (length.is_finite() && (length - 1.0).abs() <= EPS_ORTHO).then_some(vector)
 }
 
+enum RevolutionRadii {
+    Cylinder(f64),
+    Cone {
+        radius: f64,
+        ratio: f64,
+        half_angle: f64,
+    },
+    Sphere(f64),
+    Torus {
+        major_radius: f64,
+        minor_radius: f64,
+    },
+}
+
 pub fn surface_of_revolution_parallel_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
@@ -48,19 +62,6 @@ pub fn surface_of_revolution_parallel_pcurve(
         }
         _ => return None,
     };
-    enum RevolutionRadii {
-        Cylinder(f64),
-        Cone {
-            radius: f64,
-            ratio: f64,
-            half_angle: f64,
-        },
-        Sphere(f64),
-        Torus {
-            major_radius: f64,
-            minor_radius: f64,
-        },
-    }
     let (origin, axis, ref_direction, radial) = match surface {
         SurfaceGeometry::Cylinder {
             origin,
