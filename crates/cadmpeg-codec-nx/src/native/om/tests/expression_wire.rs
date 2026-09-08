@@ -71,3 +71,22 @@ fn expression_requires_nonempty_source_table() {
         .to_string()
         .contains("source_table"));
 }
+
+#[test]
+fn expression_wire_rejects_nonfinite_rust_values() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut wire: super::super::ExpressionWire = serde_json::from_str(EXPRESSION).unwrap();
+        wire.value = Some(value);
+        assert!(Expression::try_from(wire).unwrap_err().contains("value"));
+    }
+    let mut wire: super::super::ExpressionWire = serde_json::from_str(EXPRESSION).unwrap();
+    wire.value = Some(-0.0);
+    let mut expression = Expression::try_from(wire).unwrap();
+    assert_eq!(
+        expression.value.unwrap().get().to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    expression.value = Some(super::super::finite_value::FiniteValue::try_from(-1.0).unwrap());
+    let wire = serde_json::to_value(expression).unwrap();
+    assert_eq!(wire["value"], serde_json::json!(-1.0));
+}

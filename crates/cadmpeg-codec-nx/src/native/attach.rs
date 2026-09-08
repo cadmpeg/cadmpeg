@@ -8838,11 +8838,11 @@ pub(crate) fn attach_expression_parameters(
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter
                 | crate::native::om::ExpressionUnit::Inch => {
-                    crate::native::expression_length_in_millimeters(&expression.unit, value)
+                    crate::native::expression_length_in_millimeters(&expression.unit, value.get())
                         .map(|value| ParameterValue::Length(Length(value)))
                 }
                 crate::native::om::ExpressionUnit::Degree => {
-                    Some(ParameterValue::Angle(Angle(value.to_radians())))
+                    Some(ParameterValue::Angle(Angle(value.get().to_radians())))
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });

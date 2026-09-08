@@ -1212,7 +1212,9 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{key}")),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: key.to_string(),
-        value: Some(f64::from(key)),
+        value: Some(
+            crate::native::om::finite_value::FiniteValue::try_from(f64::from(key)).unwrap(),
+        ),
         source_entry: "part".into(),
         source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
         source_offset: u64::from(key),
@@ -1273,18 +1275,21 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 
 #[test]
 fn nx_inch_expression_values_are_attached_in_millimeters() {
-    let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
-        id: format!("nx:test:expression#{key}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Inch,
-        expression: formula.into(),
-        value,
-        source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
-        source_offset: u64::from(key),
-    };
+    let expression =
+        |key: u32, name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{key}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Inch,
+            expression: formula.into(),
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_offset: u64::from(key),
+        };
     let expressions = [
         expression(1, "p1", "2", Some(2.0)),
         expression(2, "p2", "p1 * 3", Some(6.0)),
@@ -1325,7 +1330,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         name: crate::om::parameter_name::ParameterName::new("p1".to_string()),
         unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
         expression: "4".into(),
-        value: Some(4.0),
+        value: Some(crate::native::om::finite_value::FiniteValue::try_from(4.0).unwrap()),
         source_entry: "part".into(),
         source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
         source_offset: 1,
