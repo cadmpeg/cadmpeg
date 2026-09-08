@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: blind circular.
 
-use crate::container::SectionRole;
 use crate::feature::schema::SchemaClass;
 
 use super::parameter_slot;
@@ -644,12 +643,10 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(crate::container::Section {
-        name: "VisibGeom".to_string(),
         raw_name: "VisibGeom".to_string(),
         offset: 0,
         length: 1_000,
         expanded_length: None,
-        role: SectionRole::PsbGeometry,
     });
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {

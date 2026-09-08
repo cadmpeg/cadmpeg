@@ -76,7 +76,7 @@ pub(in super::super) fn build_report(
         .framing
         .sections
         .iter()
-        .filter(|s| s.role == SectionRole::PsbGeometry)
+        .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
     let mut placed_plane_ids = scan
         .planes

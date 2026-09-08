@@ -105,7 +105,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             annotate(
                 annotations,
                 &id,
-                &section.name,
+                &section.name(),
                 row.offset as u64,
                 "paired_type26_sphere_envelope",
                 Exactness::Derived,
@@ -120,7 +120,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("{}:{}", section.name, row.id),
+                    object_id: format!("{}:{}", section.name(), row.id),
                     name: None,
                     color: None,
                     visible: None,
@@ -197,7 +197,7 @@ pub(in super::super) fn transfer_positional_tori(
         annotate(
             annotations,
             &id,
-            &section.name,
+            &section.name(),
             row.offset as u64,
             "positional_torus_frame",
             Exactness::Derived,
@@ -231,7 +231,7 @@ pub(in super::super) fn transfer_positional_tori(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name, row.id),
+                object_id: format!("{}:{}", section.name(), row.id),
                 name: None,
                 color: None,
                 visible: None,
