@@ -618,21 +618,46 @@ fn native_vertex_sha1(vertices: &[[f32; 3]]) -> [u8; 20] {
     digest.finalize().into()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaceIndexWidth {
+    One,
+    Two,
+    Four,
+}
+
+impl FaceIndexWidth {
+    pub(crate) fn bytes(self) -> usize {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Four => 4,
+        }
+    }
+}
+
+impl TryFrom<i32> for FaceIndexWidth {
+    type Error = GeometryError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            4 => Ok(Self::Four),
+            _ => Err(error(0, "invalid mesh face index width")),
+        }
+    }
+}
+
 fn read_faces(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     faces: usize,
 ) -> Result<Vec<[u32; 4]>, GeometryError> {
-    let width = reader.i32()?;
-    if !matches!(width, 1 | 2 | 4) {
-        return Err(error(
-            reader.position() - 4,
-            "invalid mesh face index width",
-        ));
-    }
+    let width = FaceIndexWidth::try_from(reader.i32()?)
+        .map_err(|_| error(reader.position() - 4, "invalid mesh face index width"))?;
     let bytes = faces
         .checked_mul(4)
-        .and_then(|value| value.checked_mul(width as usize))
+        .and_then(|value| value.checked_mul(width.bytes()))
         .ok_or_else(|| error(reader.position(), "mesh face byte count overflow"))?;
     let raw = reader.take(bytes)?;
     let mut result = Vec::new();
@@ -642,7 +667,7 @@ fn read_faces(
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
-            let offset = (face * 4 + slot) * width as usize;
+            let offset = (face * 4 + slot) * width.bytes();
             *index = face_index(raw, offset, width);
             if (*index as usize) >= vertices {
                 return Err(error(reader.position(), "mesh face index out of range"));
@@ -700,12 +725,11 @@ fn distance_squared(a: Point3, b: Point3) -> f64 {
     (a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)
 }
 
-fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
+fn face_index(raw: &[u8], offset: usize, width: FaceIndexWidth) -> u32 {
     match width {
-        1 => u32::from(raw[offset]),
-        2 => u32::from(View::u16_le_at(raw, offset).expect("face width")),
-        4 => View::u32_le_at(raw, offset).expect("face width"),
-        _ => unreachable!(),
+        FaceIndexWidth::One => u32::from(raw[offset]),
+        FaceIndexWidth::Two => u32::from(View::u16_le_at(raw, offset).expect("face width")),
+        FaceIndexWidth::Four => View::u32_le_at(raw, offset).expect("face width"),
     }
 }
 
