@@ -137,12 +137,13 @@ mod tests {
             indices.push(index);
             Ok(2.5)
         })
-        .unwrap();
+        .expect("matrix fixture agrees with its masks");
         assert_eq!(indices, [0]);
         assert_eq!(matrix.rows()[0], [2.5, 1.0, 0.0, -1.0]);
-        let wire = serde_json::to_value(matrix).unwrap();
+        let wire = serde_json::to_value(matrix).expect("matrix fixture agrees with its masks");
         assert_eq!(
-            serde_json::from_value::<CompactMatrix>(wire.clone()).unwrap(),
+            serde_json::from_value::<CompactMatrix>(wire.clone())
+                .expect("matrix fixture agrees with its masks"),
             matrix
         );
         for column in 1..4 {
