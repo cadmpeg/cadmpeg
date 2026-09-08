@@ -42,8 +42,7 @@ pub use catalog::{
 };
 pub use descriptors::{forced_input, input_names, FormatDescriptor, NativeDescriptor};
 pub use disposition::{
-    Disposition, InvalidLadderLevel, LadderLevel, ReadDisposition, UnknownDisposition,
-    WriteDisposition,
+    Disposition, LadderLevel, ReadDisposition, UnknownDisposition, WriteDisposition,
 };
 pub use encoders::build_encoder;
 pub use format::Format;
