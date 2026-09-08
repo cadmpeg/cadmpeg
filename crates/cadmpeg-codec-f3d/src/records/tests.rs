@@ -1293,6 +1293,8 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
             "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0
         });
+        base["companion"] = json!({"prefix_present_zero": false, "incident_curves": [],
+            "reference_encoding": if base["record_form"]["kind"].as_str().unwrap().ends_with("inline_typed") { "inline_typed" } else { "same_segment" }});
         if count > 1 {
             base["persistent_id"] = json!(4);
             base["closure"] = json!({"selector": 0, "state": 0});
@@ -1320,7 +1322,7 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
                     assert!(error.to_string().contains("prefix_present_zero"), "{error}");
                 } else {
                     let point = decoded.expect("companion matches point form");
-                    let companion = point.companion().expect("present companion");
+                    let companion = point.companion();
                     assert_eq!(companion.prefix_present_zero, prefix_present_zero);
                     assert_eq!(companion.incident_curves, [7, 2]);
                     assert_eq!(serde_json::to_value(point).unwrap(), wire);
@@ -1811,12 +1813,15 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
         class_tag: "000".to_owned().try_into().unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: super::SketchPointRecordForm::version11(
             1,
             super::SketchPointClosure::Selector0State0,
             None,
             -2.0,
-            None,
         ),
         paired_reference: 2,
         coordinates: cadmpeg_ir::math::Point2::new(1.0, -1.0),
@@ -1849,4 +1854,46 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
         wire.depth = value;
         assert!(super::SketchPoint::try_from(wire).is_err());
     }
+}
+
+#[test]
+fn sketch_point_requires_a_distinct_companion_on_every_route() {
+    let mut wire = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
+        "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
+        "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
+        "persistent_id": 1, "closure": {"selector": 0, "state": 0},
+        "companion": {"prefix_present_zero": false, "reference_encoding": "same_segment", "incident_curves": []}});
+    let original: super::SketchPoint = serde_json::from_value(wire.clone()).unwrap();
+    assert!(original.companion().incident_curves.is_empty());
+    assert_eq!(serde_json::to_value(&original).unwrap(), wire);
+    wire["companion"]["incident_curves"] = serde_json::json!([7, 7]);
+    assert!(serde_json::from_value::<super::SketchPoint>(wire.clone())
+        .unwrap_err()
+        .to_string()
+        .contains("incident_curves"));
+    wire.as_object_mut().unwrap().remove("companion");
+    assert!(serde_json::from_value::<super::SketchPoint>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("companion"));
+    let duplicate = super::SketchPointCompanion {
+        prefix_present_zero: false,
+        incident_curves: vec![7, 7],
+    };
+    let draft = super::SketchPointDraft {
+        id: "point".into(),
+        record_index: 1,
+        owner_reference: None,
+        class_tag: "000".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+        coordinate_offset: 0,
+        record_form: original.record_form().clone(),
+        paired_reference: 2,
+        coordinates: original.coordinates(),
+        companion: duplicate.clone(),
+    };
+    assert!(super::SketchPoint::try_from(draft).is_err());
+    let mut point = original.clone();
+    assert!(point.try_set_companion(duplicate).is_err());
+    assert_eq!(point, original);
 }

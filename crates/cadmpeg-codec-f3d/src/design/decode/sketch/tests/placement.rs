@@ -208,12 +208,15 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             20,
             crate::records::SketchPointClosure::Selector0State0,
             Some(2),
             0.0,
-            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(120.0, 30.0),
@@ -224,10 +227,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
     identityless_point
-        .try_set_record_form(crate::records::SketchPointRecordForm::Version0 {
-            flag: false,
-            companion: None,
-        })
+        .try_set_record_form(crate::records::SketchPointRecordForm::Version0 { flag: false })
         .unwrap();
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
@@ -823,12 +823,15 @@ fn sketch_member_run_backfills_relation_free_owners() {
             class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
             byte_offset: u64::from(record_index),
             coordinate_offset: 141,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
             record_form: crate::records::SketchPointRecordForm::version11(
                 u64::from(record_index),
                 crate::records::SketchPointClosure::Selector0State0,
                 Some(2),
                 0.0,
-                None,
             ),
             paired_reference: 0,
             coordinates: Point2::new(0.0, 0.0),

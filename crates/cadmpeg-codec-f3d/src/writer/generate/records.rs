@@ -494,7 +494,6 @@ fn encode_sketch_point(
     })?;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
-        companion: _,
         entity_genesis,
         depth,
         persistent_id,
@@ -548,13 +547,8 @@ fn encode_sketch_point_companion(
     class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
-    companion: Option<crate::records::SketchPointCompanionRef<'_>>,
+    companion: crate::records::SketchPointCompanionRef<'_>,
 ) -> Result<(), CodecError> {
-    let companion = companion.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {point_record_index} has no inverse companion"
-        ))
-    })?;
     let prefix_present_zero = companion.prefix_present_zero;
     let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {

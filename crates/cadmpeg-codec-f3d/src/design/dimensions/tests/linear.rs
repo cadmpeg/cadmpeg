@@ -841,12 +841,15 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset: 0,
             coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
             record_form: crate::records::SketchPointRecordForm::version11(
                 u64::from(record_index),
                 crate::records::SketchPointClosure::Selector0State0,
                 None,
                 0.0,
-                None,
             ),
             paired_reference: 0,
             coordinates: Point2::new(0.0, y),

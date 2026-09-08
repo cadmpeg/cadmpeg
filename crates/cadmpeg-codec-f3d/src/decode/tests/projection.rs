@@ -1283,12 +1283,15 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
             byte_offset: 0,
             coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
             record_form: crate::records::SketchPointRecordForm::version11(
                 1,
                 crate::records::SketchPointClosure::Selector0State0,
                 None,
                 0.0,
-                None,
             ),
             paired_reference: 0,
             coordinates: Point2::new(0.0, 0.0),

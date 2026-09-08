@@ -409,20 +409,8 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 point.id, point.paired_reference
             )));
         }
-        let companion = point.companion().ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "source-less F3D sketch point {} has no inverse companion",
-                point.id
-            ))
-        })?;
-        let mut incident_curves = BTreeSet::new();
+        let companion = point.companion();
         for curve in companion.incident_curves {
-            if !incident_curves.insert(*curve) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D sketch point {} companion repeats curve {curve}",
-                    point.id
-                )));
-            }
             if !curve_indices.contains(curve) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D sketch point {} companion references missing curve {curve}",
