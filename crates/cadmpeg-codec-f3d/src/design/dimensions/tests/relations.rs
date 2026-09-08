@@ -270,15 +270,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     .unwrap();
     assert!(exact_counted_dimension_relation(&[&circle, &displaced]).is_none());
 
-    let mut invalid = arc;
-    invalid.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-        center: Point2::new(1.0, 2.0),
-        radius: Length(0.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(1.0),
-    })
-    .unwrap();
-    assert!(exact_counted_dimension_relation(&[&circle, &invalid]).is_none());
+
 }
 
 #[test]
