@@ -1064,7 +1064,7 @@ fn annotate(
 ) {
     let id = id.to_string();
     let stream = annotations.stream(format!("catia:{stream}"));
-    annotations.note(&id, stream, 0).tag(tag);
+    annotations.note(&id, &stream, 0).tag(tag);
     annotations.exactness(id, exactness);
 }
 

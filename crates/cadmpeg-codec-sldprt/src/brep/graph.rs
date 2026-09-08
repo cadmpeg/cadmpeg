@@ -603,7 +603,7 @@ fn emit_offset_surface(
     offset: &OffsetCarrier,
 ) {
     annotations
-        .note(&surface, source_stream, offset.offset as u64)
+        .note(&surface, &source_stream, offset.offset as u64)
         .tag("00_3c");
     out.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
@@ -676,7 +676,7 @@ fn ensure_surface_support(
                     annotate_surface_frame(annotations, id.as_str(), &geometry);
                 }
                 annotations
-                    .note(&id, source_stream, carrier.offset as u64)
+                    .note(&id, &source_stream, carrier.offset as u64)
                     .tag("procedural_support");
                 out.surfaces.push(Surface {
                     id: id.clone(),
@@ -692,7 +692,7 @@ fn ensure_surface_support(
                 emitted_face_surface_by_carrier,
                 out,
                 annotations,
-                source_stream,
+                source_stream.clone(),
                 resolving,
             )?;
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
@@ -706,7 +706,7 @@ fn ensure_surface_support(
                 emit_offset_surface(
                     out,
                     annotations,
-                    source_stream,
+                    source_stream.clone(),
                     surface.clone(),
                     construction,
                     support,
@@ -1303,7 +1303,7 @@ fn decode_graph(
     for a in point_attrs {
         let rec = &t.points[&a];
         annotations
-            .note(id_point(a), source_stream, rec.offset as u64)
+            .note(id_point(a), &source_stream, rec.offset as u64)
             .tag("00_1d");
         let [x, y, z] = rec.xyz_m;
         out.points.push(Point {
@@ -1320,7 +1320,7 @@ fn decode_graph(
         let rec = &t.vertex_uses[&a];
         let point_attr = rec.refs[4];
         annotations
-            .note(id_vertex(a), source_stream, rec.offset as u64)
+            .note(id_vertex(a), &source_stream, rec.offset as u64)
             .tag("00_12");
         out.vertices.push(Vertex {
             id: VertexId::mint(id_vertex(a)).expect("identity grammar"),
@@ -1362,11 +1362,11 @@ fn decode_graph(
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
             annotations
-                .note(&point_id, source_stream, 0)
+                .note(&point_id, &source_stream, 0)
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&point_id, Exactness::Derived);
             annotations
-                .note(&vertex_id, source_stream, 0)
+                .note(&vertex_id, &source_stream, 0)
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&vertex_id, Exactness::Derived);
             out.points.push(Point {
@@ -1423,7 +1423,7 @@ fn decode_graph(
                         if carriers.curve_is_derived(curve_attr) {
                             let offset = carrier.offset;
                             annotations
-                                .note(id_curve(curve_attr), source_stream, offset as u64)
+                                .note(id_curve(curve_attr), &source_stream, offset as u64)
                                 .tag("surface_intersection");
                             annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
@@ -1434,7 +1434,7 @@ fn decode_graph(
                     if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations
-                            .note(id_curve(curve_attr), source_stream, offset as u64)
+                            .note(id_curve(curve_attr), &source_stream, offset as u64)
                             .tag("unknown_curve");
                         annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         out.curves.push(Curve {
@@ -1450,7 +1450,7 @@ fn decode_graph(
         }
         let off = eu.map_or(0, |r| r.offset);
         annotations
-            .note(id_edge(e), source_stream, off as u64)
+            .note(id_edge(e), &source_stream, off as u64)
             .tag("00_10");
         out.edges.push(Edge {
             id: EdgeId::mint(id_edge(e)).expect("identity grammar"),
@@ -1516,7 +1516,7 @@ fn decode_graph(
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| CoedgeId::mint(id_coedge(twin)).expect("identity grammar"));
                 annotations
-                    .note(id_coedge(ce_attr), source_stream, ce.offset as u64)
+                    .note(id_coedge(ce_attr), &source_stream, ce.offset as u64)
                     .tag("00_11");
                 let pcurves = edge_ends
                     .get(&edge_attr)
@@ -1540,7 +1540,7 @@ fn decode_graph(
                                 .expect("identity grammar");
                         let offset = curve_carrier.offset;
                         annotations
-                            .note(&id, source_stream, offset as u64)
+                            .note(&id, &source_stream, offset as u64)
                             .tag(match source {
                                 IntersectionPcurveSource::StoredCache => "surface_intersection_uv",
                                 IntersectionPcurveSource::AnalyticInverse => {
@@ -1601,7 +1601,7 @@ fn decode_graph(
                 .collect();
             let off = t.loops.get(loop_attr).map_or(0, |r| r.offset);
             annotations
-                .note(id_loop(*loop_attr), source_stream, off as u64)
+                .note(id_loop(*loop_attr), &source_stream, off as u64)
                 .tag("00_0f");
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
                 continue;
@@ -1697,7 +1697,7 @@ fn decode_graph(
             Some(c) => {
                 surface_orientation_reversed = c.orientation_reversed;
                 annotations
-                    .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
+                    .note(id_surf(f.bridge_attr), &source_stream, c.offset as u64)
                     .tag("compact_surface");
                 let mut geometry = c.geometry.clone();
                 if let Some((u_reference, v_reference)) = c.frame() {
@@ -1721,7 +1721,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        source_stream.clone(),
                         &mut HashSet::new(),
                     )?;
                     Some((offset, support))
@@ -1770,7 +1770,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        source_stream.clone(),
                         &mut HashSet::new(),
                     )?;
                     let second = ensure_surface_support(
@@ -1779,7 +1779,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        source_stream.clone(),
                         &mut HashSet::new(),
                     )?;
                     Some((blend, first, second))
@@ -1793,7 +1793,7 @@ fn decode_graph(
                     emit_offset_surface(
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        source_stream.clone(),
                         SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         construction,
                         support,
@@ -1804,7 +1804,7 @@ fn decode_graph(
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(&mut out, carrier);
                             annotations
-                                .note(id_curve(blend.spine), source_stream, carrier.offset as u64)
+                                .note(id_curve(blend.spine), &source_stream, carrier.offset as u64)
                                 .tag("blend_spine");
                         }
                         CurveId::mint(id_curve(blend.spine)).expect("identity grammar")
@@ -1837,7 +1837,7 @@ fn decode_graph(
                         None,
                     ));
                     annotations
-                        .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
+                        .note(id_surf(f.bridge_attr), &source_stream, blend.offset as u64)
                         .tag("00_38");
                     out.surfaces.push(Surface {
                         id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
@@ -1851,7 +1851,7 @@ fn decode_graph(
                     resolve_sweep_surface(carriers, t, f)
                 {
                     annotations
-                        .note(id_surf(f.bridge_attr), source_stream, offset as u64)
+                        .note(id_surf(f.bridge_attr), &source_stream, offset as u64)
                         .tag(tag);
                     if derived {
                         annotations.exactness(id_surf(f.bridge_attr), Exactness::Derived);
@@ -1864,7 +1864,7 @@ fn decode_graph(
                 } else {
                     out.stats.unknown_surface_faces += 1;
                     annotations
-                        .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
+                        .note(id_surf(f.bridge_attr), &source_stream, surf_off as u64)
                         .tag("unknown_surface");
                     annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     out.surfaces.push(Surface {
@@ -1876,7 +1876,7 @@ fn decode_graph(
             }
         }
         annotations
-            .note(id_face(f.bridge_attr), source_stream, surf_off as u64)
+            .note(id_face(f.bridge_attr), &source_stream, surf_off as u64)
             .tag("00_0e");
         out.faces.push(Face {
             id: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
@@ -1938,13 +1938,13 @@ fn decode_graph(
         })
         .collect();
     solve_face_orientation(&mut out);
-    synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
-    synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
-    derive_planar_pcurves(&mut out, &mut annotations, source_stream);
-    derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
-    derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream);
-    derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
-    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, source_stream);
+    synthesize_cylinder_seams(&mut out, &mut annotations, source_stream.clone());
+    synthesize_sphere_seams(&mut out, &mut annotations, source_stream.clone());
+    derive_planar_pcurves(&mut out, &mut annotations, source_stream.clone());
+    derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream.clone());
+    derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream.clone());
+    derive_spherical_pcurves(&mut out, &mut annotations, source_stream.clone());
+    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, source_stream.clone());
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
@@ -1967,7 +1967,7 @@ fn decode_graph(
                 (0, "synthetic_grouping", Exactness::Derived),
                 |(offset, tag)| (offset, tag, Exactness::ByteExact),
             );
-            annotations.note(id, source_stream, offset as u64).tag(tag);
+            annotations.note(id, &source_stream, offset as u64).tag(tag);
             annotations.exactness(id, exactness);
         };
         annotate_group(
@@ -2108,7 +2108,7 @@ fn decode_graph(
         };
         if let Some(carrier) = carriers.curve(attr) {
             annotations
-                .note(&curve.id, source_stream, carrier.offset as u64)
+                .note(&curve.id, &source_stream, carrier.offset as u64)
                 .tag("compact_curve");
             if matches!(curve.geometry, CurveGeometry::Unknown { .. }) {
                 annotations.exactness(&curve.id, Exactness::Unknown);
@@ -2490,7 +2490,7 @@ fn derive_planar_pcurves(
             }];
         }
         annotations
-            .note(&id, source_stream, 0)
+            .note(&id, &source_stream, 0)
             .tag("derived_planar_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -2777,7 +2777,7 @@ fn derive_cylindrical_pcurves(
             }];
         }
         annotations
-            .note(&id, source_stream, 0)
+            .note(&id, &source_stream, 0)
             .tag("derived_cylindrical_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -3200,7 +3200,7 @@ fn derive_revolved_circle_pcurves(
             }];
         }
         annotations
-            .note(&id, source_stream, 0)
+            .note(&id, &source_stream, 0)
             .tag("derived_revolved_circle_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -3337,7 +3337,7 @@ fn derive_spherical_pcurves(
             }];
         }
         annotations
-            .note(&id, source_stream, 0)
+            .note(&id, &source_stream, 0)
             .tag("derived_spherical_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
@@ -3493,7 +3493,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 parameter_range: pcurve.parameter_range(),
             }];
         }
-        annotations.note(&id, source_stream, 0).tag(if cache {
+        annotations.note(&id, &source_stream, 0).tag(if cache {
             "derived_nurbs_surface_cache_pcurve"
         } else {
             "derived_nurbs_isoparametric_pcurve"
@@ -4941,7 +4941,7 @@ fn synthesize_cylinder_seams(
             seam_b.as_str(),
         ] {
             annotations
-                .note(id, source_stream, 0)
+                .note(id, &source_stream, 0)
                 .tag("derived_periodic_seam");
             annotations.exactness(id, Exactness::Derived);
         }
@@ -5124,7 +5124,7 @@ fn synthesize_sphere_seams(
         let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam:{suffix}"))
             .expect("identity grammar");
         annotations
-            .note(curve_id.as_str(), source_stream, 0)
+            .note(curve_id.as_str(), &source_stream, 0)
             .tag("derived_sphere_seam");
         annotations.exactness(curve_id.as_str(), Exactness::Derived);
         out.curves.push(Curve {
@@ -5237,7 +5237,7 @@ fn synthesize_sphere_seams(
                     .expect("identity grammar");
             for id in [point_id.as_str(), vertex_id.as_str()] {
                 annotations
-                    .note(id, source_stream, 0)
+                    .note(id, &source_stream, 0)
                     .tag("derived_sphere_seam");
                 annotations.exactness(id, Exactness::Derived);
             }
@@ -5260,7 +5260,7 @@ fn synthesize_sphere_seams(
             pcurve_id.as_str(),
         ] {
             annotations
-                .note(id, source_stream, 0)
+                .note(id, &source_stream, 0)
                 .tag("derived_sphere_seam");
             annotations.exactness(id, Exactness::Derived);
         }
@@ -6608,7 +6608,7 @@ mod tests {
         };
         let mut annotations = AnnotationBuilder::new();
         let source_stream = annotations.stream("test");
-        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, source_stream);
+        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, source_stream.clone());
 
         assert!(brep.pcurves.is_empty());
         assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);

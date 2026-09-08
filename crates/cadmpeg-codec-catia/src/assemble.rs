@@ -52,7 +52,7 @@ pub(crate) fn annotate(
 ) {
     let id = id.to_string();
     let stream = annotations.stream(format!("catia:{stream_name}"));
-    annotations.note(&id, stream, offset).tag(tag);
+    annotations.note(&id, &stream, offset).tag(tag);
     annotations.exactness(id, exactness);
 }
 

@@ -1399,7 +1399,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     for record in kernel_annotations {
         let stream = annotations.stream(format!("inventor:{}", record.stream));
         annotations
-            .note(&record.id, stream, record.offset)
+            .note(&record.id, &stream, record.offset)
             .tag(record.tag.as_str());
         for field in record.derived_fields {
             annotations.derived(&record.id, field);

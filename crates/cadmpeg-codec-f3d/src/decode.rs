@@ -3865,7 +3865,7 @@ fn populate_annotations(
         let stream = annotations.stream(crate::ids::native_scope(stream_name));
         for record in records {
             annotations
-                .note(&record.id, stream, record.offset)
+                .note(&record.id, &stream, record.offset)
                 .tag(record.tag.as_str());
             for field in &record.derived_fields {
                 annotations.derived(&record.id, *field);
@@ -3905,7 +3905,7 @@ fn populate_annotations(
     let native_stream = annotations.stream("f3d:native");
     let mut note = |id: &str, tag: &str| {
         let offset = trailing_offset(id);
-        annotations.note(id, native_stream, offset).tag(tag);
+        annotations.note(id, &native_stream, offset).tag(tag);
     };
     {
         for entity in &native.construction_recipes {
@@ -4077,13 +4077,13 @@ fn populate_annotations(
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
-                .note(appearance.id.as_str(), stream, 0)
+                .note(appearance.id.as_str(), &stream, 0)
                 .tag(appearance.schema.as_deref().unwrap_or("appearance"));
         }
     }
     for binding in &ir.model.appearance_bindings {
         annotations
-            .note(&binding.id, native_stream, 0)
+            .note(&binding.id, &native_stream, 0)
             .tag("appearance_binding");
     }
     if brep.is_none() {
@@ -4091,7 +4091,7 @@ fn populate_annotations(
             let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
             for unknown in unknowns {
                 annotations
-                    .note(unknown.id().as_str(), stream, unknown.offset())
+                    .note(unknown.id().as_str(), &stream, unknown.offset())
                     .tag("opaque_brep");
             }
         }

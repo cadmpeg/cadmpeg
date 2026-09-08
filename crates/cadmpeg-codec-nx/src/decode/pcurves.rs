@@ -3242,7 +3242,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
         graph,
         edges,
         prefix,
-        source_stream,
+        source_stream.clone(),
         annotations,
         &geometry_budget,
     );
@@ -3404,10 +3404,10 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         annotations.derived(&edge_id, "curve");
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             annotations
-                .note(&curve_id, source_stream, node.pos as u64)
+                .note(&curve_id, &source_stream, node.pos as u64)
                 .tag("TOLERANT_EDGE_INTERSECTION");
             annotations
-                .note(&procedural_id, source_stream, node.pos as u64)
+                .note(&procedural_id, &source_stream, node.pos as u64)
                 .tag("TOLERANT_EDGE_INTERSECTION");
         }
         annotations.derived(&curve_id, "geometry");
