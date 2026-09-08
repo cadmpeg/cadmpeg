@@ -905,3 +905,51 @@ fn pcurve_coordinate_scaling_keeps_the_original_when_a_nested_result_overflows()
     assert!(geometry.try_scale_coordinates([1e300, 1e300]).is_err());
     assert_eq!(geometry, original);
 }
+
+#[test]
+fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
+    use super::{PolygonalSurface, PolylineCurve};
+    let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    assert!(PolylineCurve::new(points.clone(), Some(vec![1.0, 1.0]), 0.0).is_err());
+    assert!(PolylineCurve::new(points.clone(), Some(vec![0.0, f64::INFINITY]), 0.0).is_err());
+    assert!(PolylineCurve::new(points.clone(), None, -1.0).is_err());
+    let mut polyline = PolylineCurve::new(points, Some(vec![2.0, 1.0]), 0.0).unwrap();
+    let original = polyline.clone();
+    assert!(polyline
+        .edit_points(|points| points[0].x = f64::NAN)
+        .is_err());
+    assert_eq!(polyline, original);
+    assert!(polyline
+        .edit_parameters(|parameters| parameters.unwrap()[1] = 2.0)
+        .is_err());
+    assert_eq!(polyline, original);
+    assert!(polyline.set_chordal_deflection(f64::INFINITY).is_err());
+    assert_eq!(polyline, original);
+    let mut wire = serde_json::to_value(&polyline).unwrap();
+    assert_eq!(
+        serde_json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
+        polyline
+    );
+    wire["parameters"] = serde_json::json!([1.0, 1.0]);
+    assert!(serde_json::from_value::<PolylineCurve>(wire).is_err());
+    let mut surface = PolygonalSurface::new(
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+        0.0,
+    )
+    .unwrap();
+    let original = surface.clone();
+    assert!(surface
+        .edit_vertices(|vertices| vertices[0].z = f64::INFINITY)
+        .is_err());
+    assert_eq!(surface, original);
+    assert!(surface.set_chordal_deflection(-1.0).is_err());
+    assert_eq!(surface, original);
+    let mut wire = serde_json::to_value(&surface).unwrap();
+    wire["chordal_deflection"] = serde_json::json!(-1.0);
+    assert!(serde_json::from_value::<PolygonalSurface>(wire).is_err());
+}

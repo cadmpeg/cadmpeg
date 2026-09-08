@@ -88,9 +88,13 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 });
             }
             CurveGeometry::Polyline(polyline) => {
-                for point in polyline.points_mut() {
-                    point.x += dx;
-                }
+                polyline
+                    .edit_points(|points| {
+                        for point in points {
+                            point.x += dx;
+                        }
+                    })
+                    .unwrap();
             }
             CurveGeometry::Transformed { transform, .. } => {
                 let mut rows = transform.rows();
@@ -178,9 +182,13 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 });
             }
             SurfaceGeometry::Polygonal(surface) => {
-                for vertex in surface.vertices_mut() {
-                    vertex.x += dx;
-                }
+                surface
+                    .edit_vertices(|points| {
+                        for point in points {
+                            point.x += dx;
+                        }
+                    })
+                    .unwrap();
             }
             SurfaceGeometry::Transformed { transform, .. } => {
                 let mut rows = transform.rows();

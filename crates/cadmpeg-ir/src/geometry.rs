@@ -948,6 +948,17 @@ impl PolygonalSurface {
                 "polygonal surface contains an out-of-range triangle index",
             ));
         }
+        if vertices
+            .iter()
+            .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        {
+            return Err(geometry_layout_error("vertices must be finite"));
+        }
+        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
+            return Err(geometry_layout_error(
+                "chordal_deflection must be finite and non-negative",
+            ));
+        }
         Ok(Self {
             vertices,
             triangles,
@@ -961,9 +972,15 @@ impl PolygonalSurface {
         &self.vertices
     }
 
-    /// Mutable vertex positions. The cardinality cannot change.
-    pub fn vertices_mut(&mut self) -> &mut [Point3] {
-        &mut self.vertices
+    /// Edit finite vertices transactionally.
+    pub fn edit_vertices(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), GeometryLayoutError> {
+        let mut candidate = self.vertices.clone();
+        edit(&mut candidate);
+        *self = Self::new(candidate, self.triangles.clone(), self.chordal_deflection)?;
+        Ok(())
     }
 
     /// Zero-based triangle indices into [`Self::vertices`].
@@ -979,8 +996,17 @@ impl PolygonalSurface {
     }
 
     /// Set the recorded chordal deviation.
-    pub fn set_chordal_deflection(&mut self, chordal_deflection: f64) {
+    pub fn set_chordal_deflection(
+        &mut self,
+        chordal_deflection: f64,
+    ) -> Result<(), GeometryLayoutError> {
+        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
+            return Err(geometry_layout_error(
+                "chordal_deflection must be finite and non-negative",
+            ));
+        }
         self.chordal_deflection = chordal_deflection;
+        Ok(())
     }
 }
 
@@ -1031,6 +1057,26 @@ impl PolylineCurve {
                 ));
             }
         }
+        if points
+            .iter()
+            .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        {
+            return Err(geometry_layout_error("points must be finite"));
+        }
+        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
+            return Err(geometry_layout_error(
+                "chordal_deflection must be finite and non-negative",
+            ));
+        }
+        if parameters.as_ref().is_some_and(|parameters| {
+            !parameters.iter().all(|value| value.is_finite())
+                || !(parameters.windows(2).all(|pair| pair[0] < pair[1])
+                    || parameters.windows(2).all(|pair| pair[0] > pair[1]))
+        }) {
+            return Err(geometry_layout_error(
+                "parameters must be finite and strictly monotonic",
+            ));
+        }
         Ok(Self {
             points,
             parameters,
@@ -1044,9 +1090,15 @@ impl PolylineCurve {
         &self.points
     }
 
-    /// Mutable sample positions. The cardinality cannot change.
-    pub fn points_mut(&mut self) -> &mut [Point3] {
-        &mut self.points
+    /// Edit finite points transactionally.
+    pub fn edit_points(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), GeometryLayoutError> {
+        let mut candidate = self.points.clone();
+        edit(&mut candidate);
+        *self = Self::new(candidate, self.parameters.clone(), self.chordal_deflection)?;
+        Ok(())
     }
 
     /// Optional source parameters parallel to [`Self::points`].
@@ -1055,9 +1107,15 @@ impl PolylineCurve {
         self.parameters.as_deref()
     }
 
-    /// Mutable source parameters. The cardinality cannot change.
-    pub fn parameters_mut(&mut self) -> Option<&mut [f64]> {
-        self.parameters.as_deref_mut()
+    /// Edit finite strictly monotonic source parameters transactionally.
+    pub fn edit_parameters(
+        &mut self,
+        edit: impl FnOnce(Option<&mut [f64]>),
+    ) -> Result<(), GeometryLayoutError> {
+        let mut candidate = self.parameters.clone();
+        edit(candidate.as_deref_mut());
+        *self = Self::new(self.points.clone(), candidate, self.chordal_deflection)?;
+        Ok(())
     }
 
     /// Maximum chordal deviation recorded by the source.
@@ -1067,8 +1125,17 @@ impl PolylineCurve {
     }
 
     /// Set the recorded chordal deviation.
-    pub fn set_chordal_deflection(&mut self, chordal_deflection: f64) {
+    pub fn set_chordal_deflection(
+        &mut self,
+        chordal_deflection: f64,
+    ) -> Result<(), GeometryLayoutError> {
+        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
+            return Err(geometry_layout_error(
+                "chordal_deflection must be finite and non-negative",
+            ));
+        }
         self.chordal_deflection = chordal_deflection;
+        Ok(())
     }
 }
 
