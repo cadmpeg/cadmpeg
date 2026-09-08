@@ -270,7 +270,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
         };
     let sketch_profile = serde_json::json!({
         "kind": "sketch_profiles",
-        "value": {"sketch": "sketch:1", "profiles": [0]}
+        "value": {"sketch": "test:model:sketch#1", "profiles": [0]}
     });
     let profile_start = serde_json::json!({"kind": "profile_plane"});
     let blind = serde_json::json!({"kind": "blind", "length": 10.0});
@@ -449,7 +449,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     };
 
     assert!(!feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "sketch", "value": "sketch:1"}),
+        serde_json::json!({"kind": "sketch", "value": "test:model:sketch#1"}),
     )));
     assert!(feature_definition_is_incomplete(&base_flange(
         serde_json::json!({"kind": "native", "value": "native:profile"}),
@@ -590,7 +590,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         "definition": "sweep",
         "section": {
             "kind": "profile",
-            "value": {"kind": "sketch", "value": "sketch:section"}
+            "value": {"kind": "sketch", "value": "test:model:sketch#section"}
         },
         "path": {"kind": "edges", "value": ["test:model:edge#path"]},
         "mode": {"mode": "solid", "op": "join"}
@@ -885,16 +885,16 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         "sections": [
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [2, 3]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [2, 3]}
             },
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [1, 4]}
             }
         ],
         "guidance": {"kind": "guides", "path": [{
             "kind": "spatial_sketch_curves",
-            "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
+            "value": {"sketch": "test:model:spatial-sketch#1", "curves": ["test:model:spatial-entity#curve"]}
         }]},
         "op": "join"
     }))
@@ -907,7 +907,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
             {"kind": "native", "value": "native:profile"},
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [1, 4]}
             }
         ],
         "guidance": {"kind": "guides", "path": [{"kind": "native", "value": "native:guide"}]},
@@ -1154,7 +1154,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 "definition": "extrude",
                 "profile": {
                     "kind": "sketch_selection",
-                    "value": {"sketch": "sketch", "selections": ["native:profile"]}
+                    "value": {"sketch": "synthetic:test:id#sketch", "selections": ["native:profile"]}
                 },
                 "start": {"kind": "profile_plane"},
                 "extent": {
