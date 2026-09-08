@@ -340,14 +340,12 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .iter()
         .find(|curve| !curve.id.as_str().contains("component"))
         .expect("root compound");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-        ..
-    } = root.definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) = root.definition()
     else {
         panic!("compound definition");
     };
+    let (parameters, components) = compound.parts();
+
     assert_eq!(parameters, &vec![0.0, 2.0, 5.0]);
     assert_eq!(components.len(), 2);
     assert!(components[0].component.as_str().contains("component-0"));

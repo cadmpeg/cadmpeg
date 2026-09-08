@@ -3300,53 +3300,84 @@ mod compound_surface_components_wire {
     }
 }
 
+/// A non-empty compound curve with finite construction parameters.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CompoundCurveConstructionWire")]
+pub struct CompoundCurveConstruction {
+    parameters: Vec<f64>,
+    components: Vec<CompoundComponent<CurveId>>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct CompoundCurveComponentsWire {
+struct CompoundCurveConstructionWire {
+    parameters: Vec<f64>,
     component_parameters: Vec<f64>,
     components: Vec<CurveId>,
 }
 
-mod compound_curve_components_wire {
-    use super::{CompoundComponent, CompoundCurveComponentsWire, CurveId};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
+    type Error = &'static str;
+    fn try_from(wire: CompoundCurveConstructionWire) -> Result<Self, Self::Error> {
+        if wire.component_parameters.len() != wire.components.len() {
+            return Err("compound curve component_parameters must match components");
+        }
+        Self::try_new(
+            wire.parameters,
+            wire.component_parameters
+                .into_iter()
+                .zip(wire.components)
+                .map(|(parameter, component)| CompoundComponent {
+                    parameter,
+                    component,
+                })
+                .collect(),
+        )
+    }
+}
 
-    pub fn serialize<S>(
-        components: &[CompoundComponent<CurveId>],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        CompoundCurveComponentsWire {
-            component_parameters: components.iter().map(|item| item.parameter).collect(),
-            components: components
+impl Serialize for CompoundCurveConstruction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        CompoundCurveConstructionWire {
+            parameters: self.parameters.clone(),
+            component_parameters: self.components.iter().map(|item| item.parameter).collect(),
+            components: self
+                .components
                 .iter()
                 .map(|item| item.component.clone())
                 .collect(),
         }
         .serialize(serializer)
     }
+}
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<CompoundComponent<CurveId>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = CompoundCurveComponentsWire::deserialize(deserializer)?;
-        if wire.component_parameters.len() != wire.components.len() {
-            return Err(serde::de::Error::custom(
-                "compound curve component_parameters must match components",
-            ));
+impl CompoundCurveConstruction {
+    /// Admit at least one component and finite leading and component parameters.
+    pub fn try_new(
+        parameters: Vec<f64>,
+        components: Vec<CompoundComponent<CurveId>>,
+    ) -> Result<Self, &'static str> {
+        if components.is_empty() {
+            return Err("compound curve components must not be empty");
         }
-        Ok(wire
-            .component_parameters
-            .into_iter()
-            .zip(wire.components)
-            .map(|(parameter, component)| CompoundComponent {
-                parameter,
-                component,
-            })
-            .collect())
+        if parameters
+            .iter()
+            .chain(components.iter().map(|item| &item.parameter))
+            .any(|value| !value.is_finite())
+        {
+            return Err("compound curve parameters must be finite");
+        }
+        Ok(Self {
+            parameters,
+            components,
+        })
+    }
+
+    /// Leading parameters and ordered parameter-component pairs.
+    #[must_use]
+    pub fn parts(&self) -> (&[f64], &[CompoundComponent<CurveId>]) {
+        (&self.parameters, &self.components)
     }
 }
 
@@ -9919,14 +9950,7 @@ pub enum ProceduralCurveDefinition {
         additional: Vec<LawFormula>,
     },
     /// Ordered compound of native child curves with construction parameters.
-    Compound {
-        /// Leading native parameter array.
-        parameters: Vec<f64>,
-        /// Ordered child curves paired with their native construction scalars.
-        #[serde(flatten, with = "compound_curve_components_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CompoundCurveComponentsWire"))]
-        components: Vec<CompoundComponent<CurveId>>,
-    },
+    Compound(CompoundCurveConstruction),
     /// Circular or conical helix around an axis.
     Helix {
         /// Native angular parameter interval.

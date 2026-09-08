@@ -1233,7 +1233,7 @@ impl<'a> DecodeContext<'a> {
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let hatch_loops = hatch.loops;
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
                 commit_curve_tree(
                     candidate,
@@ -1243,9 +1243,10 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     None,
                     &format!("hatch-loop-{index}"),
-                );
+                )?;
             }
             candidate.model.features.push(feature);
+            Ok(())
         });
         match result {
             Ok(()) => {
@@ -1396,7 +1397,7 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
                 candidate_annotations,
@@ -1405,8 +1406,9 @@ impl<'a> DecodeContext<'a> {
                 &association,
                 None,
                 "detail-boundary",
-            );
+            )?;
             candidate.model.features.push(feature);
+            Ok(())
         });
         match result {
             Ok(()) => {
@@ -1686,7 +1688,7 @@ impl<'a> DecodeContext<'a> {
                 (SurfaceGeometry::Nurbs(geometry), true)
             }
         };
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
                 candidate_annotations,
@@ -1695,7 +1697,7 @@ impl<'a> DecodeContext<'a> {
                 &association,
                 None,
                 "curve-on-surface-c2",
-            );
+            )?;
             if let Some(model_curve) = model_curve {
                 commit_curve_tree(
                     candidate,
@@ -1705,7 +1707,7 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     None,
                     "curve-on-surface-c3",
-                );
+                )?;
             }
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
@@ -1722,6 +1724,7 @@ impl<'a> DecodeContext<'a> {
                 },
             );
             candidate.model.features.push(feature);
+            Ok(())
         });
         match result {
             Ok(()) => {
@@ -2739,7 +2742,9 @@ impl<'a> DecodeContext<'a> {
                         .into_iter()
                         .map(|warning| format!("{}: {warning}", identity.source_id)),
                 );
-                let parent_id = commit_curve_tree(
+                let before = ArenaLengths::capture(&self.ir);
+                let annotation_checkpoint = self.annotations.clone();
+                let parent_id = match commit_curve_tree(
                     &mut self.ir,
                     &mut self.annotations,
                     curve,
@@ -2747,7 +2752,17 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     Some(unknown),
                     "root",
-                );
+                ) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        before.truncate(&mut self.ir);
+                        self.annotations = annotation_checkpoint;
+                        self.report
+                            .phase_warnings
+                            .push(format!("curve candidate rejected: {error}"));
+                        return false;
+                    }
+                };
                 self.append_link(source_order, parent_id.to_string());
             }
             crate::curves::DecodedGeometry::Surface { surface } => match surface {
@@ -2821,7 +2836,7 @@ impl<'a> DecodeContext<'a> {
                     Some(unknown.clone()),
                     path,
                 )
-            });
+            })?;
             let surface_id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
                 .try_into()
                 .expect("valid identity");
@@ -2893,7 +2908,7 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     Some(unknown.clone()),
                     &format!("profile-{index}.start"),
-                );
+                )?;
                 boundaries.push(CommittedExtrusionBoundary {
                     boundary,
                     directrix: id,
@@ -3870,14 +3885,20 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                         .into_iter()
                         .map(|warning| format!("C3 slot {index}: {warning}")),
                 );
-                let id = stage_curve_tree(
+                let id = match stage_curve_tree(
                     &mut staged,
                     curve,
                     key,
                     &format!("c3-{index}"),
                     association,
                     unknown,
-                );
+                ) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        child_cause = Some(format!("C3 slot {index}: {error}"));
+                        continue;
+                    }
+                };
                 c3.insert(index as i32, id);
             }
             Ok(_) => {
@@ -4540,7 +4561,7 @@ fn stage_brep_procedural_surface(
             context.association,
             context.unknown,
         )
-    });
+    })?;
     let surface_id: cadmpeg_ir::ids::SurfaceId =
         format!("rhino:object:surface#{}.slot-{index}", context.key)
             .try_into()
@@ -4583,7 +4604,7 @@ fn stage_curve_tree(
     path: &str,
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
-) -> cadmpeg_ir::ids::CurveId {
+) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -4604,7 +4625,7 @@ fn stage_curve_tree(
                         &format!("{path}.component-{index}"),
                         association,
                         unknown,
-                    ),
+                    )?,
                 });
             }
             parameters.push(end_parameter);
@@ -4612,10 +4633,12 @@ fn stage_curve_tree(
                 CurveGeometry::Unknown {
                     record: Some(unknown.clone()),
                 },
-                Some(ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components,
-                }),
+                Some(ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        parameters, components,
+                    )
+                    .map_err(|message| crate::curves::error(0, message))?,
+                )),
             )
         }
     };
@@ -4643,7 +4666,7 @@ fn stage_curve_tree(
             .model_mut()
             .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
     }
-    id
+    Ok(id)
 }
 
 fn decode_pcurves(
@@ -5027,7 +5050,7 @@ fn commit_curve_tree(
     association: &SourceObjectAssociation,
     record: Option<UnknownId>,
     path: &str,
-) -> cadmpeg_ir::ids::CurveId {
+) -> Result<cadmpeg_ir::ids::CurveId, String> {
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -5050,16 +5073,18 @@ fn commit_curve_tree(
                         association,
                         None,
                         &child_path,
-                    ),
+                    )?,
                 });
             }
             parameters.push(end_parameter);
             (
                 CurveGeometry::Unknown { record },
-                Some(ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components,
-                }),
+                Some(ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        parameters, components,
+                    )
+                    .map_err(str::to_owned)?,
+                )),
             )
         }
     };
@@ -5092,7 +5117,7 @@ fn commit_curve_tree(
             .model
             .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
     }
-    id
+    Ok(id)
 }
 
 fn decoded_curve_entity_count(curve: &crate::curves::DecodedCurve) -> usize {

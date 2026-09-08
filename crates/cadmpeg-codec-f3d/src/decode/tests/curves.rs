@@ -898,13 +898,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("generated compound intcurve decode");
-    let ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Compound(compound) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected compound construction")
     };
+    let (parameters, components) = compound.parts();
+
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
     assert_eq!(
         components
@@ -928,22 +928,22 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .abs()
             < 1.0e-12
     );
-    let component_ids = components.clone();
+    let component_ids = components.to_vec();
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Compound {
-            parameters,
-            components,
-            ..
-        } = definition
-        else {
+        let ProceduralCurveDefinition::Compound(compound) = definition else {
             unreachable!()
         };
-        *parameters = vec![-0.25, 0.75, 1.25];
+        let mut components = compound.parts().1.to_vec();
         for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
             component.parameter = parameter;
         }
+        *compound = cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+            vec![-0.25, 0.75, 1.25],
+            components,
+        )
+        .unwrap();
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -985,13 +985,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound intcurve round trip");
-    let ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-    } = &round_trip.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Compound(compound) =
+        &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip compound construction")
     };
+    let (parameters, components) = compound.parts();
+
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
     assert_eq!(
         components

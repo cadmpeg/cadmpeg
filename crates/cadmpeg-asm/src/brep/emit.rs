@@ -2793,10 +2793,11 @@ fn emit_carrier_curve(
                         }
                     })
                     .collect();
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components,
-                }
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        parameters, components,
+                    )?,
+                )
             }
             ProceduralCurveConstruction::Exact => {
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact

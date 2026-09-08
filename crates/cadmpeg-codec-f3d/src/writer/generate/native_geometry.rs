@@ -4760,11 +4760,11 @@ pub(crate) fn native_procedural_curve(
         }
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) =
+        procedural.definition()
     {
+        let (parameters, components) = compound.parts();
+
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "comp_int_cur")?;
@@ -5229,7 +5229,7 @@ pub(crate) fn native_procedural_curve(
         }
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
-        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. }

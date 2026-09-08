@@ -115,13 +115,17 @@ pub(crate) enum DecodedProceduralSurface {
 }
 
 impl DecodedProceduralSurface {
-    pub(crate) fn into_definition(
+    pub(crate) fn into_definition<E>(
         self,
-        mut commit_child: impl FnMut(usize, &'static str, DecodedCurve) -> cadmpeg_ir::ids::CurveId,
-    ) -> cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+        mut commit_child: impl FnMut(
+            usize,
+            &'static str,
+            DecodedCurve,
+        ) -> Result<cadmpeg_ir::ids::CurveId, E>,
+    ) -> Result<cadmpeg_ir::geometry::ProceduralSurfaceDefinition, E> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
-        match self {
+        Ok(match self {
             Self::Revolution {
                 children,
                 axis_origin,
@@ -132,7 +136,7 @@ impl DecodedProceduralSurface {
             } => {
                 let [directrix] = *children;
                 ProceduralSurfaceDefinition::Revolution {
-                    directrix: commit_child(0, "directrix", directrix),
+                    directrix: commit_child(0, "directrix", directrix)?,
                     axis_origin,
                     axis_direction,
                     angular_interval,
@@ -148,13 +152,13 @@ impl DecodedProceduralSurface {
             } => {
                 let [first, second] = *children;
                 ProceduralSurfaceDefinition::Sum {
-                    first: commit_child(0, "first", first),
-                    second: commit_child(1, "second", second),
+                    first: commit_child(0, "first", first)?,
+                    second: commit_child(1, "second", second)?,
                     basepoint,
                     revision_form: None,
                 }
             }
-        }
+        })
     }
 }
 

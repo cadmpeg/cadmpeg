@@ -554,7 +554,7 @@ impl AsmEditSet {
             ProceduralCurveDefinition::Subset { .. } => {
                 patch_subset_definition(bytes, self.ref_width, record, definition)
             }
-            ProceduralCurveDefinition::Compound { .. } => {
+            ProceduralCurveDefinition::Compound(_) => {
                 patch_compound_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::TwoSidedOffset { .. } => {
@@ -991,16 +991,13 @@ fn patch_compound_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-        parameters,
-        components,
-        ..
-    } = definition
-    else {
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) = definition else {
         return Err(CodecError::Malformed(
             "compound patch received another definition".into(),
         ));
     };
+    let (parameters, components) = compound.parts();
+
     let record_bytes = record_slice(bytes, record, "compound")?;
     let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {

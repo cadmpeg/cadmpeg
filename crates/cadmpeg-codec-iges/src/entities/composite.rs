@@ -1776,10 +1776,12 @@ fn project_with_type_130_policy(
             ProceduralCurve::new(
                 ProceduralCurveId::mint(format!("iges:model:procedural-curve#{stem}"))
                     .expect("identity grammar"),
-                ProceduralCurveDefinition::Compound {
-                    parameters: boundaries,
-                    components,
-                },
+                ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        boundaries, components,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
             ),
         );
         wire_edges.push(edge);

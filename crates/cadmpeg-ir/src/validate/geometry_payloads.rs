@@ -1556,31 +1556,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Compound {
-            parameters,
-            components,
-        } = procedural.definition()
-        {
-            if components.is_empty() {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "compound components are empty",
-                );
-            }
-            if parameters
-                .iter()
-                .chain(components.iter().map(|item| &item.parameter))
-                .any(|value| !value.is_finite())
-            {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "compound parameters are not finite",
-                );
-            }
-            continue;
-        }
         if let ProceduralCurveDefinition::Subset {
             parameter_range, ..
         } = procedural.definition()
