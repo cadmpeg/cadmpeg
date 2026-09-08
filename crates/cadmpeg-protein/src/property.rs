@@ -256,10 +256,13 @@ mod tests {
             ),
             (
                 PropertyContent::Value {
-                    value: PropertyValue::Float(1.5),
-                    connections: Vec::new(),
+                    value: PropertyValue::Multiple(vec![
+                        PropertyValue::Float(1.5),
+                        PropertyValue::Boolean(true),
+                    ]),
+                    connections: vec!["target".into()],
                 },
-                r#"{"value_offset":4,"value":{"kind":"float","value":1.5},"connections":[]}"#,
+                r#"{"value_offset":4,"value":{"kind":"multiple","value":[{"kind":"float","value":1.5},{"kind":"boolean","value":true}]},"connections":["target"]}"#,
             ),
         ];
         for (content, expected) in cases {
