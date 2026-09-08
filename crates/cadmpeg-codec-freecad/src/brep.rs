@@ -5383,6 +5383,40 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn binary_edge_continuity_retains_decimal_byte_spelling() {
+        for (byte, spelling) in [(0, "0"), (2, "2")] {
+            for kind in [3, 4] {
+                let mut bytes = Vec::new();
+                if kind == 3 {
+                    bytes.extend_from_slice(&1_i32.to_le_bytes());
+                    bytes.extend_from_slice(&2_i32.to_le_bytes());
+                }
+                bytes.push(byte);
+                bytes.extend_from_slice(&1_i32.to_le_bytes());
+                bytes.extend_from_slice(&0_i32.to_le_bytes());
+                if kind == 3 {
+                    bytes.extend_from_slice(&0_f64.to_le_bytes());
+                    bytes.extend_from_slice(&1_f64.to_le_bytes());
+                } else {
+                    bytes.extend_from_slice(&1_i32.to_le_bytes());
+                    bytes.extend_from_slice(&0_i32.to_le_bytes());
+                }
+                let mut cursor = BinaryCursor::new(&bytes);
+                let record =
+                    parse_binary_edge_representation(&mut cursor, 1, kind, 0, 2, 1, 0, 0, 0, 0)
+                        .unwrap();
+                let continuity = match record {
+                    TextEdgeRepresentation::PcurvePair { continuity, .. }
+                    | TextEdgeRepresentation::Regularity { continuity, .. } => continuity,
+                    _ => panic!("expected continuity representation"),
+                };
+                assert_eq!(continuity, spelling);
+                assert_eq!(cursor.remaining(), 0);
+            }
+        }
+    }
+
+    #[test]
     fn parses_joined_seam_pcurve_continuity_token() {
         let tokens = ["1", "2CN", "1", "0", "0", "10"];
         let mut cursor = TokenCursor::new(&tokens);
