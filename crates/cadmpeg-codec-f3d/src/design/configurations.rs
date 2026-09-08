@@ -2,7 +2,9 @@
 #![cfg_attr(test, allow(clippy::cloned_ref_to_slice_refs))]
 //! Decode and project Design configuration records.
 
-use crate::container::{role, ContainerScan};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::container::ContainerScan;
 use crate::design::dimensions::json_scalar_text;
 use crate::ids::{self, neutral_configuration_id};
 use crate::records::{DesignConfiguration, DesignConfigurationKind};
@@ -77,7 +79,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
     let configurations = scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, role::DESIGN_CONFIG))
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
         .map(|entry| {
             let bytes = scan.entry_bytes(&entry.name)?;
             let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
@@ -429,13 +431,12 @@ pub fn project_configurations(
             projected.push(NeutralConfiguration {
                 id: neutral_configuration_id(&table.entry_name, name),
                 ordinal,
-                active: (active == Some(name.as_str())).into(),
+                active: active == Some(name.as_str()),
                 source_index: None,
                 name: name.clone().into(),
                 material,
                 properties,
                 parameter_overrides: BTreeMap::new(),
-                suppressed_features: Vec::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
@@ -534,7 +535,14 @@ pub fn bind_configuration_suppressed_features(
             configuration
                 .properties
                 .remove(&format!("suppressed:{name}"));
-            configuration.suppressed_features.push(feature.id.clone());
+            configuration.feature_states.insert(
+                feature.id.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState {
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
+                    dependencies: feature.dependencies.clone(),
+                    definition: feature.definition.clone(),
+                },
+            );
         }
     }
 }
@@ -819,7 +827,7 @@ mod tests {
             }),
         };
         let parameter = NeutralParameter {
-            id: ParameterId("f3d:model:parameter#width".into()),
+            id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "width".into(),
@@ -841,7 +849,7 @@ mod tests {
         );
 
         let duplicate = NeutralParameter {
-            id: ParameterId("f3d:model:parameter#other-width".into()),
+            id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
         let mut ambiguous = project_configurations(&[DesignConfiguration {
@@ -874,11 +882,10 @@ mod tests {
             }),
         };
         let feature = Feature {
-            id: FeatureId("f3d:model:feature#fillet-1".into()),
+            id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
             ordinal: 0,
             name: Some("Fillet 1".into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -888,13 +895,15 @@ mod tests {
             definition: FeatureDefinition::Native {
                 kind: "Fillet".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
             native_ref: None,
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
-        assert_eq!(projected[0].suppressed_features, [feature.id.clone()]);
+        assert_eq!(
+            projected[0].suppressed_features().collect::<Vec<_>>(),
+            [&feature.id]
+        );
         assert!(projected[0].properties.is_empty());
         assert_eq!(
             unresolved_configuration_suppressed_feature_count(&projected),
@@ -902,7 +911,7 @@ mod tests {
         );
 
         let duplicate = Feature {
-            id: FeatureId("f3d:model:feature#other-fillet-1".into()),
+            id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };
         let mut ambiguous = project_configurations(&[DesignConfiguration {
@@ -916,7 +925,7 @@ mod tests {
         }])
         .expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
-        assert!(ambiguous[0].suppressed_features.is_empty());
+        assert!(ambiguous[0].suppressed_features().next().is_none());
         assert_eq!(
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1

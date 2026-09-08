@@ -9,8 +9,8 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{CadIr, WritePath};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
@@ -295,7 +295,7 @@ fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
     })
 }
 
-fn decode_result(bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+fn decode_result(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
     F3dCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
 }
 
@@ -315,7 +315,8 @@ fn indent_block(block: &str) -> String {
 
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
-        Ok(mut result) => {
+        Ok(result) => {
+            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
             if let Some(source) = result.ir_mut().source.as_mut() {
                 elide_local_digests(&mut source.attributes);
             }
@@ -360,12 +361,12 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
-    let outcome = match F3dCodec.plan(EncodeInput {
-        ir: result.ir(),
-        fidelity: Some(result.source_fidelity()),
-    }) {
+    let outcome = match F3dCodec.plan(
+        EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+        TargetRequest::Inherit,
+    ) {
         Ok(plan) => {
-            let path = plan.write_path();
+            let path = plan.report().write_path();
             match plan.write_to(&mut out) {
                 Ok(_) => {
                     assert_eq!(
@@ -389,7 +390,7 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     Some(match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
             assert_eq!(
-                report.write_path,
+                report.write_path(),
                 WritePath::Synthesized,
                 "the generate lane withholds the sidecar, so the writer must author every byte"
             );
@@ -408,11 +409,8 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     edited.model.points[0].position.x += 1.0;
     let mut out = Vec::new();
     Some(
-        match F3dCodec.write_preserved_with_source_fidelity(
-            &edited,
-            result.source_fidelity(),
-            &mut out,
-        ) {
+        match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
+        {
             Ok(path) => {
                 assert_eq!(
                     path,
@@ -746,7 +744,7 @@ fn fixtures_refuse_to_write_without_a_baseline() {
             ),
             SemanticOutcome::Written { report, .. } => panic!(
                 "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
-                report.write_path
+                report.write_path()
             ),
         }
         });
@@ -763,7 +761,7 @@ const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
-        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
     }))
 }

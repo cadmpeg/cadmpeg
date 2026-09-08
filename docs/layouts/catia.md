@@ -141,6 +141,7 @@ Unstated regions:
 
 Cross-checked against code:
 
+- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser maps the plane marker to its analytic surface kind.
 - `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-prebyte map matches the spec table row for the plane.
 
 ## `analytic_surface_cylinder`
@@ -164,6 +165,7 @@ Unstated regions:
 
 Cross-checked against code:
 
+- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser maps the cylinder marker to its analytic surface kind.
 - `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-prebyte map matches the shared cylinder/cone row.
 
 ## `analytic_surface_cone`

@@ -87,25 +87,25 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 fn offset_support_binds_by_native_domain_knot_limits() {
     let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     let mut decoy = carriers[0].clone();
-    let SurfaceGeometry::Nurbs(surface) = &mut decoy.geometry else {
-        panic!("NURBS fixture");
-    };
-    for knot in &mut surface.v_knots {
-        *knot += 10.0;
-    }
+    decoy
+        .geometry
+        .edit_v_knots(|knots| {
+            for knot in knots {
+                *knot += 10.0;
+            }
+        })
+        .unwrap();
     carriers.push(decoy);
-    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
+    let surface = &carriers[0].geometry;
     let offset = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 7,
         distance: 2.0,
         domain: [
-            surface.u_knots[0],
-            surface.v_knots[0],
-            *surface.u_knots.last().unwrap(),
-            *surface.v_knots.last().unwrap(),
+            surface.u_knots()[0],
+            surface.v_knots()[0],
+            *surface.u_knots().last().unwrap(),
+            *surface.v_knots().last().unwrap(),
         ],
     };
 

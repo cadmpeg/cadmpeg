@@ -1,14 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
+
+pub(crate) mod class5b5c;
+use class5b5c::CatiaConsolidatedClass5b5cRecord;
+
+pub(crate) mod edge_definition;
+use edge_definition::CatiaConsolidatedEdgeDefinition;
+
+pub(crate) mod edge_node;
+use edge_node::{
+    consolidated_vertex_identities, edge_node_wires, load_edge_nodes, CatiaConsolidatedEdgeNode,
+    CatiaConsolidatedEdgeNodeWire,
+};
+
+pub(crate) mod entity_record;
+use entity_record::{
+    CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody,
+    CatiaEntityValueProduction,
+};
+
+pub(crate) mod schema_configuration_chain;
+use schema_configuration_chain::{
+    derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
+};
+
+pub(crate) mod owner_chart;
+use owner_chart::{
+    CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
+    CatiaOwnerChartBridgeReference, CatiaOwnerChartCarrier, CatiaOwnerChartRelation,
+};
 
 use crate::catalog;
 use crate::container;
@@ -19,176 +46,10 @@ use crate::object_graph::{
     PayloadSubtype,
 };
 use crate::value_block;
-use crate::wire::records::ConsolidatedRecord;
-
-/// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 288;
-/// Native schema version that links width-coded owner-chart supports to alias rows.
-#[cfg(test)]
-pub(crate) const CATIA_OWNER_CHART_ALIAS_VERSION: u32 = 286;
-/// Native schema version that resolves grouped aliases to persistent surface tags.
-#[cfg(test)]
-pub(crate) const CATIA_ALIAS_SURFACE_TAG_VERSION: u32 = 285;
-/// Native schema version associating exact scalar nominals with `Range` intervals.
-#[cfg(test)]
-pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
-/// Native schema version admitting the `81 93` entity-suffix value trailer.
-#[cfg(test)]
-pub(crate) const CATIA_SUFFIX_TRAILER_8193_VERSION: u32 = 275;
-/// Native schema version retaining complete source-schema `Range` intervals.
-#[cfg(test)]
-pub(crate) const CATIA_RANGE_INTERVAL_VERSION: u32 = 273;
-/// Native schema version retaining incoming incidences for every `Range` interval.
-#[cfg(test)]
-pub(crate) const CATIA_RANGE_INTERVAL_INCIDENCE_VERSION: u32 = 274;
-/// Native schema version using schema-configuration names and derived identities.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION: u32 = 272;
-#[cfg(test)]
-const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
-#[cfg(test)]
-const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
-#[cfg(test)]
-const CATIA_LEGACY_ROLE_FIELD_CODE_VERSION: u32 = 220;
-#[cfg(test)]
-const CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION: u32 = 222;
-#[cfg(test)]
-const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
-#[cfg(test)]
-const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
-/// Native schema version adding the compact relation frame's context incidence.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_CONTEXT_VERSION: u32 = 231;
-#[cfg(test)]
-pub(crate) const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
-#[cfg(test)]
-const CATIA_CONFIGURATION_INCIDENCE_VERSION: u32 = 230;
-/// Native schema version separating schema-configuration selectors and entity references.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION: u32 = 232;
-/// Native schema version retaining selected entity classes on typed incidences.
-#[cfg(test)]
-pub(crate) const CATIA_TYPED_INCIDENCE_CLASS_VERSION: u32 = 233;
-/// Native schema version unifying relation-program entity incidences.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_TYPED_REFERENCE_VERSION: u32 = 234;
-/// Native schema version retaining the source entity of constraint-range incidences.
-#[cfg(test)]
-pub(crate) const CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION: u32 = 235;
-/// Native namespace version that unifies formula output incidence.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_OUTPUT_REFERENCE_VERSION: u32 = 236;
-/// Native namespace version that unifies formula expression incidence.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION: u32 = 237;
-/// Native namespace version that types formula dependency candidate incidences.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION: u32 = 238;
-/// Native schema version retaining complete ordered schema-configuration-row chains.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION: u32 = 239;
-/// Native schema version retaining terminal-null state on every typed incidence.
-#[cfg(test)]
-pub(crate) const CATIA_TYPED_INCIDENCE_NULL_VERSION: u32 = 240;
-/// Native schema version retaining every exact relation-program reference incidence.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION: u32 = 241;
-/// Native schema version retaining relation-program source-symbol dependencies.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION: u32 = 242;
-/// Native schema version retaining complete ordered relation-program inputs.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_INPUT_VERSION: u32 = 243;
-/// Native schema version retaining entities between schema-configuration-row successors.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
-/// Native schema version retaining constraint-range storage incidences.
-#[cfg(test)]
-pub(crate) const CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION: u32 = 245;
-/// Native schema version retaining each relation-symbol occurrence offset.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_DEPENDENCY_OFFSET_VERSION: u32 = 246;
-/// Native schema version retaining relation-program reference occurrence offsets.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_REFERENCE_OFFSET_VERSION: u32 = 247;
-/// Native schema version excluding string-literal contents from relation dependencies.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION: u32 = 248;
-/// Native schema version requiring canonical relation-signature parameter symbols.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_SIGNATURE_PARAMETER_VERSION: u32 = 249;
-/// Native schema version retaining formula reference occurrence offsets.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_REFERENCE_OFFSET_VERSION: u32 = 250;
-/// Native schema version retaining configuration payload occurrence offsets.
-#[cfg(test)]
-pub(crate) const CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION: u32 = 251;
-/// Native schema version retaining typed entity-schema selector incidences.
-#[cfg(test)]
-pub(crate) const CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION: u32 = 252;
-/// Native schema version retaining suffix schema-selector offsets.
-#[cfg(test)]
-pub(crate) const CATIA_SUFFIX_SCHEMA_OFFSET_VERSION: u32 = 253;
-/// Native schema version retaining suffix evaluation-opcode offsets.
-#[cfg(test)]
-pub(crate) const CATIA_SUFFIX_EVALUATION_OFFSET_VERSION: u32 = 254;
-/// Native schema version retaining ordered schema-configuration-row link incidences.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
-/// Native schema version retaining parallel-reference cell offsets.
-#[cfg(test)]
-pub(crate) const CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION: u32 = 256;
-/// Native schema version retaining parallel-reference column incidences.
-#[cfg(test)]
-pub(crate) const CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION: u32 = 257;
-/// Native schema version requiring exact relation-signature outer whitespace.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION: u32 = 258;
-/// Native schema version retaining reference-signature field incidences.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION: u32 = 259;
-/// Native schema version resolving reference-signature entity incidences.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION: u32 = 260;
-/// Native schema version requiring consecutive reference-signature identities.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_PAIR_VERSION: u32 = 263;
-/// Native schema version retaining reference-signature cohorts.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_COHORT_VERSION: u32 = 264;
-/// Native schema version retaining exact nullable numeric-pair productions.
-#[cfg(test)]
-pub(crate) const CATIA_NUMERIC_PAIR_VERSION: u32 = 265;
-/// Native schema version enforcing canonical reference-signature framing equations.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_FRAME_VERSION: u32 = 267;
-/// Native schema version retaining cohort-level descriptor schema incidences.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION: u32 = 268;
-/// Native schema version assigning canonical identities to graph-derived arenas.
-#[cfg(test)]
-pub(crate) const CATIA_DERIVED_NATIVE_ID_VERSION: u32 = 269;
-/// Native schema version assigning the framing-specific `paramout` result slot.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_OUTPUT_VERSION: u32 = 271;
-#[cfg(test)]
-const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
-#[cfg(test)]
-const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
-#[cfg(test)]
-const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
-#[cfg(test)]
-const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
-#[cfg(test)]
-const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
-#[cfg(test)]
-const CATIA_OBJECT_GRAPH_SEGMENT_VERSION: u32 = 208;
+use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
 /// Consolidated pcurve framing family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaConsolidatedFamily {
     /// A-family frame with a u32 payload length.
@@ -199,7 +60,6 @@ pub enum CatiaConsolidatedFamily {
 
 /// Reference dialect used by a consolidated class-`0x62` owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaOwnerReferenceEncoding {
     /// Strong identities use tagged little-endian `u16` values.
@@ -212,7 +72,6 @@ pub enum CatiaOwnerReferenceEncoding {
 
 /// Target encoding of a consolidated class-`0x5f` face node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaFaceNodeTargetEncoding {
     /// Width-coded compact target.
@@ -224,7 +83,6 @@ pub enum CatiaFaceNodeTargetEncoding {
 /// Derived class-`0x5f` face-node relation associated with a consolidated
 /// class-`0x62` packet within one bounded record source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFaceNodeRelation {
     /// Face-node record byte offset.
     pub byte_offset: u64,
@@ -242,7 +100,6 @@ pub struct CatiaFaceNodeRelation {
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerNumericTail {
     /// Five-byte class-specific header.
     pub header: [u8; 5],
@@ -255,9 +112,39 @@ pub struct CatiaOwnerNumericTail {
     pub bounds: [[f32; 2]; 3],
 }
 
+/// Selected class of a fixed-nine owner identity target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaOwnerIdentityClass {
+    /// Class-`0x5d` vertex record.
+    Vertex,
+    /// Class-`0x5e` edge record.
+    Edge,
+}
+
+impl From<CatiaOwnerIdentityClass> for u8 {
+    fn from(value: CatiaOwnerIdentityClass) -> Self {
+        match value {
+            CatiaOwnerIdentityClass::Vertex => 0x5d,
+            CatiaOwnerIdentityClass::Edge => 0x5e,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaOwnerIdentityClass {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x5d => Ok(Self::Vertex),
+            0x5e => Ok(Self::Edge),
+            other => Err(format!("target_class {other:#x} is not 0x5d or 0x5e")),
+        }
+    }
+}
+
 /// One fixed-nine owner identity resolved within its allocation source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerIdentityTarget {
     /// Zero-based identity slot in the fixed-nine packet.
     pub slot: u8,
@@ -266,103 +153,14 @@ pub struct CatiaOwnerIdentityTarget {
     /// Byte offset of the selected class-`0x5d` or class-`0x5e` record.
     pub target_byte_offset: u64,
     /// Selected record class.
-    pub target_class: u8,
-}
-
-/// Parameter axis held constant by selectors `0x05` and `0x09` in a
-/// consolidated owner chart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum CatiaOwnerChartSideAxis {
-    /// First surface parameter.
-    FirstParameter,
-    /// Second surface parameter.
-    SecondParameter,
-}
-
-/// Family-and-class carrier production that opens an owner chart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum CatiaOwnerChartCarrier {
-    /// B-family class-`0x28` cylinder carrier.
-    B28,
-    /// B-family class-`0x2b` torus carrier.
-    B2b,
-    /// A-family class-`0x32` carrier.
-    A32,
-}
-
-/// One allocation-local reference in an owner-chart bridge.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaOwnerChartBridgeReference {
-    /// Decoded allocation-local value.
-    pub value: u32,
-    /// Wire addressing form retained from the allocation-reference token.
-    pub encoding: CatiaAllocationReferenceEncoding,
-    /// Exact outer alias row selected by a unique width-coded support tag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alias_row: Option<String>,
-    /// Canonical persistent surface tag selected through the alias row.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub canonical_surface_tag: Option<u32>,
-}
-
-/// Structurally complete class-`0x37` owner-chart bridge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CatiaOwnerChartBridge {
-    /// Five-reference supported-surface construction.
-    SupportedSurface {
-        /// Record byte offset.
-        byte_offset: u64,
-        /// Constructed carrier surface.
-        carrier_surface: CatiaOwnerChartBridgeReference,
-        /// Two supporting surfaces.
-        support_surfaces: [CatiaOwnerChartBridgeReference; 2],
-        /// Pcurves on the supporting surfaces.
-        support_pcurves: [CatiaOwnerChartBridgeReference; 2],
-        /// Six construction controls in storage order.
-        controls: [u8; 6],
-        /// Positive construction radius.
-        construction_radius: f64,
-    },
-    /// Eight-reference A-family production without an assigned object role.
-    Extended {
-        /// Record byte offset.
-        byte_offset: u64,
-        /// Counted allocation references in storage order.
-        references: [CatiaOwnerChartBridgeReference; 8],
-        /// Four controls before the zero lane.
-        controls: [u8; 4],
-        /// Two terminal controls after the zero lane.
-        terminal_controls: [u8; 2],
-    },
-}
-
-/// Source-closed carrier chart terminated by an owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaOwnerChartRelation {
-    /// Carrier record byte offset.
-    pub carrier_byte_offset: u64,
-    /// Family-and-class carrier production.
-    pub carrier: CatiaOwnerChartCarrier,
-    /// Immediately following class-`0x37` bridge record.
-    pub bridge: CatiaOwnerChartBridge,
-    /// Axis held constant by selectors `0x05` and `0x09`.
-    pub side_axis: CatiaOwnerChartSideAxis,
-    /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
-    pub parameter_point_byte_offsets: [u64; 4],
+    pub target_class: CatiaOwnerIdentityClass,
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+// Keep typed source payloads inline without an allocation for each admitted record.
+#[allow(clippy::large_enum_variant)]
 pub enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
     FixedNine {
@@ -374,6 +172,17 @@ pub enum CatiaOwnerPacketPayload {
         identity_encodings: [CatiaOwnerIdentityEncoding; 9],
         /// Structurally decoded 62-byte class-specific numeric tail.
         numeric_tail: CatiaOwnerNumericTail,
+        /// Backward-distance identities resolved within this packet's contiguous
+        /// class-`0x5d`/`0x5e` allocation sequence.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        identity_targets: Vec<CatiaOwnerIdentityTarget>,
+        /// Complete carrier/reference/side chart that this packet terminates.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_chart: Option<CatiaOwnerChartRelation>,
+        /// Closed owner-local four-edge boundary, when all four resolved targets
+        /// form one simple cycle in the bounded record source.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
     },
     /// Count-selected persistent identities followed by a nonempty tail.
     Counted {
@@ -381,7 +190,6 @@ pub enum CatiaOwnerPacketPayload {
         references: Vec<u32>,
         /// Complete nonempty class-specific tail.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         tail: Vec<u8>,
     },
 }
@@ -389,7 +197,6 @@ pub enum CatiaOwnerPacketPayload {
 /// One fixed-nine boundary edge retained when four resolved class-`0x5e`
 /// targets close one simple owner-local cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerBoundaryEdge {
     /// Identity slot in the fixed-nine packet.
     pub slot: u8,
@@ -401,7 +208,6 @@ pub struct CatiaOwnerBoundaryEdge {
 
 /// Owner-local boundary evidence derived from a closed fixed-nine cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerBoundaryCycle {
     /// Source-scoped class-`0x5f` face node that precedes this boundary
     /// allocation and closes its checked identity, when present.
@@ -413,7 +219,10 @@ pub struct CatiaOwnerBoundaryCycle {
 
 /// Exact class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedOwnerPacketWire",
+    into = "CatiaConsolidatedOwnerPacketWire"
+)]
 pub struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     pub id: String,
@@ -425,25 +234,149 @@ pub struct CatiaConsolidatedOwnerPacket {
     pub header_token: u32,
     /// Count-specific reference lane and tail.
     pub payload: CatiaOwnerPacketPayload,
-    /// Backward-distance identities resolved within this packet's contiguous
-    /// class-`0x5d`/`0x5e` allocation sequence.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub identity_targets: Vec<CatiaOwnerIdentityTarget>,
     /// Source-scoped class-`0x5f` face node, when the packet relation closes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_node: Option<CatiaFaceNodeRelation>,
-    /// Complete carrier/reference/side chart that this packet terminates.
+}
+
+impl CatiaConsolidatedOwnerPacket {
+    #[cfg(test)]
+    pub fn identity_targets(&self) -> &[CatiaOwnerIdentityTarget] {
+        match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                identity_targets, ..
+            } => identity_targets,
+            CatiaOwnerPacketPayload::Counted { .. } => &[],
+        }
+    }
+
+    #[cfg(test)]
+    pub fn owner_chart(&self) -> Option<&CatiaOwnerChartRelation> {
+        match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_ref(),
+            CatiaOwnerPacketPayload::Counted { .. } => None,
+        }
+    }
+
+    pub fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
+        match &mut self.payload {
+            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_mut(),
+            CatiaOwnerPacketPayload::Counted { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn boundary_cycle(&self) -> Option<&CatiaOwnerBoundaryCycle> {
+        match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine { boundary_cycle, .. } => boundary_cycle.as_ref(),
+            CatiaOwnerPacketPayload::Counted { .. } => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedOwnerPacketWire {
+    id: String,
+    byte_offset: u64,
+    source_index: usize,
+    header_token: u32,
+    payload: CatiaOwnerPacketPayload,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    identity_targets: Vec<CatiaOwnerIdentityTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_chart: Option<CatiaOwnerChartRelation>,
-    /// Closed owner-local four-edge boundary, when all four resolved targets
-    /// form one simple cycle in the bounded record source.
+    face_node: Option<CatiaFaceNodeRelation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
+    owner_chart: Option<CatiaOwnerChartRelation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
+}
+
+impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
+    fn from(value: CatiaConsolidatedOwnerPacket) -> Self {
+        let (identity_targets, owner_chart, boundary_cycle, payload) = match value.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+            } => (
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+                CatiaOwnerPacketPayload::FixedNine {
+                    reference_encoding,
+                    references,
+                    identity_encodings,
+                    numeric_tail,
+                    identity_targets: Vec::new(),
+                    owner_chart: None,
+                    boundary_cycle: None,
+                },
+            ),
+            payload @ CatiaOwnerPacketPayload::Counted { .. } => (Vec::new(), None, None, payload),
+        };
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            source_index: value.source_index,
+            header_token: value.header_token,
+            payload,
+            identity_targets,
+            face_node: value.face_node,
+            owner_chart,
+            boundary_cycle,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedOwnerPacketWire) -> Result<Self, Self::Error> {
+        let payload = match wire.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                ..
+            } => CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                identity_targets: wire.identity_targets,
+                owner_chart: wire.owner_chart,
+                boundary_cycle: wire.boundary_cycle,
+            },
+            counted @ CatiaOwnerPacketPayload::Counted { .. } => {
+                if !wire.identity_targets.is_empty()
+                    || wire.owner_chart.is_some()
+                    || wire.boundary_cycle.is_some()
+                {
+                    return Err(
+                        "counted owner packets cannot carry fixed-nine chart or boundary data"
+                            .to_owned(),
+                    );
+                }
+                counted
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            source_index: wire.source_index,
+            header_token: wire.header_token,
+            payload,
+            face_node: wire.face_node,
+        })
+    }
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedCone {
     /// Stable native-record identity.
     pub id: String,
@@ -471,16 +404,52 @@ pub struct CatiaConsolidatedCone {
     pub angular_domain: [f64; 2],
 }
 
+/// Payload-layout discriminator of a consolidated arc-length circle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+// Variant names retain the source layout width terminology.
+#[allow(clippy::enum_variant_names)]
+pub enum CatiaCircleLayout {
+    /// Identity packed in six bits (`0x32`).
+    Identity6Bit,
+    /// Identity packed in one byte (`0x33`).
+    Identity8Bit,
+    /// Identity packed in two bytes (`0x34`).
+    Identity16Bit,
+}
+
+impl From<CatiaCircleLayout> for u8 {
+    fn from(value: CatiaCircleLayout) -> Self {
+        match value {
+            CatiaCircleLayout::Identity6Bit => 0x32,
+            CatiaCircleLayout::Identity8Bit => 0x33,
+            CatiaCircleLayout::Identity16Bit => 0x34,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaCircleLayout {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x32 => Ok(Self::Identity6Bit),
+            0x33 => Ok(Self::Identity8Bit),
+            0x34 => Ok(Self::Identity16Bit),
+            other => Err(format!("layout {other:#x} is not 0x32..=0x34")),
+        }
+    }
+}
+
 /// One complete consolidated `B:19` arc-length circle support.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedCircle {
     /// Stable native-record identity.
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
-    /// Payload-layout discriminator (`0x32..=0x34`).
-    pub layout: u8,
+    /// Payload-layout discriminator.
+    pub layout: CatiaCircleLayout,
     /// Compact persistent record identity.
     pub record_id: u32,
     /// Width-coded frame token.
@@ -498,12 +467,19 @@ pub struct CatiaConsolidatedCircle {
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CatiaConsolidatedCylinderPayload {
-    /// Complete three-dimensional frame reconstructed from layout `0x52` or `0x5a`.
-    Resolved {
+    /// Complete three-dimensional frame reconstructed from layout `0x52`.
+    Layout52 {
+        /// Token selecting the serialized frame-vector role.
+        frame_token: u8,
+        /// Cylinder-axis unit direction.
+        axis: [f64; 3],
+        /// Unit direction from which the circumferential parameter is measured.
+        reference_direction: [f64; 3],
+    },
+    /// Complete three-dimensional frame reconstructed from layout `0x5a`.
+    Layout5a {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
@@ -524,16 +500,27 @@ pub enum CatiaConsolidatedCylinderPayload {
     },
 }
 
+impl CatiaConsolidatedCylinderPayload {
+    pub(crate) const fn layout(&self) -> u8 {
+        match self {
+            Self::Layout52 { .. } => 0x52,
+            Self::Layout5a { .. } => 0x5a,
+            Self::RangeOrigin { .. } => 0x62,
+        }
+    }
+}
+
 /// One structurally complete consolidated `B:28` cylinder chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedCylinderWire",
+    into = "CatiaConsolidatedCylinderWire"
+)]
 pub struct CatiaConsolidatedCylinder {
     /// Stable native-record identity.
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
-    /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
-    pub layout: u8,
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder radius.
@@ -546,9 +533,140 @@ pub struct CatiaConsolidatedCylinder {
     pub payload: CatiaConsolidatedCylinderPayload,
 }
 
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedCylinderWire {
+    id: String,
+    byte_offset: u64,
+    layout: u8,
+    origin: [f64; 3],
+    radius: f64,
+    u_range: [f64; 2],
+    v_range: [f64; 2],
+    payload: CatiaConsolidatedCylinderPayloadWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CatiaConsolidatedCylinderPayloadWire {
+    Resolved {
+        frame_token: u8,
+        axis: [f64; 3],
+        reference_direction: [f64; 3],
+    },
+    RangeOrigin {
+        stored_vector: [f64; 2],
+        axis: [f64; 3],
+        reference_direction: [f64; 3],
+        range_origin: f64,
+    },
+}
+
+impl From<CatiaConsolidatedCylinder> for CatiaConsolidatedCylinderWire {
+    fn from(value: CatiaConsolidatedCylinder) -> Self {
+        let layout = value.payload.layout();
+        let payload = match value.payload {
+            CatiaConsolidatedCylinderPayload::Layout52 {
+                frame_token,
+                axis,
+                reference_direction,
+            }
+            | CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            } => CatiaConsolidatedCylinderPayloadWire::Resolved {
+                frame_token,
+                axis,
+                reference_direction,
+            },
+            CatiaConsolidatedCylinderPayload::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            } => CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            },
+        };
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            layout,
+            origin: value.origin,
+            radius: value.radius,
+            u_range: value.u_range,
+            v_range: value.v_range,
+            payload,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedCylinderWire) -> Result<Self, Self::Error> {
+        let payload = match (wire.layout, wire.payload) {
+            (
+                0x52,
+                CatiaConsolidatedCylinderPayloadWire::Resolved {
+                    frame_token,
+                    axis,
+                    reference_direction,
+                },
+            ) => CatiaConsolidatedCylinderPayload::Layout52 {
+                frame_token,
+                axis,
+                reference_direction,
+            },
+            (
+                0x5a,
+                CatiaConsolidatedCylinderPayloadWire::Resolved {
+                    frame_token,
+                    axis,
+                    reference_direction,
+                },
+            ) => CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            },
+            (
+                0x62,
+                CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
+                    stored_vector,
+                    axis,
+                    reference_direction,
+                    range_origin,
+                },
+            ) => CatiaConsolidatedCylinderPayload::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            },
+            (layout, _) => {
+                return Err(format!(
+                    "cylinder layout {layout:#04x} does not match payload"
+                ));
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            origin: wire.origin,
+            radius: wire.radius,
+            u_range: wire.u_range,
+            v_range: wire.v_range,
+            payload,
+        })
+    }
+}
+
 /// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEmbeddedCylinder {
     /// Stable native-record identity.
     pub id: String,
@@ -576,7 +694,6 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided.
@@ -603,25 +720,37 @@ pub enum CatiaConsolidatedParameterPointPayload {
     },
 }
 
+impl CatiaConsolidatedParameterPointPayload {
+    pub(crate) const fn layout(&self) -> u8 {
+        match self {
+            Self::Scalar { .. } => 0x0a,
+            Self::Uv { .. } => 0x12,
+            Self::StationUv { .. } => 0x1a,
+            Self::FiveScalars { .. } => 0x2a,
+        }
+    }
+}
+
 #[cfg(test)]
 impl CatiaConsolidatedParameterPointPayload {
-    fn is_valid_for_layout(&self, layout: u8) -> bool {
+    fn is_valid(&self) -> bool {
         match self {
-            Self::Scalar { value } => layout == 0x0a && value.is_finite(),
-            Self::Uv { uv } => layout == 0x12 && uv.iter().all(|value| value.is_finite()),
+            Self::Scalar { value } => value.is_finite(),
+            Self::Uv { uv } => uv.iter().all(|value| value.is_finite()),
             Self::StationUv { station, uv } => {
-                layout == 0x1a && station.is_finite() && uv.iter().all(|value| value.is_finite())
+                station.is_finite() && uv.iter().all(|value| value.is_finite())
             }
-            Self::FiveScalars { values } => {
-                layout == 0x2a && values.iter().all(|value| value.is_finite())
-            }
+            Self::FiveScalars { values } => values.iter().all(|value| value.is_finite()),
         }
     }
 }
 
 /// One complete consolidated `B:18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedParameterPointWire",
+    into = "CatiaConsolidatedParameterPointWire"
+)]
 pub struct CatiaConsolidatedParameterPoint {
     /// Stable native-record identity.
     pub id: String,
@@ -629,19 +758,64 @@ pub struct CatiaConsolidatedParameterPoint {
     pub byte_offset: u64,
     /// Complete framed-record length.
     pub byte_len: u64,
-    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
-    pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
-    pub prefix: u8,
+    pub prefix: crate::families::b2::records::B2ParameterPointPrefix,
     /// Second byte of the two-byte class-specific prefix.
     pub control: u8,
     /// Layout-specific finite scalar lane.
     pub payload: CatiaConsolidatedParameterPointPayload,
 }
 
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedParameterPointWire {
+    id: String,
+    byte_offset: u64,
+    byte_len: u64,
+    layout: u8,
+    prefix: u8,
+    control: u8,
+    payload: CatiaConsolidatedParameterPointPayload,
+}
+
+impl From<CatiaConsolidatedParameterPoint> for CatiaConsolidatedParameterPointWire {
+    fn from(value: CatiaConsolidatedParameterPoint) -> Self {
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            byte_len: value.byte_len,
+            layout: value.payload.layout(),
+            prefix: value.prefix.as_u8(),
+            control: value.control,
+            payload: value.payload,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedParameterPointWire> for CatiaConsolidatedParameterPoint {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedParameterPointWire) -> Result<Self, Self::Error> {
+        if wire.layout != wire.payload.layout() {
+            return Err(format!(
+                "parameter-point layout {:#04x} does not match payload",
+                wire.layout
+            ));
+        }
+        let prefix = crate::families::b2::records::B2ParameterPointPrefix::from_u8(wire.prefix)
+            .ok_or_else(|| format!("unknown parameter-point prefix {:#04x}", wire.prefix))?;
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            prefix,
+            control: wire.control,
+            payload: wire.payload,
+        })
+    }
+}
+
 /// Selector-specific payload of a consolidated `B:27` plane carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedPlaneCarrierPayload {
     /// Two-coordinate point, two-coordinate direction, and three tail scalars.
@@ -673,14 +847,31 @@ pub enum CatiaConsolidatedPlaneCarrierPayload {
     /// Finite scalar lane for a selector whose semantic layout is not yet
     /// established.
     ScalarLane {
+        /// Second payload byte selecting the scalar layout.
+        #[serde(skip, default)]
+        selector: u8,
         /// Complete selector-specific scalar lane in source order.
         values: Vec<f64>,
     },
 }
 
+impl CatiaConsolidatedPlaneCarrierPayload {
+    pub(crate) const fn selector(&self) -> u8 {
+        match self {
+            Self::PointDirection2 { .. } => 0xe4,
+            Self::PointDirection3 { .. } => 0xc4,
+            Self::PointTail { .. } => 0xec,
+            Self::ScalarLane { selector, .. } => *selector,
+        }
+    }
+}
+
 /// One complete consolidated `B:27` plane-carrier record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedPlaneCarrierWire",
+    into = "CatiaConsolidatedPlaneCarrierWire"
+)]
 pub struct CatiaConsolidatedPlaneCarrier {
     /// Stable native-record identity.
     pub id: String,
@@ -689,20 +880,69 @@ pub struct CatiaConsolidatedPlaneCarrier {
     /// Complete framed-record length.
     pub byte_len: u64,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent frame flag.
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Width-coded frame header token.
     pub header_token: u32,
-    /// Second payload byte selecting the scalar layout.
-    pub selector: u8,
     /// Selector-specific finite scalar payload.
     pub payload: CatiaConsolidatedPlaneCarrierPayload,
 }
 
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedPlaneCarrierWire {
+    id: String,
+    byte_offset: u64,
+    byte_len: u64,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
+    header_token: u32,
+    selector: u8,
+    payload: CatiaConsolidatedPlaneCarrierPayload,
+}
+
+impl From<CatiaConsolidatedPlaneCarrier> for CatiaConsolidatedPlaneCarrierWire {
+    fn from(value: CatiaConsolidatedPlaneCarrier) -> Self {
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            byte_len: value.byte_len,
+            width: value.width,
+            flag: value.flag,
+            header_token: value.header_token,
+            selector: value.payload.selector(),
+            payload: value.payload,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedPlaneCarrierWire> for CatiaConsolidatedPlaneCarrier {
+    type Error = String;
+
+    fn try_from(mut wire: CatiaConsolidatedPlaneCarrierWire) -> Result<Self, Self::Error> {
+        if let CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, .. } = &mut wire.payload
+        {
+            *selector = wire.selector;
+        } else if wire.payload.selector() != wire.selector {
+            return Err(format!(
+                "plane-carrier selector {:#04x} does not match payload",
+                wire.selector
+            ));
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            width: wire.width,
+            flag: wire.flag,
+            header_token: wire.header_token,
+            payload: wire.payload,
+        })
+    }
+}
+
 /// One complete consolidated `B:37` persistent-reference list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedReferenceList {
     /// Stable native-record identity.
     pub id: String,
@@ -715,7 +955,6 @@ pub struct CatiaConsolidatedReferenceList {
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
 /// identity has not necessarily been resolved to a native surface record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedPcurve {
     /// Stable native-record identity.
     pub id: String,
@@ -741,13 +980,11 @@ pub struct CatiaConsolidatedPcurve {
     pub range: [f64; 2],
     /// Bytes following the evaluation interval in the framed payload.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub tail: Vec<u8>,
 }
 
 /// One structurally complete consolidated `B:2a` sphere chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedSphere {
     /// Stable native-record identity.
     pub id: String,
@@ -771,7 +1008,6 @@ pub struct CatiaConsolidatedSphere {
 
 /// One structurally complete consolidated `B:2b` torus chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedTorus {
     /// Stable native-record identity.
     pub id: String,
@@ -805,7 +1041,6 @@ pub struct CatiaConsolidatedTorus {
 
 /// One exact consolidated B-family metric line profile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedLineProfile {
     /// Stable native-record identity.
     pub id: String,
@@ -819,16 +1054,46 @@ pub struct CatiaConsolidatedLineProfile {
     pub range: [f64; 2],
 }
 
+/// Reference-token dialect of a consolidated surface of revolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaRevolutionReferenceToken {
+    /// Compact object-reference token `0x08`.
+    Compact,
+    /// Wide object-reference token `0x0a`.
+    Wide,
+}
+
+impl From<CatiaRevolutionReferenceToken> for u8 {
+    fn from(value: CatiaRevolutionReferenceToken) -> Self {
+        match value {
+            CatiaRevolutionReferenceToken::Compact => 0x08,
+            CatiaRevolutionReferenceToken::Wide => 0x0a,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaRevolutionReferenceToken {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x08 => Ok(Self::Compact),
+            0x0a => Ok(Self::Wide),
+            other => Err(format!("reference_token {other:#x} is not 0x08 or 0x0a")),
+        }
+    }
+}
+
 /// One structurally complete consolidated `B:2d` surface-of-revolution record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedRevolution {
     /// Stable native-record identity.
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
-    /// Reference-token dialect (`0x08` or `0x0a`).
-    pub reference_token: u8,
+    /// Reference-token dialect.
+    pub reference_token: CatiaRevolutionReferenceToken,
     /// Unresolved consolidated allocation identity of the profile curve.
     pub profile_allocation_id: u16,
     /// Axis-frame origin.
@@ -852,7 +1117,6 @@ pub struct CatiaConsolidatedRevolution {
 
 /// One structurally complete consolidated class-`0x61` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedClass61Record {
     /// Stable native-record identity.
     pub id: String,
@@ -864,40 +1128,8 @@ pub struct CatiaConsolidatedClass61Record {
     pub payload: CatiaConsolidatedClass61Payload,
 }
 
-/// One complete consolidated B-family class-`0x5b` or class-`0x5c` record.
-///
-/// These records retain their source-local control lane. The payload has no
-/// assigned semantic fields or cross-source identity relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedClass5b5cRecord {
-    /// Stable native-record identity.
-    pub id: String,
-    /// Byte offset of the framed record.
-    pub byte_offset: u64,
-    /// Zero-based bounded record-source ordinal.
-    pub source_index: u64,
-    /// Logical offset within the bounded record source.
-    pub source_offset: u64,
-    /// Complete framed-record byte length.
-    pub byte_len: u64,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent frame flag.
-    pub flag: u8,
-    /// Record class (`0x5b` or `0x5c`).
-    pub class: u8,
-    /// Width-coded frame header token.
-    pub header_token: u32,
-    /// Complete opaque payload in source order.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub payload: Vec<u8>,
-}
-
 /// Structurally decoded payload of a consolidated class-`0x61` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedClass61Payload {
     /// Count-selected compact reference lane followed by a class-specific tail.
@@ -906,7 +1138,6 @@ pub enum CatiaConsolidatedClass61Payload {
         references: Vec<u32>,
         /// Complete nonempty tail, including terminal byte `0x03`.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         tail: Vec<u8>,
     },
     /// Long form with a monotone member lane and five persistent references.
@@ -924,7 +1155,6 @@ pub enum CatiaConsolidatedClass61Payload {
 
 /// One typed consolidated class-`0x60` group opener.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedGroup {
     /// Stable native-record identity.
     pub id: String,
@@ -936,7 +1166,6 @@ pub struct CatiaConsolidatedGroup {
 
 /// One complete consolidated cone-face chart descriptor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedConeFace {
     /// Stable native-record identity.
     pub id: String,
@@ -946,7 +1175,6 @@ pub struct CatiaConsolidatedConeFace {
     pub byte_len: u64,
     /// Complete reference-and-control program preceding the scalars.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub program: Vec<u8>,
     /// Stored angular chart scale.
     pub angular_scale: f64,
@@ -959,7 +1187,6 @@ pub struct CatiaConsolidatedConeFace {
 /// One complete consolidated historical edge run referencing two retained
 /// pcurve records.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEdgeRun {
     /// Stable native-record identity.
     pub id: String,
@@ -986,7 +1213,6 @@ pub struct CatiaConsolidatedEdgeRun {
 
 /// Wire addressing form of one width-coded allocation reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaAllocationReferenceEncoding {
     /// `4n+1` backward framed-record distance.
@@ -1005,7 +1231,6 @@ pub enum CatiaAllocationReferenceEncoding {
 
 /// Wire addressing form of one fixed-nine owner identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaOwnerIdentityEncoding {
     /// One token from the allocation-reference grammar.
@@ -1014,70 +1239,8 @@ pub enum CatiaOwnerIdentityEncoding {
     RawU8,
 }
 
-/// One structurally complete width-coded class-`0x5e` edge node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedEdgeNode {
-    /// Stable native-record identity.
-    pub id: String,
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Owning compact class-`0x62` packet, when selected by its allocation roster.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allocation_owner: Option<String>,
-    /// Zero-based frame ordinal after the compact owner packet.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allocation_ordinal: Option<u32>,
-    /// Allocation-local curve-support reference.
-    pub curve_ref: u32,
-    /// Middle reference pair. These are endpoint addresses only when an
-    /// allocation walk or complete edge-use run proves that layout.
-    pub vertex_refs: [u32; 2],
-    /// Resolved structural endpoint records in edge direction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint_records: Option<[u64; 2]>,
-    /// Retained vertex identities in edge direction. Empty strings mean that
-    /// the five-reference layout remains unresolved.
-    pub vertices: [String; 2],
-    /// Final reference pair. Complete edge-use runs interpret these as
-    /// allocation-local side selectors; other layouts retain them untyped.
-    pub parameter_selectors: [u32; 2],
-    /// Wire addressing forms of curve, vertex, and parameter references.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_encodings: Option<[CatiaAllocationReferenceEncoding; 5]>,
-    /// Decoded value of the one-byte terminal allocation reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub terminal_value: Option<u32>,
-    /// Wire addressing form of the terminal allocation reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub terminal_encoding: Option<CatiaAllocationReferenceEncoding>,
-    /// Terminal layout byte.
-    pub tail: u8,
-    /// Adjacent class-`0x23..=0x25` edge-definition frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub definition: Option<CatiaConsolidatedEdgeDefinition>,
-    /// Adjacent oriented uses whose references close on this edge node.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uses: Option<CatiaConsolidatedEdgeUses>,
-    /// Analytic circle carrier structurally bound by an adjacent six-record run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
-    /// Typed class-`0x18` descriptor bound to a class-`0x25` edge run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
-}
-
 /// Typed class-`0x18` descriptor bound to a class-`0x25` edge definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedClass25Descriptor {
     /// Record byte offset.
     pub byte_offset: u64,
@@ -1091,67 +1254,54 @@ pub struct CatiaConsolidatedClass25Descriptor {
 
 /// Descriptor and circle relation structurally bound to an analytic edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedAnalyticCircleBinding {
     /// Exact class-`0x18` descriptor frame.
-    pub descriptor: CatiaConsolidatedAnalyticCircleDescriptor,
+    pub descriptor: crate::wire::records::ConsolidatedRawFrame<u64>,
     /// Referenced consolidated circle support.
     pub circle: String,
 }
 
-/// Exact class-`0x18` descriptor frame attached to an analytic circle.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedAnalyticCircleDescriptor {
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
-}
-
-/// Exact class-specific edge-definition frame owned by one consolidated edge node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedEdgeDefinition {
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
-    /// Edge-definition class in `0x23..=0x25`.
-    pub class: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
-    /// Structurally decoded class-specific payload. Reuses the consolidated
-    /// family enum directly: it is serialization-identical (same variant and
-    /// field names, no id/offset decoration), so no native restatement is
-    /// needed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<crate::families::consolidated::records::ConsolidatedEdgeDefinitionData>,
-}
-
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedEdgeUsesWire",
+    into = "CatiaConsolidatedEdgeUsesWire"
+)]
 pub struct CatiaConsolidatedEdgeUses {
     /// Counted allocation-reference vectors in side order.
     pub references: [[u32; 2]; 2],
-    /// Terminal side-use sense bytes in serialized order.
-    pub senses: [u8; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedEdgeUsesWire {
+    references: [[u32; 2]; 2],
+    senses: [u8; 2],
+}
+
+impl From<CatiaConsolidatedEdgeUses> for CatiaConsolidatedEdgeUsesWire {
+    fn from(value: CatiaConsolidatedEdgeUses) -> Self {
+        Self {
+            references: value.references,
+            senses: [0x88, 0x84],
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedEdgeUsesWire> for CatiaConsolidatedEdgeUses {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedEdgeUsesWire) -> Result<Self, Self::Error> {
+        if wire.senses != [0x88, 0x84] {
+            return Err("consolidated edge uses require senses [0x88, 0x84]".to_owned());
+        }
+        Ok(Self {
+            references: wire.references,
+        })
+    }
 }
 
 /// One endpoint identity retained by consolidated topology edge nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedVertexIdentity {
     /// Stable native-record identity assigned in first-incidence order.
     pub id: String,
@@ -1174,7 +1324,6 @@ pub struct CatiaConsolidatedVertexIdentity {
 
 /// Exact carrier selected for one side of a consolidated historical edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum CatiaConsolidatedSupportBinding {
     /// Standalone `b2 03 28` cylinder.
@@ -1225,7 +1374,6 @@ pub enum CatiaConsolidatedSupportBinding {
 
 /// One complete outer FINJPL segment retained with its framing identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFinjplSegment {
     /// Globally unique segment identity.
     pub id: String,
@@ -1242,13 +1390,11 @@ pub struct CatiaFinjplSegment {
     pub name: Option<String>,
     /// Complete segment bytes from marker through the byte before the next segment.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
 }
 
 /// One external CATIA document selected by a storage-property record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaExternalReference {
     /// Globally unique reference identity.
     pub id: String,
@@ -1262,7 +1408,6 @@ pub struct CatiaExternalReference {
 
 /// One exact JPEG preview from the outer summary-information segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaPreviewImage {
     /// Globally unique preview identity.
     pub id: String,
@@ -1278,32 +1423,25 @@ pub struct CatiaPreviewImage {
     pub components: u8,
     /// Exact JPEG byte stream.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
 }
 
 /// One exact outer `01 00 04 00` alias-row core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaAliasRowWire", into = "CatiaAliasRowWire")]
 pub struct CatiaAliasRow {
     /// Globally unique alias-row identity.
     pub id: String,
     /// Byte offset of the four-byte alias marker.
     pub byte_offset: u64,
-    /// Classification of the preceding four-byte word.
-    pub lead: AliasLead,
     /// Complete preceding four-byte word.
     pub lead_raw: u32,
-    /// Low 24 bits of the stored tag word.
-    pub tag: u32,
     /// Complete stored tag word.
     pub tag_raw: u32,
     /// Single-byte row flag.
     pub flag: u8,
     /// Complete three-byte F1 field.
     pub f1: [u8; 3],
-    /// One-based object-graph record ordinal carried by F1.
-    pub entity_record_ordinal: u8,
     /// Primary object graph selected by the valid F1 ordinal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_graph: Option<String>,
@@ -1325,18 +1463,107 @@ pub struct CatiaAliasRow {
     pub canonical_surface_tag: Option<u32>,
 }
 
+impl CatiaAliasRow {
+    /// Classification of the stored alias lead word.
+    pub fn lead(&self) -> AliasLead {
+        AliasLead::from_raw(self.lead_raw)
+    }
+    /// Low 24 bits of the stored tag word.
+    pub fn tag(&self) -> u32 {
+        self.tag_raw & 0x00ff_ffff
+    }
+    /// Entity-table ordinal from the F1 field.
+    pub fn entity_record_ordinal(&self) -> u8 {
+        self.f1[2]
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaAliasRowWire {
+    id: String,
+    byte_offset: u64,
+    lead: AliasLead,
+    lead_raw: u32,
+    tag: u32,
+    tag_raw: u32,
+    flag: u8,
+    f1: [u8; 3],
+    entity_record_ordinal: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_graph: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    design_object: Option<String>,
+    f2: u32,
+    f3: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group: Option<AliasGroupMembership>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    canonical_surface_tag: Option<u32>,
+}
+
+impl From<CatiaAliasRow> for CatiaAliasRowWire {
+    fn from(value: CatiaAliasRow) -> Self {
+        Self {
+            lead: value.lead(),
+            tag: value.tag(),
+            entity_record_ordinal: value.entity_record_ordinal(),
+            id: value.id,
+            byte_offset: value.byte_offset,
+            lead_raw: value.lead_raw,
+            tag_raw: value.tag_raw,
+            flag: value.flag,
+            f1: value.f1,
+            object_graph: value.object_graph,
+            object_record: value.object_record,
+            design_object: value.design_object,
+            f2: value.f2,
+            f3: value.f3,
+            group: value.group,
+            canonical_surface_tag: value.canonical_surface_tag,
+        }
+    }
+}
+
+impl TryFrom<CatiaAliasRowWire> for CatiaAliasRow {
+    type Error = &'static str;
+    fn try_from(wire: CatiaAliasRowWire) -> Result<Self, Self::Error> {
+        if wire.lead != AliasLead::from_raw(wire.lead_raw) {
+            return Err("lead disagrees with source bytes");
+        }
+        if wire.tag != wire.tag_raw & 0x00ff_ffff {
+            return Err("tag disagrees with source bytes");
+        }
+        if wire.entity_record_ordinal != wire.f1[2] {
+            return Err("entity_record_ordinal disagrees with source bytes");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            lead_raw: wire.lead_raw,
+            tag_raw: wire.tag_raw,
+            flag: wire.flag,
+            f1: wire.f1,
+            object_graph: wire.object_graph,
+            object_record: wire.object_record,
+            design_object: wire.design_object,
+            f2: wire.f2,
+            f3: wire.f3,
+            group: wire.group,
+            canonical_surface_tag: wire.canonical_surface_tag,
+        })
+    }
+}
+
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaValueBlockWire", into = "CatiaValueBlockWire")]
 pub struct CatiaValueBlock {
     /// Globally unique value-block identity.
     pub id: String,
     /// Byte offset of the `7C0B` marker.
     pub byte_offset: u64,
-    /// Complete framed extent including the trailing terminator.
-    pub byte_len: u64,
-    /// Stored length from the marker through the byte before the terminator.
-    pub declared_len: u64,
     /// Object graph ending exactly where this value block begins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_graph: Option<String>,
@@ -1344,19 +1571,115 @@ pub struct CatiaValueBlock {
     pub catalog: String,
     /// Value payload in serialized order.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub payload: Vec<u8>,
-    /// Lossless typed fields in payload order.
-    #[serde(default)]
-    pub fields: Vec<value_block::ValueField>,
     /// Schema selectors in payload order, resolved against the adjacent catalog.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub schema_selections: Vec<CatiaValueSchemaSelection>,
 }
 
+impl CatiaValueBlock {
+    pub fn declared_len(&self) -> u64 {
+        self.payload.len() as u64 + crate::layout::value_block_7c0b::LEN as u64
+    }
+
+    pub fn byte_len(&self) -> u64 {
+        self.declared_len() + 1
+    }
+
+    pub fn fields(&self) -> Vec<value_block::ValueField> {
+        value_block::tokenize(&self.payload)
+    }
+}
+
+// Compatibility fields are derived on output and checked once on input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CatiaValueBlockWire {
+    /// Globally unique value-block identity.
+    id: String,
+    /// Byte offset of the `7C0B` marker.
+    byte_offset: u64,
+    /// Complete framed extent including the trailing terminator.
+    byte_len: u64,
+    /// Stored length from the marker through the byte before the terminator.
+    declared_len: u64,
+    /// Object graph ending exactly where this value block begins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_graph: Option<String>,
+    /// Source-schema catalog that begins immediately after this block.
+    catalog: String,
+    /// Value payload in serialized order.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    payload: Vec<u8>,
+    /// Lossless typed fields in payload order.
+    #[serde(default)]
+    fields: Vec<value_block::ValueField>,
+    /// Schema selectors in payload order, resolved against the adjacent catalog.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    schema_selections: Vec<CatiaValueSchemaSelection>,
+}
+
+impl From<CatiaValueBlock> for CatiaValueBlockWire {
+    fn from(block: CatiaValueBlock) -> Self {
+        Self {
+            byte_len: block.byte_len(),
+            declared_len: block.declared_len(),
+            fields: block.fields(),
+            id: block.id,
+            byte_offset: block.byte_offset,
+            object_graph: block.object_graph,
+            catalog: block.catalog,
+            payload: block.payload,
+            schema_selections: block.schema_selections,
+        }
+    }
+}
+
+impl TryFrom<CatiaValueBlockWire> for CatiaValueBlock {
+    type Error = &'static str;
+
+    fn try_from(wire: CatiaValueBlockWire) -> Result<Self, Self::Error> {
+        let block = Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            object_graph: wire.object_graph,
+            catalog: wire.catalog,
+            payload: wire.payload,
+            schema_selections: wire.schema_selections,
+        };
+        if wire.byte_len != block.byte_len()
+            || wire.declared_len != block.declared_len()
+            || wire.fields != block.fields()
+        {
+            return Err("value block lengths or fields disagree with payload");
+        }
+        Ok(block)
+    }
+}
+
+/// Catalog class and encoded payload of a selected value-block schema selector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatiaValueSchemaSelectionValue {
+    /// Selected catalog class.
+    pub class: CatiaDesignClass,
+    /// Complete encoded value after this selector and before the next selector.
+    pub encoded_value: Vec<value_block::ValueField>,
+}
+
+/// One `0x32` selector from a value block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CatiaValueSchemaSelectionKind {
+    /// Catalog class selected by the stored ordinal.
+    Selected(CatiaValueSchemaSelectionValue),
+    /// Terminal absent-schema sentinel.
+    Terminal,
+}
+
 /// One `0x32` selector from a value block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaValueSchemaSelectionWire",
+    into = "CatiaValueSchemaSelectionWire"
+)]
 pub struct CatiaValueSchemaSelection {
     /// Globally unique schema-selection identity.
     pub id: String,
@@ -1366,20 +1689,111 @@ pub struct CatiaValueSchemaSelection {
     pub offset: u64,
     /// Stored zero-based ordinal or terminal absent-schema sentinel.
     pub ordinal: u32,
-    /// Selected catalog entry; absent for the terminal sentinel.
+    /// Selected class or terminal sentinel.
+    pub kind: CatiaValueSchemaSelectionKind,
+}
+
+impl CatiaValueSchemaSelection {
+    #[cfg(test)]
+    pub fn entry(&self) -> Option<&str> {
+        match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.entry.as_str()),
+            CatiaValueSchemaSelectionKind::Terminal => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn name(&self) -> Option<&str> {
+        match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.name.as_str()),
+            CatiaValueSchemaSelectionKind::Terminal => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn encoded_value(&self) -> &[value_block::ValueField] {
+        match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => &value.encoded_value,
+            CatiaValueSchemaSelectionKind::Terminal => &[],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaValueSchemaSelectionWire {
+    id: String,
+    parent: String,
+    offset: u64,
+    ordinal: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry: Option<String>,
-    /// UTF-8 source-schema name stored by the selected entry.
+    entry: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// Complete encoded value after this selector and before the next selector.
+    name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub encoded_value: Vec<value_block::ValueField>,
+    encoded_value: Vec<value_block::ValueField>,
+}
+
+impl From<CatiaValueSchemaSelection> for CatiaValueSchemaSelectionWire {
+    fn from(value: CatiaValueSchemaSelection) -> Self {
+        let (entry, name, encoded_value) = match value.kind {
+            CatiaValueSchemaSelectionKind::Selected(selected) => (
+                Some(selected.class.entry),
+                Some(selected.class.name),
+                selected.encoded_value,
+            ),
+            CatiaValueSchemaSelectionKind::Terminal => (None, None, Vec::new()),
+        };
+        Self {
+            id: value.id,
+            parent: value.parent,
+            offset: value.offset,
+            ordinal: value.ordinal,
+            entry,
+            name,
+            encoded_value,
+        }
+    }
+}
+
+impl TryFrom<CatiaValueSchemaSelectionWire> for CatiaValueSchemaSelection {
+    type Error = String;
+
+    fn try_from(wire: CatiaValueSchemaSelectionWire) -> Result<Self, Self::Error> {
+        let kind = match (wire.entry, wire.name) {
+            (None, None) => {
+                if !wire.encoded_value.is_empty() {
+                    return Err(
+                        "value schema terminal sentinel cannot carry an encoded value".to_owned(),
+                    );
+                }
+                CatiaValueSchemaSelectionKind::Terminal
+            }
+            (Some(entry), Some(name)) => {
+                CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
+                    class: CatiaDesignClass { entry, name },
+                    encoded_value: wire.encoded_value,
+                })
+            }
+            _ => {
+                return Err(
+                    "value schema selection entry and name must both be present or both absent"
+                        .to_owned(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            offset: wire.offset,
+            ordinal: wire.ordinal,
+            kind,
+        })
+    }
 }
 
 /// One exact `7C02` source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaCatalogWire", into = "CatiaCatalogWire")]
 pub struct CatiaCatalog {
     /// Globally unique catalog identity.
     pub id: String,
@@ -1387,16 +1801,79 @@ pub struct CatiaCatalog {
     pub byte_offset: u64,
     /// Total framed byte length.
     pub byte_len: u64,
-    /// Stored count, equal to the entry population plus one.
-    pub declared_count: u32,
     /// Catalog entries in serialized order.
     #[serde(default)]
     pub entries: Vec<CatiaCatalogEntry>,
 }
 
+impl CatiaCatalog {
+    pub fn declared_count(&self) -> u32 {
+        u32::try_from(self.entries.len() + 1).unwrap_or(u32::MAX)
+    }
+}
+
+// The stored header keeps its declared count until the entry arena is joined.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CatiaCatalogWire {
+    /// Globally unique catalog identity.
+    id: String,
+    /// Byte offset of the `7C02` marker.
+    byte_offset: u64,
+    /// Total framed byte length.
+    byte_len: u64,
+    /// Stored count, equal to the entry population plus one.
+    declared_count: u32,
+    /// Catalog entries in serialized order.
+    #[serde(default)]
+    entries: Vec<CatiaCatalogEntry>,
+}
+
+impl CatiaCatalogWire {
+    fn header(catalog: &CatiaCatalog) -> Self {
+        Self {
+            id: catalog.id.clone(),
+            byte_offset: catalog.byte_offset,
+            byte_len: catalog.byte_len,
+            declared_count: catalog.declared_count(),
+            entries: Vec::new(),
+        }
+    }
+}
+
+impl From<CatiaCatalog> for CatiaCatalogWire {
+    fn from(catalog: CatiaCatalog) -> Self {
+        Self {
+            declared_count: catalog.declared_count(),
+            id: catalog.id,
+            byte_offset: catalog.byte_offset,
+            byte_len: catalog.byte_len,
+            entries: catalog.entries,
+        }
+    }
+}
+
+impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
+    type Error = &'static str;
+
+    fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
+        if u32::try_from(wire.entries.len())
+            .ok()
+            .and_then(|count| count.checked_add(1))
+            != Some(wire.declared_count)
+        {
+            return Err("catalog count disagrees with entries");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            entries: wire.entries,
+        })
+    }
+}
+
 /// One source-schema name from a [`CatiaCatalog`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaCatalogEntry {
     /// Globally unique catalog-entry identity.
     pub id: String,
@@ -1412,7 +1889,6 @@ pub struct CatiaCatalogEntry {
 
 /// One definition selector resolved against an object graph's source schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDefinitionSchemaSelection {
     /// Byte offset of the selector marker within the definition prefix.
     pub offset: u64,
@@ -1428,7 +1904,6 @@ pub struct CatiaDefinitionSchemaSelection {
 
 /// One schema selector and its following encoded `7C07` value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntityValueSchemaSelection {
     /// Byte offset of the selector marker within the value payload.
     pub offset: u64,
@@ -1448,7 +1923,6 @@ pub struct CatiaEntityValueSchemaSelection {
 
 /// One repeated-reference preamble selector resolved through its graph catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRepeatedReferenceSchemaSelection {
     /// Serialized order of the blob and schema ordinal.
     pub order: CatiaRepeatedReferenceSchemaOrder,
@@ -1466,7 +1940,6 @@ pub struct CatiaRepeatedReferenceSchemaSelection {
 
 /// One exact schema selector used by a typed entity program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySchemaValue {
     /// Byte offset of the selector within its definition or value payload.
     #[serde(default)]
@@ -1482,7 +1955,10 @@ pub struct CatiaEntitySchemaValue {
 
 /// One complete relation-expression value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    from = "CatiaRelationExpressionWire",
+    into = "CatiaRelationExpressionWire"
+)]
 pub struct CatiaRelationExpression {
     /// Exact wire framing and its framing-specific roles.
     pub framing: CatiaRelationExpressionFraming,
@@ -1492,16 +1968,64 @@ pub struct CatiaRelationExpression {
     pub parameter_role: CatiaEntitySchemaValue,
     /// Stored source type signature.
     pub type_signature: CatiaEntitySchemaValue,
-    /// Parsed parameter and value types when the source signature has the typed form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<CatiaRelationTypeSignature>,
     /// Exact `RelationExpFct` function selector.
     pub function_role: CatiaEntitySchemaValue,
 }
 
+impl CatiaRelationExpression {
+    /// Parsed parameter and value types when the source signature has the typed form.
+    pub fn signature(&self) -> Option<CatiaRelationTypeSignature> {
+        let placeholder = match &self.framing {
+            CatiaRelationExpressionFraming::PlaceholderState { placeholder, .. } => {
+                Some(placeholder.value.as_str())
+            }
+            CatiaRelationExpressionFraming::ParserVersion { .. }
+            | CatiaRelationExpressionFraming::BooleanParserVersion { .. }
+            | CatiaRelationExpressionFraming::OpenedBooleanParserVersion { .. } => None,
+        };
+        relation_type_signature(placeholder, &self.type_signature.value)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaRelationExpressionWire {
+    framing: CatiaRelationExpressionFraming,
+    expression: CatiaEntitySchemaValue,
+    parameter_role: CatiaEntitySchemaValue,
+    type_signature: CatiaEntitySchemaValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature: Option<CatiaRelationTypeSignature>,
+    function_role: CatiaEntitySchemaValue,
+}
+
+impl From<CatiaRelationExpression> for CatiaRelationExpressionWire {
+    fn from(value: CatiaRelationExpression) -> Self {
+        let signature = value.signature();
+        Self {
+            framing: value.framing,
+            expression: value.expression,
+            parameter_role: value.parameter_role,
+            type_signature: value.type_signature,
+            signature,
+            function_role: value.function_role,
+        }
+    }
+}
+
+impl From<CatiaRelationExpressionWire> for CatiaRelationExpression {
+    fn from(wire: CatiaRelationExpressionWire) -> Self {
+        Self {
+            framing: wire.framing,
+            expression: wire.expression,
+            parameter_role: wire.parameter_role,
+            type_signature: wire.type_signature,
+            function_role: wire.function_role,
+        }
+    }
+}
+
 /// Mutually exclusive role framing of one relation-expression value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaRelationExpressionFraming {
     /// Local placeholder followed by the exact `opened` state selector.
     PlaceholderState {
@@ -1535,7 +2059,6 @@ pub enum CatiaRelationExpressionFraming {
 
 /// Typed roles in a relation-expression source signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationTypeSignature {
     /// Ordered expression-local inputs named inside the signature.
     pub inputs: Vec<CatiaRelationTypeInput>,
@@ -1545,7 +2068,6 @@ pub struct CatiaRelationTypeSignature {
 
 /// One typed input clause in a relation-expression source signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationTypeInput {
     /// Expression-local parameter named before `#In`.
     pub parameter: String,
@@ -1555,7 +2077,6 @@ pub struct CatiaRelationTypeInput {
 
 /// Evaluation state of one complete entity-record suffix value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntityEvaluation {
     /// The `E7` form carries no evaluated scalar.
     Unset,
@@ -1568,7 +2089,6 @@ pub enum CatiaEntityEvaluation {
 
 /// Wire encoding of one entity-record suffix evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntityEvaluationEncoding {
     /// The evaluation opcode directly precedes its payload.
     Direct,
@@ -1578,7 +2098,6 @@ pub enum CatiaEntityEvaluationEncoding {
 
 /// Payload of one complete entity-record suffix value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixPayload {
     /// An unset or finite scalar evaluation with exact framing.
     Evaluation {
@@ -1603,7 +2122,7 @@ pub enum CatiaEntitySuffixPayload {
         /// Stored zero-based source-schema ordinal.
         selector: u32,
         /// Typed value following the selector.
-        value: CatiaEntitySuffixSelectedValue,
+        value: CatiaEntitySuffixSchemaValue,
     },
     /// One zero-payload `E8` control state.
     ControlE8,
@@ -1613,40 +2132,8 @@ pub enum CatiaEntitySuffixPayload {
     Separator37,
 }
 
-/// Typed value following a source-schema selector in an entity-record suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum CatiaEntitySuffixSelectedValue {
-    /// One canonical one-byte atom.
-    Atom {
-        /// Decoded atom value.
-        value: u32,
-    },
-    /// One direct unset or finite scalar evaluation.
-    Evaluation {
-        /// Byte offset of the evaluation opcode within the record suffix.
-        #[serde(default)]
-        opcode_offset: u64,
-        /// Decoded evaluation.
-        evaluation: CatiaEntityEvaluation,
-    },
-    /// One zero-payload `E8` control state.
-    ControlE8,
-    /// One zero-payload `37` separator.
-    Separator37,
-    /// One further source-schema selector.
-    SchemaSelector {
-        /// Byte offset of the selector marker within the record suffix.
-        #[serde(default)]
-        offset: u64,
-        /// Stored zero-based source-schema ordinal.
-        ordinal: u32,
-    },
-}
-
 /// Exact trailer framing of one complete entity-record suffix value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixTrailer {
     /// No trailer bytes follow the payload.
     Empty,
@@ -1668,7 +2155,6 @@ pub enum CatiaEntitySuffixTrailer {
 
 /// One complete typed value in an entity-record suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySuffixValue {
     /// Three canonical compact atoms preceding the field code.
     pub prefix_atoms: [u32; 3],
@@ -1684,7 +2170,6 @@ pub struct CatiaEntitySuffixValue {
 
 /// State byte following one escaped word in an entity-record suffix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixEscapedWordState {
     /// Stored state byte `00`.
     State00,
@@ -1700,7 +2185,6 @@ pub enum CatiaEntitySuffixEscapedWordState {
 
 /// One complete escaped-word entity-record suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySuffixEscapedWord {
     /// Fixed-width little-endian word following the `80` escape.
     pub word: u32,
@@ -1710,7 +2194,6 @@ pub struct CatiaEntitySuffixEscapedWord {
 
 /// One complete non-value entity-record suffix framing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixFraming {
     /// One escaped fixed-width word followed by an exact state.
     EscapedWord(CatiaEntitySuffixEscapedWord),
@@ -1720,7 +2203,6 @@ pub enum CatiaEntitySuffixFraming {
     FixedFeF6 {
         /// Exact fixed-width payload.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         payload: Vec<u8>,
     },
     /// One paged compact atom followed by state byte `01`.
@@ -1732,7 +2214,6 @@ pub enum CatiaEntitySuffixFraming {
 
 /// One suffix selector resolved through its graph's source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySuffixSchemaSelection {
     /// Byte offset of the selector marker within the record suffix.
     #[serde(default)]
@@ -1749,7 +2230,6 @@ pub struct CatiaEntitySuffixSchemaSelection {
 
 /// Catalog-resolved value following an entity-suffix schema selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixSchemaValue {
     /// One canonical compact atom.
     Atom {
@@ -1775,18 +2255,17 @@ pub enum CatiaEntitySuffixSchemaValue {
         offset: u64,
         /// Stored zero-based source-schema ordinal.
         ordinal: u32,
-        /// Selected catalog entry when the ordinal is in range.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry: Option<String>,
-        /// UTF-8 source-schema name stored by the selected entry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
+        /// Catalog class selected by `ordinal`.
+        #[serde(flatten)]
+        resolution: Option<CatiaDesignClass>,
     },
 }
 
+/// Unresolved suffix payload value. Same shape as [`CatiaEntitySuffixSchemaValue`].
+pub type CatiaEntitySuffixSelectedValue = CatiaEntitySuffixSchemaValue;
+
 /// One complete named parameter-value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaParameterValue {
     /// Stored parameter name.
     pub name: CatiaEntitySchemaValue,
@@ -1801,7 +2280,6 @@ pub struct CatiaParameterValue {
 
 /// One complete source-schema `Range` interval carried by an entity value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRangeInterval {
     /// Exact source-schema selector naming `Range`.
     pub range: CatiaEntitySchemaValue,
@@ -1820,7 +2298,6 @@ pub struct CatiaRangeInterval {
 
 /// Exact scalar-suffix dialect associating a nominal with a `Range` interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaRangeNominalFraming {
     /// Prefix code `D8` and trailer `81 93`.
     D8Token8193,
@@ -1834,7 +2311,6 @@ pub enum CatiaRangeNominalFraming {
 
 /// One finite nominal associated with a complete `Range` interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRangeNominal {
     /// Exact scalar-suffix dialect.
     pub framing: CatiaRangeNominalFraming,
@@ -1847,7 +2323,6 @@ pub struct CatiaRangeNominal {
 
 /// Exact framing of one complete constraint-range value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaConstraintRangeFraming {
     /// `CstAttr_Dimension` selected with prefix code `B8`.
     DimensionB8,
@@ -1863,7 +2338,6 @@ pub enum CatiaConstraintRangeFraming {
 
 /// One complete constraint-range value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConstraintRange {
     /// Exact `Range` role selector.
     pub range: CatiaEntitySchemaValue,
@@ -1886,7 +2360,6 @@ pub struct CatiaConstraintRange {
 
 /// One exact payload-reference occurrence selecting an entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntityIncomingReference {
     /// Object record carrying the reference occurrence.
     pub object_record: String,
@@ -1901,7 +2374,6 @@ pub struct CatiaEntityIncomingReference {
 
 /// One exact object-head storage selector selecting an entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntityIncomingStorageReference {
     /// Object record carrying the storage selector.
     pub object_record: String,
@@ -1912,7 +2384,6 @@ pub struct CatiaEntityIncomingStorageReference {
 
 /// One definition-selected entity whose complete value occupies its suffix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDefinitionValue {
     /// Exact source-schema definition selected by the entity.
     pub definition: CatiaEntitySchemaValue,
@@ -1925,7 +2396,6 @@ pub struct CatiaDefinitionValue {
 
 /// One value selected through a complete two-definition role chain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDefinitionChainValue {
     /// Definition repeated by the suffix's fixed-width schema selector.
     pub selector: CatiaEntitySchemaValue,
@@ -1937,13 +2407,18 @@ pub struct CatiaDefinitionChainValue {
 
 /// One complete formula relation stored by an entity and its object payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFormulaRelation {
     /// Complete relation-expression incidence selected by the second payload reference.
-    #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
+    #[serde(
+        default = "default_payload_entity_reference",
+        deserialize_with = "deserialize_payload_entity_reference"
+    )]
     pub expression_entity: CatiaPayloadEntityReference,
     /// Output parameter incidence selected by the third payload reference.
-    #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
+    #[serde(
+        default = "default_payload_entity_reference",
+        deserialize_with = "deserialize_payload_entity_reference"
+    )]
     pub output_entity: CatiaPayloadEntityReference,
     /// Named parameter records selected by expression-local symbols, in occurrence order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1952,7 +2427,6 @@ pub struct CatiaFormulaRelation {
 
 /// One relation-expression symbol and every matching named parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationParameterDependency {
     /// UTF-8 byte offset of this occurrence within the source expression.
     #[serde(default)]
@@ -1965,13 +2439,11 @@ pub struct CatiaRelationParameterDependency {
         skip_serializing_if = "Vec::is_empty",
         deserialize_with = "deserialize_relation_dependency_candidates"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<CatiaEntityReference>"))]
     pub candidates: Vec<CatiaEntityReference>,
 }
 
 /// One declared relation-program input and its uniquely selected entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationProgramInput {
     /// Expression-local parameter in signature order.
     pub parameter: String,
@@ -1999,10 +2471,9 @@ where
             .into_iter()
             .map(|candidate| match candidate {
                 CatiaRelationDependencyCandidate::Reference(reference) => reference,
-                CatiaRelationDependencyCandidate::LegacyEntity(entity) => CatiaEntityReference {
-                    entity: Some(entity),
-                    ..CatiaEntityReference::default()
-                },
+                CatiaRelationDependencyCandidate::LegacyEntity(entity) => {
+                    CatiaEntityReference::from_parts(0, false, Some(entity), None)
+                }
             })
             .collect()
     })
@@ -2010,52 +2481,160 @@ where
 
 /// One exact compound relation-program instance frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaRelationProgramInstanceWire",
+    into = "CatiaRelationProgramInstanceWire"
+)]
 pub struct CatiaRelationProgramInstance {
-    /// Exact object-head and payload production.
-    #[serde(default)]
+    /// Exact object-head and payload production with the framing-specific incidence.
     pub framing: CatiaRelationProgramInstanceFraming,
     /// Entity incidence carried by the frame's program slot.
-    #[serde(default)]
     pub program_entity: CatiaEntityReference,
     /// Entity identity stored once as an atom and once as a reference.
-    #[serde(default)]
     pub repeated_entity: CatiaEntityReference,
     /// Every reference occurrence in exact payload order, including repeated identities.
+    pub reference_incidences: Vec<CatiaPayloadEntityReference>,
+    /// Selected entity when it carries a complete relation-expression program.
+    pub relation_expression: Option<String>,
+    /// Named parameter records selected by expression-local symbols, in occurrence order.
+    pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
+    /// Complete declared inputs in signature order; absent when any binding is incomplete.
+    pub inputs: Option<Vec<CatiaRelationProgramInput>>,
+}
+
+impl CatiaRelationProgramInstance {
+    /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
+    #[must_use]
+    pub fn lead12_context_entity(&self) -> Option<&CatiaEntityReference> {
+        match &self.framing {
+            CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => Some(context_entity),
+            CatiaRelationProgramInstanceFraming::Lead54 { .. } => None,
+        }
+    }
+
+    /// Trailing same-graph entity incidence carried only by lead-`54`.
+    #[must_use]
+    pub fn lead54_trailing_entity(&self) -> Option<&CatiaEntityReference> {
+        match &self.framing {
+            CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => {
+                Some(trailing_entity)
+            }
+            CatiaRelationProgramInstanceFraming::Lead12 { .. } => None,
+        }
+    }
+
+    /// Result entity selected by the framing-specific `paramout` slot.
+    #[must_use]
+    pub fn output_entity(&self) -> Option<&CatiaEntityReference> {
+        let slot = match &self.framing {
+            CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => context_entity,
+            CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => trailing_entity,
+        };
+        (slot.class_name() == Some("paramout")).then_some(slot)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaRelationProgramInstanceWire {
+    #[serde(default)]
+    framing: CatiaRelationProgramInstanceFramingTag,
+    #[serde(default)]
+    program_entity: Option<CatiaEntityReference>,
+    #[serde(default)]
+    repeated_entity: Option<CatiaEntityReference>,
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
         deserialize_with = "deserialize_relation_reference_incidences"
     )]
-    pub reference_incidences: Vec<CatiaPayloadEntityReference>,
-    /// Selected entity when it carries a complete relation-expression program.
+    reference_incidences: Vec<CatiaPayloadEntityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_expression: Option<String>,
-    /// Named parameter records selected by expression-local symbols, in occurrence order.
+    relation_expression: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
-    /// Complete declared inputs in signature order; absent when any binding is incomplete.
+    parameter_dependencies: Vec<CatiaRelationParameterDependency>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inputs: Option<Vec<CatiaRelationProgramInput>>,
-    /// Result entity selected by the framing-specific `paramout` slot.
-    ///
-    /// Lead-`12` selects its `ref(h)` context slot and lead-`54` selects its
-    /// trailing `d` slot. The slot is a result only when its resolved class is
-    /// `paramout`; the ordinary context and trailing incidences remain
-    /// available in their dedicated fields.
+    inputs: Option<Vec<CatiaRelationProgramInput>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_entity: Option<CatiaEntityReference>,
-    /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
+    output_entity: Option<CatiaEntityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead12_context_entity: Option<CatiaEntityReference>,
-    /// Trailing same-graph entity incidence carried only by lead-`54`.
+    lead12_context_entity: Option<CatiaEntityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead54_trailing_entity: Option<CatiaEntityReference>,
+    lead54_trailing_entity: Option<CatiaEntityReference>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+enum CatiaRelationProgramInstanceFramingTag {
+    #[default]
+    Lead12,
+    Lead54,
+}
+
+impl From<CatiaRelationProgramInstance> for CatiaRelationProgramInstanceWire {
+    fn from(value: CatiaRelationProgramInstance) -> Self {
+        let output_entity = value.output_entity().cloned();
+        let (framing, lead12_context_entity, lead54_trailing_entity) = match value.framing {
+            CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => (
+                CatiaRelationProgramInstanceFramingTag::Lead12,
+                Some(context_entity),
+                None,
+            ),
+            CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => (
+                CatiaRelationProgramInstanceFramingTag::Lead54,
+                None,
+                Some(trailing_entity),
+            ),
+        };
+        Self {
+            framing,
+            program_entity: Some(value.program_entity),
+            repeated_entity: Some(value.repeated_entity),
+            reference_incidences: value.reference_incidences,
+            relation_expression: value.relation_expression,
+            parameter_dependencies: value.parameter_dependencies,
+            inputs: value.inputs,
+            output_entity,
+            lead12_context_entity,
+            lead54_trailing_entity,
+        }
+    }
+}
+
+impl TryFrom<CatiaRelationProgramInstanceWire> for CatiaRelationProgramInstance {
+    type Error = String;
+
+    fn try_from(wire: CatiaRelationProgramInstanceWire) -> Result<Self, Self::Error> {
+        let framing = match wire.framing {
+            CatiaRelationProgramInstanceFramingTag::Lead12 => {
+                let context_entity = wire.lead12_context_entity.ok_or_else(|| {
+                    "lead-12 relation program requires lead12_context_entity".to_owned()
+                })?;
+                CatiaRelationProgramInstanceFraming::Lead12 { context_entity }
+            }
+            CatiaRelationProgramInstanceFramingTag::Lead54 => {
+                let trailing_entity = wire.lead54_trailing_entity.ok_or_else(|| {
+                    "lead-54 relation program requires lead54_trailing_entity".to_owned()
+                })?;
+                CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity }
+            }
+        };
+        Ok(Self {
+            framing,
+            program_entity: wire
+                .program_entity
+                .unwrap_or(CatiaEntityReference::Unresolved { entity_id: 0 }),
+            repeated_entity: wire
+                .repeated_entity
+                .unwrap_or(CatiaEntityReference::Unresolved { entity_id: 0 }),
+            reference_incidences: wire.reference_incidences,
+            relation_expression: wire.relation_expression,
+            parameter_dependencies: wire.parameter_dependencies,
+            inputs: wire.inputs,
+        })
+    }
 }
 
 /// One exact entity-reference occurrence in an object payload.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatiaPayloadEntityReference {
     /// Byte offset of the reference field within the object payload.
     pub payload_offset: u64,
@@ -2094,6 +2673,13 @@ where
         .map(stored_payload_entity_reference)
 }
 
+fn default_payload_entity_reference() -> CatiaPayloadEntityReference {
+    CatiaPayloadEntityReference {
+        payload_offset: 0,
+        reference: CatiaEntityReference::Unresolved { entity_id: 0 },
+    }
+}
+
 fn stored_payload_entity_reference(
     incidence: StoredCatiaPayloadEntityReference,
 ) -> CatiaPayloadEntityReference {
@@ -2107,53 +2693,174 @@ fn stored_payload_entity_reference(
 }
 
 /// One stored entity identity and its optional same-graph resolution.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaEntityReference {
-    /// Stored entity identity.
-    pub entity_id: u32,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "CatiaEntityReferenceWire", into = "CatiaEntityReferenceWire")]
+pub enum CatiaEntityReference {
     /// The stored identity is the graph's terminal null identity.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
+    Null { entity_id: u32 },
+    /// Stored identity with no same-graph entity.
+    Unresolved { entity_id: u32 },
     /// Same-graph entity selected by that identity.
+    Resolved {
+        entity_id: u32,
+        entity: String,
+        class_name: Option<String>,
+    },
+}
+
+impl CatiaEntityReference {
+    pub fn from_parts(
+        entity_id: u32,
+        is_null: bool,
+        entity: Option<String>,
+        class_name: Option<String>,
+    ) -> Self {
+        match (is_null, entity) {
+            (true, _) => Self::Null { entity_id },
+            (false, None) => Self::Unresolved { entity_id },
+            (false, Some(entity)) => Self::Resolved {
+                entity_id,
+                entity,
+                class_name,
+            },
+        }
+    }
+
+    pub fn entity_id(&self) -> u32 {
+        match *self {
+            Self::Null { entity_id }
+            | Self::Unresolved { entity_id }
+            | Self::Resolved { entity_id, .. } => entity_id,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null { .. })
+    }
+
+    pub fn entity(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { entity, .. } => Some(entity.as_str()),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn class_name(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { class_name, .. } => class_name.as_deref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_entity_id(self, entity_id: u32) -> Self {
+        match self {
+            Self::Null { .. } => Self::Null { entity_id },
+            Self::Unresolved { .. } => Self::Unresolved { entity_id },
+            Self::Resolved {
+                entity, class_name, ..
+            } => Self::Resolved {
+                entity_id,
+                entity,
+                class_name,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn without_entity(self) -> Self {
+        Self::Unresolved {
+            entity_id: self.entity_id(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaEntityReferenceWire {
+    entity_id: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    is_null: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity: Option<String>,
-    /// Class selected by the same-graph entity when its object record has one.
+    entity: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
+    class_name: Option<String>,
+}
+
+impl From<CatiaEntityReference> for CatiaEntityReferenceWire {
+    fn from(value: CatiaEntityReference) -> Self {
+        match value {
+            CatiaEntityReference::Null { entity_id } => Self {
+                entity_id,
+                is_null: true,
+                entity: None,
+                class_name: None,
+            },
+            CatiaEntityReference::Unresolved { entity_id } => Self {
+                entity_id,
+                is_null: false,
+                entity: None,
+                class_name: None,
+            },
+            CatiaEntityReference::Resolved {
+                entity_id,
+                entity,
+                class_name,
+            } => Self {
+                entity_id,
+                is_null: false,
+                entity: Some(entity),
+                class_name,
+            },
+        }
+    }
+}
+
+impl From<CatiaEntityReferenceWire> for CatiaEntityReference {
+    fn from(wire: CatiaEntityReferenceWire) -> Self {
+        match (wire.is_null, wire.entity) {
+            (true, _) => Self::Null {
+                entity_id: wire.entity_id,
+            },
+            (false, None) => Self::Unresolved {
+                entity_id: wire.entity_id,
+            },
+            (false, Some(entity)) => Self::Resolved {
+                entity_id: wire.entity_id,
+                entity,
+                class_name: wire.class_name,
+            },
+        }
+    }
 }
 
 /// One complete reference-signature packet and its same-graph entity incidences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaReferenceSignature {
     /// Exact complete packet production.
     #[serde(flatten)]
     pub production: entity_table::ReferenceSignature,
     /// Entity incidence selected by the first fixed-width reference.
-    #[serde(default)]
     pub first_entity: CatiaEntityReference,
     /// Entity incidence selected by the second fixed-width reference.
-    #[serde(default)]
     pub second_entity: CatiaEntityReference,
 }
 
 /// Source-ordered descriptor records sharing one exact reference pair.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaReferenceSignatureCohortWire",
+    into = "CatiaReferenceSignatureCohortWire"
+)]
 pub struct CatiaReferenceSignatureCohort {
+    references: entity_table::ConsecutiveReferences,
     /// Globally unique cohort identity.
     pub id: String,
     /// Containing object graph.
     pub parent: String,
     /// Zero-based order of the cohort's first member within the graph.
     pub ordinal: u64,
-    /// First identity shared by every member.
-    pub first_reference: u32,
     /// Common same-graph incidence selected by the first identity.
     pub first_entity: CatiaEntityReference,
-    /// Consecutive second identity shared by every member.
-    pub second_reference: u32,
     /// Common same-graph incidence selected by the second identity.
     pub second_entity: CatiaEntityReference,
     /// Unique schema selected by descriptor-bearing members after `_SpecList`.
@@ -2163,9 +2870,78 @@ pub struct CatiaReferenceSignatureCohort {
     pub members: Vec<String>,
 }
 
+impl CatiaReferenceSignatureCohort {
+    /// First reference identity shared by the cohort.
+    pub fn first_reference(&self) -> u32 {
+        self.references.first()
+    }
+    /// Second reference identity shared by the cohort.
+    pub fn second_reference(&self) -> u32 {
+        self.references.second()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaReferenceSignatureCohortWire {
+    /// Globally unique cohort identity.
+    id: String,
+    /// Containing object graph.
+    parent: String,
+    /// Zero-based order of the cohort's first member within the graph.
+    ordinal: u64,
+    /// First identity shared by every member.
+    first_reference: u32,
+    /// Common same-graph incidence selected by the first identity.
+    first_entity: CatiaEntityReference,
+    /// Consecutive second identity shared by every member.
+    second_reference: u32,
+    /// Common same-graph incidence selected by the second identity.
+    second_entity: CatiaEntityReference,
+    /// Unique schema selected by descriptor-bearing members after `_SpecList`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
+    /// Descriptor-bearing entity records in source order.
+    members: Vec<String>,
+}
+
+impl From<CatiaReferenceSignatureCohort> for CatiaReferenceSignatureCohortWire {
+    fn from(value: CatiaReferenceSignatureCohort) -> Self {
+        Self {
+            first_reference: value.first_reference(),
+            second_reference: value.second_reference(),
+            id: value.id,
+            parent: value.parent,
+            ordinal: value.ordinal,
+            first_entity: value.first_entity,
+            second_entity: value.second_entity,
+            schema_selection: value.schema_selection,
+            members: value.members,
+        }
+    }
+}
+impl TryFrom<CatiaReferenceSignatureCohortWire> for CatiaReferenceSignatureCohort {
+    type Error = &'static str;
+    fn try_from(wire: CatiaReferenceSignatureCohortWire) -> Result<Self, Self::Error> {
+        let references = entity_table::ConsecutiveReferences::new(wire.first_reference)
+            .ok_or("first_reference has no consecutive successor")?;
+        if references.second() != wire.second_reference {
+            return Err("second_reference must follow first_reference");
+        }
+        Ok(Self {
+            references,
+            id: wire.id,
+            parent: wire.parent,
+            ordinal: wire.ordinal,
+            first_entity: wire.first_entity,
+            second_entity: wire.second_entity,
+            schema_selection: wire.schema_selection,
+            members: wire.members,
+        })
+    }
+}
+
 /// Cohort-level schema incidence selected after the `_SpecList` marker.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaReferenceSignatureSchemaSelection {
     /// Stored zero-based source-schema ordinal.
     pub ordinal: u32,
@@ -2177,7 +2953,6 @@ pub struct CatiaReferenceSignatureSchemaSelection {
 
 /// One exact self-defining schema-configuration `Configuration` object production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaSchemaConfigurationRecord {
     /// Byte offset of the schema reference within the object payload.
     #[serde(default)]
@@ -2195,7 +2970,6 @@ pub struct CatiaSchemaConfigurationRecord {
 
 /// One exact schema-configuration `configrow` successor-link production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaSchemaConfigurationRowLink {
     /// Stored class identity whose catalog name is `configrow`.
     pub class_reference: CatiaEntityReference,
@@ -2206,50 +2980,23 @@ pub struct CatiaSchemaConfigurationRowLink {
     pub successor: CatiaEntityReference,
 }
 
-/// One complete ordered schema-configuration chain formed by exact `configrow` links.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaSchemaConfigurationRowChain {
-    /// Stable identity derived from the graph and stored class identity.
-    pub id: String,
-    /// Object graph containing every row link.
-    pub object_graph: String,
-    /// Successor incidences in chain order from the root row.
-    #[serde(default)]
-    pub links: Vec<CatiaSchemaConfigurationRowChainLink>,
-}
-
-/// One ordered edge in a complete schema-configuration-row successor chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaSchemaConfigurationRowChainLink {
-    /// Row entity carrying the successor occurrence.
-    pub row: CatiaEntityReference,
-    /// Byte offset of the successor atom within the row object's payload.
-    pub successor_payload_offset: u64,
-    /// Stored successor identity and its same-graph resolution.
-    pub successor: CatiaEntityReference,
-    /// Same-graph entities strictly between the row and successor.
-    ///
-    /// Absent when the successor does not follow the row in source order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub intervening_entities: Option<Vec<CatiaEntityReference>>,
-}
-
 /// Exact framing production for a compound relation-program instance.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatiaRelationProgramInstanceFraming {
     /// Compact `0x12` object head and its 20-token payload.
-    #[default]
-    Lead12,
+    Lead12 {
+        /// Same-graph incidence carried by the `ref(h)` slot.
+        context_entity: CatiaEntityReference,
+    },
     /// Separator-form `0x54` object head and its 18-token payload.
-    Lead54,
+    Lead54 {
+        /// Trailing same-graph entity incidence.
+        trailing_entity: CatiaEntityReference,
+    },
 }
 
 /// Field order used by a repeated-reference schema preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaRepeatedReferenceSchemaOrder {
     /// The binary descriptor precedes the schema ordinal.
     BlobThenSchema,
@@ -2257,121 +3004,8 @@ pub enum CatiaRepeatedReferenceSchemaOrder {
     SchemaThenBlob,
 }
 
-/// One `7C05` entity-table record paired with a `7C09` object record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaEntityRecord {
-    /// Globally unique entity-record identity.
-    pub id: String,
-    /// Object graph whose record occupies the same table position.
-    pub object_graph: String,
-    /// Positionally paired `7C09` object record.
-    pub object_record: String,
-    /// Stable serialized order within the table run.
-    pub ordinal: u64,
-    /// Byte offset of the `7C05` marker.
-    pub byte_offset: u64,
-    /// Total framed byte length.
-    pub byte_len: u64,
-    /// Byte between the `7C05` length and nested `7C06` marker.
-    pub lead: u8,
-    /// Complete alternate inline body, including its lead byte, when nested
-    /// definition and value frames are absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    pub inline_body: Option<Vec<u8>>,
-    /// Stored nested `7C06` length.
-    pub definition_len: u32,
-    /// Exact definition prefix before the `0xEA` identity delimiter.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub definition_prefix: Vec<u8>,
-    /// Definition selectors resolved against the containing graph's source schema.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
-    /// Stored identity used by object-record owner and payload references.
-    pub entity_id: u32,
-    /// Exact definition bytes after the identity.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub definition_suffix: Vec<u8>,
-    /// Stored nested `7C07` total length.
-    pub value_len: u32,
-    /// Exact nested `7C07` payload.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub value_payload: Vec<u8>,
-    /// Lossless tokenization of the complete `7C07` payload.
-    #[serde(default)]
-    pub value_fields: Vec<value_block::ValueField>,
-    /// Value selectors resolved against the containing graph's source schema.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
-    /// Complete relation-expression program carried by the value selectors.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_expression: Option<CatiaRelationExpression>,
-    /// Complete named parameter-value production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_value: Option<CatiaParameterValue>,
-    /// Complete source-schema `Range` interval production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub range_interval: Option<CatiaRangeInterval>,
-    /// Complete constraint-range production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub constraint_range: Option<CatiaConstraintRange>,
-    /// Complete suffix value bound to the entity's sole definition selector.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub definition_value: Option<CatiaDefinitionValue>,
-    /// Complete value bound by a two-definition role chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub definition_chain_value: Option<CatiaDefinitionChainValue>,
-    /// Complete compound relation-program instance frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_program_instance: Option<CatiaRelationProgramInstance>,
-    /// Exact self-defining schema-configuration `Configuration` object production.
-    #[serde(
-        default,
-        alias = "configuration_record",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub schema_configuration_record: Option<CatiaSchemaConfigurationRecord>,
-    /// Exact `configrow` successor-link production.
-    #[serde(
-        default,
-        alias = "configuration_row_link",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub schema_configuration_row_link: Option<CatiaSchemaConfigurationRowLink>,
-    /// Complete formula-to-expression and formula-to-parameter relation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub formula_relation: Option<CatiaFormulaRelation>,
-    /// Exact packets in the value program, in source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub value_packets: Vec<entity_table::EntityValuePacket>,
-    /// Complete nullable numeric pair when the entire `7C07` payload has that production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub numeric_pair: Option<entity_table::NumericPair>,
-    /// Complete reference signature when the entire `7C07` payload has that production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_signature: Option<CatiaReferenceSignature>,
-    /// Exact bytes after the nested `7C07` frame.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub record_suffix: Vec<u8>,
-    /// Complete typed value production occupying the record suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suffix_value: Option<CatiaEntitySuffixValue>,
-    /// Complete non-value framing occupying the record suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suffix_framing: Option<CatiaEntitySuffixFraming>,
-    /// Fixed-width suffix selector resolved through the containing graph's catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
-}
-
 /// One outer `7C08` ownership graph in source order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaObjectGraph {
     /// Globally unique graph identity.
     pub id: String,
@@ -2398,7 +3032,6 @@ pub struct CatiaObjectGraph {
 
 /// Outer `Data` declaration and its selected physical stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOuterContainerBinding {
     /// Byte offset of the declaration in the reconstructed outer `Data` stream.
     pub data_offset: u64,
@@ -2412,23 +3045,53 @@ pub struct CatiaOuterContainerBinding {
     pub stream_name: String,
 }
 
+/// Paired entity-table identity for one object record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatiaObjectEntity {
+    /// Positionally paired `7C05` entity-table record.
+    pub record: String,
+    /// Stored entity-table identity used to select this record.
+    pub id: u32,
+}
+
+/// Class role resolved through the graph schema catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
+pub struct CatiaObjectClass {
+    /// Head role identifying the per-file class ordinal.
+    pub class_ref: u32,
+    /// UTF-8 class name resolved through the graph's schema catalog.
+    pub class_name: Option<String>,
+    /// Exact schema-catalog entry selected by `class_ref`.
+    pub class_entry: Option<String>,
+}
+
+/// Storage role resolved through the same graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
+pub struct CatiaObjectStorage {
+    /// Head role selecting class-specific storage.
+    pub storage_ref: u32,
+    /// Same-graph field record selected by `storage_ref`.
+    pub storage_record: Option<String>,
+    /// Design object containing the selected storage record.
+    pub storage_design_object: Option<String>,
+}
+
 /// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaObjectRecordWire", into = "CatiaObjectRecordWire")]
 pub struct CatiaObjectRecord {
     /// Globally unique record identity.
     pub id: String,
     /// Containing [`CatiaObjectGraph`] identity.
     pub parent: String,
     /// Design object selected by this record's owner entity identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_object: Option<String>,
-    /// Positionally paired `7C05` entity-table record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_record: Option<String>,
-    /// Stored entity-table identity used to select this record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_id: Option<u32>,
+    /// Paired entity-table identity.
+    pub entity: Option<CatiaObjectEntity>,
     /// Stable serialized order within the graph.
     pub ordinal: u64,
     /// Byte offset of the `7C09` record.
@@ -2440,46 +3103,23 @@ pub struct CatiaObjectRecord {
     /// Decoded head tokens in serialized order.
     pub head: Vec<HeadToken>,
     /// Complete alternate inline body when the record has no nested `7C0A`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub inline_body: Option<Vec<u8>>,
     /// Structurally assigned owner slot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<CatiaObjectOwner>,
-    /// Head role identifying the per-file class ordinal.
-    pub class_ref: Option<u32>,
-    /// UTF-8 class name resolved through the graph's schema catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
-    /// Exact schema-catalog entry selected by `class_ref`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_entry: Option<String>,
-    /// Head role selecting class-specific storage.
-    pub storage_ref: Option<u32>,
-    /// Same-graph field record selected by `storage_ref`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub storage_record: Option<String>,
-    /// Design object containing the selected storage record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub storage_design_object: Option<String>,
+    /// Class role when the head carries a class ordinal.
+    pub class: Option<CatiaObjectClass>,
+    /// Storage role when the head carries a storage ordinal.
+    pub storage: Option<CatiaObjectStorage>,
     /// Typed nested payload, empty for an inline record.
     pub payload: ObjectPayload,
-    /// Counted reference suffix when the payload repeats its reference prefix exactly.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
     /// Repeated-reference preamble selector resolved through the graph catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
-    /// Structural payload classification.
-    pub subtype: PayloadSubtype,
     /// Ordered same-graph payload-reference links.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<CatiaObjectRecordReference>,
 }
 
 /// Structurally assigned owner role in a `7C09` head.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaObjectOwner {
     /// Stored entity identity selecting the design object.
     Entity(u32),
@@ -2487,7 +3127,65 @@ pub enum CatiaObjectOwner {
     UnassignedLiteral(u8),
 }
 
+impl From<object_graph::HeadOwner> for CatiaObjectOwner {
+    fn from(owner: object_graph::HeadOwner) -> Self {
+        match owner {
+            object_graph::HeadOwner::Entity(value) => Self::Entity(value),
+            object_graph::HeadOwner::UnassignedLiteral(value) => Self::UnassignedLiteral(value),
+        }
+    }
+}
+
 impl CatiaObjectRecord {
+    /// Structural payload classification.
+    pub fn subtype(&self) -> PayloadSubtype {
+        object_graph::classify(&self.payload.fields)
+    }
+    /// Counted reference suffix of the payload.
+    pub fn repeated_reference_suffix(&self) -> Option<object_graph::RepeatedReferenceSuffix> {
+        object_graph::repeated_reference_suffix(&self.payload)
+    }
+
+    pub fn entity_record(&self) -> Option<&str> {
+        self.entity.as_ref().map(|entity| entity.record.as_str())
+    }
+
+    pub fn entity_id(&self) -> Option<u32> {
+        self.entity.as_ref().map(|entity| entity.id)
+    }
+
+    pub fn class_ref(&self) -> Option<u32> {
+        self.class.as_ref().map(|class| class.class_ref)
+    }
+
+    pub fn class_name(&self) -> Option<&str> {
+        self.class
+            .as_ref()
+            .and_then(|class| class.class_name.as_deref())
+    }
+
+    pub fn class_entry(&self) -> Option<&str> {
+        self.class
+            .as_ref()
+            .and_then(|class| class.class_entry.as_deref())
+    }
+
+    pub fn storage_ref(&self) -> Option<u32> {
+        self.storage.as_ref().map(|storage| storage.storage_ref)
+    }
+
+    pub fn storage_record(&self) -> Option<&str> {
+        self.storage
+            .as_ref()
+            .and_then(|storage| storage.storage_record.as_deref())
+    }
+
+    pub fn storage_design_object(&self) -> Option<&str> {
+        self.storage
+            .as_ref()
+            .and_then(|storage| storage.storage_design_object.as_deref())
+    }
+
     pub(crate) fn owner_entity_id(&self) -> Option<u32> {
         match self.owner {
             Some(CatiaObjectOwner::Entity(entity_id)) => Some(entity_id),
@@ -2500,30 +3198,333 @@ impl CatiaObjectRecord {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct CatiaObjectRecordWire {
+    id: String,
+    parent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    design_object: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_id: Option<u32>,
+    ordinal: u64,
+    byte_offset: u64,
+    byte_len: u64,
+    lead: u8,
+    head: Vec<HeadToken>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    inline_body: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<CatiaObjectOwner>,
+    class_ref: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_entry: Option<String>,
+    storage_ref: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage_design_object: Option<String>,
+    payload: ObjectPayload,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
+    subtype: PayloadSubtype,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    references: Vec<CatiaObjectRecordReference>,
+}
+
+impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
+    fn from(value: CatiaObjectRecord) -> Self {
+        let subtype = value.subtype();
+        let repeated_reference_suffix = value.repeated_reference_suffix();
+        let (entity_record, entity_id) = match value.entity {
+            Some(entity) => (Some(entity.record), Some(entity.id)),
+            None => (None, None),
+        };
+        let (class_ref, class_name, class_entry) = match value.class {
+            Some(class) => (Some(class.class_ref), class.class_name, class.class_entry),
+            None => (None, None, None),
+        };
+        let (storage_ref, storage_record, storage_design_object) = match value.storage {
+            Some(storage) => (
+                Some(storage.storage_ref),
+                storage.storage_record,
+                storage.storage_design_object,
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: value.id,
+            parent: value.parent,
+            design_object: value.design_object,
+            entity_record,
+            entity_id,
+            ordinal: value.ordinal,
+            byte_offset: value.byte_offset,
+            byte_len: value.byte_len,
+            lead: value.lead,
+            head: value.head,
+            inline_body: value.inline_body,
+            owner: value.owner,
+            class_ref,
+            class_name,
+            class_entry,
+            storage_ref,
+            storage_record,
+            storage_design_object,
+            payload: value.payload,
+            repeated_reference_suffix,
+            repeated_reference_schema_selection: value.repeated_reference_schema_selection,
+            subtype,
+            references: value.references,
+        }
+    }
+}
+
+impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
+    type Error = String;
+
+    fn try_from(wire: CatiaObjectRecordWire) -> Result<Self, Self::Error> {
+        if wire.subtype != object_graph::classify(&wire.payload.fields) {
+            return Err("subtype disagrees with payload".to_owned());
+        }
+        if wire.repeated_reference_suffix != object_graph::repeated_reference_suffix(&wire.payload)
+        {
+            return Err("repeated_reference_suffix disagrees with payload".to_owned());
+        }
+
+        let entity = match (wire.entity_record, wire.entity_id) {
+            (None, None) => None,
+            (Some(record), Some(id)) => Some(CatiaObjectEntity { record, id }),
+            _ => {
+                return Err(
+                    "object record entity_record and entity_id must both be present or both absent"
+                        .to_owned(),
+                );
+            }
+        };
+        let class = match wire.class_ref {
+            Some(class_ref) => Some(CatiaObjectClass {
+                class_ref,
+                class_name: wire.class_name,
+                class_entry: wire.class_entry,
+            }),
+            None if wire.class_name.is_some() || wire.class_entry.is_some() => {
+                return Err("object record class name/entry requires class_ref".to_owned());
+            }
+            None => None,
+        };
+        let storage = match wire.storage_ref {
+            Some(storage_ref) => Some(CatiaObjectStorage {
+                storage_ref,
+                storage_record: wire.storage_record,
+                storage_design_object: wire.storage_design_object,
+            }),
+            None if wire.storage_record.is_some() || wire.storage_design_object.is_some() => {
+                return Err("object record storage links require storage_ref".to_owned());
+            }
+            None => None,
+        };
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            design_object: wire.design_object,
+            entity,
+            ordinal: wire.ordinal,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            lead: wire.lead,
+            head: wire.head,
+            inline_body: wire.inline_body,
+            owner: wire.owner,
+            class,
+            storage,
+            payload: wire.payload,
+            repeated_reference_schema_selection: wire.repeated_reference_schema_selection,
+            references: wire.references,
+        })
+    }
+}
+
 /// One typed payload reference from a `7C09` record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaObjectRecordReference {
-    /// Stored entity identity.
-    pub entity_id: u32,
-    /// Byte offset of the reference field within the payload.
-    pub payload_offset: u64,
-    /// Structural container of the reference occurrence.
-    pub source: CatiaObjectRecordReferenceSource,
+#[serde(
+    from = "CatiaObjectRecordReferenceWire",
+    into = "CatiaObjectRecordReferenceWire"
+)]
+pub enum CatiaObjectRecordReference {
     /// The stored identity is the graph's terminal null identity.
+    Null {
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+    },
+    /// Stored identity with no same-graph target.
+    Unresolved {
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+    },
+    /// Same-graph record selected by that identity.
+    Resolved {
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+        target: String,
+        design_object: Option<String>,
+    },
+}
+
+impl CatiaObjectRecordReference {
+    pub fn from_parts(
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+        is_null: bool,
+        target: Option<String>,
+        design_object: Option<String>,
+    ) -> Self {
+        match (is_null, target) {
+            (true, _) => Self::Null {
+                entity_id,
+                payload_offset,
+                source,
+            },
+            (false, None) => Self::Unresolved {
+                entity_id,
+                payload_offset,
+                source,
+            },
+            (false, Some(target)) => Self::Resolved {
+                entity_id,
+                payload_offset,
+                source,
+                target,
+                design_object,
+            },
+        }
+    }
+
+    pub fn entity_id(&self) -> u32 {
+        match *self {
+            Self::Null { entity_id, .. }
+            | Self::Unresolved { entity_id, .. }
+            | Self::Resolved { entity_id, .. } => entity_id,
+        }
+    }
+
+    pub fn payload_offset(&self) -> u64 {
+        match *self {
+            Self::Null { payload_offset, .. }
+            | Self::Unresolved { payload_offset, .. }
+            | Self::Resolved { payload_offset, .. } => payload_offset,
+        }
+    }
+
+    pub fn source(&self) -> &CatiaObjectRecordReferenceSource {
+        match self {
+            Self::Null { source, .. }
+            | Self::Unresolved { source, .. }
+            | Self::Resolved { source, .. } => source,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null { .. })
+    }
+
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { target, .. } => Some(target.as_str()),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn design_object(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { design_object, .. } => design_object.as_deref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaObjectRecordReferenceWire {
+    entity_id: u32,
+    payload_offset: u64,
+    source: CatiaObjectRecordReferenceSource,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
-    /// Exact selected record; absent when the identity is outside the graph.
+    is_null: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    /// Design object owning the selected record.
+    target: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_object: Option<String>,
+    design_object: Option<String>,
+}
+
+impl From<CatiaObjectRecordReference> for CatiaObjectRecordReferenceWire {
+    fn from(value: CatiaObjectRecordReference) -> Self {
+        match value {
+            CatiaObjectRecordReference::Null {
+                entity_id,
+                payload_offset,
+                source,
+            } => Self {
+                entity_id,
+                payload_offset,
+                source,
+                is_null: true,
+                target: None,
+                design_object: None,
+            },
+            CatiaObjectRecordReference::Unresolved {
+                entity_id,
+                payload_offset,
+                source,
+            } => Self {
+                entity_id,
+                payload_offset,
+                source,
+                is_null: false,
+                target: None,
+                design_object: None,
+            },
+            CatiaObjectRecordReference::Resolved {
+                entity_id,
+                payload_offset,
+                source,
+                target,
+                design_object,
+            } => Self {
+                entity_id,
+                payload_offset,
+                source,
+                is_null: false,
+                target: Some(target),
+                design_object,
+            },
+        }
+    }
+}
+
+impl From<CatiaObjectRecordReferenceWire> for CatiaObjectRecordReference {
+    fn from(wire: CatiaObjectRecordReferenceWire) -> Self {
+        Self::from_parts(
+            wire.entity_id,
+            wire.payload_offset,
+            wire.source,
+            wire.is_null,
+            wire.target,
+            wire.design_object,
+        )
+    }
 }
 
 /// Structural container of one payload-reference occurrence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaObjectRecordReferenceSource {
     /// Standalone compact or fixed-width payload field.
     Field,
@@ -2538,7 +3539,6 @@ pub enum CatiaObjectRecordReferenceSource {
 
 /// One exact schema class retained on a grouped design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignClass {
     /// Selected source-schema entry.
     pub entry: String,
@@ -2548,7 +3548,6 @@ pub struct CatiaDesignClass {
 
 /// One exact outbound relation occurrence in a grouped design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignObjectRelation {
     /// Field record containing the relation.
     pub source_field: String,
@@ -2571,7 +3570,6 @@ pub struct CatiaDesignObjectRelation {
 
 /// Structural source of one exact outbound relation occurrence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaDesignObjectRelationSource {
     /// Class-specific storage selector in the field-record head.
     Storage,
@@ -2586,30 +3584,224 @@ pub enum CatiaDesignObjectRelationSource {
 
 /// One cell in a row-aligned design-object reference table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaDesignReferenceCell {
-    /// Byte offset of the reference item within the source field's payload.
-    #[serde(default)]
-    pub payload_offset: u64,
-    /// Stored target entity identity.
-    pub entity_id: u32,
+#[serde(
+    from = "CatiaDesignReferenceCellWire",
+    into = "CatiaDesignReferenceCellWire"
+)]
+pub enum CatiaDesignReferenceCell {
     /// The stored identity is the graph's terminal null identity.
+    Null { payload_offset: u64, entity_id: u32 },
+    /// Stored identity with no same-graph field.
+    Unresolved { payload_offset: u64, entity_id: u32 },
+    /// Same-graph field selected by that identity.
+    Resolved {
+        payload_offset: u64,
+        entity_id: u32,
+        field: String,
+        field_class: Option<CatiaDesignClass>,
+        design_object: Option<String>,
+    },
+}
+
+impl CatiaDesignReferenceCell {
+    pub fn from_parts(
+        payload_offset: u64,
+        entity_id: u32,
+        is_null: bool,
+        field: Option<String>,
+        field_class: Option<CatiaDesignClass>,
+        design_object: Option<String>,
+    ) -> Self {
+        match (is_null, field) {
+            (true, _) => Self::Null {
+                payload_offset,
+                entity_id,
+            },
+            (false, None) => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            (false, Some(field)) => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn payload_offset(&self) -> u64 {
+        match *self {
+            Self::Null { payload_offset, .. }
+            | Self::Unresolved { payload_offset, .. }
+            | Self::Resolved { payload_offset, .. } => payload_offset,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn entity_id(&self) -> u32 {
+        match *self {
+            Self::Null { entity_id, .. }
+            | Self::Unresolved { entity_id, .. }
+            | Self::Resolved { entity_id, .. } => entity_id,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null { .. })
+    }
+
+    pub fn field(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { field, .. } => Some(field.as_str()),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn field_class(&self) -> Option<&CatiaDesignClass> {
+        match self {
+            Self::Resolved { field_class, .. } => field_class.as_ref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn design_object(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { design_object, .. } => design_object.as_deref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_payload_offset(self, payload_offset: u64) -> Self {
+        match self {
+            Self::Null { entity_id, .. } => Self::Null {
+                payload_offset,
+                entity_id,
+            },
+            Self::Unresolved { entity_id, .. } => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            Self::Resolved {
+                entity_id,
+                field,
+                field_class,
+                design_object,
+                ..
+            } => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_entity_id(self, entity_id: u32) -> Self {
+        match self {
+            Self::Null { payload_offset, .. } => Self::Null {
+                payload_offset,
+                entity_id,
+            },
+            Self::Unresolved { payload_offset, .. } => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            Self::Resolved {
+                payload_offset,
+                field,
+                field_class,
+                design_object,
+                ..
+            } => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaDesignReferenceCellWire {
+    #[serde(default)]
+    payload_offset: u64,
+    entity_id: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
-    /// Exact field record selected by the stored identity.
+    is_null: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field: Option<String>,
-    /// Exact class of the selected field record.
+    field: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field_class: Option<CatiaDesignClass>,
-    /// Design object containing the selected field record, when it has an owner group.
+    field_class: Option<CatiaDesignClass>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_object: Option<String>,
+    design_object: Option<String>,
+}
+
+impl From<CatiaDesignReferenceCell> for CatiaDesignReferenceCellWire {
+    fn from(value: CatiaDesignReferenceCell) -> Self {
+        match value {
+            CatiaDesignReferenceCell::Null {
+                payload_offset,
+                entity_id,
+            } => Self {
+                payload_offset,
+                entity_id,
+                is_null: true,
+                field: None,
+                field_class: None,
+                design_object: None,
+            },
+            CatiaDesignReferenceCell::Unresolved {
+                payload_offset,
+                entity_id,
+            } => Self {
+                payload_offset,
+                entity_id,
+                is_null: false,
+                field: None,
+                field_class: None,
+                design_object: None,
+            },
+            CatiaDesignReferenceCell::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            } => Self {
+                payload_offset,
+                entity_id,
+                is_null: false,
+                field: Some(field),
+                field_class,
+                design_object,
+            },
+        }
+    }
+}
+
+impl From<CatiaDesignReferenceCellWire> for CatiaDesignReferenceCell {
+    fn from(wire: CatiaDesignReferenceCellWire) -> Self {
+        Self::from_parts(
+            wire.payload_offset,
+            wire.entity_id,
+            wire.is_null,
+            wire.field,
+            wire.field_class,
+            wire.design_object,
+        )
+    }
 }
 
 /// One source-ordered row in a parallel design-object reference table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignReferenceRow {
     /// Cells in the order of the table's source fields.
     pub cells: Vec<CatiaDesignReferenceCell>,
@@ -2620,7 +3812,6 @@ pub struct CatiaDesignReferenceRow {
 
 /// One source field and list framing forming a parallel-reference table column.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignReferenceColumn {
     /// Source field record containing the reference list.
     pub field: String,
@@ -2664,18 +3855,61 @@ where
 
 /// Equal-cardinality reference lists aligned by list-item ordinal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaDesignParallelReferenceTableWire",
+    into = "CatiaDesignParallelReferenceTableWire"
+)]
 pub struct CatiaDesignParallelReferenceTable {
-    /// Source field and list incidences forming the table's columns.
+    columns: Vec<CatiaDesignReferenceColumn>,
+    rows: Vec<CatiaDesignReferenceRow>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CatiaDesignParallelReferenceTableWire {
     #[serde(deserialize_with = "deserialize_design_reference_columns")]
-    pub columns: Vec<CatiaDesignReferenceColumn>,
-    /// Row-aligned reference cells.
-    pub rows: Vec<CatiaDesignReferenceRow>,
+    columns: Vec<CatiaDesignReferenceColumn>,
+    rows: Vec<CatiaDesignReferenceRow>,
+}
+
+impl CatiaDesignParallelReferenceTable {
+    fn new(
+        columns: Vec<CatiaDesignReferenceColumn>,
+        rows: Vec<CatiaDesignReferenceRow>,
+    ) -> Option<Self> {
+        rows.iter()
+            .all(|row| row.cells.len() == columns.len())
+            .then_some(Self { columns, rows })
+    }
+
+    pub(crate) fn columns(&self) -> &[CatiaDesignReferenceColumn] {
+        &self.columns
+    }
+
+    pub(crate) fn rows(&self) -> &[CatiaDesignReferenceRow] {
+        &self.rows
+    }
+}
+
+impl From<CatiaDesignParallelReferenceTable> for CatiaDesignParallelReferenceTableWire {
+    fn from(value: CatiaDesignParallelReferenceTable) -> Self {
+        Self {
+            columns: value.columns,
+            rows: value.rows,
+        }
+    }
+}
+
+impl TryFrom<CatiaDesignParallelReferenceTableWire> for CatiaDesignParallelReferenceTable {
+    type Error = String;
+
+    fn try_from(wire: CatiaDesignParallelReferenceTableWire) -> Result<Self, Self::Error> {
+        Self::new(wire.columns, wire.rows)
+            .ok_or_else(|| "parallel reference row width disagrees with column count".to_owned())
+    }
 }
 
 /// One serialized design object formed by a shared `7C09` owner identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignObject {
     /// Globally unique design-object identity.
     pub id: String,
@@ -2724,12 +3958,12 @@ fn design_objects(
 ) -> Vec<CatiaDesignObject> {
     let definition_value_entities = entity_records
         .iter()
-        .filter(|entity| entity.definition_value.is_some())
+        .filter(|entity| entity.definition_value().is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     let definition_chain_value_entities = entity_records
         .iter()
-        .filter(|entity| entity.definition_chain_value.is_some())
+        .filter(|entity| entity.definition_chain_value().is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
     graphs
@@ -2739,7 +3973,7 @@ fn design_objects(
                 .records
                 .iter()
                 .enumerate()
-                .filter_map(|(index, record)| Some((record.entity_id?, index)))
+                .filter_map(|(index, record)| Some((record.entity_id()?, index)))
                 .collect::<HashMap<_, _>>();
             let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
             let mut owner_indices = HashMap::<u32, usize>::new();
@@ -2782,7 +4016,7 @@ fn design_objects(
                             .and_then(design_class),
                         owner_storage_ref: owner_record
                             .filter(|record| record_has_separator_roles(record))
-                            .and_then(|record| record.storage_ref),
+                            .and_then(CatiaObjectRecord::storage_ref),
                         fields: records.iter().map(|record| record.id.clone()).collect(),
                         field_classes: records
                             .iter()
@@ -2795,54 +4029,52 @@ fn design_objects(
                             }),
                         definition_values: records
                             .iter()
-                            .filter_map(|record| record.entity_record.as_ref())
-                            .filter(|entity| definition_value_entities.contains(entity.as_str()))
-                            .cloned()
+                            .filter_map(|record| record.entity_record())
+                            .filter(|entity| definition_value_entities.contains(*entity))
+                            .map(str::to_owned)
                             .collect(),
                         definition_chain_values: records
                             .iter()
-                            .filter_map(|record| record.entity_record.as_ref())
-                            .filter(|entity| {
-                                definition_chain_value_entities.contains(entity.as_str())
-                            })
-                            .cloned()
+                            .filter_map(|record| record.entity_record())
+                            .filter(|entity| definition_chain_value_entities.contains(*entity))
+                            .map(str::to_owned)
                             .collect(),
                         relations: records
                             .iter()
                             .flat_map(|record| {
-                                let storage =
-                                    record.storage_record.as_ref().and_then(|target_field| {
-                                        let target_record = record_indices
-                                            .get(&record.storage_ref?)
-                                            .and_then(|index| graph.records.get(*index))?;
-                                        let target_design_object =
-                                            record.storage_design_object.clone();
-                                        Some(CatiaDesignObjectRelation {
-                                            source_field: record.id.clone(),
-                                            source_class: design_class(record),
-                                            source: CatiaDesignObjectRelationSource::Storage,
-                                            target_entity_id: record.storage_ref?,
-                                            target_field: target_field.clone(),
-                                            target_class: design_class(target_record),
-                                            target_design_object,
-                                        })
-                                    });
+                                let storage = record.storage_record().and_then(|target_field| {
+                                    let target_record = record_indices
+                                        .get(&record.storage_ref()?)
+                                        .and_then(|index| graph.records.get(*index))?;
+                                    let target_design_object =
+                                        record.storage_design_object().map(str::to_owned);
+                                    Some(CatiaDesignObjectRelation {
+                                        source_field: record.id.clone(),
+                                        source_class: design_class(record),
+                                        source: CatiaDesignObjectRelationSource::Storage,
+                                        target_entity_id: record.storage_ref()?,
+                                        target_field: target_field.to_owned(),
+                                        target_class: design_class(target_record),
+                                        target_design_object,
+                                    })
+                                });
                                 storage
                                     .into_iter()
                                     .chain(record.references.iter().filter_map(|reference| {
-                                        let target_field = reference.target.as_ref()?.clone();
+                                        let target_field = reference.target()?.to_owned();
                                         let target_record = record_indices
-                                            .get(&reference.entity_id)
+                                            .get(&reference.entity_id())
                                             .and_then(|index| graph.records.get(*index))?;
-                                        let target_design_object = reference.design_object.clone();
+                                        let target_design_object =
+                                            reference.design_object().map(str::to_owned);
                                         Some(CatiaDesignObjectRelation {
                                             source_field: record.id.clone(),
                                             source_class: design_class(record),
                                             source: CatiaDesignObjectRelationSource::Payload {
-                                                payload_offset: reference.payload_offset,
-                                                container: reference.source.clone(),
+                                                payload_offset: reference.payload_offset(),
+                                                container: reference.source().clone(),
                                             },
-                                            target_entity_id: reference.entity_id,
+                                            target_entity_id: reference.entity_id(),
                                             target_field,
                                             target_class: design_class(target_record),
                                             target_design_object,
@@ -2922,30 +4154,30 @@ fn design_parallel_reference_table(
                     let target = record_indices
                         .get(&target_entity_id)
                         .and_then(|index| graph.records.get(*index));
-                    CatiaDesignReferenceCell {
-                        payload_offset: u64::try_from(payload_offset)
+                    CatiaDesignReferenceCell::from_parts(
+                        u64::try_from(payload_offset)
                             .expect("bounded CATIA list-item offset fits u64"),
-                        entity_id: target_entity_id,
-                        is_null: Some(target_entity_id) == terminal_null_entity_id,
-                        field: target.map(|record| record.id.clone()),
-                        field_class: target.and_then(design_class),
-                        design_object: target.and_then(|record| record.design_object.clone()),
-                    }
+                        target_entity_id,
+                        Some(target_entity_id) == terminal_null_entity_id,
+                        target.map(|record| record.id.clone()),
+                        target.and_then(design_class),
+                        target.and_then(|record| record.design_object.clone()),
+                    )
                 })
                 .collect::<Vec<_>>();
             let matching_design_object = cells
                 .first()
-                .and_then(|cell| cell.design_object.clone())
+                .and_then(|cell| cell.design_object().map(str::to_owned))
                 .filter(|member| {
                     let distinct_fields = cells
                         .iter()
-                        .filter_map(|cell| cell.field.as_deref())
+                        .filter_map(|cell| cell.field())
                         .collect::<HashSet<_>>();
                     columns.iter().zip(&cells).all(|((column, _), cell)| {
                         column.field_class.is_some()
-                            && cell.field.is_some()
-                            && cell.field_class.as_ref() == column.field_class.as_ref()
-                            && cell.design_object.as_ref() == Some(member)
+                            && cell.field().is_some()
+                            && cell.field_class() == column.field_class.as_ref()
+                            && cell.design_object() == Some(member.as_str())
                     }) && distinct_fields.len() == cells.len()
                 });
             CatiaDesignReferenceRow {
@@ -2954,16 +4186,16 @@ fn design_parallel_reference_table(
             }
         })
         .collect();
-    Some(CatiaDesignParallelReferenceTable {
-        columns: columns.into_iter().map(|(column, _)| column).collect(),
+    CatiaDesignParallelReferenceTable::new(
+        columns.into_iter().map(|(column, _)| column).collect(),
         rows,
-    })
+    )
 }
 
 fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
     Some(CatiaDesignClass {
-        entry: record.class_entry.clone()?,
-        name: record.class_name.clone()?,
+        entry: record.class_entry()?.to_owned(),
+        name: record.class_name()?.to_owned(),
     })
 }
 
@@ -3023,18 +4255,17 @@ fn resolved_payload_references(
     payload_references(payload)
         .map(|(entity_id, payload_offset, source)| {
             let index = record_indices.get(&entity_id).copied();
-            CatiaObjectRecordReference {
+            CatiaObjectRecordReference::from_parts(
                 entity_id,
-                payload_offset: u64::try_from(payload_offset)
-                    .expect("bounded CATIA payload offset fits u64"),
+                u64::try_from(payload_offset).expect("bounded CATIA payload offset fits u64"),
                 source,
-                is_null: Some(entity_id) == terminal_null_entity_id,
-                target: index.and_then(|index| record_ids.get(index)).cloned(),
-                design_object: index
+                Some(entity_id) == terminal_null_entity_id,
+                index.and_then(|index| record_ids.get(index)).cloned(),
+                index
                     .and_then(|index| record_design_objects.get(index))
                     .cloned()
                     .flatten(),
-            }
+            )
         })
         .collect()
 }
@@ -3153,27 +4384,31 @@ fn entity_suffix_schema_selection(
         .ok()
         .and_then(|ordinal| catalog?.entries.get(ordinal))?;
     let value = match value {
-        CatiaEntitySuffixSelectedValue::Atom { value } => {
+        CatiaEntitySuffixSchemaValue::Atom { value } => {
             CatiaEntitySuffixSchemaValue::Atom { value: *value }
         }
-        CatiaEntitySuffixSelectedValue::Evaluation {
+        CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
         } => CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset: *opcode_offset,
             evaluation: evaluation.clone(),
         },
-        CatiaEntitySuffixSelectedValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
-        CatiaEntitySuffixSelectedValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
-        CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
+        CatiaEntitySuffixSchemaValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
+        CatiaEntitySuffixSchemaValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
+        CatiaEntitySuffixSchemaValue::SchemaSelector {
+            offset, ordinal, ..
+        } => {
             let selected = usize::try_from(*ordinal)
                 .ok()
                 .and_then(|ordinal| catalog?.entries.get(ordinal));
             CatiaEntitySuffixSchemaValue::SchemaSelector {
                 offset: *offset,
                 ordinal: *ordinal,
-                entry: selected.map(|entry| entry.id.clone()),
-                name: selected.map(|entry| entry.value.clone()),
+                resolution: selected.map(|entry| CatiaDesignClass {
+                    entry: entry.id.clone(),
+                    name: entry.value.clone(),
+                }),
             }
         }
     };
@@ -3183,6 +4418,57 @@ fn entity_suffix_schema_selection(
         entry: entry.id.clone(),
         name: entry.value.clone(),
         value,
+    })
+}
+
+fn value_production(
+    entity: &CatiaEntityRecord,
+    records: &[CatiaObjectRecord],
+    value_fields: &[value_block::ValueField],
+) -> Option<CatiaEntityValueProduction> {
+    relation_expression(
+        &entity.definition_schema_selections,
+        &entity.value_schema_selections,
+    )
+    .map(CatiaEntityValueProduction::RelationExpression)
+    .or_else(|| {
+        parameter_value(
+            entity.lead,
+            &entity.value_schema_selections,
+            entity.suffix_value(),
+        )
+        .map(CatiaEntityValueProduction::ParameterValue)
+    })
+    .or_else(|| {
+        resolved_constraint_range(
+            entity.lead,
+            &entity.value_schema_selections,
+            entity.suffix_value(),
+            records,
+            &entity.object_graph,
+            entity.entity_id,
+        )
+        .map(CatiaEntityValueProduction::ConstraintRange)
+    })
+    .or_else(|| {
+        definition_value(
+            entity.lead,
+            &entity.definition_schema_selections,
+            value_fields,
+            entity.suffix_value(),
+            entity.suffix_schema_selection.as_ref(),
+        )
+        .map(CatiaEntityValueProduction::DefinitionValue)
+    })
+    .or_else(|| {
+        definition_chain_value(
+            entity.lead,
+            &entity.definition_schema_selections,
+            value_fields,
+            entity.suffix_value(),
+            entity.suffix_schema_selection.as_ref(),
+        )
+        .map(CatiaEntityValueProduction::DefinitionChainValue)
     })
 }
 
@@ -3205,90 +4491,81 @@ fn relation_expression(
         entry: selection.entry.clone(),
         value: selection.name.clone(),
     };
-    let (framing, expression, parameter_role, type_signature, function_role, signature) =
-        match values {
-            [prefix_role, expression, parser_version_role, parameter_role, type_signature, state_role, function_role]
-                if prefix_role.name == "Boolean"
-                    && parser_version_role.name == "ParserVersion"
-                    && parameter_role.name == "param"
-                    && state_role.name == "opened"
-                    && function_role.name == "RelationExpFct" =>
-            {
-                (
-                    CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
-                        prefix_role: schema_value(prefix_role),
-                        parser_version_role: schema_value(parser_version_role),
-                        state_role: schema_value(state_role),
-                    },
-                    expression,
-                    parameter_role,
-                    type_signature,
-                    function_role,
-                    relation_type_signature(None, &type_signature.name),
-                )
-            }
-            [placeholder, expression, parameter_role, type_signature, state_role, function_role]
-                if parameter_role.name == "param"
-                    && state_role.name == "opened"
-                    && function_role.name == "RelationExpFct" =>
-            {
-                let placeholder = schema_value(placeholder);
-                let signature =
-                    relation_type_signature(Some(&placeholder.value), &type_signature.name);
-                (
-                    CatiaRelationExpressionFraming::PlaceholderState {
-                        placeholder,
-                        state_role: schema_value(state_role),
-                    },
-                    expression,
-                    parameter_role,
-                    type_signature,
-                    function_role,
-                    signature,
-                )
-            }
-            [prefix_role, expression, parser_version_role, parameter_role, type_signature, function_role]
-                if prefix_role.name == "Boolean"
-                    && parser_version_role.name == "ParserVersion"
-                    && parameter_role.name == "param"
-                    && function_role.name == "RelationExpFct" =>
-            {
-                (
-                    CatiaRelationExpressionFraming::BooleanParserVersion {
-                        prefix_role: schema_value(prefix_role),
-                        parser_version_role: schema_value(parser_version_role),
-                    },
-                    expression,
-                    parameter_role,
-                    type_signature,
-                    function_role,
-                    relation_type_signature(None, &type_signature.name),
-                )
-            }
-            [expression, parser_version_role, parameter_role, type_signature, function_role]
-                if parser_version_role.name == "ParserVersion"
-                    && parameter_role.name == "param"
-                    && function_role.name == "RelationExpFct" =>
-            {
-                (
-                    CatiaRelationExpressionFraming::ParserVersion {
-                        parser_version_role: schema_value(parser_version_role),
-                    },
-                    expression,
-                    parameter_role,
-                    type_signature,
-                    function_role,
-                    relation_type_signature(None, &type_signature.name),
-                )
-            }
-            _ => return None,
-        };
+    let (framing, expression, parameter_role, type_signature, function_role) = match values {
+        [prefix_role, expression, parser_version_role, parameter_role, type_signature, state_role, function_role]
+            if prefix_role.name == "Boolean"
+                && parser_version_role.name == "ParserVersion"
+                && parameter_role.name == "param"
+                && state_role.name == "opened"
+                && function_role.name == "RelationExpFct" =>
+        {
+            (
+                CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
+                    prefix_role: schema_value(prefix_role),
+                    parser_version_role: schema_value(parser_version_role),
+                    state_role: schema_value(state_role),
+                },
+                expression,
+                parameter_role,
+                type_signature,
+                function_role,
+            )
+        }
+        [placeholder, expression, parameter_role, type_signature, state_role, function_role]
+            if parameter_role.name == "param"
+                && state_role.name == "opened"
+                && function_role.name == "RelationExpFct" =>
+        {
+            (
+                CatiaRelationExpressionFraming::PlaceholderState {
+                    placeholder: schema_value(placeholder),
+                    state_role: schema_value(state_role),
+                },
+                expression,
+                parameter_role,
+                type_signature,
+                function_role,
+            )
+        }
+        [prefix_role, expression, parser_version_role, parameter_role, type_signature, function_role]
+            if prefix_role.name == "Boolean"
+                && parser_version_role.name == "ParserVersion"
+                && parameter_role.name == "param"
+                && function_role.name == "RelationExpFct" =>
+        {
+            (
+                CatiaRelationExpressionFraming::BooleanParserVersion {
+                    prefix_role: schema_value(prefix_role),
+                    parser_version_role: schema_value(parser_version_role),
+                },
+                expression,
+                parameter_role,
+                type_signature,
+                function_role,
+            )
+        }
+        [expression, parser_version_role, parameter_role, type_signature, function_role]
+            if parser_version_role.name == "ParserVersion"
+                && parameter_role.name == "param"
+                && function_role.name == "RelationExpFct" =>
+        {
+            (
+                CatiaRelationExpressionFraming::ParserVersion {
+                    parser_version_role: schema_value(parser_version_role),
+                },
+                expression,
+                parameter_role,
+                type_signature,
+                function_role,
+            )
+        }
+        _ => return None,
+    };
     Some(CatiaRelationExpression {
         framing,
         expression: schema_value(expression),
         parameter_role: schema_value(parameter_role),
         type_signature: schema_value(type_signature),
-        signature,
         function_role: schema_value(function_role),
     })
 }
@@ -3473,27 +4750,31 @@ fn entity_incidences(
             record
                 .references
                 .iter()
-                .filter(|reference| reference.entity_id == entity_id)
+                .filter(|reference| reference.entity_id() == entity_id)
                 .map(|reference| CatiaEntityIncomingReference {
                     object_record: record.id.clone(),
-                    source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
-                        entity_id,
-                        is_null: false,
-                        entity: record.entity_record.clone(),
-                        class_name: record.class_name.clone(),
+                    source_entity: record.entity_id().map(|entity_id| {
+                        CatiaEntityReference::from_parts(
+                            entity_id,
+                            false,
+                            record.entity_record().map(str::to_owned),
+                            record.class_name().map(str::to_owned),
+                        )
                     }),
-                    payload_offset: reference.payload_offset,
-                    source: reference.source.clone(),
+                    payload_offset: reference.payload_offset(),
+                    source: reference.source().clone(),
                 }),
         );
-        if record.storage_ref == Some(entity_id) {
+        if record.storage_ref() == Some(entity_id) {
             incoming_storage_references.push(CatiaEntityIncomingStorageReference {
                 object_record: record.id.clone(),
-                source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
-                    entity_id,
-                    is_null: false,
-                    entity: record.entity_record.clone(),
-                    class_name: record.class_name.clone(),
+                source_entity: record.entity_id().map(|entity_id| {
+                    CatiaEntityReference::from_parts(
+                        entity_id,
+                        false,
+                        record.entity_record().map(str::to_owned),
+                        record.class_name().map(str::to_owned),
+                    )
                 }),
             });
         }
@@ -3723,6 +5004,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 CatiaEntitySuffixSelectedValue::SchemaSelector {
                     offset: u64::try_from(value_offset).ok()?,
                     ordinal: View::u32_le_at(suffix, value_offset + 1)?,
+                    resolution: None,
                 },
                 value_offset + 5,
             ),
@@ -3829,6 +5111,56 @@ pub(crate) fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFr
     }
 }
 
+fn object_production(
+    entity: &CatiaEntityRecord,
+    object: &CatiaObjectRecord,
+    references: &CatiaEntityReferenceIndex<'_>,
+    expressions: &HashMap<String, String>,
+    expression_entities: &CatiaRelationExpressionEntityIndex,
+    parameters: &CatiaParameterBindingIndex,
+) -> Option<CatiaEntityObjectProduction> {
+    relation_program_instance(
+        entity.entity_id,
+        object,
+        references,
+        expression_entities,
+        parameters,
+    )
+    .map(CatiaEntityObjectProduction::RelationProgramInstance)
+    .or_else(|| {
+        schema_configuration_record(
+            entity.entity_id,
+            object,
+            &entity.value_schema_selections,
+            references.entities,
+            references.classes,
+            references.terminal_nulls,
+        )
+        .map(CatiaEntityObjectProduction::SchemaConfigurationRecord)
+    })
+    .or_else(|| {
+        schema_configuration_row_link(
+            entity.entity_id,
+            object,
+            references.entities,
+            references.classes,
+            references.terminal_nulls,
+        )
+        .map(CatiaEntityObjectProduction::SchemaConfigurationRowLink)
+    })
+    .or_else(|| {
+        formula_relation(
+            &entity.definition_schema_selections,
+            entity.entity_id,
+            object,
+            expressions,
+            references,
+            parameters,
+        )
+        .map(CatiaEntityObjectProduction::FormulaRelation)
+    })
+}
+
 fn relation_program_instance(
     entity_id: u32,
     object: &CatiaObjectRecord,
@@ -3836,53 +5168,48 @@ fn relation_program_instance(
     relation_expressions: &CatiaRelationExpressionEntityIndex,
     parameter_bindings: &CatiaParameterBindingIndex,
 ) -> Option<CatiaRelationProgramInstance> {
-    if object.entity_id != Some(entity_id)
+    if object.entity_id() != Some(entity_id)
         || object.owner_entity_id().is_none()
-        || object.class_ref.is_none()
+        || object.class_ref().is_none()
     {
         return None;
     }
-    let (
-        framing,
-        program_entity_id,
-        repeated_reference_entity_id,
-        lead12_context_entity,
-        lead54_trailing_entity,
-    ) = if object.lead == 0x12 && object.storage_ref.is_none() {
-        let (program_entity_id, repeated_reference_entity_id, context_entity_id) =
-            relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
-        (
-            CatiaRelationProgramInstanceFraming::Lead12,
-            program_entity_id,
-            repeated_reference_entity_id,
-            Some(entity_reference(
-                &object.parent,
-                context_entity_id,
-                entity_references.entities,
-                entity_references.classes,
-                entity_references.terminal_nulls,
-            )),
-            None,
-        )
-    } else if object.lead == 0x54 && object.storage_ref.is_some() {
-        let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
-            relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
-        (
-            CatiaRelationProgramInstanceFraming::Lead54,
-            program_entity_id,
-            repeated_reference_entity_id,
-            None,
-            Some(entity_reference(
-                &object.parent,
-                trailing_entity_id,
-                entity_references.entities,
-                entity_references.classes,
-                entity_references.terminal_nulls,
-            )),
-        )
-    } else {
-        return None;
-    };
+    let (framing, program_entity_id, repeated_reference_entity_id) =
+        if object.lead == 0x12 && object.storage_ref().is_none() {
+            let (program_entity_id, repeated_reference_entity_id, context_entity_id) =
+                relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
+            (
+                CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: entity_reference(
+                        &object.parent,
+                        context_entity_id,
+                        entity_references.entities,
+                        entity_references.classes,
+                        entity_references.terminal_nulls,
+                    ),
+                },
+                program_entity_id,
+                repeated_reference_entity_id,
+            )
+        } else if object.lead == 0x54 && object.storage_ref().is_some() {
+            let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
+                relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
+            (
+                CatiaRelationProgramInstanceFraming::Lead54 {
+                    trailing_entity: entity_reference(
+                        &object.parent,
+                        trailing_entity_id,
+                        entity_references.entities,
+                        entity_references.classes,
+                        entity_references.terminal_nulls,
+                    ),
+                },
+                program_entity_id,
+                repeated_reference_entity_id,
+            )
+        } else {
+            return None;
+        };
     let program_key = (object.parent.clone(), program_entity_id);
     let selected_expression = relation_expressions.get(&program_key);
     let parameter_dependencies = selected_expression
@@ -3914,12 +5241,6 @@ fn relation_program_instance(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let output_entity = match framing {
-        CatiaRelationProgramInstanceFraming::Lead12 => lead12_context_entity.as_ref(),
-        CatiaRelationProgramInstanceFraming::Lead54 => lead54_trailing_entity.as_ref(),
-    }
-    .filter(|reference| reference.class_name.as_deref() == Some("paramout"))
-    .cloned();
     Some(CatiaRelationProgramInstance {
         framing,
         program_entity: entity_reference(
@@ -3940,9 +5261,6 @@ fn relation_program_instance(
         relation_expression: selected_expression.map(|expression| expression.entity.clone()),
         parameter_dependencies,
         inputs,
-        output_entity,
-        lead12_context_entity,
-        lead54_trailing_entity,
     })
 }
 
@@ -3954,11 +5272,16 @@ fn entity_reference(
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
 ) -> CatiaEntityReference {
     let key = (graph_id.to_owned(), entity_id);
-    CatiaEntityReference {
-        entity_id,
-        is_null: terminal_nulls.get(graph_id).copied() == Some(entity_id),
-        entity: entities.get(&key).cloned(),
-        class_name: entity_classes.get(&key).cloned(),
+    if terminal_nulls.get(graph_id).copied() == Some(entity_id) {
+        return CatiaEntityReference::Null { entity_id };
+    }
+    match entities.get(&key).cloned() {
+        Some(entity) => CatiaEntityReference::Resolved {
+            entity_id,
+            entity,
+            class_name: entity_classes.get(&key).cloned(),
+        },
+        None => CatiaEntityReference::Unresolved { entity_id },
     }
 }
 
@@ -3969,14 +5292,14 @@ fn reference_signature(
 ) -> CatiaReferenceSignature {
     let first_entity = entity_reference(
         graph_id,
-        production.first_reference,
+        production.first_reference(),
         entity_references.entities,
         entity_references.classes,
         entity_references.terminal_nulls,
     );
     let second_entity = entity_reference(
         graph_id,
-        production.second_reference,
+        production.second_reference(),
         entity_references.entities,
         entity_references.classes,
         entity_references.terminal_nulls,
@@ -4004,7 +5327,7 @@ fn derive_reference_signature_cohorts(
     entity_records: &[CatiaEntityRecord],
 ) -> Vec<CatiaReferenceSignatureCohort> {
     let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
-    let mut cohort_by_pair = HashMap::<(String, u32, u32), usize>::new();
+    let mut cohort_by_pair = HashMap::<(String, u32), usize>::new();
     let mut next_ordinal_by_graph = HashMap::<String, u64>::new();
     for entity in entity_records {
         let Some(signature) = &entity.reference_signature else {
@@ -4012,8 +5335,7 @@ fn derive_reference_signature_cohorts(
         };
         let key = (
             entity.object_graph.clone(),
-            signature.production.first_reference,
-            signature.production.second_reference,
+            signature.production.first_reference(),
         );
         if let Some(index) = cohort_by_pair.get(&key).copied() {
             cohorts[index].members.push(entity.id.clone());
@@ -4035,9 +5357,8 @@ fn derive_reference_signature_cohorts(
             id,
             parent: entity.object_graph.clone(),
             ordinal: *ordinal,
-            first_reference: signature.production.first_reference,
+            references: signature.production.references(),
             first_entity: signature.first_entity.clone(),
-            second_reference: signature.production.second_reference,
             second_entity: signature.second_entity.clone(),
             schema_selection: None,
             members: vec![entity.id.clone()],
@@ -4093,12 +5414,12 @@ fn schema_configuration_record(
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
 ) -> Option<CatiaSchemaConfigurationRecord> {
-    if object.entity_id != Some(entity_id)
+    if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
-        || object.class_ref != Some(entity_id)
-        || object.class_name.as_deref() != Some("Configuration")
-        || object.storage_ref.is_some()
+        || object.class_ref() != Some(entity_id)
+        || object.class_name() != Some("Configuration")
+        || object.storage_ref().is_some()
     {
         return None;
     }
@@ -4145,15 +5466,15 @@ fn schema_configuration_row_link(
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
 ) -> Option<CatiaSchemaConfigurationRowLink> {
-    if object.entity_id != Some(entity_id)
+    if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
-        || object.class_name.as_deref() != Some("configrow")
-        || object.storage_ref.is_some()
+        || object.class_name() != Some("configrow")
+        || object.storage_ref().is_some()
     {
         return None;
     }
-    let class_entity_id = object.class_ref?;
+    let class_entity_id = object.class_ref()?;
     let [PayloadField::Atom { value: 250, .. }, PayloadField::Atom {
         value: successor_entity_id,
         offset: successor_offset,
@@ -4178,104 +5499,6 @@ fn schema_configuration_row_link(
             terminal_nulls,
         ),
     })
-}
-
-fn derive_schema_configuration_row_chains(
-    records: &[CatiaEntityRecord],
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Vec<CatiaSchemaConfigurationRowChain> {
-    let row_ids = records
-        .iter()
-        .filter(|entity| entity.schema_configuration_row_link.is_some())
-        .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
-        .collect::<HashSet<_>>();
-    let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
-    for entity in records {
-        let Some(link) = &entity.schema_configuration_row_link else {
-            continue;
-        };
-        groups
-            .entry((entity.object_graph.as_str(), link.class_reference.entity_id))
-            .or_default()
-            .push((entity.entity_id, link));
-    }
-    let mut groups = groups.into_iter().collect::<Vec<_>>();
-    groups.sort_by(
-        |((left_graph, left_root), _), ((right_graph, right_root), _)| {
-            left_graph.cmp(right_graph).then(left_root.cmp(right_root))
-        },
-    );
-
-    groups
-        .into_iter()
-        .filter_map(|((graph, root), links)| {
-            let successors = links.iter().copied().collect::<HashMap<_, _>>();
-            if successors.len() != links.len() {
-                return None;
-            }
-            let mut row_ids_in_order = Vec::with_capacity(links.len());
-            let mut visited = HashSet::new();
-            let mut current = root;
-            while let Some(link) = successors.get(&current).copied() {
-                if !visited.insert(current) {
-                    return None;
-                }
-                row_ids_in_order.push(current);
-                current = link.successor.entity_id;
-            }
-            if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
-                return None;
-            }
-            let links = row_ids_in_order
-                .into_iter()
-                .map(|row_id| {
-                    let link = successors[&row_id];
-                    let successor_id = link.successor.entity_id;
-                    CatiaSchemaConfigurationRowChainLink {
-                        row: entity_reference(
-                            graph,
-                            row_id,
-                            entities,
-                            entity_classes,
-                            terminal_nulls,
-                        ),
-                        successor_payload_offset: link.successor_payload_offset,
-                        successor: link.successor.clone(),
-                        intervening_entities: (row_id < successor_id).then(|| {
-                            records
-                                .iter()
-                                .filter(|entity| {
-                                    entity.object_graph == graph
-                                        && entity.entity_id > row_id
-                                        && entity.entity_id < successor_id
-                                })
-                                .map(|entity| {
-                                    entity_reference(
-                                        graph,
-                                        entity.entity_id,
-                                        entities,
-                                        entity_classes,
-                                        terminal_nulls,
-                                    )
-                                })
-                                .collect()
-                        }),
-                    }
-                })
-                .collect();
-            Some(CatiaSchemaConfigurationRowChain {
-                id: object_graph_derived_id(
-                    graph,
-                    "schema-configuration-row-chain",
-                    &root.to_string(),
-                )?,
-                object_graph: graph.to_string(),
-                links,
-            })
-        })
-        .collect()
 }
 
 fn relation_program_instance_lead_12(
@@ -4393,14 +5616,14 @@ fn formula_relation(
     else {
         return None;
     };
-    if owner_reference.entity_id != entity_id
-        || expression_reference.entity_id != *expression_entity_id
-        || parameter_reference.entity_id != *parameter_entity_id
-        || owner_reference.target.as_deref() != Some(object.id.as_str())
+    if owner_reference.entity_id() != entity_id
+        || expression_reference.entity_id() != *expression_entity_id
+        || parameter_reference.entity_id() != *parameter_entity_id
+        || owner_reference.target() != Some(object.id.as_str())
     {
         return None;
     }
-    let expression_object = expression_reference.target.as_ref()?;
+    let expression_object = expression_reference.target()?;
     let source = relation_expressions.get(expression_object)?;
     let parameter_dependencies =
         relation_parameter_dependencies(source, &object.parent, parameter_bindings);
@@ -4417,15 +5640,21 @@ fn formula_relation(
         },
         output_entity: CatiaPayloadEntityReference {
             payload_offset: u64::try_from(*parameter_offset).ok()?,
-            reference: CatiaEntityReference {
-                is_null: parameter_reference.is_null,
-                ..entity_reference(
+            reference: {
+                let resolved = entity_reference(
                     &object.parent,
                     *parameter_entity_id,
                     entity_references.entities,
                     entity_references.classes,
                     entity_references.terminal_nulls,
-                )
+                );
+                if parameter_reference.is_null() {
+                    CatiaEntityReference::Null {
+                        entity_id: resolved.entity_id(),
+                    }
+                } else {
+                    resolved
+                }
             },
         },
         parameter_dependencies,
@@ -4457,8 +5686,8 @@ fn entity_class_index<'a>(
         .into_iter()
         .filter_map(|record| {
             Some((
-                (record.parent.clone(), record.entity_id?),
-                record.class_name.clone()?,
+                (record.parent.clone(), record.entity_id()?),
+                record.class_name()?.to_owned(),
             ))
         })
         .collect()
@@ -4477,7 +5706,7 @@ fn semantic_entity_indices(
     let relation_expressions = entities
         .iter()
         .filter_map(|entity| {
-            let expression = entity.relation_expression.as_ref()?;
+            let expression = entity.relation_expression()?;
             Some((
                 entity.object_record.clone(),
                 expression.expression.value.clone(),
@@ -4487,13 +5716,13 @@ fn semantic_entity_indices(
     let relation_expression_entities = entities
         .iter()
         .filter_map(|entity| {
-            let expression = entity.relation_expression.as_ref()?;
+            let expression = entity.relation_expression()?;
             Some((
                 (entity.object_graph.clone(), entity.entity_id),
                 CatiaRelationExpressionEntity {
                     entity: entity.id.clone(),
                     source: expression.expression.value.clone(),
-                    signature: expression.signature.clone(),
+                    signature: expression.signature(),
                 },
             ))
         })
@@ -4523,7 +5752,7 @@ fn semantic_entity_indices(
         .collect();
     let mut parameter_bindings = CatiaParameterBindingIndex::new();
     for entity in entities {
-        let Some(parameter) = &entity.parameter_value else {
+        let Some(parameter) = entity.parameter_value() else {
             continue;
         };
         parameter_bindings
@@ -4531,14 +5760,14 @@ fn semantic_entity_indices(
             .or_default()
             .entry(parameter.binding.value.clone())
             .or_default()
-            .push(CatiaEntityReference {
-                entity_id: entity.entity_id,
-                is_null: false,
-                entity: Some(entity.id.clone()),
-                class_name: entity_classes
+            .push(CatiaEntityReference::from_parts(
+                entity.entity_id,
+                false,
+                Some(entity.id.clone()),
+                entity_classes
                     .get(&(entity.object_graph.clone(), entity.entity_id))
                     .cloned(),
-            });
+            ));
     }
     (
         relation_expressions,
@@ -4617,7 +5846,7 @@ pub(crate) fn resolved_relation_program_inputs(
                 let [candidate] = dependency.candidates.as_slice() else {
                     return None;
                 };
-                if candidate.is_null || candidate.entity.is_none() {
+                if candidate.is_null() || candidate.entity().is_none() {
                     return None;
                 }
                 match &selected {
@@ -4627,7 +5856,7 @@ pub(crate) fn resolved_relation_program_inputs(
                 }
             }
             let entity = (occurrence_count != 0).then_some(selected)??;
-            if !entity_ids.insert(entity.entity_id) {
+            if !entity_ids.insert(entity.entity_id()) {
                 return None;
             }
             Some(CatiaRelationProgramInput {
@@ -4735,7 +5964,6 @@ fn repeated_reference_schema_selection(
 
 /// One stored entity identity in a pre-`7C05` design stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyEntityIdentity {
     /// Offset of the `EA` identity delimiter.
     pub byte_offset: u64,
@@ -4748,7 +5976,6 @@ pub struct CatiaLegacyEntityIdentity {
 
 /// One complete compact legacy schema program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacySchemaProgram {
     /// Offset of the first program byte after the fixed prefix.
     pub byte_offset: u64,
@@ -4760,7 +5987,6 @@ pub struct CatiaLegacySchemaProgram {
     pub boundary: CatiaLegacySchemaProgramBoundary,
     /// Exact program bytes, including the terminal `FE`.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
     /// Complete inclusive-length identifier packets in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -4769,7 +5995,6 @@ pub struct CatiaLegacySchemaProgram {
 
 /// Production that closes a compact legacy schema program.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacySchemaProgramBoundary {
     /// Fixed vendor footer preceded by the terminal `FE`.
@@ -4781,7 +6006,6 @@ pub enum CatiaLegacySchemaProgramBoundary {
 
 /// One complete inclusive-length identifier packet in a compact schema program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacySchemaIdentifier {
     /// Offset of the inclusive-length byte.
     pub byte_offset: u64,
@@ -4791,7 +6015,6 @@ pub struct CatiaLegacySchemaIdentifier {
 
 /// Framing production used by a legacy schema text field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyTextEncoding {
     /// Nonzero one-byte inclusive length.
@@ -4804,7 +6027,6 @@ pub enum CatiaLegacyTextEncoding {
 
 /// Framing production used by a legacy role selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyRoleSelectorEncoding {
     /// `80` followed by a nonzero little-endian `u32`.
@@ -4815,7 +6037,6 @@ pub enum CatiaLegacyRoleSelectorEncoding {
 
 /// Stored representation of one legacy schema role name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
 pub enum CatiaLegacyRoleName {
     /// Inclusive-length UTF-8 role name.
@@ -4852,7 +6073,6 @@ impl From<legacy_entity::LegacyRoleName> for CatiaLegacyRoleName {
 
 /// One length-framed legacy schema role and its selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRoleSelector {
     /// Offset of the literal length or schema-selector byte.
     pub byte_offset: u64,
@@ -4862,8 +6082,7 @@ pub struct CatiaLegacyRoleSelector {
     /// Stored literal or unresolved role name.
     pub name: CatiaLegacyRoleName,
     /// Selector framing production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub encoding: Option<CatiaLegacyRoleSelectorEncoding>,
+    pub encoding: CatiaLegacyRoleSelectorEncoding,
     /// Stored selector following the role name.
     pub selector: u32,
     /// Field code when an `E8 <field-code:u16le> 01` opener follows immediately.
@@ -4873,7 +6092,7 @@ pub struct CatiaLegacyRoleSelector {
 
 impl CatiaLegacyRoleSelector {
     pub(crate) fn end_offset(&self) -> Option<u64> {
-        let selector_len = match self.encoding? {
+        let selector_len = match self.encoding {
             CatiaLegacyRoleSelectorEncoding::FixedU32 => 5,
             CatiaLegacyRoleSelectorEncoding::Paged => 2,
         };
@@ -4885,7 +6104,6 @@ impl CatiaLegacyRoleSelector {
 
 /// One complete legacy schema text field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyTextField {
     /// Offset of the field opener.
     pub byte_offset: u64,
@@ -4902,7 +6120,6 @@ pub struct CatiaLegacyTextField {
 
 /// One legacy schema field bounded by consecutive role selectors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacySchemaField {
     /// Offset of the `E8 <field-code:u16le> 01` opener.
     pub byte_offset: u64,
@@ -4920,7 +6137,6 @@ pub struct CatiaLegacySchemaField {
 
 /// One typed parameter role in a legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRelationParameter {
     /// Expression-local parameter.
     pub parameter: String,
@@ -4930,7 +6146,6 @@ pub struct CatiaLegacyRelationParameter {
 
 /// One complete legacy expression and type-signature pair.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRelation {
     /// Stored owner identity.
     pub entity_id: u32,
@@ -4962,7 +6177,6 @@ pub struct CatiaLegacyRelation {
 
 /// One complete legacy `synchrone` relation-update field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRelationSynchronousState {
     /// Offset of the `synchrone` role-name length byte.
     pub role_byte_offset: u64,
@@ -4976,7 +6190,6 @@ pub struct CatiaLegacyRelationSynchronousState {
 
 /// Value selected by one complete legacy type descriptor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaLegacyTypeValue {
     /// Inclusive-length UTF-8 type name.
     Name {
@@ -4992,7 +6205,6 @@ pub enum CatiaLegacyTypeValue {
 
 /// One complete type descriptor in a legacy identity interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyTypeDescriptor {
     /// Offset of the fixed descriptor prefix.
     pub byte_offset: u64,
@@ -5004,7 +6216,6 @@ pub struct CatiaLegacyTypeDescriptor {
 
 /// Evaluation stored by a complete legacy scalar packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaLegacyScalarEvaluation {
     /// Finite binary64 scalar.
     Value {
@@ -5017,7 +6228,6 @@ pub enum CatiaLegacyScalarEvaluation {
 
 /// Fixed prefix selecting one legacy scalar production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyScalarEncoding {
     /// `FE 84 88 82 FE`.
@@ -5028,7 +6238,6 @@ pub enum CatiaLegacyScalarEncoding {
 
 /// One complete typed scalar packet in a legacy identity interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyScalarValue {
     /// Stable native identity derived from the containing run and packet offset.
     pub id: String,
@@ -5050,7 +6259,6 @@ pub struct CatiaLegacyScalarValue {
 
 /// One complete legacy UTF-8 string-value packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyStringValue {
     /// Stable native identity derived from the containing run and packet offset.
     pub id: String,
@@ -5070,7 +6278,6 @@ pub struct CatiaLegacyStringValue {
 
 /// Stored encoding of one complete legacy signed integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyIntegerEncoding {
     /// One byte stores values zero through 126 as `value + 0x81`.
@@ -5081,7 +6288,6 @@ pub enum CatiaLegacyIntegerEncoding {
 
 /// One complete legacy signed-integer packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyIntegerValue {
     /// Stable native identity derived from the containing run and packet offset.
     pub id: String,
@@ -5103,7 +6309,6 @@ pub struct CatiaLegacyIntegerValue {
 
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyEntityRun {
     /// Stable native identity.
     pub id: String,
@@ -5148,7 +6353,6 @@ pub struct CatiaLegacyEntityRun {
 
 /// One zero-entity face-local surface-support occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntitySupportOccurrence {
     /// Byte offset of the framed `21xx` record.
     pub byte_offset: u64,
@@ -5183,7 +6387,6 @@ pub struct CatiaZeroEntitySupportOccurrence {
 
 /// One counted zero-entity `5fxx` face record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityFace {
     /// Byte offset of the framed face record.
     pub byte_offset: u64,
@@ -5203,7 +6406,6 @@ pub struct CatiaZeroEntityFace {
 
 /// One counted zero-entity `62xx` loop record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityLoop {
     /// Byte offset of the framed loop record.
     pub byte_offset: u64,
@@ -5236,7 +6438,6 @@ pub struct CatiaZeroEntityLoop {
 
 /// One zero-entity surface carrier and its maximal following support run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntitySupportRun {
     /// Stable native-run identity.
     pub id: String,
@@ -5253,7 +6454,6 @@ pub struct CatiaZeroEntitySupportRun {
 
 /// One zero-entity `5e1a` allocation tuple.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEdgeStride {
     /// Stable native-record identity.
     pub id: String,
@@ -5273,7 +6473,6 @@ pub struct CatiaZeroEntityEdgeStride {
 
 /// One positional zero-entity `0638` oriented use.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityOrientedUse {
     /// Byte offset of the framed record.
     pub byte_offset: u64,
@@ -5287,7 +6486,6 @@ pub struct CatiaZeroEntityOrientedUse {
 
 /// One zero-entity `2569` header and its two positional uses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityOrientedUsePair {
     /// Stable native-pair identity.
     pub id: String,
@@ -5305,7 +6503,6 @@ pub struct CatiaZeroEntityOrientedUsePair {
 ///
 /// This relation does not establish curve coincidence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointPairCandidate {
     /// Stable derived-pair identity.
     pub id: String,
@@ -5319,19 +6516,48 @@ pub struct CatiaZeroEntityEndpointPairCandidate {
     pub model_midpoint: cadmpeg_ir::math::Point3,
 }
 
+/// Start or end of an oriented endpoint pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaZeroEntityEndpointIndex {
+    /// First oriented endpoint.
+    Start,
+    /// Second oriented endpoint.
+    End,
+}
+
+impl From<CatiaZeroEntityEndpointIndex> for u8 {
+    fn from(value: CatiaZeroEntityEndpointIndex) -> Self {
+        match value {
+            CatiaZeroEntityEndpointIndex::Start => 0,
+            CatiaZeroEntityEndpointIndex::End => 1,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaZeroEntityEndpointIndex {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Start),
+            1 => Ok(Self::End),
+            other => Err(format!("endpoint_index {other} is not start or end")),
+        }
+    }
+}
+
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
-    /// Zero-based endpoint index in that candidate's oriented endpoint pair.
-    pub endpoint_index: u8,
+    /// Start or end of that candidate's oriented endpoint pair.
+    pub endpoint_index: CatiaZeroEntityEndpointIndex,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointLocusCandidate {
     /// Stable derived-locus identity.
     pub id: String,
@@ -5345,7 +6571,6 @@ pub struct CatiaZeroEntityEndpointLocusCandidate {
 
 /// One counted zero-entity `05xx` vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityVertexIncidence {
     /// Stable native-record identity.
     pub id: String,
@@ -5364,7 +6589,6 @@ pub struct CatiaZeroEntityVertexIncidence {
 
 /// One complete zero-entity face-roster, shell, and body ownership hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityOwnershipRoot {
     /// Stable native-root identity.
     pub id: String,
@@ -5386,7 +6610,6 @@ pub struct CatiaZeroEntityOwnershipRoot {
 
 /// One framed record in the zero-entity global identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityRecord {
     /// Stable native-record identity.
     pub id: String,
@@ -5421,10 +6644,8 @@ macro_rules! define_catia_arenas {
 
         /// CATIA-native records retained outside the format-neutral model.
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(try_from = "CatiaNativeWire", into = "CatiaNativeWire")]
         pub struct CatiaNative {
-            /// Schema version this namespace was written under.
-            pub version: u32,
             $(
                 $(
                     $(#[$attr])*
@@ -5434,11 +6655,37 @@ macro_rules! define_catia_arenas {
             )*
         }
 
+        #[derive(Serialize, Deserialize)]
+        struct CatiaNativeWire {
+            $($( $(#[$attr])* #[serde(default)]
+                $field: define_catia_arenas!(@native_type $field, $stored, $record),
+            )?)*
+        }
+
+        impl From<CatiaNative> for CatiaNativeWire {
+            fn from(mut native: CatiaNative) -> Self {
+                let nodes = edge_node_wires(std::mem::take(&mut native.consolidated_edge_nodes), &native.consolidated_vertex_identities);
+                Self {
+                    $($( $field: define_catia_arenas!(@native_value $field, $stored, native, nodes), )?)*
+                }
+            }
+        }
+
+        impl TryFrom<CatiaNativeWire> for CatiaNative {
+            type Error = String;
+            fn try_from(mut wire: CatiaNativeWire) -> Result<Self, Self::Error> {
+                let nodes = load_edge_nodes(std::mem::take(&mut wire.consolidated_edge_nodes), &wire.consolidated_vertex_identities)?;
+                Ok(Self {
+                    $($( $field: define_catia_arenas!(@native_value $field, $stored, wire, nodes), )?)*
+                })
+            }
+        }
+
         /// Owning, flattened arena payload shared by borrowed and consuming stores.
         pub(crate) struct CatiaArenaProjection {
             $(
                 $(
-                    $field: define_catia_arenas!(@type $stored, $record),
+                    $field: define_catia_arenas!(@type $field, $stored, $record),
                 )?
             )*
             $(
@@ -5460,6 +6707,11 @@ macro_rules! define_catia_arenas {
             fn from(mut native: CatiaNative) -> Self {
                 $(
                     $(
+                        define_catia_arenas!(@prepare $field, native, $stored, $field);
+                    )?
+                )*
+                $(
+                    $(
                         let $field = native
                             .$owner
                             .iter_mut()
@@ -5471,7 +6723,7 @@ macro_rules! define_catia_arenas {
                     $(
                         $(
                             $field: define_catia_arenas!(
-                                @stored_value $stored, native, $field
+                                @stored_value $stored, native, $field, $field
                             ),
                         )?
                     )*
@@ -5506,7 +6758,6 @@ macro_rules! define_catia_arenas {
         impl Default for CatiaNative {
             fn default() -> Self {
                 Self {
-                    version: CATIA_NATIVE_VERSION,
                     $(
                         $(
                             $field: define_catia_arenas!(@default $stored),
@@ -5516,13 +6767,32 @@ macro_rules! define_catia_arenas {
             }
         }
     };
-    (@type $kind:ident, $record:ty) => {
+    (@native_type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
+    (@native_type $field:ident, $kind:ident, $record:ty) => { Vec<$record> };
+    (@native_value consolidated_edge_nodes, $kind:ident, $owner:ident, $nodes:ident) => { $nodes };
+    (@native_value $field:ident, $kind:ident, $owner:ident, $nodes:ident) => { $owner.$field };
+    (@type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
+    (@prepare consolidated_edge_nodes, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = edge_node_wires(std::mem::take(&mut $native.consolidated_edge_nodes), &$native.consolidated_vertex_identities);
+    };
+    (@stored_value stored, $native:ident, consolidated_edge_nodes, $binding:ident) => { $binding };
+    (@type catalogs, $kind:ident, $record:ty) => {
+        Vec<CatiaCatalogWire>
+    };
+    (@type $field:ident, $kind:ident, $record:ty) => {
         Vec<$record>
     };
     (@flattened_type $owner:ident, $children:ident, $record:ty) => {
         Vec<$record>
     };
-    (@stored_value stored, $native:ident, $field:ident) => {
+    (@prepare catalogs, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = $native.catalogs.iter().map(CatiaCatalogWire::header).collect();
+    };
+    (@prepare $field:ident, $native:ident, $kind:ident, $binding:ident) => {};
+    (@stored_value stored, $native:ident, catalogs, $binding:ident) => {
+        $binding
+    };
+    (@stored_value stored, $native:ident, $field:ident, $binding:ident) => {
         $native.$field
     };
     (@flattened_value $owner:ident, $children:ident, $field:ident) => {
@@ -5531,10 +6801,8 @@ macro_rules! define_catia_arenas {
     (@family $kind:ident, $field:ident) => {
         CatiaFamilyRow {
             arena: stringify!($field),
-            tag: None,
             exactness: (),
             phase: Phase::ArenaOnly,
-            note: None,
             emit: |projection, row, namespace| {
                 namespace.set_arena(row.arena, &projection.$field)
             },
@@ -5727,23 +6995,16 @@ const CATIA_CATALOGUE: Catalogue<
     (),
     cadmpeg_ir::NativeNamespace,
     (),
-> = Catalogue::new(
-    CATIA_FAMILIES,
-    VersionContract {
-        minimum: 0,
-        maximum: u32::MAX,
-    },
-);
+> = Catalogue::new(CATIA_FAMILIES);
 
 fn store_projection(
     projection: &CatiaArenaProjection,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    namespace.version = CATIA_NATIVE_VERSION;
     CATIA_CATALOGUE.emit_all(projection, namespace)?;
     debug_assert!(CATIA_ARENA_NAMES
         .iter()
-        .all(|name| namespace.arenas.contains_key(*name)));
+        .all(|name| namespace.arenas().contains_key(*name)));
     Ok(())
 }
 
@@ -5823,14 +7084,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         byte_offset: role.offset as u64,
                         entity_id: role.entity_id,
                         name: role.name.into(),
-                        encoding: Some(match role.encoding {
+                        encoding: match role.encoding {
                             legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
                                 CatiaLegacyRoleSelectorEncoding::FixedU32
                             }
                             legacy_entity::LegacyRoleSelectorEncoding::Paged => {
                                 CatiaLegacyRoleSelectorEncoding::Paged
                             }
-                        }),
+                        },
                         selector: role.selector,
                         field_code: role.field_code,
                     })
@@ -5856,14 +7117,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                             byte_offset: role.offset as u64,
                             entity_id: role.entity_id,
                             name: role.name.into(),
-                            encoding: Some(match role.encoding {
+                            encoding: match role.encoding {
                                 legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
                                     CatiaLegacyRoleSelectorEncoding::FixedU32
                                 }
                                 legacy_entity::LegacyRoleSelectorEncoding::Paged => {
                                     CatiaLegacyRoleSelectorEncoding::Paged
                                 }
-                            }),
+                            },
                             selector: role.selector,
                             field_code: role.field_code,
                         }),
@@ -5904,11 +7165,12 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                             inputs: relation
                                 .signature
                                 .inputs
-                                .into_iter()
+                                .iter()
+                                .cloned()
                                 .map(parameter)
                                 .collect(),
-                            output: relation.signature.output.map(parameter),
-                            result_type: relation.signature.result_type,
+                            output: relation.signature.output().cloned().map(parameter),
+                            result_type: relation.signature.result_type().to_owned(),
                         }
                     })
                     .collect(),
@@ -6099,15 +7361,10 @@ fn consolidated_class5b5c_records(
         .enumerate()
         .map(|(index, record)| CatiaConsolidatedClass5b5cRecord {
             id: format!("catia:consolidated:class5b5c-record#{index}"),
-            byte_offset: record.pos as u64,
+            frame: record.frame.into(),
             source_index: record.source_index as u64,
             source_offset: record.source_offset as u64,
-            byte_len: record.byte_len as u64,
-            width: record.width,
-            flag: record.flag,
             class: record.class,
-            header_token: record.header_token,
-            payload: record.payload,
         })
         .collect()
 }
@@ -6200,43 +7457,38 @@ fn consolidated_cylinders(
         .into_iter()
         .enumerate()
         .map(|(index, cylinder)| {
-            let payload = if cylinder.layout == 0x62 {
-                let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                    axis,
-                    ref_direction,
-                    ..
-                } = cylinder.geometry
-                else {
-                    unreachable!("B2 cylinder parser produced a non-cylinder carrier")
-                };
-                CatiaConsolidatedCylinderPayload::RangeOrigin {
-                    stored_vector: cylinder
-                        .stored_vector
-                        .expect("range-origin cylinder has its stored vector"),
-                    axis: [axis.x, axis.y, axis.z],
-                    reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    range_origin: cylinder
-                        .range_origin
-                        .expect("range-origin cylinder has its range origin"),
+            let payload = match cylinder.layout {
+                crate::families::b2::records::B2CylinderLayout::RangeOrigin { stored_vector } => {
+                    CatiaConsolidatedCylinderPayload::RangeOrigin {
+                        stored_vector,
+                        axis: cylinder.axis,
+                        reference_direction: cylinder.reference_direction,
+                        range_origin: cylinder.range_origin().unwrap_or_else(|| {
+                            crate::families::b2::records::cylinder_range_origin(
+                                cylinder.radius,
+                                cylinder.u_range,
+                            )
+                        }),
+                    }
                 }
-            } else {
-                match cylinder.geometry {
-                    cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                        axis,
-                        ref_direction,
-                        ..
-                    } => CatiaConsolidatedCylinderPayload::Resolved {
-                        frame_token: cylinder.frame_token,
-                        axis: [axis.x, axis.y, axis.z],
-                        reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    },
-                    _ => unreachable!("B2 cylinder parser produced a non-cylinder carrier"),
+                crate::families::b2::records::B2CylinderLayout::Full52 => {
+                    CatiaConsolidatedCylinderPayload::Layout52 {
+                        frame_token: cylinder.frame_token(),
+                        axis: cylinder.axis,
+                        reference_direction: cylinder.reference_direction,
+                    }
+                }
+                crate::families::b2::records::B2CylinderLayout::Full5a { frame_token } => {
+                    CatiaConsolidatedCylinderPayload::Layout5a {
+                        frame_token,
+                        axis: cylinder.axis,
+                        reference_direction: cylinder.reference_direction,
+                    }
                 }
             };
             CatiaConsolidatedCylinder {
                 id: format!("catia:consolidated:cylinder#{index}"),
                 byte_offset: cylinder.pos as u64,
-                layout: cylinder.layout,
                 origin: cylinder.origin,
                 radius: cylinder.radius,
                 u_range: cylinder.u_range,
@@ -6259,31 +7511,21 @@ fn consolidated_embedded_cylinders(
     crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records)
         .into_iter()
         .enumerate()
-        .map(|(index, embedded)| {
-            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                axis,
-                ref_direction,
-                ..
-            } = embedded.cylinder.geometry
-            else {
-                unreachable!("embedded B2 cylinder parser produced a non-cylinder carrier")
-            };
-            CatiaConsolidatedEmbeddedCylinder {
-                id: format!("catia:consolidated:embedded-cylinder#{index}"),
-                byte_offset: embedded.pos as u64,
-                group: group_ids
-                    .get(&(embedded.wrapper_pos as u64))
-                    .expect("embedded cylinder owner came from the same group parse")
-                    .to_string(),
-                object_id: embedded.object_id,
-                origin: embedded.cylinder.origin,
-                radius: embedded.cylinder.radius,
-                u_range: embedded.cylinder.u_range,
-                v_range: embedded.cylinder.v_range,
-                frame_token: embedded.cylinder.frame_token,
-                axis: [axis.x, axis.y, axis.z],
-                reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            }
+        .map(|(index, embedded)| CatiaConsolidatedEmbeddedCylinder {
+            id: format!("catia:consolidated:embedded-cylinder#{index}"),
+            byte_offset: embedded.pos as u64,
+            group: group_ids
+                .get(&(embedded.wrapper_pos as u64))
+                .expect("embedded cylinder owner came from the same group parse")
+                .to_string(),
+            object_id: embedded.object_id,
+            origin: embedded.cylinder.origin,
+            radius: embedded.cylinder.radius,
+            u_range: embedded.cylinder.u_range,
+            v_range: embedded.cylinder.v_range,
+            frame_token: embedded.cylinder.frame_token(),
+            axis: embedded.cylinder.axis,
+            reference_direction: embedded.cylinder.reference_direction,
         })
         .collect()
 }
@@ -6316,7 +7558,6 @@ fn consolidated_parameter_points(
                 id: format!("catia:consolidated:parameter-point#{index}"),
                 byte_offset: point.pos as u64,
                 byte_len: (point.end - point.pos) as u64,
-                layout: point.layout,
                 prefix: point.prefix,
                 control: point.control,
                 payload,
@@ -6357,8 +7598,8 @@ fn consolidated_plane_carriers(
                 B2PlaneCarrierPayload::PointTail { point, tail } => {
                     CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
                 }
-                B2PlaneCarrierPayload::ScalarLane { values } => {
-                    CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values }
+                B2PlaneCarrierPayload::ScalarLane { selector, values } => {
+                    CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
                 }
             };
             CatiaConsolidatedPlaneCarrier {
@@ -6368,7 +7609,6 @@ fn consolidated_plane_carriers(
                 width: carrier.width,
                 flag: carrier.flag,
                 header_token: carrier.header_token,
-                selector: carrier.selector,
                 payload,
             }
         })
@@ -6412,12 +7652,12 @@ fn consolidated_pcurves(
             byte_offset: pcurve.pos as u64,
             family,
             support_id: pcurve.support_id,
-            degree: pcurve.degree,
+            degree: crate::wire::records::ConsolidatedPcurve::DEGREE,
             extrapolation_sites: pcurve.extrapolation_sites,
-            knots: pcurve.knots,
-            points: pcurve.points,
-            first_derivatives: pcurve.first_derivatives,
-            second_derivatives: pcurve.second_derivatives,
+            knots: pcurve.knots(),
+            points: pcurve.points(),
+            first_derivatives: pcurve.first_derivatives(),
+            second_derivatives: pcurve.second_derivatives(),
             range: pcurve.range,
             tail: pcurve.tail,
         })
@@ -6532,42 +7772,47 @@ fn zero_entity_support_runs(
             id: format!("catia:zero-entity:support-run#{index}"),
             carrier_byte_offset: run.carrier_pos as u64,
             carrier_record_ordinal: run.carrier_record_ordinal,
-            face: run.face.map(|face| CatiaZeroEntityFace {
-                byte_offset: face.pos as u64,
-                record_ordinal: face.record_ordinal,
-                tag: face.tag,
-                allocations: face.allocations,
-                loop_terminals: face.loop_terminals,
-                loops: face
-                    .loops
-                    .into_iter()
-                    .map(|loop_record| {
-                        let typed_records = loop_record
-                            .typed_references
-                            .iter()
-                            .map(|ordinal| {
-                                zero_entity_record(records, *ordinal)
-                                    .map(|record| record.id.clone())
-                            })
-                            .collect::<Option<Vec<_>>>()
-                            .unwrap_or_default();
-                        CatiaZeroEntityLoop {
-                            byte_offset: loop_record.pos as u64,
-                            record_ordinal: loop_record.record_ordinal,
-                            tag: loop_record.tag,
-                            member_ids: loop_record.member_ids,
-                            typed_references: loop_record.typed_references,
-                            typed_records,
-                            support_record_ordinals: loop_record.support_record_ordinals,
-                            terminal_id: loop_record.terminal_id,
-                            gap: loop_record.gap,
-                            loop_class: loop_record.loop_class,
-                            forward_senses: loop_record.forward_senses,
-                            oriented_model_endpoints: loop_record.oriented_model_endpoints,
-                        }
-                    })
-                    .collect(),
-                terminal_control: face.terminal_control,
+            face: run.face.map(|face| {
+                let loop_terminals = face.loop_terminals();
+                let terminal_control = face.terminal_control.as_byte();
+                CatiaZeroEntityFace {
+                    byte_offset: face.pos as u64,
+                    record_ordinal: face.record_ordinal,
+                    tag: face.tag,
+                    allocations: face.allocations,
+                    loop_terminals,
+                    loops: face
+                        .loops
+                        .into_iter()
+                        .flatten()
+                        .map(|loop_record| {
+                            let typed_records = loop_record
+                                .typed_references
+                                .iter()
+                                .map(|ordinal| {
+                                    zero_entity_record(records, *ordinal)
+                                        .map(|record| record.id.clone())
+                                })
+                                .collect::<Option<Vec<_>>>()
+                                .unwrap_or_default();
+                            CatiaZeroEntityLoop {
+                                byte_offset: loop_record.pos as u64,
+                                record_ordinal: loop_record.record_ordinal,
+                                tag: loop_record.tag,
+                                member_ids: loop_record.member_ids,
+                                typed_references: loop_record.typed_references,
+                                typed_records,
+                                support_record_ordinals: loop_record.support_record_ordinals,
+                                terminal_id: loop_record.terminal_id,
+                                gap: loop_record.gap,
+                                loop_class: loop_record.loop_class,
+                                forward_senses: loop_record.forward_senses,
+                                oriented_model_endpoints: loop_record.oriented_model_endpoints,
+                            }
+                        })
+                        .collect(),
+                    terminal_control,
+                }
             }),
             supports: run
                 .supports
@@ -6625,7 +7870,10 @@ fn zero_entity_endpoint_locus_candidates(
                 .map(
                     |(pair, endpoint_index)| CatiaZeroEntityEndpointPairEndpoint {
                         endpoint_pair: endpoint_pairs[pair].id.clone(),
-                        endpoint_index,
+                        endpoint_index: match endpoint_index {
+                            0 => CatiaZeroEntityEndpointIndex::Start,
+                            _ => CatiaZeroEntityEndpointIndex::End,
+                        },
                     },
                 )
                 .collect(),
@@ -6679,15 +7927,19 @@ fn zero_entity_ownership_roots(
     crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range)
         .into_iter()
         .enumerate()
-        .map(|(index, root)| CatiaZeroEntityOwnershipRoot {
-            id: format!("catia:zero-entity:ownership-root#{index}"),
-            face_roster_byte_offset: root.face_roster_pos as u64,
-            face_roster_record_ordinal: root.face_roster_record_ordinal,
-            face_slots: root.face_slots,
-            shell_byte_offset: root.shell_pos as u64,
-            shell_record_ordinal: root.shell_record_ordinal,
-            body_byte_offset: root.body_pos as u64,
-            body_record_ordinal: root.body_record_ordinal,
+        .map(|(index, root)| {
+            let shell_record_ordinal = root.shell_record_ordinal();
+            let body_record_ordinal = root.body_record_ordinal();
+            CatiaZeroEntityOwnershipRoot {
+                id: format!("catia:zero-entity:ownership-root#{index}"),
+                face_roster_byte_offset: root.face_roster_pos as u64,
+                face_roster_record_ordinal: root.face_roster_record_ordinal,
+                face_slots: root.face_slots,
+                shell_byte_offset: root.shell_pos as u64,
+                shell_record_ordinal,
+                body_byte_offset: root.body_pos as u64,
+                body_record_ordinal,
+            }
         })
         .collect()
 }
@@ -6707,8 +7959,8 @@ fn zero_entity_vertex_incidences(
                 id: format!("catia:zero-entity:vertex-incidence#{index}"),
                 byte_offset: record.pos as u64,
                 record_ordinal: record.record_ordinal,
-                tag: record.tag,
-                allocations: record.allocations,
+                tag: record.tag(),
+                allocations: record.allocations.as_slice().to_vec(),
                 vertex_record,
             }
         })
@@ -6737,12 +7989,10 @@ fn consolidated_owner_packets(
         .map(|chart| {
             let native_reference =
                 |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
-                    CatiaOwnerChartBridgeReference {
-                        value: reference.value,
-                        encoding: native_allocation_reference_encoding(reference.encoding),
-                        alias_row: None,
-                        canonical_surface_tag: None,
-                    }
+                    CatiaOwnerChartBridgeReference::new(
+                        reference.value,
+                        native_allocation_reference_encoding(reference.encoding),
+                    )
                 };
             (
                 (chart.source_index, chart.owner_pos),
@@ -6765,39 +8015,29 @@ fn consolidated_owner_packets(
                             carrier_surface,
                             support_surfaces,
                             support_pcurves,
-                            controls,
+                            middle_controls,
+                            terminal_control,
                             construction_radius,
                         } => CatiaOwnerChartBridge::SupportedSurface {
                             byte_offset: pos as u64,
                             carrier_surface: native_reference(carrier_surface),
                             support_surfaces: support_surfaces.map(native_reference),
                             support_pcurves: support_pcurves.map(native_reference),
-                            controls,
+                            middle_controls,
+                            terminal_control,
                             construction_radius,
                         },
                         crate::families::b2::records::B2OwnerChartBridge::Extended {
                             pos,
                             references,
-                            controls,
-                            terminal_controls,
                         } => CatiaOwnerChartBridge::Extended {
                             byte_offset: pos as u64,
                             references: references.map(native_reference),
-                            controls,
-                            terminal_controls,
                         },
                     },
-                    side_axis: match chart.side_axis {
-                        crate::families::b2::records::B2OwnerChartSideAxis::FirstParameter => {
-                            CatiaOwnerChartSideAxis::FirstParameter
-                        }
-                        crate::families::b2::records::B2OwnerChartSideAxis::SecondParameter => {
-                            CatiaOwnerChartSideAxis::SecondParameter
-                        }
-                    },
                     parameter_point_byte_offsets: chart
-                        .parameter_points
-                        .map(|point| point.pos as u64),
+                        .parameter_point_offsets()
+                        .map(|pos| pos as u64),
                 },
             )
         })
@@ -6912,6 +8152,9 @@ fn consolidated_owner_packets(
                         upper: packet.numeric_tail.upper,
                         bounds: packet.numeric_tail.bounds,
                     },
+                    identity_targets: Vec::new(),
+                    owner_chart: None,
+                    boundary_cycle: None,
                 },
             )
         })
@@ -6936,15 +8179,26 @@ fn consolidated_owner_packets(
     packets
         .into_iter()
         .map(
-            |(pos, source_index, header_token, payload)| CatiaConsolidatedOwnerPacket {
+            |(pos, source_index, header_token, mut payload)| {
+                if let CatiaOwnerPacketPayload::FixedNine {
+                    identity_targets: stored_targets,
+                    owner_chart,
+                    boundary_cycle,
+                    ..
+                } = &mut payload
+                {
+                    *stored_targets = identity_targets
+                        .remove(&(source_index, pos))
+                        .unwrap_or_default();
+                    *owner_chart = owner_charts.get(&(source_index, pos)).cloned();
+                    *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied();
+                }
+                CatiaConsolidatedOwnerPacket {
                 id: format!("catia:consolidated:owner-packet#{pos:010}"),
                 byte_offset: pos as u64,
                 source_index,
                 header_token,
                 payload,
-                identity_targets: identity_targets
-                    .remove(&(source_index, pos))
-                    .unwrap_or_default(),
                 face_node: face_nodes
                     .get(&(source_index, pos))
                     .map(|face_node| CatiaFaceNodeRelation {
@@ -6962,8 +8216,7 @@ fn consolidated_owner_packets(
                     target: face_node.target,
                         terminal: face_node.terminal,
                     }),
-                owner_chart: owner_charts.get(&(source_index, pos)).cloned(),
-                boundary_cycle: boundary_cycles.get(&(source_index, pos)).copied(),
+            }
             },
         )
         .collect()
@@ -6994,12 +8247,9 @@ fn consolidated_edge_runs(
         bytes, records,
     )
     .into_iter()
-    .filter_map(|run| {
-        if !run.edge.co_parametric || !run.identity_chain_consistent {
-            return None;
-        }
+    .map(|run| {
         let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
-        Some((run, pcurve_offsets))
+        (run, pcurve_offsets)
     })
     .enumerate()
     .filter_map(|(index, (run, pcurve_offsets))| {
@@ -7078,9 +8328,6 @@ fn consolidated_edge_nodes(
     )
     .into_iter()
     .filter_map(|run| {
-        if !run.identity_chain_consistent {
-            return None;
-        }
         Some((
             run.node.pos,
             (
@@ -7095,19 +8342,12 @@ fn consolidated_edge_nodes(
             bytes, records,
         )
             .into_iter()
-            .filter(|run| run.identity_chain_consistent)
             .filter_map(|run| {
                 let circle = circle_ids.get(&(run.circle.pos as u64))?;
                 Some((
                     run.node.pos,
                     CatiaConsolidatedAnalyticCircleBinding {
-                        descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
-                            byte_offset: run.descriptor.pos as u64,
-                            width: run.descriptor.width,
-                            flag: run.descriptor.flag,
-                            header_token: run.descriptor.header_token,
-                            payload: run.descriptor.payload,
-                        },
+                        descriptor: run.descriptor.into(),
                         circle: (*circle).to_string(),
                     },
                 ))
@@ -7118,7 +8358,6 @@ fn consolidated_edge_nodes(
             bytes, records,
         )
         .into_iter()
-        .filter(|run| run.identity_chain_consistent)
         .map(|run| {
             (
                 run.node.pos,
@@ -7144,22 +8383,21 @@ fn consolidated_edge_nodes(
                 width: *width,
                 flag: *flag,
                 header_token: node.header_token,
-                allocation_owner: owner
-                    .map(|(pos, _)| format!("catia:consolidated:owner-packet#{pos:010}")),
-                allocation_ordinal: owner.map(|(_, ordinal)| *ordinal),
+                allocation: owner.map(|(pos, ordinal)| {
+                    (
+                        format!("catia:consolidated:owner-packet#{pos:010}"),
+                        *ordinal,
+                    )
+                }),
                 curve_ref: node.curve_ref,
                 vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
                 endpoint_records: compact_endpoints.get(&node.pos).copied(),
-                vertices: [String::new(), String::new()],
                 parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
-                reference_encodings: Some(
-                    node.reference_encodings
-                        .map(native_allocation_reference_encoding),
-                ),
-                terminal_value: Some(node.terminal_value),
-                terminal_encoding: Some(native_allocation_reference_encoding(
-                    node.terminal_encoding,
-                )),
+                reference_encodings: node
+                    .reference_encodings
+                    .map(native_allocation_reference_encoding),
+                terminal_value: node.terminal_value,
+                terminal_encoding: native_allocation_reference_encoding(node.terminal_encoding),
                 tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
@@ -7174,13 +8412,8 @@ fn native_consolidated_edge_definition(
     definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
 ) -> CatiaConsolidatedEdgeDefinition {
     CatiaConsolidatedEdgeDefinition {
-        byte_offset: definition.pos as u64,
-        width: definition.width,
-        flag: definition.flag,
+        frame: definition.frame.into(),
         class: definition.class,
-        header_token: definition.header_token,
-        payload: definition.payload,
-        data: definition.data,
     }
 }
 
@@ -7214,13 +8447,13 @@ fn native_consolidated_edge_uses(
 ) -> Option<CatiaConsolidatedEdgeUses> {
     let references = uses
         .iter()
-        .map(|use_| use_.references.as_deref()?.try_into().ok())
+        .map(|use_| use_.references()?.try_into().ok())
         .collect::<Option<Vec<[u32; 2]>>>()?
         .try_into()
         .ok()?;
-    let senses = uses
+    let senses: [u8; 2] = uses
         .each_ref()
-        .map(|use_| match use_.sense? {
+        .map(|use_| match use_.sense()? {
             crate::families::b2::records::B2UseSense::Sense84 => Some(0x84),
             crate::families::b2::records::B2UseSense::Sense88 => Some(0x88),
         })
@@ -7228,60 +8461,7 @@ fn native_consolidated_edge_uses(
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
-    (senses == [0x88, 0x84]).then_some(CatiaConsolidatedEdgeUses { references, senses })
-}
-
-fn consolidated_vertex_identities(
-    nodes: &mut [CatiaConsolidatedEdgeNode],
-) -> Vec<CatiaConsolidatedVertexIdentity> {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    enum IdentityKey {
-        EndpointRecord(u64),
-        Unresolved(usize, Option<String>, u32),
-    }
-
-    let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
-    let mut identity_indices = HashMap::<IdentityKey, usize>::new();
-    for node in nodes {
-        if node.endpoint_records.is_none() && node.uses.is_none() {
-            continue;
-        }
-        for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
-            let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
-            let key = endpoint_record.map_or_else(
-                || {
-                    IdentityKey::Unresolved(
-                        node.source_index,
-                        node.allocation_owner.clone(),
-                        identity,
-                    )
-                },
-                IdentityKey::EndpointRecord,
-            );
-            let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
-                let index = identities.len();
-                identities.push(CatiaConsolidatedVertexIdentity {
-                    id: format!("catia:consolidated:vertex-identity#{index}"),
-                    identity,
-                    source_index: node.source_index,
-                    endpoint_record,
-                    reference_values: vec![identity],
-                    allocation_owner: node.allocation_owner.clone(),
-                    incident_edge_nodes: Vec::new(),
-                });
-                index
-            });
-            let vertex = &mut identities[index];
-            if !vertex.reference_values.contains(&identity) {
-                vertex.reference_values.push(identity);
-            }
-            node.vertices[endpoint].clone_from(&vertex.id);
-            if vertex.incident_edge_nodes.last() != Some(&node.id) {
-                vertex.incident_edge_nodes.push(node.id.clone());
-            }
-        }
-    }
-    identities
+    (senses == [0x88, 0x84]).then_some(CatiaConsolidatedEdgeUses { references })
 }
 
 fn point_coordinates(point: &cadmpeg_ir::math::Point3) -> [f64; 3] {
@@ -7466,17 +8646,17 @@ fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
         let Some(group) = row.group.as_ref() else {
             continue;
         };
-        if row.lead != AliasLead::SurfaceSupportStorage {
+        if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
-            .or_insert(Some(row.tag));
+            .or_insert(Some(row.tag()));
     }
     for row in rows {
-        row.canonical_surface_tag = match row.lead {
-            AliasLead::SurfaceSupportStorage => Some(row.tag),
+        row.canonical_surface_tag = match row.lead() {
+            AliasLead::SurfaceSupportStorage => Some(row.tag()),
             AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
                 stored_by_group
                     .get(&(group.prototype, group.group_id))
@@ -7495,24 +8675,24 @@ fn resolve_owner_chart_support_aliases(
     let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
     for alias in aliases {
         unique_by_tag
-            .entry(alias.tag)
+            .entry(alias.tag())
             .and_modify(|unique| *unique = None)
             .or_insert(Some(alias));
     }
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
-        reference.alias_row = None;
-        reference.canonical_surface_tag = None;
-        if reference.encoding != CatiaAllocationReferenceEncoding::WidthCoded {
-            return;
+        if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
+            *alias = unique_by_tag
+                .get(&reference.value)
+                .copied()
+                .flatten()
+                .map(|row| CatiaOwnerChartAliasBinding {
+                    row: row.id.clone(),
+                    canonical_tag: row.canonical_surface_tag,
+                });
         }
-        let Some(alias) = unique_by_tag.get(&reference.value).copied().flatten() else {
-            return;
-        };
-        reference.alias_row = Some(alias.id.clone());
-        reference.canonical_surface_tag = alias.canonical_surface_tag;
     };
     for packet in packets {
-        let Some(chart) = packet.owner_chart.as_mut() else {
+        let Some(chart) = packet.owner_chart_mut() else {
             continue;
         };
         let CatiaOwnerChartBridge::SupportedSurface {
@@ -7532,11 +8712,7 @@ fn resolve_owner_chart_support_aliases(
 #[cfg(test)]
 fn validate_alias_surface_tags(
     rows: &[CatiaAliasRow],
-    required: bool,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    if !required {
-        return Ok(());
-    }
     let mut expected = rows.to_vec();
     resolve_alias_surface_tags(&mut expected);
     if rows
@@ -7556,11 +8732,7 @@ fn validate_alias_surface_tags(
 fn validate_owner_chart_support_aliases(
     packets: &[CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
-    required: bool,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    if !required {
-        return Ok(());
-    }
     let mut expected = packets.to_vec();
     resolve_owner_chart_support_aliases(&mut expected, aliases);
     if packets == expected {
@@ -7570,16 +8742,6 @@ fn validate_owner_chart_support_aliases(
             "owner-chart support references have invalid alias links".to_string(),
         ))
     }
-}
-
-#[cfg(test)]
-fn validate_alias_links(
-    rows: &[CatiaAliasRow],
-    packets: &[CatiaConsolidatedOwnerPacket],
-    version: u32,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    validate_alias_surface_tags(rows, version >= CATIA_ALIAS_SURFACE_TAG_VERSION)?;
-    validate_owner_chart_support_aliases(packets, rows, version >= CATIA_OWNER_CHART_ALIAS_VERSION)
 }
 
 impl CatiaNative {
@@ -7625,7 +8787,7 @@ impl CatiaNative {
         let paired_object_graph_roots = entity_runs
             .iter()
             .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
             })
             .collect::<HashMap<_, _>>();
@@ -7638,19 +8800,19 @@ impl CatiaNative {
         let mut parsed_value_blocks = value_block::parse(bytes);
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
-                contains_extent(graph.pos, graph.total_len, block.pos, block.total_len)
+                contains_extent(graph.pos, graph.total_len, block.pos, block.total_len())
             })
         });
         parsed_object_graphs.retain(|graph| {
             !parsed_value_blocks.iter().any(|block| {
-                contains_extent(block.pos, block.total_len, graph.pos, graph.total_len)
+                contains_extent(block.pos, block.total_len(), graph.pos, graph.total_len)
             })
         });
         parsed_catalogs.retain(|catalog| {
             !parsed_object_graphs.iter().any(|graph| {
                 contains_extent(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
             }) && !parsed_value_blocks.iter().any(|block| {
-                contains_extent(block.pos, block.total_len, catalog.pos, catalog.total_len)
+                contains_extent(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
         });
         let catalogs: Vec<CatiaCatalog> = parsed_catalogs
@@ -7660,7 +8822,7 @@ impl CatiaNative {
         let mut entity_runs = entity_runs
             .into_iter()
             .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some(((end + 1, run.len()), run))
             })
             .collect::<HashMap<_, _>>();
@@ -7702,14 +8864,18 @@ impl CatiaNative {
             });
             graph.catalog = catalog.map(|catalog| catalog.id.clone());
             for record in &mut graph.records {
-                record.class_entry = record.class_ref.and_then(|ordinal| {
-                    usize::try_from(ordinal)
+                if let Some(class) = &mut record.class {
+                    class.class_entry = usize::try_from(class.class_ref)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.id.clone())
-                });
+                        .map(|entry| entry.id.clone());
+                    class.class_name = usize::try_from(class.class_ref)
+                        .ok()
+                        .and_then(|ordinal| catalog?.entries.get(ordinal))
+                        .map(|entry| entry.value.clone());
+                }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
-                    record.repeated_reference_suffix.as_ref(),
+                    record.repeated_reference_suffix().as_ref(),
                     catalog,
                 );
             }
@@ -7718,56 +8884,24 @@ impl CatiaNative {
                 .filter(|entity| entity.object_graph == graph.id)
             {
                 entity.definition_schema_selections = definition_schema_selections(
-                    &entity_table::parse_definition_schema_selectors(&entity.definition_prefix),
+                    &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
                     catalog,
                 );
-                entity.value_schema_selections = entity_value_schema_selections(
-                    &entity.value_fields,
-                    catalog,
-                    &entity.value_packets,
-                );
-                entity.relation_expression = relation_expression(
-                    &entity.definition_schema_selections,
-                    &entity.value_schema_selections,
-                );
-                entity.suffix_value = entity_suffix_value(&entity.record_suffix);
-                entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
+                let value_fields = entity.value_fields();
+                entity.value_schema_selections =
+                    entity_value_schema_selections(&value_fields, catalog, &entity.value_packets());
+                let record_suffix = entity.record_suffix().to_vec();
+                entity.set_suffix_from_bytes(&record_suffix);
                 entity.suffix_schema_selection =
-                    entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
-                entity.parameter_value = parameter_value(
-                    entity.lead,
-                    &entity.value_schema_selections,
-                    entity.suffix_value.as_ref(),
-                );
+                    entity_suffix_schema_selection(entity.suffix_value(), catalog);
+                entity.value_production = value_production(entity, &graph.records, &value_fields);
                 entity.range_interval = range_interval(
-                    &entity.value_payload,
+                    entity.value_payload(),
                     &entity.value_schema_selections,
-                    entity.suffix_value.as_ref(),
+                    entity.suffix_value(),
                     &graph.records,
                     &graph.id,
                     entity.entity_id,
-                );
-                entity.constraint_range = resolved_constraint_range(
-                    entity.lead,
-                    &entity.value_schema_selections,
-                    entity.suffix_value.as_ref(),
-                    &graph.records,
-                    &graph.id,
-                    entity.entity_id,
-                );
-                entity.definition_value = definition_value(
-                    entity.lead,
-                    &entity.definition_schema_selections,
-                    &entity.value_fields,
-                    entity.suffix_value.as_ref(),
-                    entity.suffix_schema_selection.as_ref(),
-                );
-                entity.definition_chain_value = definition_chain_value(
-                    entity.lead,
-                    &entity.definition_schema_selections,
-                    &entity.value_fields,
-                    entity.suffix_value.as_ref(),
-                    entity.suffix_schema_selection.as_ref(),
                 );
             }
         }
@@ -7805,34 +8939,12 @@ impl CatiaNative {
             else {
                 continue;
             };
-            entity.relation_program_instance = relation_program_instance(
-                entity.entity_id,
+            entity.object_production = object_production(
+                entity,
                 object,
                 &entity_references,
-                &relation_expression_entities,
-                &parameter_bindings,
-            );
-            entity.schema_configuration_record = schema_configuration_record(
-                entity.entity_id,
-                object,
-                &entity.value_schema_selections,
-                &entities_by_graph_identity,
-                &entity_classes_by_graph_identity,
-                &terminal_nulls_by_graph,
-            );
-            entity.schema_configuration_row_link = schema_configuration_row_link(
-                entity.entity_id,
-                object,
-                &entities_by_graph_identity,
-                &entity_classes_by_graph_identity,
-                &terminal_nulls_by_graph,
-            );
-            entity.formula_relation = formula_relation(
-                &entity.definition_schema_selections,
-                entity.entity_id,
-                object,
                 &relation_expressions,
-                &entity_references,
+                &relation_expression_entities,
                 &parameter_bindings,
             );
         }
@@ -7849,7 +8961,7 @@ impl CatiaNative {
                 .iter()
                 .any(|graph| extents_overlap(row_start, 24, graph.byte_offset, graph.byte_len))
                 && !parsed_value_blocks.iter().any(|block| {
-                    extents_overlap(row_start, 24, block.pos as u64, block.total_len as u64)
+                    extents_overlap(row_start, 24, block.pos as u64, block.total_len() as u64)
                 })
                 && !catalogs.iter().any(|catalog| {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
@@ -7871,7 +8983,7 @@ impl CatiaNative {
         };
         if let Some(graph) = part_graph {
             for row in &mut alias_rows {
-                let Some(index) = usize::from(row.entity_record_ordinal).checked_sub(1) else {
+                let Some(index) = usize::from(row.entity_record_ordinal()).checked_sub(1) else {
                     continue;
                 };
                 let Some(record) = graph.records.get(index) else {
@@ -7885,7 +8997,7 @@ impl CatiaNative {
         let value_blocks = parsed_value_blocks
             .into_iter()
             .filter_map(|block| {
-                let catalog_pos = block.pos + block.total_len;
+                let catalog_pos = block.pos + block.total_len();
                 let catalog = catalogs
                     .iter()
                     .find(|catalog| catalog.byte_offset == catalog_pos as u64)?;
@@ -7976,7 +9088,7 @@ impl CatiaNative {
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
-        let mut consolidated_edge_nodes =
+        let consolidated_edge_nodes =
             consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
         let consolidated_edge_runs = consolidated_edge_runs(
             bytes,
@@ -7985,9 +9097,8 @@ impl CatiaNative {
             &consolidated_edge_nodes,
         );
         let consolidated_vertex_identities =
-            consolidated_vertex_identities(&mut consolidated_edge_nodes);
+            consolidated_vertex_identities(&consolidated_edge_nodes);
         Self {
-            version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
             consolidated_circles,
@@ -8069,15 +9180,21 @@ fn value_schema_selections(
                     return None;
                 }
                 let catalog_entry = catalog.entries.get(ordinal_index);
-                let entry = catalog_entry.map(|entry| entry.id.clone());
                 let value_end = selector_indices
                     .get(selector_rank + 1)
                     .copied()
                     .unwrap_or(fields.len());
-                let encoded_value = if entry.is_some() {
-                    fields[index + 1..value_end].to_vec()
-                } else {
-                    Vec::new()
+                let kind = match catalog_entry {
+                    Some(entry) => {
+                        CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
+                            class: CatiaDesignClass {
+                                entry: entry.id.clone(),
+                                name: entry.value.clone(),
+                            },
+                            encoded_value: fields[index + 1..value_end].to_vec(),
+                        })
+                    }
+                    None => CatiaValueSchemaSelectionKind::Terminal,
                 };
                 let byte_offset = block_byte_offset
                     .checked_add(6)?
@@ -8087,9 +9204,7 @@ fn value_schema_selections(
                     parent: block_id.to_string(),
                     offset: *offset as u64,
                     ordinal: *ordinal,
-                    encoded_value,
-                    entry,
-                    name: catalog_entry.map(|entry| entry.value.clone()),
+                    kind,
                 })
             }
             _ => None,
@@ -8104,17 +9219,14 @@ impl CatiaValueBlock {
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
         let id = format!("catia:outer:value-block#{:010}", block.pos);
-        let schema_selections =
-            value_schema_selections(&id, block.pos as u64, &block.fields, catalog);
+        let fields = block.fields();
+        let schema_selections = value_schema_selections(&id, block.pos as u64, &fields, catalog);
         Self {
             id,
             byte_offset: block.pos as u64,
-            byte_len: block.total_len as u64,
-            declared_len: block.declared_len as u64,
             object_graph: object_graph.map(|graph| graph.id.clone()),
             catalog: catalog.id.clone(),
             payload: block.payload,
-            fields: block.fields,
             schema_selections,
         }
     }
@@ -8125,13 +9237,10 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
         Self {
             id: format!("catia:outer:alias-row#{:010}", row.pos),
             byte_offset: row.pos as u64,
-            lead: row.lead,
             lead_raw: row.lead_raw,
-            tag: row.tag,
             tag_raw: row.tag_raw,
             flag: row.flag,
             f1: row.f1,
-            entity_record_ordinal: row.entity_record_ordinal,
             object_graph: None,
             object_record: None,
             design_object: None,
@@ -8161,7 +9270,6 @@ impl From<catalog::Catalog> for CatiaCatalog {
             id,
             byte_offset: catalog.pos as u64,
             byte_len: catalog.total_len as u64,
-            declared_count: catalog.declared_count,
             entries,
         }
     }
@@ -8180,34 +9288,34 @@ fn native_object_graph(
         .enumerate()
         .map(|(ordinal, record)| {
             let entity = entity_records.get(ordinal);
+            let roles = record.roles();
             CatiaObjectRecord {
                 id: format!("catia:outer:object-record#{:010}", record.pos),
                 parent: id.clone(),
                 design_object: None,
-                entity_record: entity
-                    .map(|entity| format!("catia:outer:entity-record#{:010}", entity.pos)),
-                entity_id: entity.map(|entity| entity.entity_id),
-                ordinal: record.index as u64,
+                entity: entity.map(|entity| CatiaObjectEntity {
+                    record: format!("catia:outer:entity-record#{:010}", entity.pos),
+                    id: entity.entity_id,
+                }),
+                ordinal: ordinal as u64,
                 byte_offset: record.pos as u64,
                 byte_len: record.total_len as u64,
                 lead: record.lead,
-                head: record.head,
-                inline_body: record.inline_body,
-                owner: record.owner_ref.map(CatiaObjectOwner::Entity).or_else(|| {
-                    record
-                        .owner_literal
-                        .map(CatiaObjectOwner::UnassignedLiteral)
+                head: record.head().to_vec(),
+                inline_body: record.inline_body().map(<[u8]>::to_vec),
+                owner: roles.owner.map(CatiaObjectOwner::from),
+                class: roles.class_ref.map(|class_ref| CatiaObjectClass {
+                    class_ref,
+                    class_name: None,
+                    class_entry: None,
                 }),
-                class_ref: record.class_ref,
-                class_name: record.class_name,
-                class_entry: None,
-                storage_ref: record.storage_ref,
-                storage_record: None,
-                storage_design_object: None,
-                payload: record.payload,
-                repeated_reference_suffix: record.repeated_reference_suffix,
+                storage: roles.storage_ref.map(|storage_ref| CatiaObjectStorage {
+                    storage_ref,
+                    storage_record: None,
+                    storage_design_object: None,
+                }),
+                payload: record.payload().clone(),
                 repeated_reference_schema_selection: None,
-                subtype: record.subtype,
                 references: Vec::new(),
             }
         })
@@ -8228,16 +9336,20 @@ fn native_object_graph(
     let record_indices = records
         .iter()
         .enumerate()
-        .filter_map(|(index, record)| Some((record.entity_id?, index)))
+        .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
     let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
     for record in &mut records {
-        (record.storage_record, record.storage_design_object) = resolved_storage_link(
-            record.storage_ref,
-            &record_ids,
-            &record_design_objects,
-            &record_indices,
-        );
+        if let Some(storage) = &mut record.storage {
+            let (storage_record, storage_design_object) = resolved_storage_link(
+                Some(storage.storage_ref),
+                &record_ids,
+                &record_design_objects,
+                &record_indices,
+            );
+            storage.storage_record = storage_record;
+            storage.storage_design_object = storage_design_object;
+        }
         record.references = resolved_payload_references(
             &record.payload,
             &record_ids,
@@ -8251,8 +9363,22 @@ fn native_object_graph(
         .enumerate()
         .filter_map(|(ordinal, entity)| {
             let object_record = records.get(ordinal)?;
-            let value_fields = value_block::tokenize(&entity.value_payload);
-            let value_packets = entity_table::value_packets(&entity.value_payload, &value_fields);
+            let reference_signature = entity.reference_signature();
+            let body = match entity.body {
+                entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
+                entity_table::EntityBody::Nested {
+                    prefix,
+                    suffix,
+                    value_payload,
+                    record_suffix,
+                    ..
+                } => CatiaEntityRecordBody::Nested {
+                    definition_prefix: prefix,
+                    definition_suffix: suffix,
+                    value_payload,
+                    record_suffix,
+                },
+            };
             Some(CatiaEntityRecord {
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
@@ -8260,41 +9386,22 @@ fn native_object_graph(
                 ordinal: u64::try_from(ordinal).expect("bounded entity-table ordinal fits u64"),
                 byte_offset: u64::try_from(entity.pos)
                     .expect("bounded entity-table offset fits u64"),
-                byte_len: u64::try_from(entity.total_len)
-                    .expect("bounded entity-table length fits u64"),
                 lead: entity.lead,
-                inline_body: entity.inline_body,
-                definition_len: entity.definition_len,
-                definition_prefix: entity.definition_prefix,
+                body,
                 definition_schema_selections: Vec::new(),
                 entity_id: entity.entity_id,
-                definition_suffix: entity.definition_suffix,
-                value_len: entity.value_len,
-                value_payload: entity.value_payload,
-                value_fields,
                 value_schema_selections: Vec::new(),
-                relation_expression: None,
-                parameter_value: None,
+                object_production: None,
+                value_production: None,
                 range_interval: None,
-                constraint_range: None,
-                definition_value: None,
-                definition_chain_value: None,
-                relation_program_instance: None,
-                schema_configuration_record: None,
-                schema_configuration_row_link: None,
-                formula_relation: None,
-                value_packets,
-                numeric_pair: entity.numeric_pair,
-                reference_signature: entity.reference_signature.map(|production| {
+                reference_signature: reference_signature.map(|production| {
                     CatiaReferenceSignature {
                         production,
-                        first_entity: CatiaEntityReference::default(),
-                        second_entity: CatiaEntityReference::default(),
+                        first_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
+                        second_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
                     }
                 }),
-                record_suffix: entity.record_suffix,
-                suffix_value: None,
-                suffix_framing: None,
+                suffix: None,
                 suffix_schema_selection: None,
             })
         })

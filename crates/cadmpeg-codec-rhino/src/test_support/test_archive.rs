@@ -377,14 +377,21 @@ fn region_array(records: &[Vec<u8>]) -> Vec<u8> {
 }
 
 pub(crate) fn brep_payload(semantic_invalid: bool) -> Vec<u8> {
-    brep_payload_with_topology(false, semantic_invalid)
+    brep_payload_with_topology(false, semantic_invalid, 0)
 }
 
 pub(crate) fn singular_seam_brep_payload(malformed_ring: bool) -> Vec<u8> {
-    brep_payload_with_topology(true, malformed_ring)
+    brep_payload_with_topology(true, malformed_ring, 0)
 }
 
-fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
+/// The open triangle B-rep carrying `is_solid`, whose three edges have one trim
+/// each, so the closed-shell gauge reads it as a sheet and the stored flag does
+/// not.
+pub(crate) fn solid_flagged_brep_payload(is_solid: i32) -> Vec<u8> {
+    brep_payload_with_topology(false, false, is_solid)
+}
+
+fn brep_payload_with_topology(singular_seam: bool, malformed: bool, is_solid: i32) -> Vec<u8> {
     let mut payload = vec![0x33];
     // The triangle's trim curves in plane parameter space, one per side; the
     // seam fixture reuses one side four times.
@@ -556,7 +563,7 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
     );
     payload.extend(crc_chunk(0x4000_8000, &[0]));
     payload.extend(crc_chunk(0x4000_8000, &[0]));
-    payload.extend(0_i32.to_le_bytes());
+    payload.extend(is_solid.to_le_bytes());
 
     let sides = [[0_i32, 1, 0, 1], [1_i32, 0, 0, -1]]
         .into_iter()

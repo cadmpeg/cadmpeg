@@ -2,6 +2,7 @@
 //! SMBH body encoders and edge/vertex/point normalization for source-less
 //! generation.
 
+use cadmpeg_asm::brep::records::EndpointSlot;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::F3dNative;
@@ -14,7 +15,7 @@ use cadmpeg_ir::topology::Sense;
 use super::attributes::{
     edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
     owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts,
+    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts, SurfaceOwnerStarts,
 };
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{
@@ -548,8 +549,7 @@ fn encode_wire_body_smbh(
         attribute_start,
         AttributeOwnerStarts {
             body: body_start,
-            face: None,
-            coedge: None,
+            surface: None,
             edge: edge_start,
             vertex: vertex_start,
         },
@@ -563,7 +563,7 @@ fn encode_wire_body_smbh(
 fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
     let model = &target.model;
     for carrier in &model.curves {
-        match carrier.geometry {
+        match *carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
             CurveGeometry::Line { origin, direction } => {
                 native_curve_base(records, "straight")?;
                 native_point(
@@ -1047,7 +1047,7 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("loop references missing face {}", loop_.face))
             })?;
-        let first = loop_.coedges.first().ok_or_else(|| {
+        let first = loop_.coedges().first().ok_or_else(|| {
             CodecError::malformed(format_args!("loop {} has no coedges", loop_.id))
         })?;
         let coedge_position = model
@@ -1098,7 +1098,7 @@ fn encode_face_topology_smbh(
     }
 
     for surface in &model.surfaces {
-        match surface.geometry {
+        match *surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
             SurfaceGeometry::Plane {
                 origin,
                 normal,
@@ -1235,7 +1235,7 @@ fn encode_face_topology_smbh(
                 );
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Polygonal { .. } => {
+            SurfaceGeometry::Polygonal(_) => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id
@@ -1289,8 +1289,16 @@ fn encode_face_topology_smbh(
                 coedge.id
             )));
         }
-        let next = coedge_ordinals.get(&coedge.next).copied();
-        let previous = coedge_ordinals.get(&coedge.previous).copied();
+        let Some((next_id, previous_id)) =
+            cadmpeg_ir::topology::coedge_ring_neighbors(&model.loops, coedge)
+        else {
+            return Err(CodecError::malformed(format_args!(
+                "coedge {} is absent from its owning loop ring",
+                coedge.id
+            )));
+        };
+        let next = coedge_ordinals.get(&next_id).copied();
+        let previous = coedge_ordinals.get(&previous_id).copied();
         let radial = coedge_ordinals.get(&coedge.radial_next).copied();
         let edge = edge_ordinals.get(&coedge.edge).copied();
         let owner = loop_ordinals.get(&coedge.owner_loop).copied();
@@ -1427,8 +1435,10 @@ fn encode_face_topology_smbh(
         attribute_start,
         AttributeOwnerStarts {
             body: body_start,
-            face: Some(face_start),
-            coedge: Some(coedge_start),
+            surface: Some(SurfaceOwnerStarts {
+                face: face_start,
+                coedge: coedge_start,
+            }),
             edge: edge_start,
             vertex: vertex_start,
         },
@@ -1605,7 +1615,7 @@ fn encode_source_less_edges_vertices_points(
         } else {
             let (edge, endpoint_index) = vertex_ownership(target, topology, vertex)?;
             native_ref(records, native_record_index(edge_start, edge)?);
-            native_i64(records, i64::from(endpoint_index));
+            native_i64(records, i64::from(endpoint_index.code()));
         }
         native_ref(records, native_record_index(point_start, point)?);
         native_tolerant_vertex_tail(records, topology, vertex)?;
@@ -1633,7 +1643,7 @@ fn vertex_ownership(
     target: &CadIr,
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
-) -> Result<(usize, u8), CodecError> {
+) -> Result<(usize, EndpointSlot), CodecError> {
     let model = &target.model;
     if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
         let ordinal = model
@@ -1648,14 +1658,15 @@ fn vertex_ownership(
             })?;
         let edge = &model.edges[ordinal];
         let valid = match metadata.endpoint_index {
-            0 => edge.start == vertex.id,
-            1 => edge.end == vertex.id,
-            _ => false,
+            EndpointSlot::Start => edge.start == vertex.id,
+            EndpointSlot::End => edge.end == vertex.id,
         };
         if !valid {
             return Err(CodecError::malformed(format_args!(
                 "vertex {} endpoint slot {} conflicts with owning edge {}",
-                vertex.id, metadata.endpoint_index, metadata.owning_edge
+                vertex.id,
+                metadata.endpoint_index.code(),
+                metadata.owning_edge
             )));
         }
         return Ok((ordinal, metadata.endpoint_index));
@@ -1666,9 +1677,9 @@ fn vertex_ownership(
         .enumerate()
         .find_map(|(ordinal, edge)| {
             if edge.start == vertex.id {
-                Some((ordinal, 0))
+                Some((ordinal, EndpointSlot::Start))
             } else if edge.end == vertex.id {
-                Some((ordinal, 1))
+                Some((ordinal, EndpointSlot::End))
             } else {
                 None
             }
@@ -1722,7 +1733,7 @@ fn native_wire_side(
         .into_iter()
         .flatten()
         .copied()
-        .filter(|wire| wire.edges == edges && wire.free_vertex.as_ref() == free_vertex);
+        .filter(|wire| wire.members.edges() == edges && wire.members.free_vertex() == free_vertex);
     let side = match (matches.next(), matches.next()) {
         (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,
@@ -1849,7 +1860,8 @@ fn apply_native_edge_owners(
         {
             return Err(CodecError::malformed(format_args!(
                 "F3D edge ownership {} references missing edge {}",
-                ownership.id, ownership.edge
+                ownership.id(),
+                ownership.edge
             )));
         }
         let owner = match &ownership.owner_coedge {
@@ -1865,7 +1877,7 @@ fn apply_native_edge_owners(
                     if coedge.edge != ownership.edge {
                         return Err(CodecError::malformed(format_args!(
                             "F3D edge ownership {} selects a coedge of another edge",
-                            ownership.id
+                            ownership.id()
                         )));
                     }
                     native_record_index(coedge_start, ordinal)?
@@ -1874,7 +1886,7 @@ fn apply_native_edge_owners(
                 } else {
                     return Err(CodecError::malformed(format_args!(
                         "F3D edge ownership {} references missing coedge {owner}",
-                        ownership.id
+                        ownership.id()
                     )));
                 }
             }

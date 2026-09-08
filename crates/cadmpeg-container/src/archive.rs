@@ -3,17 +3,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::{CompressionMethod, HasZipMetadata};
 
-static NEXT_ARCHIVE_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
-
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryCompression {
+pub enum ZipCompression {
     /// The entry payload is stored directly in the archive.
     Stored,
     /// The entry payload is a raw-DEFLATE member.
@@ -22,7 +19,7 @@ pub enum EntryCompression {
     Zstd,
 }
 
-impl EntryCompression {
+impl ZipCompression {
     fn from_zip(method: CompressionMethod, name: &str) -> Result<Self, CodecError> {
         match method {
             CompressionMethod::Stored => Ok(Self::Stored),
@@ -34,13 +31,24 @@ impl EntryCompression {
         }
     }
 
+    const fn summary(self) -> cadmpeg_core::container::EntryCompression {
+        use cadmpeg_core::container::EntryCompression;
+        match self {
+            Self::Stored => EntryCompression::Stored,
+            Self::Deflate => EntryCompression::Deflate,
+            Self::Zstd => EntryCompression::Zstd,
+        }
+    }
+
     /// Returns the stable container-summary label.
     pub const fn label(self) -> &'static str {
-        match self {
-            Self::Stored => "stored",
-            Self::Deflate => "deflate",
-            Self::Zstd => "zstd",
-        }
+        self.summary().as_str()
+    }
+}
+
+impl From<ZipCompression> for cadmpeg_core::container::EntryCompression {
+    fn from(value: ZipCompression) -> Self {
+        value.summary()
     }
 }
 
@@ -50,7 +58,7 @@ pub struct EntryRecord {
     /// Entry name as stored in the central directory.
     pub name: String,
     /// Compression method admitted by the snapshot.
-    pub compression: EntryCompression,
+    pub compression: ZipCompression,
     /// CRC-32 of the uncompressed payload.
     pub crc32: u32,
     /// Compressed payload size.
@@ -64,7 +72,6 @@ pub struct EntryRecord {
     /// Physical start of the central-directory record.
     pub central_start: u64,
     utf8_name: bool,
-    snapshot_id: u64,
 }
 
 impl EntryRecord {
@@ -87,7 +94,6 @@ impl EntryRecord {
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
-    snapshot_id: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
 }
@@ -104,7 +110,6 @@ impl<'a> ArchiveSnapshot<'a> {
                 "ZIP central directory contains duplicate entry names".into(),
             ));
         }
-        let snapshot_id = NEXT_ARCHIVE_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let mut names = BTreeSet::new();
         let mut entries = Vec::with_capacity(archive.len());
         for index in 0..archive.len() {
@@ -122,7 +127,7 @@ impl<'a> ArchiveSnapshot<'a> {
                     "encrypted ZIP entry {name}"
                 )));
             }
-            let compression = EntryCompression::from_zip(file.compression(), &name)?;
+            let compression = ZipCompression::from_zip(file.compression(), &name)?;
             let data_start = file.data_start().ok_or_else(|| {
                 CodecError::malformed(format_args!("missing data offset for {name}"))
             })?;
@@ -136,7 +141,6 @@ impl<'a> ArchiveSnapshot<'a> {
                 data_start,
                 central_start: file.central_header_start(),
                 utf8_name: file.get_metadata().is_utf8,
-                snapshot_id,
             };
             for offset in [
                 record.header_start,
@@ -161,7 +165,6 @@ impl<'a> ArchiveSnapshot<'a> {
             .collect();
         Ok(Self {
             root,
-            snapshot_id,
             entries,
             by_name,
         })
@@ -177,17 +180,11 @@ impl<'a> ArchiveSnapshot<'a> {
         self.by_name.get(name).map(|index| &self.entries[*index])
     }
 
-    /// Opens one entry as a borrowed stored slice or budgeted expanded view.
-    pub fn open(
-        &self,
-        ctx: &DecodeContext<'a>,
-        entry: &EntryRecord,
-    ) -> Result<View<'a>, CodecError> {
-        if entry.snapshot_id != self.snapshot_id {
-            return Err(CodecError::Malformed(
-                "ZIP entry handle does not belong to this snapshot".into(),
-            ));
-        }
+    /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
+    pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .entry(name)
+            .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         let end = entry.data_end()?;
         let archive_start = u64::try_from(self.root.start())
             .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
@@ -198,7 +195,7 @@ impl<'a> ArchiveSnapshot<'a> {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
         match entry.compression {
-            EntryCompression::Stored => {
+            ZipCompression::Stored => {
                 let view = ctx.register_slice_as(
                     self.root,
                     ByteRange {
@@ -221,7 +218,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 }
                 Ok(view)
             }
-            EntryCompression::Deflate | EntryCompression::Zstd => {
+            ZipCompression::Deflate | ZipCompression::Zstd => {
                 let start = usize::try_from(absolute_start).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
@@ -235,10 +232,10 @@ impl<'a> ArchiveSnapshot<'a> {
                     ))
                 })?;
                 let mut decoder: Box<dyn Read> = match entry.compression {
-                    EntryCompression::Deflate => {
+                    ZipCompression::Deflate => {
                         Box::new(flate2::read::DeflateDecoder::new(source.window()))
                     }
-                    EntryCompression::Zstd => Box::new(
+                    ZipCompression::Zstd => Box::new(
                         zstd::stream::read::Decoder::with_buffer(source.window()).map_err(
                             |error| {
                                 CodecError::malformed(format_args!(
@@ -248,7 +245,7 @@ impl<'a> ArchiveSnapshot<'a> {
                             },
                         )?,
                     ),
-                    EntryCompression::Stored => unreachable!("stored entries use borrowed views"),
+                    ZipCompression::Stored => unreachable!("stored entries use borrowed views"),
                 };
                 let mut writer = ctx.begin_expand_as(
                     source,
@@ -283,7 +280,7 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Builds generic entry summaries using a codec-owned role classifier.
     pub fn container_entries(
         &self,
-        classify: impl Fn(&str) -> &'static str,
+        classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
     ) -> Vec<ContainerEntry> {
         self.entries
             .iter()
@@ -298,8 +295,8 @@ impl<'a> ArchiveSnapshot<'a> {
                 );
                 ContainerEntry {
                     name: entry.name.clone(),
-                    role: classify(&entry.name).into(),
-                    compression: entry.compression.label().into(),
+                    role: classify(&entry.name),
+                    compression: entry.compression.into(),
                     compressed_size: entry.compressed_size,
                     uncompressed_size: entry.uncompressed_size,
                     attributes,
@@ -352,25 +349,133 @@ fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<us
     Ok(entry_count)
 }
 
-/// One exact physical range in a ZIP archive.
+/// The closed structural role of one physical container range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpanRole {
+    /// ZIP local-header signature for the named entry.
+    LocalSignature(String),
+    /// ZIP local-header fields for the named entry.
+    LocalFields(String),
+    /// ZIP local-header name for the named entry.
+    LocalName(String),
+    /// ZIP local-header extra data for the named entry.
+    LocalExtra(String),
+    /// ZIP compressed payload for the named entry.
+    CompressedPayload(String),
+    /// ZIP data descriptor for the named entry.
+    DataDescriptor(String),
+    /// ZIP padding, optionally owned by an entry.
+    Padding {
+        /// Owning entry, when the padding belongs to one.
+        entry: Option<String>,
+    },
+    /// ZIP central-header signature for the named entry.
+    CentralSignature(String),
+    /// ZIP central-header fields for the named entry.
+    CentralFields(String),
+    /// ZIP central-header name for the named entry.
+    CentralName(String),
+    /// ZIP central-header extra data for the named entry.
+    CentralExtra(String),
+    /// ZIP central-header comment for the named entry.
+    CentralComment(String),
+    /// ZIP64 end-of-central-directory record.
+    Zip64EndRecord,
+    /// ZIP64 end-of-central-directory locator.
+    Zip64EndLocator,
+    /// ZIP end-of-central-directory record.
+    EndRecord,
+    /// CFB file header.
+    CfbHeader,
+    /// CFB version-4 range-lock sector.
+    CfbRangeLockSector,
+    /// CFB file-allocation-table sector.
+    CfbFat,
+    /// CFB double-indirect file-allocation-table sector.
+    CfbDifat,
+    /// CFB directory sector.
+    CfbDirectory,
+    /// CFB mini-file-allocation-table sector.
+    CfbMiniFat,
+    /// CFB regular-sector payload for the named stream.
+    CfbRegularStreamPayload(String),
+    /// CFB allocation padding, optionally owned by a stream.
+    CfbPadding {
+        /// Owning entry, when the padding belongs to one.
+        entry: Option<String>,
+    },
+    /// CFB mini-sector payload for the named stream.
+    CfbMiniStreamPayload(String),
+    /// Unallocated bytes inside the CFB root mini stream.
+    CfbMiniStreamPadding,
+    /// Unallocated CFB sector.
+    CfbUnallocatedSector,
+}
+
+impl SpanRole {
+    /// Returns the stable physical-ledger label.
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::LocalSignature(_) => "local-signature",
+            Self::LocalFields(_) => "local-fields",
+            Self::LocalName(_) => "local-name",
+            Self::LocalExtra(_) => "local-extra",
+            Self::CompressedPayload(_) => "compressed-payload",
+            Self::DataDescriptor(_) => "data-descriptor",
+            Self::Padding { .. } => "archive-padding",
+            Self::CentralSignature(_) => "central-signature",
+            Self::CentralFields(_) => "central-fields",
+            Self::CentralName(_) => "central-name",
+            Self::CentralExtra(_) => "central-extra",
+            Self::CentralComment(_) => "central-comment",
+            Self::Zip64EndRecord => "zip64-end-record",
+            Self::Zip64EndLocator => "zip64-end-locator",
+            Self::EndRecord => "end-record",
+            Self::CfbHeader => "header",
+            Self::CfbRangeLockSector => "range lock sector",
+            Self::CfbFat => "FAT",
+            Self::CfbDifat => "DIFAT",
+            Self::CfbDirectory => "directory",
+            Self::CfbMiniFat => "mini FAT",
+            Self::CfbRegularStreamPayload(_) => "regular stream payload",
+            Self::CfbPadding { .. } => "padding",
+            Self::CfbMiniStreamPayload(_) => "mini stream payload",
+            Self::CfbMiniStreamPadding => "mini-stream padding",
+            Self::CfbUnallocatedSector => "unallocated sector",
+        }
+    }
+
+    /// Returns the owning entry for an entry-owned range.
+    pub fn entry(&self) -> Option<&str> {
+        match self {
+            Self::LocalSignature(entry)
+            | Self::LocalFields(entry)
+            | Self::LocalName(entry)
+            | Self::LocalExtra(entry)
+            | Self::CompressedPayload(entry)
+            | Self::DataDescriptor(entry)
+            | Self::CentralSignature(entry)
+            | Self::CentralFields(entry)
+            | Self::CentralName(entry)
+            | Self::CentralExtra(entry)
+            | Self::CentralComment(entry)
+            | Self::CfbRegularStreamPayload(entry)
+            | Self::CfbMiniStreamPayload(entry) => Some(entry),
+            Self::Padding { entry } | Self::CfbPadding { entry } => entry.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+/// One exact physical range in an archive or compound file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalSpan {
     /// Inclusive byte offset.
     pub start: u64,
     /// Exclusive byte offset.
     pub end: u64,
-    /// ZIP structural role.
-    pub role: String,
-    /// Owning entry name, when applicable.
-    pub entry: Option<String>,
-}
-
-#[derive(Debug)]
-struct Region {
-    start: u64,
-    end: u64,
-    role: &'static str,
-    entry: Option<String>,
+    /// Structural role, including an owning entry where applicable.
+    pub role: SpanRole,
 }
 
 fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
@@ -407,20 +512,9 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn push_region(
-    regions: &mut Vec<Region>,
-    start: u64,
-    end: u64,
-    role: &'static str,
-    entry: Option<&str>,
-) {
+fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: SpanRole) {
     if start < end {
-        regions.push(Region {
-            start,
-            end,
-            role,
-            entry: entry.map(str::to_owned),
-        });
+        regions.push(PhysicalSpan { start, end, role });
     }
 }
 
@@ -457,36 +551,31 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             &mut regions,
             entry.header_start,
             entry.header_start + 4,
-            "local-signature",
-            Some(&entry.name),
+            SpanRole::LocalSignature(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.header_start + 4,
             fixed_end,
-            "local-fields",
-            Some(&entry.name),
+            SpanRole::LocalFields(entry.name.clone()),
         );
         push_region(
             &mut regions,
             fixed_end,
             name_end,
-            "local-name",
-            Some(&entry.name),
+            SpanRole::LocalName(entry.name.clone()),
         );
         push_region(
             &mut regions,
             name_end,
             extra_end,
-            "local-extra",
-            Some(&entry.name),
+            SpanRole::LocalExtra(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.data_start,
             entry.data_end()?,
-            "compressed-payload",
-            Some(&entry.name),
+            SpanRole::CompressedPayload(entry.name.clone()),
         );
 
         let next = local_order
@@ -506,23 +595,24 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
                     &mut regions,
                     entry.data_end()?,
                     descriptor_end,
-                    "data-descriptor",
-                    Some(&entry.name),
+                    SpanRole::DataDescriptor(entry.name.clone()),
                 );
                 push_region(
                     &mut regions,
                     descriptor_end,
                     next,
-                    "archive-padding",
-                    Some(&entry.name),
+                    SpanRole::Padding {
+                        entry: Some(entry.name.clone()),
+                    },
                 );
             } else {
                 push_region(
                     &mut regions,
                     entry.data_end()?,
                     next,
-                    "archive-padding",
-                    Some(&entry.name),
+                    SpanRole::Padding {
+                        entry: Some(entry.name.clone()),
+                    },
                 );
             }
         }
@@ -555,36 +645,31 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             &mut regions,
             entry.central_start,
             entry.central_start + 4,
-            "central-signature",
-            Some(&entry.name),
+            SpanRole::CentralSignature(entry.name.clone()),
         );
         push_region(
             &mut regions,
             entry.central_start + 4,
             fixed_end,
-            "central-fields",
-            Some(&entry.name),
+            SpanRole::CentralFields(entry.name.clone()),
         );
         push_region(
             &mut regions,
             fixed_end,
             name_end,
-            "central-name",
-            Some(&entry.name),
+            SpanRole::CentralName(entry.name.clone()),
         );
         push_region(
             &mut regions,
             name_end,
             extra_end,
-            "central-extra",
-            Some(&entry.name),
+            SpanRole::CentralExtra(entry.name.clone()),
         );
         push_region(
             &mut regions,
             extra_end,
             record_end,
-            "central-comment",
-            Some(&entry.name),
+            SpanRole::CentralComment(entry.name.clone()),
         );
         central_end = central_end.max(record_end);
     }
@@ -638,7 +723,7 @@ fn classify_end_records(
     bytes: &[u8],
     mut offset: u64,
     len: u64,
-    regions: &mut Vec<Region>,
+    regions: &mut Vec<PhysicalSpan>,
 ) -> Result<(), CodecError> {
     while offset < len {
         let (role, size) = match signature_at(bytes, offset) {
@@ -651,32 +736,35 @@ fn classify_end_records(
                 let body = View::u64_le_at(raw, 0)
                     .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
                 (
-                    "zip64-end-record",
+                    SpanRole::Zip64EndRecord,
                     12_u64
                         .checked_add(body)
                         .ok_or_else(|| CodecError::Malformed("ZIP64 end size overflow".into()))?,
                 )
             }
-            Some(signature) if signature == *b"PK\x06\x07" => ("zip64-end-locator", 20),
+            Some(signature) if signature == *b"PK\x06\x07" => (SpanRole::Zip64EndLocator, 20),
             Some(signature) if signature == *b"PK\x05\x06" => {
                 let comment = u64::from(u16_at(bytes, offset + 20)?);
-                ("end-record", 22_u64 + comment)
+                (SpanRole::EndRecord, 22_u64 + comment)
             }
-            _ => ("archive-padding", len - offset),
+            _ => (SpanRole::Padding { entry: None }, len - offset),
         };
         let end = offset
             .checked_add(size)
             .ok_or_else(|| CodecError::Malformed("ZIP end-record range overflow".into()))?;
         if end > len {
-            return Err(CodecError::malformed(format_args!("truncated {role}")));
+            return Err(CodecError::malformed(format_args!(
+                "truncated {}",
+                role.label()
+            )));
         }
-        push_region(regions, offset, end, role, None);
+        push_region(regions, offset, end, role);
         offset = end;
     }
     Ok(())
 }
 
-fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecError> {
+fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, CodecError> {
     let mut boundaries = BTreeSet::from([0_u64, len]);
     for region in regions {
         if region.end > len || region.start > region.end {
@@ -691,44 +779,29 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecErr
     let mut ordered_regions = regions.iter().collect::<Vec<_>>();
     ordered_regions.sort_by_key(|region| (region.start, region.end));
     let mut region_index = 0_usize;
-    let spans = points
-        .windows(2)
-        .filter_map(|pair| {
-            let (start, end) = (pair[0], pair[1]);
-            (start < end).then(|| {
-                while ordered_regions
-                    .get(region_index)
-                    .is_some_and(|region| region.end <= start)
-                {
-                    region_index += 1;
-                }
-                let owner = ordered_regions
-                    .get(region_index)
-                    .copied()
-                    .filter(|region| region.start <= start && end <= region.end);
-                let (role, entry) = owner.map_or(("unclassified", None), |region| {
-                    (region.role, region.entry.clone())
-                });
-                PhysicalSpan {
-                    start,
-                    end: end.min(len),
-                    role: role.into(),
-                    entry,
-                }
-            })
-        })
-        .collect::<Vec<_>>();
-    if spans.iter().any(|span| span.role == "unclassified") {
-        return Err(CodecError::Malformed(
-            "physical ZIP ledger contains an unclassified byte range".into(),
-        ));
-    }
-    for pair in spans.windows(2) {
-        if pair[0].end != pair[1].start {
-            return Err(CodecError::Malformed(
-                "physical ZIP ledger has a gap or overlap".into(),
-            ));
+    let mut spans = Vec::new();
+    for pair in points.windows(2) {
+        let (start, end) = (pair[0], pair[1]);
+        while ordered_regions
+            .get(region_index)
+            .is_some_and(|region| region.end <= start)
+        {
+            region_index += 1;
         }
+        let owner = ordered_regions
+            .get(region_index)
+            .copied()
+            .filter(|region| region.start <= start && end <= region.end)
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "physical ZIP ledger contains an unclassified byte range".into(),
+                )
+            })?;
+        spans.push(PhysicalSpan {
+            start,
+            end,
+            role: owner.role.clone(),
+        });
     }
     Ok(spans)
 }
@@ -784,19 +857,22 @@ mod tests {
         let deflated = snapshot.entry("deflated.bin").expect("deflated record");
         let zstd = snapshot.entry("zstd.bin").expect("Zstandard record");
         assert_eq!(
-            snapshot.open(&ctx, stored).expect("stored opens").window(),
+            snapshot
+                .open(&ctx, &stored.name)
+                .expect("stored opens")
+                .window(),
             b"stored"
         );
         assert_eq!(
             snapshot
-                .open(&ctx, deflated)
+                .open(&ctx, &deflated.name)
                 .expect("deflated opens")
                 .window(),
             b"deflated payload"
         );
         assert_eq!(
             snapshot
-                .open(&ctx, zstd)
+                .open(&ctx, &zstd.name)
                 .expect("Zstandard entry opens")
                 .window(),
             b"Zstandard payload"
@@ -804,27 +880,24 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_rejects_entry_handles_from_another_snapshot() {
+    fn snapshot_opens_names_using_its_own_metadata() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
         let first = ArchiveSnapshot::new(root).expect("first archive snapshot");
         let second = ArchiveSnapshot::new(root).expect("second archive snapshot");
-        let foreign = second.entry("stored.bin").expect("foreign entry exists");
-        assert!(first.open(&ctx, foreign).is_err());
-
-        let owned = first
-            .entry("stored.bin")
-            .expect("owned entry exists")
-            .clone();
+        let mut detached = second.entry("stored.bin").expect("entry exists").clone();
+        detached.data_start = u64::MAX;
+        detached.crc32 = 0;
         assert_eq!(
             first
-                .open(&ctx, &owned)
-                .expect("owned clone opens")
+                .open(&ctx, &detached.name)
+                .expect("name opens own metadata")
                 .window(),
             b"stored"
         );
+        assert!(first.open(&ctx, "missing.bin").is_err());
     }
 
     #[test]
@@ -849,7 +922,7 @@ mod tests {
             let entry = snapshot.entry(name).expect("entry exists");
             assert_eq!(
                 snapshot
-                    .open(&ctx, entry)
+                    .open(&ctx, &entry.name)
                     .expect("nested entry opens")
                     .window(),
                 expected
@@ -877,7 +950,9 @@ mod tests {
                 .expect("archive fits root policy");
         let archive = ArchiveSnapshot::new(root).expect("archive snapshots");
         let entry = archive.entry("GuiDocument.xml").expect("member present");
-        let view = archive.open(&ctx, entry).expect("GuiDocument member opens");
+        let view = archive
+            .open(&ctx, &entry.name)
+            .expect("GuiDocument member opens");
         let address = ctx.resolve_location(view.location_at(5));
         assert!(
             address.path().ends_with("GuiDocument.xml@5"),

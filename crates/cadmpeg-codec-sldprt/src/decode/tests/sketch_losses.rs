@@ -3,13 +3,11 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
     SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
@@ -47,7 +45,7 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
 
 #[test]
 fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
@@ -61,15 +59,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
             },
             native_ref: None,
         });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -81,13 +71,12 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
 
 #[test]
 fn typed_native_operands_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("combine".into()),
+        id: FeatureId::mint("combine").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -97,20 +86,12 @@ fn typed_native_operands_are_reported_as_design_losses() {
         definition: FeatureDefinition::Combine {
             target: BodySelection::Native("target".into()),
             tools: BodySelection::Native("tools".into()),
-            op: BooleanOp::Unresolved,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         },
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 

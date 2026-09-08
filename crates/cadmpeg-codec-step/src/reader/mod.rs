@@ -3,18 +3,18 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
-use cadmpeg_ir::units::Units;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
-use crate::ids::StepIdentity;
+use crate::dialect::StepDialect;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
@@ -31,6 +31,43 @@ pub(crate) mod topology;
 mod validation;
 
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
+
+/// Container facts available when the STEP source identity is authored.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Packaging {
+    /// A bare ISO 10303-21 exchange.
+    Bare,
+    /// A ZIP-packaged exchange and its selected root entry.
+    Zip {
+        entry_count: usize,
+        root_data_offset: u64,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum DecodeMode {
+    Decode(Packaging),
+    Inspect,
+}
+
+impl Packaging {
+    fn add_source_attributes(self, attributes: &mut BTreeMap<String, String>) {
+        let Self::Zip {
+            entry_count,
+            root_data_offset,
+        } = self
+        else {
+            return;
+        };
+        attributes.insert("container_kind".into(), "iso-10303-21-zip".into());
+        attributes.insert("archive_root".into(), crate::archive::ROOT_NAME.into());
+        attributes.insert("archive_entries".into(), entry_count.to_string());
+        attributes.insert(
+            "archive_root_data_offset".into(),
+            root_data_offset.to_string(),
+        );
+    }
+}
 
 pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
     ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
@@ -63,21 +100,22 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
 
 struct StepDecodeSession<'ctx, 'arena> {
     ir: CadIr,
-    report: DecodeReport,
+    matched: DialectMatch,
+    source_attributes: BTreeMap<String, String>,
+    body: DecodeBody,
     typed_records: HashSet<u64>,
     admitted_ir_entities: u64,
     semantic_input_work: u64,
-    ctx: Option<&'ctx DecodeContext<'arena>>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
 impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     fn new(
         exchange: &Exchange,
         diagnostics: &[ParseDiagnostic],
-        container_only: bool,
-        ctx: Option<&'ctx DecodeContext<'arena>>,
+        ctx: &'ctx DecodeContext<'arena>,
+        mode: DecodeMode,
     ) -> Self {
-        let mut ir = CadIr::empty(Units::default());
         let mut attributes = BTreeMap::new();
         attributes.insert("schema".into(), schema_name(exchange));
         attributes.insert("data_sections".into(), exchange.data.len().to_string());
@@ -85,25 +123,23 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             "entity_instances".into(),
             exchange.records.len().to_string(),
         );
-        ir.source = Some(SourceMeta {
-            format: "step".into(),
-            attributes,
-        });
+        if let DecodeMode::Decode(packaging) = mode {
+            packaging.add_source_attributes(&mut attributes);
+        }
+        // The `schema` attribute above stays: it is the joined identifier list,
+        // and retiring the ad-hoc attribute keys is a later phase.
+        let primary = StepDialect::classify(exchange);
+        let dialect_loss = crate::dialect::dialect_loss(&primary);
+        let ir = CadIr::empty();
 
-        let mut report = DecodeReport {
-            format: "step".into(),
-            container_only,
-            geometry_transferred: false,
-            coverage: BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-            losses: Vec::new(),
-            notes: exchange
-                .references
-                .iter()
-                .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
-                .collect(),
-        };
-        report.losses.extend(diagnostics.iter().map(|diagnostic| {
+        let mut body = DecodeBody::new(false);
+        body.notes = exchange
+            .references
+            .iter()
+            .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
+            .collect();
+        body.losses.extend(dialect_loss);
+        body.losses.extend(diagnostics.iter().map(|diagnostic| {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
@@ -115,19 +151,25 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::SchemaObjectIdentifierOutOfRange,
                     "schema_identifier",
                 ),
+                crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified => (
+                    StepLossCode::ImplementationLevelUnverified,
+                    "implementation_level",
+                ),
             };
-            code.note(diagnostic.message.clone())
-                .with_provenance(cadmpeg_ir::SourceProvenance {
-                    format: "step".into(),
-                    stream: String::new(),
-                    offset: diagnostic.offset as u64,
-                    tag: Some(tag.into()),
-                })
+            code.note(diagnostic.message.clone()).with_provenance(
+                cadmpeg_ir::SourceProvenance::root(
+                    crate::dialect::FORMAT,
+                    diagnostic.offset as u64,
+                )
+                .with_tag(tag),
+            )
         }));
 
         Self {
             ir,
-            report,
+            matched: primary,
+            source_attributes: attributes,
+            body,
             typed_records: HashSet::new(),
             admitted_ir_entities: 0,
             semantic_input_work: 0,
@@ -139,41 +181,60 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         self.charge_pending_ir_entities(operation)?;
         let output_work = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
         let units = self.semantic_input_work.saturating_add(output_work);
-        self.ctx
-            .map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+        self.ctx.charge_work(units, operation)
     }
 
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         let current_entities = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
         let additional_entities = current_entities.saturating_sub(self.admitted_ir_entities);
-        if let Some(ctx) = self.ctx {
-            ctx.charge_entities(additional_entities, operation)?;
-        }
+        self.ctx.charge_entities(additional_entities, operation)?;
         self.admitted_ir_entities = current_entities;
         Ok(())
     }
 
     fn absorb<T>(&mut self, outcome: &mut StageOutcome<T>) {
         self.typed_records.extend(outcome.claims.drain());
-        self.report.losses.append(&mut outcome.losses);
-        self.report.notes.append(&mut outcome.notes);
+        self.body.losses.append(&mut outcome.losses);
+        self.body.notes.append(&mut outcome.notes);
     }
 
     fn absorb_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
-        self.report.losses.extend(
+        self.body.losses.extend(
             warnings
                 .into_iter()
                 .map(|message| StepLossCode::DecodeWarning.note(message)),
         );
     }
 
-    fn into_result(self, source_fidelity: SourceFidelity) -> DecodeResult {
-        DecodeResult::new(self.ir, self.report, source_fidelity)
+    fn into_result(
+        mut self,
+        source_fidelity: SourceFidelity,
+        opaque_offsets: BTreeSet<usize>,
+    ) -> AnalyzedExchange {
+        self.ir.source = Some(SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
+            self.source_attributes,
+        ));
+        AnalyzedExchange {
+            decoded: Decoded {
+                ir: self.ir,
+                body: self.body,
+                source_fidelity,
+            },
+            matched: self.matched,
+            opaque_offsets,
+        }
     }
 }
 
+pub(super) struct AnalyzedExchange {
+    pub decoded: Decoded,
+    pub matched: DialectMatch,
+    pub opaque_offsets: BTreeSet<usize>,
+}
+
 struct OpaqueSourceRecord {
-    unknown_id: String,
+    unknown_id: UnknownId,
     span: std::ops::Range<usize>,
     links: BTreeSet<u64>,
     reference_work: u64,
@@ -182,22 +243,28 @@ struct OpaqueSourceRecord {
 /// Decode a complete clear-text exchange structure.
 pub fn decode(
     input: &[u8],
-    options: DecodeOptions,
     ctx: &DecodeContext<'_>,
-) -> Result<DecodeResult, CodecError> {
+    packaging: Packaging,
+) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    decode_exchange(input, options, exchange, &diagnostics, Some(ctx))
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
-    options: DecodeOptions,
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<DecodeResult, CodecError> {
-    decode_exchange_mode(input, options, &mut exchange, diagnostics, true, ctx)
-        .map(|(result, _)| result)
+    ctx: &DecodeContext<'_>,
+    packaging: Packaging,
+) -> Result<Decoded, CodecError> {
+    decode_exchange_mode(
+        input,
+        &mut exchange,
+        diagnostics,
+        DecodeMode::Decode(packaging),
+        ctx,
+    )
+    .map(|result| result.decoded)
 }
 
 /// Deep semantic analysis used by STEP `inspect`.
@@ -209,32 +276,21 @@ pub(super) fn analyze_exchange(
     input: &[u8],
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
-    decode_exchange_mode(
-        input,
-        DecodeOptions::default(),
-        exchange,
-        diagnostics,
-        false,
-        ctx,
-    )
+    ctx: &DecodeContext<'_>,
+) -> Result<AnalyzedExchange, CodecError> {
+    decode_exchange_mode(input, exchange, diagnostics, DecodeMode::Inspect, ctx)
 }
 
 fn decode_exchange_mode(
     input: &[u8],
-    options: DecodeOptions,
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
-    retain_opaque: bool,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
-    let mut session = StepDecodeSession::new(exchange, diagnostics, options.container_only, ctx);
-    if options.container_only {
-        return Ok((
-            session.into_result(SourceFidelity::default()),
-            BTreeSet::new(),
-        ));
+    mode: DecodeMode,
+    ctx: &DecodeContext<'_>,
+) -> Result<AnalyzedExchange, CodecError> {
+    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
+    if ctx.container_only() {
+        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }
 
     session.semantic_input_work = semantic_input_work(exchange);
@@ -245,14 +301,13 @@ fn decode_exchange_mode(
     session.charge_stage("step_carrier_index")?;
     let carrier_index = index::CarrierIndex::from_ir(&session.ir);
     session.charge_stage("step_topology_decode")?;
-    if let Some(ctx) = session.ctx {
-        ctx.charge_work(
-            implicit_face_plane_work(exchange),
-            "step_implicit_face_plane",
-        )?;
-    }
-    let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx);
-    geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
+    session.ctx.charge_work(
+        implicit_face_plane_work(exchange),
+        "step_implicit_face_plane",
+    )?;
+    let mut topology =
+        topology::decode(exchange, &mut session.ir, &carrier_index, Some(session.ctx));
+    geometry::infer_edge_parameter_ranges(&mut session.ir, Some(session.ctx))?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_stage("step_topology_association")?;
     geometry::associate_topology_carriers(
@@ -302,7 +357,7 @@ fn decode_exchange_mode(
         &geometry.value,
         &topology.value,
         &mut session.ir,
-        session.ctx,
+        Some(session.ctx),
         &mut session.admitted_ir_entities,
     )?;
     session.charge_stage("step_tessellation_decode")?;
@@ -314,7 +369,7 @@ fn decode_exchange_mode(
         &geometry.value,
         &topology.value,
         &mut session.ir,
-        session.ctx,
+        Some(session.ctx),
     );
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
@@ -322,15 +377,18 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
-        session.ctx,
+        Some(session.ctx),
     );
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
-    session.report.geometry_transferred = !session.ir.model.points.is_empty()
+    if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()
         || !session.ir.model.bodies.is_empty()
-        || !session.ir.model.tessellations.is_empty();
+        || !session.ir.model.tessellations.is_empty()
+    {
+        session.body.geometry_transferred = true;
+    }
 
     // Keep the established report order while every pass contributes through
     // the same accumulator.
@@ -369,31 +427,30 @@ fn decode_exchange_mode(
     session.absorb_warnings(post_decode_warnings);
 
     session.charge_stage("step_opaque_record_retention")?;
-    let opaque_offsets = if retain_opaque {
-        BTreeSet::new()
-    } else {
-        exchange
+    let opaque_offsets = match mode {
+        DecodeMode::Decode(_) => BTreeSet::new(),
+        DecodeMode::Inspect => exchange
             .records
-            .values()
-            .filter(|record| !session.typed_records.contains(&record.id))
-            .map(|record| record.span.start)
-            .collect()
+            .iter()
+            .filter(|(id, _)| !session.typed_records.contains(id))
+            .map(|(_, record)| record.span.start)
+            .collect(),
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
-    if retain_opaque {
+    if matches!(mode, DecodeMode::Decode(_)) {
         opaque_ids = exchange
             .records
-            .values()
-            .filter(|record| !session.typed_records.contains(&record.id))
-            .map(|record| (record.id, opaque_record_id(record).0))
+            .iter()
+            .filter(|(id, _)| !session.typed_records.contains(id))
+            .map(|(&id, record)| (id, opaque_record_id(id, record)))
             .collect::<BTreeMap<_, _>>();
         opaque_sources.reserve(opaque_ids.len());
-        for record in exchange.records.values() {
-            if session.typed_records.contains(&record.id) {
+        for (&id, record) in &exchange.records {
+            if session.typed_records.contains(&id) {
                 continue;
             }
             let kind = record
@@ -417,7 +474,7 @@ fn decode_exchange_mode(
                     .for_each(|value| collect_references(value, &mut links));
             }
             opaque_sources.push(OpaqueSourceRecord {
-                unknown_id: opaque_ids[&record.id].clone(),
+                unknown_id: opaque_ids[&id].clone(),
                 span: record.span.clone(),
                 links,
                 reference_work,
@@ -429,8 +486,8 @@ fn decode_exchange_mode(
             .collect::<BTreeSet<_>>();
         source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
     } else {
-        for record in exchange.records.values() {
-            if session.typed_records.contains(&record.id) {
+        for (&id, record) in &exchange.records {
+            if session.typed_records.contains(&id) {
                 continue;
             }
             let kind = record
@@ -443,96 +500,90 @@ fn decode_exchange_mode(
         }
     }
     let accounting = {
-        if let Some(ctx) = session.ctx {
-            ctx.charge_work(
-                u64::try_from(input.len()).unwrap_or(u64::MAX),
-                "step_byte_accounting",
-            )?;
-        }
-        let _reservation = session
-            .ctx
-            .map(|ctx| ctx.reserve_scoped(input.len() as u64, "step_byte_accounting", None))
-            .transpose()?;
+        session.ctx.charge_work(
+            u64::try_from(input.len()).unwrap_or(u64::MAX),
+            "step_byte_accounting",
+        )?;
+        let _reservation =
+            session
+                .ctx
+                .reserve_scoped(input.len() as u64, "step_byte_accounting", None)?;
         byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
-    if retain_opaque {
+    if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = std::mem::take(&mut exchange.signatures);
         exchange.release_source_graph();
         let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
         for source in opaque_sources {
-            let bytes = if let Some(ctx) = session.ctx {
-                ctx.charge_collection_items(source.reference_work, "step_opaque_record_links")?;
-                ctx.copy_retained(&input[source.span.clone()], "step_opaque_record", None)?
-            } else {
-                input[source.span.clone()].to_vec()
-            };
-            opaque.push(UnknownRecord {
-                id: UnknownId(source.unknown_id),
-                offset: source.span.start as u64,
-                byte_len: source.span.len() as u64,
-                sha256: sha256_hex(&bytes),
-                data: Some(bytes),
-                links: source
+            session
+                .ctx
+                .charge_collection_items(source.reference_work, "step_opaque_record_links")?;
+            let bytes = session.ctx.copy_retained(
+                &input[source.span.clone()],
+                "step_opaque_record",
+                None,
+            )?;
+            opaque.push(UnknownRecord::retained(
+                source.unknown_id,
+                source.span.start as u64,
+                bytes,
+                source
                     .links
                     .into_iter()
                     .flat_map(|id| {
                         opaque_ids
                             .get(&id)
-                            .cloned()
+                            .map(|id| id.as_str().to_owned())
                             .into_iter()
                             .chain(source_targets.get(&id).into_iter().flatten().cloned())
                     })
                     .collect(),
-            });
+            ));
         }
         for (index, signature) in signature_spans.into_iter().enumerate() {
-            let bytes = if let Some(ctx) = session.ctx {
-                ctx.copy_retained(&input[signature.clone()], "step_signature_record", None)?
-            } else {
-                input[signature.clone()].to_vec()
-            };
+            let bytes = session.ctx.copy_retained(
+                &input[signature.clone()],
+                "step_signature_record",
+                None,
+            )?;
             *counts.entry("SIGNATURE".into()).or_default() += 1;
-            opaque.push(UnknownRecord {
-                id: crate::ids::StepIdentity::signature(index),
-                offset: signature.start as u64,
-                byte_len: signature.len() as u64,
-                sha256: sha256_hex(&bytes),
-                data: Some(bytes),
-                links: Vec::new(),
-            });
+            opaque.push(UnknownRecord::retained(
+                ids::signature(index),
+                signature.start as u64,
+                bytes,
+                Vec::new(),
+            ));
         }
         source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque)?;
     }
-    if let Some(source) = &mut session.ir.source {
-        source
-            .attributes
-            .insert("bytes_structural".into(), accounting.structural.to_string());
-        source
-            .attributes
-            .insert("bytes_typed".into(), accounting.typed.to_string());
-        source
-            .attributes
-            .insert("bytes_named_opaque".into(), accounting.opaque.to_string());
-        source.attributes.insert(
-            "bytes_unclassified".into(),
-            accounting.unclassified.to_string(),
-        );
-    }
+    session
+        .source_attributes
+        .insert("bytes_structural".into(), accounting.structural.to_string());
+    session
+        .source_attributes
+        .insert("bytes_typed".into(), accounting.typed.to_string());
+    session
+        .source_attributes
+        .insert("bytes_named_opaque".into(), accounting.opaque.to_string());
+    session.source_attributes.insert(
+        "bytes_unclassified".into(),
+        accounting.unclassified.to_string(),
+    );
     if accounting.unclassified > 0 {
         session
-            .report
+            .body
             .losses
             .push(StepLossCode::ByteAccountingUnclassified.note(format!(
                 "STEP byte accounting left {} byte(s) unclassified",
                 accounting.unclassified
             )));
     }
-    session.report.notes.push(format!(
+    session.body.notes.push(format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
     ));
     session
-        .report
+        .body
         .losses
         .extend(counts.into_iter().map(|(name, count)| {
             StepLossCode::OpaqueRecordPreserved.note(format!(
@@ -540,7 +591,7 @@ fn decode_exchange_mode(
             ))
         }));
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
-    Ok((session.into_result(source_fidelity), opaque_offsets))
+    Ok(session.into_result(source_fidelity, opaque_offsets))
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.
@@ -649,12 +700,16 @@ fn retain_unowned_carriers(
         .model
         .coedges
         .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
+        .flat_map(|coedge| {
+            coedge
+                .pcurves
+                .iter()
+                .map(|use_| use_.pcurve.as_str().to_owned())
+        })
         .chain(ir.model.loops.iter().flat_map(|loop_| {
             loop_
-                .vertex_uses
-                .iter()
-                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
+                .vertex_pcurves()
+                .map(|pcurve| pcurve.pcurve.as_str().to_owned())
         }))
         .chain(
             ir.model
@@ -664,14 +719,14 @@ fn retain_unowned_carriers(
                     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
                         boundary_pcurves,
                         ..
-                    } = &surface.definition
+                    } = surface.definition()
                     else {
                         return None;
                     };
                     Some(boundary_pcurves)
                 })
                 .flatten()
-                .map(|pcurve| pcurve.0.clone()),
+                .map(|pcurve| pcurve.as_str().to_owned()),
         )
         .collect::<BTreeSet<_>>();
     let unowned_pcurves = exchange
@@ -684,7 +739,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(&StepIdentity::data("pcurve", id)))
+        .filter(|id| !owned.contains(&ids::data("pcurve", id)))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
@@ -692,20 +747,20 @@ fn retain_unowned_carriers(
         .points
         .iter()
         .filter(|point| point.source_object.is_none())
-        .map(|point| point.id.0.as_str())
+        .map(|point| point.id.as_str())
         .chain(
             ir.model
                 .curves
                 .iter()
                 .filter(|curve| curve.source_object.is_none())
-                .map(|curve| curve.id.0.as_str()),
+                .map(|curve| curve.id.as_str()),
         )
         .chain(
             ir.model
                 .surfaces
                 .iter()
                 .filter(|surface| surface.source_object.is_none())
-                .map(|surface| surface.id.0.as_str()),
+                .map(|surface| surface.id.as_str()),
         )
         .filter_map(step_id_from_ir)
         .filter(|id| exchange.records.contains_key(id) && !referenced.contains(id))
@@ -719,59 +774,59 @@ fn retain_unowned_carriers(
         .model
         .vertices
         .iter()
-        .map(|vertex| vertex.point.0.as_str())
+        .map(|vertex| vertex.point.as_str())
         .chain(
             ir.model
                 .edges
                 .iter()
-                .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.0.as_str())),
+                .filter_map(|edge| edge.curve.as_ref().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
-        .chain(ir.model.faces.iter().map(|face| face.surface.0.as_str()))
+        .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
         .chain(
             ir.model
                 .coedges
                 .iter()
-                .filter_map(|coedge| coedge.use_curve.as_ref().map(|curve| curve.0.as_str())),
+                .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())),
         )
         .chain(
             ir.model
                 .pcurves
                 .iter()
-                .filter(|pcurve| owned.contains(&pcurve.id.0))
-                .map(|pcurve| pcurve.id.0.as_str()),
+                .filter(|pcurve| owned.contains(pcurve.id.as_str()))
+                .map(|pcurve| pcurve.id.as_str()),
         )
         .chain(
             ir.model
                 .points
                 .iter()
                 .filter(|point| point.source_object.is_some())
-                .map(|point| point.id.0.as_str()),
+                .map(|point| point.id.as_str()),
         )
         .chain(
             ir.model
                 .curves
                 .iter()
                 .filter(|curve| curve.source_object.is_some())
-                .map(|curve| curve.id.0.as_str()),
+                .map(|curve| curve.id.as_str()),
         )
         .chain(
             ir.model
                 .surfaces
                 .iter()
                 .filter(|surface| surface.source_object.is_some())
-                .map(|surface| surface.id.0.as_str()),
+                .map(|surface| surface.id.as_str()),
         )
         .chain(
             ir.model
                 .procedural_curves
                 .iter()
-                .map(|curve| curve.id.0.as_str()),
+                .map(|curve| curve.id.as_str()),
         )
         .chain(
             ir.model
                 .procedural_surfaces
                 .iter()
-                .map(|surface| surface.id.0.as_str()),
+                .map(|surface| surface.id.as_str()),
         )
         .filter_map(step_id_from_ir)
     {
@@ -787,56 +842,56 @@ fn retain_unowned_carriers(
         .model
         .pcurves
         .iter()
-        .filter(|pcurve| !retains_carrier(&pcurve.id.0, &removed_closure, &protected))
+        .filter(|pcurve| !retains_carrier(pcurve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_points = ir
         .model
         .points
         .iter()
-        .filter(|point| !retains_carrier(&point.id.0, &removed_closure, &protected))
+        .filter(|point| !retains_carrier(point.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_curves = ir
         .model
         .curves
         .iter()
-        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_curves = ir
         .model
         .procedural_curves
         .iter()
-        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_surfaces = ir
         .model
         .procedural_surfaces
         .iter()
-        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
     ir.model
         .pcurves
-        .retain(|pcurve| owned.contains(&pcurve.id.0));
+        .retain(|pcurve| owned.contains(pcurve.id.as_str()));
     ir.model
         .points
-        .retain(|point| retains_carrier(&point.id.0, &removed_closure, &protected));
+        .retain(|point| retains_carrier(point.id.as_str(), &removed_closure, &protected));
     ir.model
         .curves
-        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
     ir.model
         .surfaces
-        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
+        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
     ir.model
         .procedural_curves
-        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+        .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
     ir.model
         .procedural_surfaces
-        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
+        .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
     typed_records.retain(|id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
     });
@@ -852,7 +907,7 @@ fn retain_unowned_carriers(
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
     for point in &mut ir.model.points {
-        let Some(id) = step_id_from_ir(&point.id.0) else {
+        let Some(id) = step_id_from_ir(point.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -862,7 +917,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for curve in &mut ir.model.curves {
-        let Some(id) = step_id_from_ir(&curve.id.0) else {
+        let Some(id) = step_id_from_ir(curve.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -872,7 +927,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(id) = step_id_from_ir(&surface.id.0) else {
+        let Some(id) = step_id_from_ir(surface.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -885,7 +940,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
 
 fn direct_carrier_association(id: u64) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "step".into(),
+        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
         object_id: format!("#{id}"),
         name: None,
         color: None,
@@ -943,14 +998,14 @@ fn referenced_record_ids(exchange: &Exchange) -> BTreeSet<u64> {
     references
 }
 
-fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
+fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
     let kind = record
         .partials
         .iter()
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId(crate::ids::StepIdentity::data(&kind, record.id))
+    UnknownId::mint(ids::data(&kind, id)).expect("identity grammar")
 }
 
 fn record_targets(
@@ -993,15 +1048,12 @@ fn byte_accounting(
     input: &[u8],
     exchange: &Exchange,
     typed_records: &HashSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ByteAccounting, CodecError> {
-    let mut classes = if let Some(ctx) = ctx {
-        ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?
-    } else {
-        alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?
-    };
-    for record in exchange.records.values() {
-        let class = if typed_records.contains(&record.id) {
+    let mut classes =
+        ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
+    for (&id, record) in &exchange.records {
+        let class = if typed_records.contains(&id) {
             ByteClass::Typed
         } else {
             ByteClass::Opaque
@@ -1073,58 +1125,8 @@ fn claim_trivia(input: &[u8], range: std::ops::Range<usize>, classes: &mut [Byte
     }
 }
 
-pub(super) fn schema_identifiers(exchange: &Exchange) -> Vec<String> {
-    let Some(record) = exchange
-        .header
-        .iter()
-        .find(|record| record.name == "FILE_SCHEMA")
-    else {
-        return Vec::new();
-    };
-    let Some(Value::List(identifiers)) = record.parameters.first() else {
-        return Vec::new();
-    };
-    identifiers
-        .iter()
-        .filter_map(|value| match value {
-            Value::String(bytes) => Some(
-                crate::strings::decode(bytes)
-                    .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned()),
-            ),
-            _ => None,
-        })
-        .collect()
-}
-
 fn schema_name(exchange: &Exchange) -> String {
-    schema_identifiers(exchange).join(",")
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StringEncoding {
-    Iso8859_1,
-    Utf8,
-}
-
-fn string_encoding(exchange: &Exchange) -> StringEncoding {
-    let edition = exchange
-        .header
-        .iter()
-        .find(|record| record.name == "FILE_DESCRIPTION")
-        .and_then(|record| record.parameters.get(1))
-        .and_then(|value| match value {
-            Value::String(bytes) => bytes
-                .split(|byte| *byte == b';')
-                .next()
-                .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                .and_then(|edition| edition.parse::<u8>().ok()),
-            _ => None,
-        });
-    if edition == Some(4) {
-        StringEncoding::Utf8
-    } else {
-        StringEncoding::Iso8859_1
-    }
+    exchange.schema_identifiers().join(",")
 }
 
 pub(super) fn decode_text(
@@ -1138,11 +1140,7 @@ pub(super) fn decode_text(
     let Value::String(bytes) = value else {
         return None;
     };
-    let decoded = match string_encoding(exchange) {
-        StringEncoding::Iso8859_1 => crate::strings::decode(bytes),
-        StringEncoding::Utf8 => crate::strings::decode_utf8(bytes),
-    };
-    match decoded {
+    match exchange.decode_string(bytes) {
         Ok(text) => Some(text),
         Err(error) => {
             losses.push(code.note(format!(

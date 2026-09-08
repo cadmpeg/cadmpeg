@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section geometry conversion and sketch-table coordinate, radius, and trim solvers.
 
+pub(super) mod axis;
 mod coordinates;
 mod equations_coordinate;
-mod equations_scalar;
+pub(super) mod equations_scalar;
 mod geometry;
 mod intersect;
 mod radii;

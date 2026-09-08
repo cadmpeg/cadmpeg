@@ -13,18 +13,19 @@ fn decodes_direct_class_registry_tail() {
     let definition = TypeDefinition {
         offset: 0,
         name: "UGS::OM::RootObject",
-        trailing_code: 0x38,
-        registry_suffix: &[0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02],
+        registry_tail: &[
+            0x38, 0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02,
+        ],
     };
 
-    let layout = definition.class_registry_layout().unwrap();
+    let layout = crate::om::registry::class_registry_layout(definition.registry_tail).unwrap();
 
-    assert_eq!(layout.storage_code.value, 0x38);
-    assert_eq!(layout.storage_code.form, RegistryTokenForm::Direct);
-    assert_eq!(layout.storage_code.width, 1);
-    assert_eq!(layout.base_class, 0x05);
+    assert_eq!(layout.storage_code.value(), 0x38);
+    assert_eq!(layout.storage_code.form(), RegistryTokenForm::Direct);
+    assert_eq!(layout.storage_code.width(), 1);
+    assert_eq!(layout.base_class.map_or(0, std::num::NonZeroU32::get), 0x05);
     assert_eq!(layout.schema_fingerprint, fingerprint);
-    assert_eq!(layout.reference, 0x02);
+    assert_eq!(layout.reference.get(), 0x02);
 }
 
 #[test]
@@ -33,60 +34,70 @@ fn decodes_compact_and_wide_class_registry_tokens() {
     let compact = TypeDefinition {
         offset: 0,
         name: "UGS::OM::SaveAuditTrail",
-        trailing_code: 0x80,
-        registry_suffix: &[
-            0xc9, 0x09, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x23, 0x01,
+        registry_tail: &[
+            0x80, 0xc9, 0x09, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x23, 0x01,
         ],
     };
 
-    let compact_layout = compact.class_registry_layout().unwrap();
-    assert_eq!(compact_layout.storage_code.value, 0xc9 + 1);
-    assert_eq!(compact_layout.storage_code.form, RegistryTokenForm::Compact);
-    assert_eq!(compact_layout.storage_code.width, 2);
-    assert_eq!(compact_layout.base_class, 0x09);
+    let compact_layout = crate::om::registry::class_registry_layout(compact.registry_tail).unwrap();
+    assert_eq!(compact_layout.storage_code.value(), 0xc9 + 1);
+    assert_eq!(
+        compact_layout.storage_code.form(),
+        RegistryTokenForm::Compact
+    );
+    assert_eq!(compact_layout.storage_code.width(), 2);
+    assert_eq!(
+        compact_layout
+            .base_class
+            .map_or(0, std::num::NonZeroU32::get),
+        0x09
+    );
     assert_eq!(compact_layout.schema_fingerprint, fingerprint);
-    assert_eq!(compact_layout.reference, 0x01);
+    assert_eq!(compact_layout.reference.get(), 0x01);
 
     let wide = TypeDefinition {
         offset: 0,
         name: "UGS::Part::Unit::ProxySystemMeasure",
-        trailing_code: 0xa0,
-        registry_suffix: &[
-            0x27, 0x10, 0x82, 0x3c, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x80, 0xd3,
+        registry_tail: &[
+            0xa0, 0x27, 0x10, 0x82, 0x3c, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x80,
+            0xd3,
         ],
     };
 
-    let wide_layout = wide.class_registry_layout().unwrap();
-    assert_eq!(wide_layout.storage_code.value, 0x27_10 + 1);
-    assert_eq!(wide_layout.storage_code.form, RegistryTokenForm::Wide);
-    assert_eq!(wide_layout.storage_code.width, 3);
-    assert_eq!(wide_layout.base_class, 0x02_3c + 1);
+    let wide_layout = crate::om::registry::class_registry_layout(wide.registry_tail).unwrap();
+    assert_eq!(wide_layout.storage_code.value(), 0x27_10 + 1);
+    assert_eq!(wide_layout.storage_code.form(), RegistryTokenForm::Wide);
+    assert_eq!(wide_layout.storage_code.width(), 3);
+    assert_eq!(
+        wide_layout.base_class.map_or(0, std::num::NonZeroU32::get),
+        0x02_3c + 1
+    );
     assert_eq!(
         wide_layout.schema_fingerprint,
         [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]
     );
-    assert_eq!(wide_layout.reference, 0xd3 + 1);
+    assert_eq!(wide_layout.reference.get(), 0xd3 + 1);
 }
 
 #[test]
 fn decodes_each_extended_registry_prefix_family() {
-    let compact = crate::om::registry::registry_token_at(0x8f, &[0xfe], 0).unwrap();
-    assert_eq!(compact.value, 0x0f00 + 0xfe + 1);
-    assert_eq!(compact.form, RegistryTokenForm::Compact);
-    assert_eq!(compact.width, 2);
+    let compact = crate::om::registry::registry_token_at(&[0x8f, 0xfe], 0).unwrap();
+    assert_eq!(compact.value(), 0x0f00 + 0xfe + 1);
+    assert_eq!(compact.form(), RegistryTokenForm::Compact);
+    assert_eq!(compact.width(), 2);
 
-    let wide_90 = crate::om::registry::registry_token_at(0x90, &[0x12, 0x34], 0).unwrap();
-    assert_eq!(wide_90.value, 0x1234 + 1);
-    assert_eq!(wide_90.form, RegistryTokenForm::Wide);
-    assert_eq!(wide_90.width, 3);
+    let wide_90 = crate::om::registry::registry_token_at(&[0x90, 0x12, 0x34], 0).unwrap();
+    assert_eq!(wide_90.value(), 0x1234 + 1);
+    assert_eq!(wide_90.form(), RegistryTokenForm::Wide);
+    assert_eq!(wide_90.width(), 3);
 
-    let wide_a1 = crate::om::registry::registry_token_at(0xa1, &[0x12, 0x34], 0).unwrap();
-    assert_eq!(wide_a1.value, 0x1_1234 + 1);
-    assert_eq!(wide_a1.form, RegistryTokenForm::Wide);
+    let wide_a1 = crate::om::registry::registry_token_at(&[0xa1, 0x12, 0x34], 0).unwrap();
+    assert_eq!(wide_a1.value(), 0x1_1234 + 1);
+    assert_eq!(wide_a1.form(), RegistryTokenForm::Wide);
 
-    let wide_f1 = crate::om::registry::registry_token_at(0xf1, &[0x12, 0x34], 0).unwrap();
-    assert_eq!(wide_f1.value, 0x1_1234 + 1);
-    assert_eq!(wide_f1.form, RegistryTokenForm::Wide);
+    let wide_f1 = crate::om::registry::registry_token_at(&[0xf1, 0x12, 0x34], 0).unwrap();
+    assert_eq!(wide_f1.value(), 0x1_1234 + 1);
+    assert_eq!(wide_f1.form(), RegistryTokenForm::Wide);
 }
 
 #[test]
@@ -94,24 +105,25 @@ fn decodes_direct_and_compact_field_registry_heads() {
     let direct = FieldDefinition {
         offset: 0,
         name: "m_objectStateCollection",
-        trailing_code: 0x78,
-        registry_suffix: &[0x28, 0x12, 0x34],
+        registry_tail: &[0x78, 0x28, 0x12, 0x34],
     };
-    let direct_layout = direct.field_registry_layout().unwrap();
-    assert_eq!(direct_layout.storage_code.value, 0x78);
-    assert_eq!(direct_layout.storage_code.form, RegistryTokenForm::Direct);
-    assert_eq!(direct_layout.owner_class, 0x28);
+    let direct_layout = crate::om::registry::field_registry_layout(direct.registry_tail).unwrap();
+    assert_eq!(direct_layout.storage_code.value(), 0x78);
+    assert_eq!(direct_layout.storage_code.form(), RegistryTokenForm::Direct);
+    assert_eq!(direct_layout.owner_class.get(), 0x28);
 
     let compact = FieldDefinition {
         offset: 0,
         name: "first_record_area",
-        trailing_code: 0x80,
-        registry_suffix: &[0xcf, 0x28],
+        registry_tail: &[0x80, 0xcf, 0x28],
     };
-    let compact_layout = compact.field_registry_layout().unwrap();
-    assert_eq!(compact_layout.storage_code.value, 0xcf + 1);
-    assert_eq!(compact_layout.storage_code.form, RegistryTokenForm::Compact);
-    assert_eq!(compact_layout.owner_class, 0x28);
+    let compact_layout = crate::om::registry::field_registry_layout(compact.registry_tail).unwrap();
+    assert_eq!(compact_layout.storage_code.value(), 0xcf + 1);
+    assert_eq!(
+        compact_layout.storage_code.form(),
+        RegistryTokenForm::Compact
+    );
+    assert_eq!(compact_layout.owner_class.get(), 0x28);
 }
 
 #[test]
@@ -119,26 +131,23 @@ fn rejects_incomplete_or_null_registry_tails() {
     let truncated = TypeDefinition {
         offset: 0,
         name: "UGS::OM::Truncated",
-        trailing_code: 0x38,
-        registry_suffix: &[0x05, 0x00, 0x01],
+        registry_tail: &[0x38, 0x05, 0x00, 0x01],
     };
-    assert!(truncated.class_registry_layout().is_none());
+    assert!(crate::om::registry::class_registry_layout(truncated.registry_tail).is_none());
 
     let null_storage = FieldDefinition {
         offset: 0,
         name: "m_null",
-        trailing_code: 0xff,
-        registry_suffix: &[],
+        registry_tail: &[0xff],
     };
-    assert!(null_storage.field_registry_layout().is_none());
+    assert!(crate::om::registry::field_registry_layout(null_storage.registry_tail).is_none());
 
     let null_owner = FieldDefinition {
         offset: 0,
         name: "m_null_owner",
-        trailing_code: 0x78,
-        registry_suffix: &[0x00],
+        registry_tail: &[0x78, 0x00],
     };
-    assert!(null_owner.field_registry_layout().is_none());
+    assert!(crate::om::registry::field_registry_layout(null_owner.registry_tail).is_none());
 }
 
 #[test]
@@ -176,18 +185,17 @@ fn separates_complete_reference_class_and_member_regions() {
     assert_eq!(registry.definitions[0].name, "UGS::OM::RootObject");
     assert_eq!(registry.definitions[1].name, "UGS::OM::ChildObject");
     assert_eq!(
-        registry.definitions[0]
-            .class_registry_layout()
+        crate::om::registry::class_registry_layout(registry.definitions[0].registry_tail)
             .unwrap()
-            .base_class,
+            .base_class
+            .map_or(0, std::num::NonZeroU32::get),
         0
     );
     assert_eq!(
-        registry.definitions[1]
-            .class_registry_layout()
+        crate::om::registry::class_registry_layout(registry.definitions[1].registry_tail)
             .unwrap()
             .storage_code
-            .value,
+            .value(),
         0xc9 + 1
     );
     assert_eq!(registry.field_start, member_start);
@@ -196,9 +204,21 @@ fn separates_complete_reference_class_and_member_regions() {
         crate::om::registry::all_field_definitions(&bytes, registry.field_start, bytes.len());
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].name, "m_first");
-    assert_eq!(fields[0].field_registry_layout().unwrap().owner_class, 1);
+    assert_eq!(
+        crate::om::registry::field_registry_layout(fields[0].registry_tail)
+            .unwrap()
+            .owner_class
+            .get(),
+        1
+    );
     assert_eq!(fields[1].name, "m_second");
-    assert_eq!(fields[1].field_registry_layout().unwrap().owner_class, 2);
+    assert_eq!(
+        crate::om::registry::field_registry_layout(fields[1].registry_tail)
+            .unwrap()
+            .owner_class
+            .get(),
+        2
+    );
     assert_eq!(fields[2].name, "m_tail");
 
     let mut one_byte_gap = bytes;

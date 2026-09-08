@@ -183,6 +183,7 @@ anchor = "`0x17` | INT64 | 8 B | AutoCAD int64 attribute value"
 
 [[record]]
 name = "asmheader_binaryfile8"
+dialects = ["acis:asm-binaryfile-8"]
 kind = "byte"
 section = "1"
 anchor = "`BinaryFile8` header layout (little-endian, mirroring `BinaryFile4` with wider words)"
@@ -227,6 +228,7 @@ anchor = "`39..47` | little-endian u64 flags; bit 0 is set iff the stream carrie
 
 [[record]]
 name = "asmheader_binaryfile4"
+dialects = ["acis:asm-binaryfile-4"]
 kind = "byte"
 section = "1"
 anchor = "`BinaryFile4` header layout (the classic ACIS save header, little-endian)"
@@ -270,6 +272,7 @@ anchor = "`27..31` | little-endian u32 flags; bit 0 is set iff the stream carrie
 
 [[record]]
 name = "acisheader_binaryfile4"
+dialects = ["acis:save-format-217", "acis:save-format-218", "acis:save-format-binary-other"]
 kind = "byte"
 section = "1"
 anchor = "ACIS 217 and 218 binary streams use this 31-byte fixed prefix"
@@ -315,6 +318,7 @@ anchor = "`27..31` | little-endian u32 flags; bit 0 is set iff the stream carrie
 
 [[record]]
 name = "body"
+dialects = ["acis:asm-binaryfile-8"]
 kind = "byte"
 section = "5.2"
 anchor = "**Body (61 B):**"
@@ -696,6 +700,7 @@ note = "Record head and `chunk[0..=2]`; the spec states no offsets for them."
 
 [[record]]
 name = "point"
+dialects = ["acis:asm-binaryfile-8"]
 kind = "byte"
 section = "5.3"
 anchor = "A BinaryFile8 `point` record is 60 bytes"

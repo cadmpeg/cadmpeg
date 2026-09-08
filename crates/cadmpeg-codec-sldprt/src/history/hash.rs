@@ -4,12 +4,47 @@
 use crate::records::{FeatureContent, FeatureHistory};
 use cadmpeg_ir::features::{DesignConfiguration, DesignParameter};
 use sha2::{Digest, Sha256};
-use std::fmt::Write as _;
+use std::fmt::{Debug, Formatter, Write as _};
 
-pub fn feature_hash(features: &[cadmpeg_ir::features::Feature]) -> String {
-    let mut features = features.to_vec();
-    features.sort_by(|left, right| left.id.cmp(&right.id));
+pub fn feature_hash(model: &cadmpeg_ir::document::Model) -> String {
+    let mut features = model
+        .features
+        .iter()
+        .map(|feature| FeatureHashView {
+            feature,
+            parent: model.feature_parent(&feature.id),
+        })
+        .collect::<Vec<_>>();
+    features.sort_by(|left, right| left.feature.id.cmp(&right.feature.id));
     hash_debug(&features)
+}
+
+/// Debug projection retained byte-for-byte for existing machine-local hashes.
+struct FeatureHashView<'a> {
+    feature: &'a cadmpeg_ir::features::Feature,
+    parent: Option<&'a cadmpeg_ir::features::FeatureId>,
+}
+
+impl Debug for FeatureHashView<'_> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        let feature = self.feature;
+        formatter
+            .debug_struct("Feature")
+            .field("id", &feature.id)
+            .field("ordinal", &feature.ordinal)
+            .field("name", &feature.name)
+            .field("suppressed", &feature.suppressed)
+            .field("parent", &self.parent)
+            .field("dependencies", &feature.dependencies)
+            .field("source_properties", &feature.source_properties)
+            .field("source_tag", &feature.source_tag)
+            .field("source_text", &feature.source_text)
+            .field("source_content", &feature.source_content)
+            .field("outputs", &feature.outputs)
+            .field("definition", &feature.definition)
+            .field("native_ref", &feature.native_ref)
+            .finish()
+    }
 }
 
 /// Stable hash of the native feature histories.

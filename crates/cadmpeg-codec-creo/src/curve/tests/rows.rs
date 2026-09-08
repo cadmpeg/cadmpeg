@@ -4,18 +4,15 @@
 use super::*;
 use std::collections::BTreeSet;
 
-fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterRecord {
+fn parameter_record(curve_id: u32) -> CurveParameterRecord {
     CurveParameterRecord {
         curve_id,
         type_byte: 0,
         body: Vec::new(),
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
-        skipped_references: Vec::new(),
         references: Vec::new(),
         opaque_spans: Vec::new(),
         reference_geometry: [0, 0],
-        suffix,
         offset: curve_id as usize,
         body_offset: curve_id as usize,
         suffix_offset: curve_id as usize,
@@ -23,25 +20,21 @@ fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterR
 }
 
 #[test]
-fn typed_parameter_rows_require_unique_identity_and_suffix_boundary() {
-    let unique = parameter_record(7, CurveSuffixStatus::Unique);
+fn typed_parameter_rows_require_unique_identity() {
+    let unique = parameter_record(7);
     assert_eq!(
         uniquely_bounded_parameter_records(std::slice::from_ref(&unique)).len(),
         1
     );
-
-    let ambiguous = parameter_record(8, CurveSuffixStatus::Ambiguous { candidate_count: 2 });
-    assert!(uniquely_bounded_parameter_records(&[ambiguous]).is_empty());
     assert!(uniquely_bounded_parameter_records(&[unique.clone(), unique]).is_empty());
 }
 
 #[test]
 fn pcurve_endpoint_slots_must_be_finite() {
     let nan = [0xed, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0];
-    let mut record = parameter_record(7, CurveSuffixStatus::Unique);
+    let mut record = parameter_record(7);
     record.body.extend_from_slice(&nan);
     record.body.extend([0x0f; 7]);
-    record.scalar_values.push(f64::NAN);
     record.scalar_tokens.push(CurveParameterScalar {
         value: f64::NAN,
         raw: nan.to_vec(),
@@ -49,7 +42,6 @@ fn pcurve_endpoint_slots_must_be_finite() {
         length: nan.len(),
     });
     for offset in nan.len()..record.body.len() {
-        record.scalar_values.push(0.0);
         record.scalar_tokens.push(CurveParameterScalar {
             value: 0.0,
             raw: vec![0x0f],
@@ -62,7 +54,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
         type_byte: 0,
         feature_id: 1,
         directions: [1, 1],
-        faces: [2, 3],
+        faces: [std::num::NonZeroU32::new(2), std::num::NonZeroU32::new(3)],
         next_edges: [7, 7],
         offset: 1,
     };
@@ -177,7 +169,6 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     let record = CurveParameterRecord {
         curve_id: 846,
         type_byte: 0,
-        scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
         opaque_spans: vec![
             CurveParameterOpaqueSpan {
                 raw: vec![0xfc, 0x02],
@@ -192,14 +183,17 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
         ],
         body,
         scalar_tokens,
-        ..parameter_record(846, CurveSuffixStatus::Unique)
+        ..parameter_record(846)
     };
     let topology = CurveTopologyRow {
         id: 846,
         type_byte: 0,
         feature_id: 57,
         directions: [0x01, 0xf6],
-        faces: [43, 163],
+        faces: [
+            std::num::NonZeroU32::new(43),
+            std::num::NonZeroU32::new(163),
+        ],
         next_edges: [841, 164],
         offset: 100,
     };
@@ -218,7 +212,6 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     );
 
     let mut malformed = record.clone();
-    malformed.scalar_values[3] = 2.0;
     malformed.scalar_tokens[3].value = 2.0;
     assert!(fc02_short_pcurve_endpoints(&[malformed], std::slice::from_ref(&topology)).is_empty());
 
@@ -268,7 +261,10 @@ fn promotes_only_referenced_unique_prototype_topology() {
     }];
     let prototype_topology = [CurvePrototypeTopology {
         curve_id: 44,
-        faces: [43, 141],
+        faces: [
+            std::num::NonZeroU32::new(43),
+            std::num::NonZeroU32::new(141),
+        ],
         next_edges: [271, 142],
         offset: 100,
     }];
@@ -277,7 +273,10 @@ fn promotes_only_referenced_unique_prototype_topology() {
         type_byte: 0,
         feature_id: 547,
         directions: [0x01, 0xf6],
-        faces: [43, 235],
+        faces: [
+            std::num::NonZeroU32::new(43),
+            std::num::NonZeroU32::new(235),
+        ],
         next_edges: [44, 597],
         offset: 200,
     }];
@@ -293,7 +292,10 @@ fn promotes_only_referenced_unique_prototype_topology() {
             type_byte: 0,
             feature_id: 40,
             directions: [0x01, 0xf6],
-            faces: [43, 141],
+            faces: [
+                std::num::NonZeroU32::new(43),
+                std::num::NonZeroU32::new(141)
+            ],
             next_edges: [271, 142],
             offset: 100,
         }]
@@ -414,7 +416,7 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
             type_byte: 8,
             feature_id: 4,
             directions: [1, 0xf6],
-            faces: [10, 11],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
             next_edges: [7, 7],
             offset: 15,
         }]
@@ -435,7 +437,7 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
 
     assert_eq!(
         topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
-        [10, 11]
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
     );
     let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
     assert_eq!(parameters.len(), 1);
@@ -448,7 +450,12 @@ fn reference_geometry_uses_the_generic_compact_lane() {
     let row = [10, 11, 7, 7, 0x81, 0x0d, 68, 0xe3];
     assert_eq!(
         topology_suffix_candidates(&row),
-        Some(vec![(0, [10, 11, 7, 7], [269, 68])])
+        Some(vec![TopologySuffixCandidate {
+            start: 0,
+            faces: [10, 11].map(NonZeroU32::new),
+            next_edges: [7, 7],
+            reference_geometry: [269, 68],
+        }])
     );
 }
 
@@ -474,7 +481,10 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
             type_byte: 0,
             feature_id: 40,
             directions: [1, 0xf6],
-            faces: [143, 141],
+            faces: [
+                std::num::NonZeroU32::new(143),
+                std::num::NonZeroU32::new(141)
+            ],
             next_edges: [273, 44],
             offset: 15,
         }]
@@ -501,7 +511,13 @@ fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() 
     let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1].id, 144);
-    assert_eq!(rows[1].faces, [143, 141]);
+    assert_eq!(
+        rows[1].faces,
+        [
+            std::num::NonZeroU32::new(143),
+            std::num::NonZeroU32::new(141)
+        ]
+    );
     assert_eq!(rows[1].next_edges, [273, 44]);
 }
 
@@ -517,7 +533,12 @@ fn materialized_face_evidence_precedes_namespace_face_evidence() {
             Some(&materialized_face_ids),
             Some(&namespace_face_ids),
         ),
-        Some((0, [371, 369, 331, 297], [0, 0]))
+        Some(TopologySuffixCandidate {
+            start: 0,
+            faces: [371, 369].map(NonZeroU32::new),
+            next_edges: [331, 297],
+            reference_geometry: [0, 0],
+        })
     );
 }
 
@@ -560,7 +581,7 @@ fn final_curve_row_uses_the_next_array_boundary() {
             type_byte: 8,
             feature_id: 4,
             directions: [1, 0xf6],
-            faces: [10, 11],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
             next_edges: [7, 7],
             offset: 15,
         }]
@@ -577,7 +598,7 @@ fn decodes_complete_depdb_one_sided_curve_array() {
     assert_eq!(rows[0].type_byte, 8);
     assert_eq!(rows[0].feature_id, 4);
     assert_eq!(rows[0].directions, [1, 0xf6]);
-    assert_eq!(rows[0].suffix, [0, 9, 10, 0]);
+    assert_eq!(rows[0].suffix, DepdbCurveSuffix { x1: 9, face_id: 10 });
     assert_eq!(rows[0].body, [0xe4, 0xff]);
     assert_eq!(rows[0].scalar_tokens.len(), 1);
     assert_eq!(rows[0].scalar_tokens[0].value, 1.0);
@@ -606,12 +627,13 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(ordinate),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset,
     };
     let topology = |curve_id, plane_id, offset| CurveTopologyRow {
@@ -619,17 +641,19 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         type_byte: 5,
         feature_id: 4,
         directions: [1, 0xf6],
-        faces: [10, plane_id],
+        faces: [
+            std::num::NonZeroU32::new(10),
+            std::num::NonZeroU32::new(plane_id),
+        ],
         next_edges: [curve_id, curve_id],
         offset,
     };
     let surface = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 4,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture id fits usize"),
     };
@@ -647,13 +671,22 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         pairs,
         vec![Fc05CylinderCapPair {
             surface_id: 10,
-            curve_ids: vec![20, 21],
-            cap_plane_ids: vec![11, 12],
-            curve_cap_ordinates_row_frame: vec![-5.0, 7.0],
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge {
+                    curve_id: 20,
+                    cap_plane_id: 11,
+                    cap_ordinate_row_frame: -5.0
+                },
+                crate::curve::Fc05CapEdge {
+                    curve_id: 21,
+                    cap_plane_id: 12,
+                    cap_ordinate_row_frame: 7.0
+                }
+            ],
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
             reference_direction_row_frame: [1.0, 0.0],
-            parameter_sign: 1,
+            parameter_sense: crate::curve::ParameterSense::Increasing,
             cap_ordinates_row_frame: vec![-5.0, 7.0],
             offset: 100,
         }]
@@ -667,12 +700,13 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(ordinate),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset,
     };
     let topology = |curve_id, plane_id, offset| CurveTopologyRow {
@@ -680,17 +714,19 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
         type_byte: 5,
         feature_id: 4,
         directions: [1, 0xf6],
-        faces: [10, plane_id],
+        faces: [
+            std::num::NonZeroU32::new(10),
+            std::num::NonZeroU32::new(plane_id),
+        ],
         next_edges: [curve_id, curve_id],
         offset,
     };
     let surface = |id, kind: crate::surface::SurfaceKind, offset| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 4,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset,
     };
@@ -753,12 +789,13 @@ fn withholds_fc05_caps_without_distinct_ordinates() {
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(5.0),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset: 100,
     }];
     assert!(fc05_cylinder_cap_pairs(&circles, &[], &[]).is_empty());

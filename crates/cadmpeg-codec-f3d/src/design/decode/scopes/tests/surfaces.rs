@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -54,7 +53,10 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
         .expect("directed SurfaceRuled operation");
     assert_eq!(operation.method, DesignRuledSurfaceMethod::Direction);
     assert_eq!(
-        operation.direction_entity_id.as_deref(),
+        operation
+            .direction_entity_id
+            .as_ref()
+            .map(crate::records::DesignRelaxedGuidText::as_str),
         Some("01234567-89ab-cdef-0123-456789abcdef")
     );
 }
@@ -140,96 +142,54 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
         byte_offset: 0,
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 375,
-        kind: "Base Feature".into(),
         kind_offset: 273,
-        extrude_prologue: None,
-        coil_operation: None,
-        coil_operation_offset: None,
-        coil_extent: None,
-        coil_extent_offset: None,
-        coil_section: None,
-        coil_section_offset: None,
-        coil_section_placement: None,
-        coil_section_placement_offset: None,
-        coil_clockwise: None,
-        coil_clockwise_offset: None,
-        coil_placement: None,
-        coil_transform: None,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
-        history_state_id_offset: 0,
+
         previous_history_state_id: Some(2),
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: vec![301],
-        reference_member_offsets: vec![0],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange_operation: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_extrude_parameters: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature_construction: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
-        work_plane_construction: None,
-        work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
-        work_point_construction: None,
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![301],
+            vec![0],
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::feature::DesignFeatureKind::BaseFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        extrude_profile: None,
-        sweep_profile: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 375,
     };
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("generated Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
+        bodies,
         metadata_record,
-        result_records,
-        body_entity_fields,
         ..
     } = &construction
     else {
         panic!("parallel Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = &bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_entity_fields = &bodies
+        .iter()
+        .map(|body| body.entity.field)
+        .collect::<Vec<_>>();
+    let body_reference_records = &bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = &bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(body_reference_records, &[301, 302]);
     assert_eq!(*metadata_record, 401);
@@ -253,22 +213,30 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     expanded_bytes.extend_from_slice(&bytes[137..]);
     expanded_bytes.resize(366, 0);
     let mut expanded_scope = scope.clone();
-    expanded_scope.class_tag = "384".into();
-    expanded_scope.paired_class_tag = "264".into();
+    expanded_scope.class_tag = crate::records::DesignClassTag::try_from("384".to_owned()).unwrap();
+    expanded_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
     expanded_scope.frame_length = 366;
     expanded_scope.kind_offset = 265;
     expanded_scope.paired_byte_offset = 366;
     let expanded = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
         .expect("expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        result_records,
+        bodies,
         metadata_field,
         ..
     } = &expanded
     else {
         panic!("expanded Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = &bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let result_records = &bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(result_records, &[501, 502]);
     assert_eq!(metadata_field, &[0, 0]);
@@ -278,21 +246,33 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     legacy_compact_bytes[96..100].copy_from_slice(&101u32.to_le_bytes());
     legacy_compact_bytes[107..111].copy_from_slice(&202u32.to_le_bytes());
     let mut legacy_compact_scope = expanded_scope.clone();
-    legacy_compact_scope.class_tag = "420".into();
-    legacy_compact_scope.paired_class_tag = "258".into();
+    legacy_compact_scope.class_tag =
+        crate::records::DesignClassTag::try_from("420".to_owned()).unwrap();
+    legacy_compact_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     let legacy_compact =
         exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope)
             .expect("legacy compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
-        result_records,
+        bodies,
         metadata_field,
         ..
     } = &legacy_compact
     else {
         panic!("legacy compact Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = &bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_reference_records = &bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = &bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(body_reference_records, &[301, 302]);
     assert_eq!(result_records, &[501, 502]);
@@ -367,18 +347,20 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(cursor, 401);
 
     let mut snapshot_scope = scope;
-    snapshot_scope.class_tag = "314".into();
+    snapshot_scope.class_tag = crate::records::DesignClassTag::try_from("314".to_owned()).unwrap();
     snapshot_scope.frame_length = 485;
     snapshot_scope.kind_offset = 373;
     snapshot_scope.feature_ordinal_offset = 397;
     snapshot_scope.history_state_id = Some(7);
-    snapshot_scope.history_state_id_offset = 365;
+
     snapshot_scope.previous_history_state_id = None;
-    snapshot_scope.previous_history_state_id_offset = 0;
+    snapshot_scope.previous_history_state_id_offset = None;
     snapshot_scope.reference_count_offset = 350;
-    snapshot_scope.reference_members = vec![301];
-    snapshot_scope.reference_member_offsets = vec![355];
-    snapshot_scope.paired_class_tag = "259".into();
+    snapshot_scope.reference_members =
+        crate::records::ReferenceRun::from_columns(vec![301], vec![355], "reference_members")
+            .unwrap();
+    snapshot_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     snapshot_scope.paired_byte_offset = 485;
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
         .expect("body-snapshot Base Feature frame is canonical");
@@ -390,8 +372,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         construction
     );
     let DesignBaseFeatureConstruction::BodySnapshot {
-        body_entity_suffixes,
-        body_entity_fields,
+        bodies,
         related_guids: decoded_guids,
         related_guid_offsets,
         linkage_record,
@@ -403,10 +384,13 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("body-snapshot Base Feature frame selected the wrong form");
     };
-    assert_eq!(body_entity_suffixes, [101, 202]);
-    assert_eq!(body_entity_fields[0], [1, 2, 3, 4, 5, 6]);
     assert_eq!(
-        decoded_guids,
+        bodies.iter().map(|body| body.value).collect::<Vec<_>>(),
+        [101, 202]
+    );
+    assert_eq!(bodies[0].field, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(
+        decoded_guids.map(String::from),
         [
             related_guids[0].to_owned(),
             related_guids[1].to_owned(),
@@ -438,7 +422,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(related_guid_offsets, [67, 143, 275]);
 
     let mut invalid_scope = snapshot_scope;
-    invalid_scope.reference_members = vec![302];
+    invalid_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![302]);
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
@@ -473,26 +457,39 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     bytes[cursor + 1..cursor + 5].copy_from_slice(&401u32.to_le_bytes());
     assert_eq!(cursor + 11, 103);
 
-    let mut scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-compact", "Base Feature", 70);
-    scope.class_tag = "452".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-compact",
+        crate::records::feature::DesignFeatureKind::BaseFeature,
+        70,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
     scope.frame_length = 314;
     scope.kind_offset = 213;
-    scope.reference_members = vec![301];
-    scope.paired_class_tag = "266".into();
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     scope.paired_byte_offset = 314;
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
+        bodies,
         metadata_record,
-        result_records,
         ..
     } = construction
     else {
         panic!("class-452 compact Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_reference_records = bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, [101]);
     assert_eq!(body_reference_records, [201]);
     assert_eq!(metadata_record, 301);
@@ -543,14 +540,18 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
             cursor += 11;
         }
-        let mut scope =
-            DesignParameterScope::empty("f3d:scope#base-feature-409-262", "Base Feature", 70);
-        scope.class_tag = "409".into();
-        scope.paired_class_tag = "262".into();
+        let mut scope = DesignParameterScope::empty(
+            "f3d:scope#base-feature-409-262",
+            crate::records::feature::DesignFeatureKind::BaseFeature,
+            70,
+        );
+        scope.class_tag = crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
         scope.frame_length = frame_length as u64;
         scope.kind_offset = (frame_length + 102) as u64;
         scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = vec![301];
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -560,35 +561,57 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         let construction = exact_base_feature_construction(&bytes, &scope)
             .expect("class-409/class-262 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes,
-            body_reference_records,
+            bodies,
             metadata_record,
-            result_records,
             ..
         } = construction
         else {
             panic!("class-409/class-262 frame selected the wrong form");
         };
+        let body_entity_suffixes = bodies
+            .iter()
+            .map(|body| body.entity.value)
+            .collect::<Vec<_>>();
+        let body_reference_records = bodies
+            .iter()
+            .map(|body| body.reference.value)
+            .collect::<Vec<_>>();
+        let result_records = bodies
+            .iter()
+            .map(|body| body.result.value)
+            .collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
         assert_eq!(result_records.len(), body_count);
 
         let mut class_360_scope = scope.clone();
-        class_360_scope.class_tag = "360".into();
-        class_360_scope.paired_class_tag = "258".into();
+        class_360_scope.class_tag =
+            crate::records::DesignClassTag::try_from("360".to_owned()).unwrap();
+        class_360_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
         let construction = exact_base_feature_construction(&bytes, &class_360_scope)
             .expect("class-360/class-258 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes,
-            body_reference_records,
+            bodies,
             metadata_record,
-            result_records,
             ..
         } = construction
         else {
             panic!("class-360/class-258 frame selected the wrong form");
         };
+        let body_entity_suffixes = bodies
+            .iter()
+            .map(|body| body.entity.value)
+            .collect::<Vec<_>>();
+        let body_reference_records = bodies
+            .iter()
+            .map(|body| body.reference.value)
+            .collect::<Vec<_>>();
+        let result_records = bodies
+            .iter()
+            .map(|body| body.result.value)
+            .collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -600,19 +623,23 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     zero_body[prefix + 20] = 1;
     zero_body[prefix + 32] = 1;
     zero_body[prefix + 33..prefix + 41].copy_from_slice(&701u64.to_le_bytes());
-    let mut zero_scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-409-262-zero", "Base Feature", 71);
-    zero_scope.class_tag = "409".into();
-    zero_scope.paired_class_tag = "262".into();
+    let mut zero_scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-409-262-zero",
+        crate::records::feature::DesignFeatureKind::BaseFeature,
+        71,
+    );
+    zero_scope.class_tag = crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
+    zero_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     zero_scope.byte_offset = prefix as u64;
     zero_scope.frame_length = 258;
     zero_scope.kind_offset = (prefix + 157) as u64;
     zero_scope.paired_byte_offset = (prefix + 258) as u64;
-    zero_scope.reference_members = vec![701];
+    zero_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![701]);
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-409/class-262 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
+        bodies,
         metadata_record,
         metadata_record_offset,
         metadata_field,
@@ -621,6 +648,10 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     else {
         panic!("class-409/class-262 zero-body frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, (prefix + 33) as u64);
@@ -673,29 +704,42 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
         bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
         cursor += 11;
     }
-    let mut scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-290-261", "Base Feature", 74);
-    scope.class_tag = "290".into();
-    scope.paired_class_tag = "261".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-290-261",
+        crate::records::feature::DesignFeatureKind::BaseFeature,
+        74,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("290".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = frame_length as u64;
     scope.kind_offset = (frame_length + 102) as u64;
     scope.paired_byte_offset = frame_length as u64;
-    scope.reference_members = vec![301];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
     assert_eq!(cursor, 155);
 
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-290/class-261 result-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
+        bodies,
         metadata_record,
-        result_records,
         metadata_field,
         ..
     } = construction
     else {
         panic!("class-290/class-261 frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_reference_records = bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, [101, 102]);
     assert_eq!(body_reference_records, [201, 202]);
     assert_eq!(metadata_record, 301);
@@ -743,14 +787,18 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
             bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
             cursor += 11;
         }
-        let mut scope =
-            DesignParameterScope::empty("f3d:scope#base-feature-444-263", "Base Feature", 72);
-        scope.class_tag = "444".into();
-        scope.paired_class_tag = "263".into();
+        let mut scope = DesignParameterScope::empty(
+            "f3d:scope#base-feature-444-263",
+            crate::records::feature::DesignFeatureKind::BaseFeature,
+            72,
+        );
+        scope.class_tag = crate::records::DesignClassTag::try_from("444".to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
         scope.frame_length = frame_length as u64;
         scope.kind_offset = (frame_length + 102) as u64;
         scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = vec![301];
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -760,15 +808,25 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         let construction = exact_base_feature_construction(&bytes, &scope)
             .expect("class-444/class-263 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes,
-            body_reference_records,
+            bodies,
             metadata_record,
-            result_records,
             ..
         } = construction
         else {
             panic!("class-444/class-263 frame selected the wrong form");
         };
+        let body_entity_suffixes = bodies
+            .iter()
+            .map(|body| body.entity.value)
+            .collect::<Vec<_>>();
+        let body_reference_records = bodies
+            .iter()
+            .map(|body| body.reference.value)
+            .collect::<Vec<_>>();
+        let result_records = bodies
+            .iter()
+            .map(|body| body.result.value)
+            .collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -802,21 +860,29 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     }
     zero_body[prefix + 181..prefix + 185].copy_from_slice(&1u32.to_le_bytes());
     zero_body[prefix + 212..prefix + 216].copy_from_slice(&2u32.to_le_bytes());
-    let mut zero_scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-444-263-zero", "Base Feature", 73);
-    zero_scope.class_tag = "444".into();
-    zero_scope.paired_class_tag = "263".into();
+    let mut zero_scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-444-263-zero",
+        crate::records::feature::DesignFeatureKind::BaseFeature,
+        73,
+    );
+    zero_scope.class_tag = crate::records::DesignClassTag::try_from("444".to_owned()).unwrap();
+    zero_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     zero_scope.byte_offset = prefix as u64;
     zero_scope.frame_length = 258;
     zero_scope.kind_offset = (prefix + 157) as u64;
     zero_scope.paired_byte_offset = (prefix + 258) as u64;
     zero_scope.reference_count_offset = (prefix + 134) as u64;
-    zero_scope.reference_members = vec![701];
-    zero_scope.reference_member_offsets = vec![(prefix + 139) as u64];
+    zero_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![701],
+        vec![(prefix + 139) as u64],
+        "reference_members",
+    )
+    .unwrap();
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-444/class-263 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
+        bodies,
         metadata_record,
         metadata_record_offset,
         metadata_field,
@@ -825,6 +891,10 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     else {
         panic!("class-444/class-263 zero-body frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, (prefix + 33) as u64);
@@ -908,50 +978,56 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#193",
-        "Base Feature",
+        crate::records::feature::DesignFeatureKind::BaseFeature,
         193,
     );
     scope.byte_offset = 0;
-    scope.class_tag = "377".into();
-    scope.paired_class_tag = "259".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("377".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.paired_byte_offset = class_377::LEN as u64;
     scope.frame_length = class_377::LEN as u64;
     scope.kind_offset = class_377::KIND as u64;
-    scope.feature_ordinal = 1;
+    scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
     scope.history_state_id = Some(20);
-    scope.history_state_id_offset = class_377::HISTORY_STATE_ID as u64;
+
     scope.previous_history_state_id = Some(19);
-    scope.previous_history_state_id_offset = class_377::PREVIOUS_HISTORY_STATE_ID as u64;
+    scope.previous_history_state_id_offset = Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
     scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
-    scope.reference_members = vec![196];
-    scope.reference_member_offsets = vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![196],
+        vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+        "reference_members",
+    )
+    .unwrap();
 
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-377/class-259 Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::BodyBasedOnFaces {
-        body_entity_suffixes,
-        body_entity_suffix_offsets,
-        body_reference_records,
+        body,
         parameter_body_record,
         parameter_body_record_offset,
         auxiliary_record,
         auxiliary_record_offset,
         envelope_guid,
         envelope_guid_offset,
-        tag_body_based_on_faces,
         tag_body_based_on_faces_offset,
         ..
     } = &construction
     else {
         panic!("class-377/class-259 frame selected the wrong form");
     };
-    assert_eq!(body_entity_suffixes, &[201]);
     assert_eq!(
-        body_entity_suffix_offsets,
-        &[class_377::BODY_ENTITY_SUFFIX as u64]
+        *body,
+        crate::records::Located {
+            value: 201,
+            offset: class_377::BODY_ENTITY_SUFFIX as u64
+        }
     );
-    assert_eq!(body_reference_records, &[201]);
+    assert_eq!(
+        construction.body_reference_records().collect::<Vec<_>>(),
+        [201]
+    );
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,
@@ -959,17 +1035,20 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     );
     assert_eq!(*auxiliary_record, 202);
     assert_eq!(*auxiliary_record_offset, class_377::AUXILIARY_RECORD as u64);
-    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(
+        envelope_guid.as_str(),
+        "fcec56e3-832f-4468-88a4-d710e62e629f"
+    );
     assert_eq!(*envelope_guid_offset, class_377::ENVELOPE_GUID as u64);
-    assert!(*tag_body_based_on_faces);
     assert_eq!(
         *tag_body_based_on_faces_offset,
         class_377::TAG_BODY_BASED_ON_FACES_VALUE as u64
     );
 
     let mut class_365_scope = scope.clone();
-    class_365_scope.class_tag = "365".into();
-    class_365_scope.paired_class_tag = "262".into();
+    class_365_scope.class_tag = crate::records::DesignClassTag::try_from("365".to_owned()).unwrap();
+    class_365_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     let class_365_construction = exact_base_feature_construction(&bytes, &class_365_scope)
         .expect("class-365/class-262 Base Feature frame is canonical");
     assert_eq!(class_365_construction, construction);
@@ -990,7 +1069,8 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     assert!(exact_base_feature_construction(&bytes, &mismatched_previous).is_none());
 
     let mut mismatched_pair = scope;
-    mismatched_pair.paired_class_tag = "263".into();
+    mismatched_pair.paired_class_tag =
+        crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     assert!(exact_base_feature_construction(&bytes, &mismatched_pair).is_none());
 }
 
@@ -998,7 +1078,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
 fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     use crate::layout::base_feature_class_452_262_compact as compact;
     use crate::layout::base_feature_class_452_262_expanded as expanded;
-    use crate::records::DesignBaseFeatureBodyReferenceForm;
+    use crate::records::feature::DesignBaseFeatureBodyReferenceForm;
 
     fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
@@ -1075,21 +1155,27 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#452",
-            "Base Feature",
+            crate::records::feature::DesignFeatureKind::BaseFeature,
             452,
         );
         scope.byte_offset = 0;
-        scope.class_tag = "452".into();
-        scope.paired_class_tag = "262".into();
-        scope.reference_members = vec![scope_reference];
+        scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![scope_reference]);
         scope.reference_count_offset = reference_count as u64;
-        scope.reference_member_offsets = vec![generic_record as u64];
+        scope.reference_members = crate::records::ReferenceRun::from_columns(
+            scope.reference_members.values().copied().collect(),
+            vec![generic_record as u64],
+            "reference_members",
+        )
+        .unwrap();
         scope.history_state_id = Some(i64::from(current_state));
-        scope.history_state_id_offset = history_state_id as u64;
+
         scope.previous_history_state_id = Some(i64::from(previous_state));
-        scope.previous_history_state_id_offset = 0;
+        scope.previous_history_state_id_offset = None;
         scope.kind_offset = kind as u64;
-        scope.feature_ordinal = ordinal;
+        scope.feature_ordinal = std::num::NonZeroU32::new(ordinal).expect("nonzero ordinal");
         scope.feature_ordinal_offset = feature_ordinal as u64;
         scope
     }
@@ -1136,49 +1222,65 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     let mut compact_bytes = compact_frame(0);
     let mut compact_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#452",
-        "Base Feature",
+        crate::records::feature::DesignFeatureKind::BaseFeature,
         452,
     );
-    compact_scope.class_tag = "452".into();
-    compact_scope.paired_class_tag = "262".into();
+    compact_scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
+    compact_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     compact_scope.frame_length = compact::LEN as u64;
     compact_scope.paired_byte_offset = compact::LEN as u64;
-    compact_scope.reference_members = vec![196];
+    compact_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![196]);
     compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
-    compact_scope.reference_member_offsets = vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    compact_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        compact_scope.reference_members.values().copied().collect(),
+        vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+        "reference_members",
+    )
+    .unwrap();
     compact_scope.history_state_id = Some(20);
-    compact_scope.history_state_id_offset = compact::HISTORY_STATE_ID as u64;
+
     compact_scope.previous_history_state_id = Some(19);
-    compact_scope.previous_history_state_id_offset = compact::PREVIOUS_HISTORY_STATE_ID as u64;
+    compact_scope.previous_history_state_id_offset =
+        Some(compact::PREVIOUS_HISTORY_STATE_ID as u64);
     compact_scope.kind_offset = compact::KIND as u64;
-    compact_scope.feature_ordinal = 1;
+    compact_scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     compact_scope.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
     let compact_construction = exact_base_feature_construction(&compact_bytes, &compact_scope)
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
-        mode,
-        body_entity_suffixes,
-        body_entity_suffix_offsets,
-        body_entity_fields,
-        body_reference_records,
-        parameter_body_records,
-        parameter_body_record_offsets,
-        auxiliary_records,
-        auxiliary_record_offsets,
         scope_reference,
         scope_reference_offset,
         envelope_guid,
         envelope_guid_offset,
-        tag_body_based_on_faces,
         tag_body_based_on_faces_offset,
         ..
     } = &compact_construction
     else {
         panic!("class-452 compact frame selected the wrong form");
     };
-    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::CompactOneBody);
-    assert_eq!(*mode, Some(0));
+    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, body } = form else {
+        panic!("compact frame requires one body");
+    };
+    assert_eq!(
+        crate::records::Located {
+            value: mode.value as u8,
+            offset: mode.offset
+        },
+        crate::records::Located {
+            value: 0,
+            offset: compact::MODE as u64
+        }
+    );
+    let body_entity_suffixes = &[u64::from(body.entity.value)];
+    let body_entity_suffix_offsets = &[body.entity.offset];
+    let body_entity_fields = &[body.entity.field];
+    let body_reference_records = &[body.entity.value];
+    let parameter_body_records = &[body.parameter_body.value];
+    let parameter_body_record_offsets = &[body.parameter_body.offset];
+    let auxiliary_records = &[body.auxiliary.value];
+    let auxiliary_record_offsets = &[body.auxiliary.offset];
     assert_eq!(body_entity_suffixes, &[201]);
     assert_eq!(
         body_entity_suffix_offsets,
@@ -1198,9 +1300,15 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
     assert_eq!(*scope_reference, 196);
     assert_eq!(*scope_reference_offset, compact::SCOPE_REFERENCE as u64);
-    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(
+        envelope_guid.as_str(),
+        "fcec56e3-832f-4468-88a4-d710e62e629f"
+    );
     assert_eq!(*envelope_guid_offset, compact::ENVELOPE_GUID as u64);
-    assert!(*tag_body_based_on_faces);
+    assert_eq!(
+        serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
+        true
+    );
     assert_eq!(
         *tag_body_based_on_faces_offset,
         compact::TAG_BODY_BASED_ON_FACES_VALUE as u64
@@ -1215,10 +1323,22 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_bytes[compact::MODE] = 1;
     let mode_one = exact_base_feature_construction(&compact_bytes, &compact_scope)
         .expect("mode-one class-452 compact frame is canonical");
-    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { mode, .. } = mode_one else {
+    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
         panic!("class-452 compact mode-one frame selected the wrong form");
     };
-    assert_eq!(mode, Some(1));
+    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } = form else {
+        panic!("compact mode-one form");
+    };
+    assert_eq!(
+        crate::records::Located {
+            value: mode.value as u8,
+            offset: mode.offset
+        },
+        crate::records::Located {
+            value: 1,
+            offset: compact::MODE as u64
+        }
+    );
 
     let mut expanded_bytes = vec![0_u8; expanded::LEN];
     expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;
@@ -1291,28 +1411,34 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     expanded_scope.frame_length = expanded::LEN as u64;
     expanded_scope.paired_byte_offset = expanded::LEN as u64;
     expanded_scope.reference_count_offset = expanded::REFERENCE_COUNT as u64;
-    expanded_scope.reference_member_offsets = vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64];
-    expanded_scope.history_state_id_offset = expanded::HISTORY_STATE_ID as u64;
-    expanded_scope.previous_history_state_id_offset = expanded::PREVIOUS_HISTORY_STATE_ID as u64;
+    expanded_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        expanded_scope.reference_members.values().copied().collect(),
+        vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+        "reference_members",
+    )
+    .unwrap();
+
+    expanded_scope.previous_history_state_id_offset =
+        Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);
     expanded_scope.kind_offset = expanded::KIND as u64;
     expanded_scope.feature_ordinal_offset = expanded::FEATURE_ORDINAL as u64;
     let expanded_construction = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
         .expect("class-452 expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
-        mode,
-        body_entity_suffixes,
-        body_entity_fields,
-        parameter_body_records,
-        auxiliary_records,
         scope_reference,
         ..
     } = &expanded_construction
     else {
         panic!("class-452 expanded frame selected the wrong form");
     };
-    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody);
-    assert_eq!(*mode, None);
+    let DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies } = form else {
+        panic!("expanded frame requires two bodies");
+    };
+    let body_entity_suffixes = &bodies.map(|body| u64::from(body.entity.value));
+    let body_entity_fields = &bodies.map(|body| body.entity.field);
+    let parameter_body_records = &bodies.map(|body| body.parameter_body.value);
+    let auxiliary_records = &bodies.map(|body| body.auxiliary.value);
     assert_eq!(body_entity_suffixes, &[401, 402]);
     assert_eq!(body_entity_fields, &[[0; 6], [0; 6]]);
     assert_eq!(parameter_body_records, &[301, 302]);
@@ -1345,7 +1471,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
 #[test]
 fn surface_patch_boundary_settings_decode_the_fixed_payload() {
     use crate::design::decode::patch::surface_patch_boundaries;
-    use crate::records::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+    use crate::records::feature::{DesignPatchContinuity, DesignSurfacePatchBoundary};
 
     let mut bytes = vec![0_u8; 49];
     bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());

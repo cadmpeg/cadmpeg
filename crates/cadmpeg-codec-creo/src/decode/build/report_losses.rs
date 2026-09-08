@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Loss notes derived from coverage counters and undecoded PSB layers.
 
-use std::collections::BTreeMap;
-
 use crate::container::ContainerScan;
 use crate::decode::surfaces::{BrepTransferDiagnostics, FaceAdmissionRejection};
 use crate::loss::CreoLossCode;
@@ -10,13 +8,13 @@ use crate::loss::CreoLossCode;
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::LossNote;
 
-pub(super) fn coverage_count(coverage: &BTreeMap<String, usize>, key: &str) -> usize {
+pub(super) fn coverage_count(coverage: &cadmpeg_ir::Coverage, key: &str) -> usize {
     coverage.get(key).copied().unwrap_or(0)
 }
 
 pub(super) fn push_legacy_value_losses(
     losses: &mut Vec<LossNote>,
-    coverage: &BTreeMap<String, usize>,
+    coverage: &cadmpeg_ir::Coverage,
 ) {
     let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
     if unresolved_legacy_reals != 0 {
@@ -136,18 +134,15 @@ pub(super) fn push_brep_transfer_note(
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
 ) {
-    let rejected_face_count = diagnostics
-        .rejected_faces
-        .values()
-        .map(|evidence| evidence.count)
-        .sum::<usize>();
+    let rejected_face_count = diagnostics.face_rejection_diagnostics.len();
     let rejection_details = FaceAdmissionRejection::ALL
         .into_iter()
         .filter_map(|reason| {
-            let evidence = diagnostics.rejected_faces.get(&reason)?;
-            let samples = evidence
-                .sample_details
-                .iter()
+            let (count, samples) = diagnostics.evidence(reason);
+            if count == 0 {
+                return None;
+            }
+            let samples = samples
                 .map(|detail| {
                     let half_edges = detail
                         .boundary_half_edges
@@ -172,25 +167,11 @@ pub(super) fn push_brep_transfer_note(
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            let samples = if samples.is_empty() {
-                evidence
-                    .sample_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            } else {
-                samples
-            };
-            Some(if samples.is_empty() {
-                format!("{}={}", reason.label(), evidence.count)
-            } else {
-                format!(
-                    "{}={} (sample faces: {samples})",
-                    reason.label(),
-                    evidence.count
-                )
-            })
+            Some(format!(
+                "{}={} (sample faces: {samples})",
+                reason.label(),
+                count
+            ))
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -331,7 +312,12 @@ pub(super) fn push_brep_transfer_note(
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("|"),
-                sample.carrier_kinds.join("|"),
+                sample
+                    .carrier_kinds
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("|"),
                 sample.pair_intersections,
                 sample.triple_intersections,
                 sample.valid_candidates,
@@ -433,7 +419,7 @@ pub(super) fn push_brep_transfer_note(
 pub(super) fn push_carrier_transfer_notes(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,
-    coverage: &BTreeMap<String, usize>,
+    coverage: &cadmpeg_ir::Coverage,
     container_only: bool,
     placed_plane_count: usize,
 ) {
@@ -672,7 +658,10 @@ pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &Con
             !record.backup
                 && (!record.prohibited_constructs.is_empty()
                     || record.solve_blocks.iter().any(|block| {
-                        block.solutions.is_empty() || block.solutions.iter().any(Option::is_none)
+                        block
+                            .unknowns
+                            .iter()
+                            .any(|unknown| unknown.solution.is_none())
                     })
                     || record.unresolved_solve_control)
         })

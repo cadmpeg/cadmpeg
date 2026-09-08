@@ -207,7 +207,7 @@ fn a_forbidden_delimiter_payload_still_refuses_the_file() {
         assert!(
             matches!(
                 IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-                Err(CodecError::Malformed(_))
+                Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_)))
             ),
             "{field:?}"
         );
@@ -236,9 +236,9 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
         .decode(&mut Cursor::new(bytes), &strict_options(false))
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
-            loss_code,
-            IgesLossCode::GlobalNoncanonicalFraming.kind().as_str()
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.to_string(),
+            IgesLossCode::GlobalNoncanonicalFraming.kind().to_string()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
@@ -255,7 +255,7 @@ fn prohibited_delimiter_declarations_refuse_before_parameter_decode() {
             assert!(
                 matches!(
                     IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-                    Err(CodecError::Malformed(_))
+                    Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_)))
                 ),
                 "{parameter}{record}"
             );

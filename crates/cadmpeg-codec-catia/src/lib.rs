@@ -2,13 +2,18 @@
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
 //! [`CatiaCodec`] is the normal public decode API. A hidden `fuzz` module
-//! exposes `()`-returning parser wrappers. It implements the shared [`Codec`]
+//! exposes `()`-returning parser wrappers. It implements the shared
+//! [`cadmpeg_ir::codec::Codec`]
 //! interface: it detects the `V5_CFV2` file signature, inspects the catalogued
 //! logical streams, identifies the storage variant, and decodes the record
 //! families supported for that variant.
 //!
-//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
-//! Geometry on the standard-nested layout shows as extras.
+//! <!-- generated: capability catia -->
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#catia-v5-catpart)).
+//! <!-- /generated: capability catia -->
+//!
+//! Recognized storage families transfer typed geometry, topology, design
+//! records, and presentation data when their source relations are complete.
 //!
 //! # Decode a part
 //!
@@ -42,6 +47,7 @@ pub(crate) mod container;
 pub(crate) mod coverage;
 pub(crate) mod decode;
 pub(crate) mod design_feature;
+pub(crate) mod dialect;
 pub(crate) mod entity_table;
 pub(crate) mod families;
 pub(crate) mod formula;
@@ -79,19 +85,18 @@ pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Opt
 }
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::ContainerSummary;
 
 /// The CATIA V5 `.CATPart` codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
-    fn id(&self) -> &'static str {
-        "catia"
-    }
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_catia(prefix) {
             Confidence::High
         } else {
@@ -108,11 +113,7 @@ impl CodecBackend for CatiaCodec {
         Ok(container::summarize(&scan))
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }

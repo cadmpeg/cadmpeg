@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition, ParameterId};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::{planned_feature_dimension_parameter_ids, transfer_feature_dimensions};
@@ -14,8 +13,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 40,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(926),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Section),
         stream_offset: 0,
         body: vec![0; 20],
         body_offset: 0,
@@ -24,8 +22,10 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: Some(40),
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: Some(40),
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -40,10 +40,8 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureDimension {
                     dimension_type: 2,
-                    value: Some(5.0),
+                    value: crate::feature::definitions::DimensionValue::Resolved(5.0),
                     value_body: Vec::new(),
-                    unresolved_value_token: None,
-                    value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: None,
                     auxiliary_body: Vec::new(),
@@ -60,18 +58,21 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
 
     assert_eq!(
         planned_feature_dimension_parameter_ids(&scan),
-        BTreeSet::from([ParameterId("creo:featdefs:parameter#917:3".to_string())])
+        BTreeSet::from([
+            ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                .expect("identity grammar")
+        ])
     );
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.features.push(Feature::new(
-            "creo:model:feature#40".into(),
+            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
+                .expect("identity grammar"),
             ordinal,
             IrFeatureDefinition::Native {
-                kind: "test".to_string(),
+                kind: "test".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         ));
     }

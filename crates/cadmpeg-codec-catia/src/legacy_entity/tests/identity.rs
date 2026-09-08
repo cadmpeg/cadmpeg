@@ -119,37 +119,37 @@ fn native_round_trips_legacy_entity_identity_runs() {
             (
                 4,
                 "body",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32),
+                crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32,
                 4,
             ),
             (
                 4,
                 "param",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 9,
             ),
             (
                 9,
                 "paramin",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32),
+                crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32,
                 4134,
             ),
             (
                 9,
                 "name",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 10,
             ),
             (
                 12,
                 "name",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 12,
             ),
             (
                 13,
                 "name",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 13,
             ),
         ]
@@ -248,57 +248,6 @@ fn native_round_trips_legacy_entity_identity_runs() {
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
 
-    let mut previous_schema_namespace = namespace.clone();
-    let mut previous_schema_runs: Vec<crate::native::CatiaLegacyEntityRun> =
-        previous_schema_namespace
-            .arena_as("legacy_entity_runs")
-            .expect("load previous schema-program runs");
-    previous_schema_runs[0]
-        .schema_program
-        .as_mut()
-        .expect("schema program")
-        .identifiers
-        .clear();
-    previous_schema_namespace
-        .set_arena("legacy_entity_runs", &previous_schema_runs)
-        .expect("store previous schema-program runs");
-    previous_schema_namespace.version = 221;
-    let migrated_schema = crate::native::CatiaNative::load(&previous_schema_namespace)
-        .expect("migrate schema identifiers");
-    assert_eq!(
-        migrated_schema.legacy_entity_runs[0]
-            .schema_program
-            .as_ref()
-            .expect("migrated schema program")
-            .identifiers,
-        schema_program.identifiers
-    );
-
-    let mut previous_boundary_namespace = namespace.clone();
-    let mut previous_boundary_runs: Vec<crate::native::CatiaLegacyEntityRun> =
-        previous_boundary_namespace
-            .arena_as("legacy_entity_runs")
-            .expect("load previous schema-program boundary");
-    previous_boundary_runs[0]
-        .schema_program
-        .as_mut()
-        .expect("schema program")
-        .boundary = crate::native::CatiaLegacySchemaProgramBoundary::StreamDirectory;
-    previous_boundary_namespace
-        .set_arena("legacy_entity_runs", &previous_boundary_runs)
-        .expect("store previous schema-program boundary");
-    previous_boundary_namespace.version = 222;
-    let migrated_boundary = crate::native::CatiaNative::load(&previous_boundary_namespace)
-        .expect("migrate schema-program boundary");
-    assert_eq!(
-        migrated_boundary.legacy_entity_runs[0]
-            .schema_program
-            .as_ref()
-            .expect("migrated schema program")
-            .boundary,
-        crate::native::CatiaLegacySchemaProgramBoundary::VendorFooter
-    );
-
     let mut invalid_schema_program = native.clone();
     invalid_schema_program.legacy_entity_runs[0]
         .schema_program
@@ -324,79 +273,6 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .store(&mut invalid_identifier_namespace)
         .expect("store invalid schema identifier");
     assert!(crate::native::CatiaNative::load(&invalid_identifier_namespace).is_err());
-
-    let mut previous_field_namespace = namespace.clone();
-    let mut previous_field_runs: Vec<crate::native::CatiaLegacyEntityRun> =
-        previous_field_namespace
-            .arena_as("legacy_entity_runs")
-            .expect("load previous field-binding runs");
-    for run in &mut previous_field_runs {
-        for role in &mut run.role_selectors {
-            role.field_code = None;
-        }
-        for role in run
-            .text_fields
-            .iter_mut()
-            .filter_map(|field| field.role.as_mut())
-        {
-            role.field_code = None;
-        }
-    }
-    previous_field_namespace
-        .set_arena("legacy_entity_runs", &previous_field_runs)
-        .expect("store previous field-binding runs");
-    previous_field_namespace.version = 219;
-    let migrated_field_bindings = crate::native::CatiaNative::load(&previous_field_namespace)
-        .expect("load previous field bindings");
-    assert!(migrated_field_bindings.legacy_entity_runs[0]
-        .role_selectors
-        .iter()
-        .all(|role| role.field_code.is_none()));
-
-    let mut previous_identity_namespace = namespace.clone();
-    let mut previous_identity_runs: Vec<crate::native::CatiaLegacyEntityRun> =
-        previous_identity_namespace
-            .arena_as("legacy_entity_runs")
-            .expect("load previous identity runs");
-    for identity in previous_identity_runs
-        .iter_mut()
-        .flat_map(|run| &mut run.identities)
-    {
-        identity.lead = 0;
-    }
-    previous_identity_namespace
-        .set_arena("legacy_entity_runs", &previous_identity_runs)
-        .expect("store previous identity runs");
-    previous_identity_namespace.version = 215;
-    let migrated_identity = crate::native::CatiaNative::load(&previous_identity_namespace)
-        .expect("migrate legacy identity leads");
-    assert!(migrated_identity.legacy_entity_runs[0]
-        .identities
-        .iter()
-        .all(|identity| identity.lead == 0x81));
-
-    let mut previous_namespace = namespace.clone();
-    let mut previous_runs: Vec<crate::native::CatiaLegacyEntityRun> = previous_namespace
-        .arena_as("legacy_entity_runs")
-        .expect("load legacy entity runs");
-    previous_runs[0].role_selectors.clear();
-    previous_runs[0].schema_fields.clear();
-    for field in &mut previous_runs[0].text_fields {
-        if let Some(role) = &mut field.role {
-            role.entity_id = 0;
-        }
-    }
-    previous_namespace
-        .set_arena("legacy_entity_runs", &previous_runs)
-        .expect("store previous legacy entity runs");
-    previous_namespace.version = 211;
-    let migrated =
-        crate::native::CatiaNative::load(&previous_namespace).expect("migrate legacy text roles");
-    assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 5);
-    assert!(migrated.legacy_entity_runs[0]
-        .role_selectors
-        .iter()
-        .all(|role| role.entity_id != 0));
 
     let mut invalid_type_name = native.clone();
     invalid_type_name.legacy_entity_runs[0].type_descriptors[0].value =

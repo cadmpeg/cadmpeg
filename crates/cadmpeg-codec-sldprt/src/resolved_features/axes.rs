@@ -1051,10 +1051,10 @@ pub(crate) fn bind_profile_revolution_axes(
         let FeatureDefinition::Revolve { construction, .. } = &feature.definition else {
             continue;
         };
-        if construction.axis.is_some() {
+        if construction.axis().is_some() {
             continue;
         }
-        let Some(profile) = construction.profile.as_ref() else {
+        let Some(profile) = construction.profile() else {
             continue;
         };
         let (profile_native, sketch_id) = match profile {
@@ -1064,9 +1064,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 };
                 let profile_feature = &model_features[profile_index];
                 let FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: Some(sketch),
-                    ..
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 } = &profile_feature.definition
                 else {
                     continue;
@@ -1079,13 +1077,11 @@ pub(crate) fn bind_profile_revolution_axes(
             cadmpeg_ir::features::ProfileRef::Sketch(sketch_id) => {
                 let mut owners = model_features.iter().filter(|candidate| {
                     matches!(
-                        &candidate.definition,
-                        FeatureDefinition::Sketch {
-                            space: cadmpeg_ir::features::SketchSpace::Planar,
-                            sketch: Some(candidate),
-                            ..
-                        } if candidate == sketch_id
-                    )
+                    &candidate.definition,
+                    FeatureDefinition::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
+                    } if candidate == sketch_id
+                        )
                 });
                 let Some(owner) = owners.next() else {
                     continue;
@@ -1120,9 +1116,9 @@ pub(crate) fn bind_profile_revolution_axes(
             continue;
         };
         let generated_axis_surfaces = if matches!(
-            construction.extent.as_ref(),
+            construction.extent(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                termination: cadmpeg_ir::features::Termination::Angle { angle },
+                termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
             }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
         ) {
             surfaces
@@ -1152,7 +1148,7 @@ pub(crate) fn bind_profile_revolution_axes(
         });
         candidates.dedup();
         if let [axis] = candidates.as_slice() {
-            assignments.push((feature_index, *axis));
+            assignments.push((feature_index, axis.clone()));
         }
     }
 
@@ -1160,8 +1156,8 @@ pub(crate) fn bind_profile_revolution_axes(
         if let FeatureDefinition::Revolve { construction, .. } =
             &mut model_features[index].definition
         {
-            if construction.axis.is_none() {
-                construction.axis = Some(axis);
+            if construction.axis().is_none() {
+                construction.set_axis(Some(axis));
             }
         }
     }
@@ -1247,6 +1243,7 @@ pub(super) fn profile_roster_construction_axis(
         cadmpeg_ir::features::RevolutionAxis {
             origin: start,
             direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+            reference: None,
         },
     )
 }
@@ -1347,7 +1344,7 @@ pub(super) fn common_generated_surface_axis(
             SurfaceGeometry::Plane { .. }
             | SurfaceGeometry::Sphere { .. }
             | SurfaceGeometry::Nurbs(_)
-            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Polygonal(_)
             | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => None,
@@ -1405,7 +1402,11 @@ pub(super) fn common_generated_surface_axis(
         origin.y - origin_projection * direction.y,
         origin.z - origin_projection * direction.z,
     );
-    Some(cadmpeg_ir::features::RevolutionAxis { origin, direction })
+    Some(cadmpeg_ir::features::RevolutionAxis {
+        origin,
+        direction,
+        reference: None,
+    })
 }
 
 pub(super) fn profile_roster_origin_axis_endpoints(

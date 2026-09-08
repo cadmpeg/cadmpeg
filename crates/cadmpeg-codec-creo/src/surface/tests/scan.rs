@@ -19,9 +19,9 @@ fn scan_discovers_typed_surface_rows() {
 
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(scan.surfaces.rows[0].id, 7);
-    assert_eq!(scan.surfaces.rows[0].type_byte, 0x22);
+    assert_eq!(scan.surfaces.rows[0].kind.canonical_type_byte(), 0x22);
     assert_eq!(scan.surfaces.rows[1].id, 8);
-    assert_eq!(scan.surfaces.rows[1].type_byte, 0x24);
+    assert_eq!(scan.surfaces.rows[1].kind.canonical_type_byte(), 0x24);
 }
 
 #[test]
@@ -35,18 +35,18 @@ fn scan_preserves_linear_extrusion_type_variants() {
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(
         scan.surfaces.rows[0].kind,
-        crate::surface::SurfaceKind::Extrusion
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)
     );
-    assert_eq!(scan.surfaces.rows[0].type_byte, 0x2a);
+    assert_eq!(scan.surfaces.rows[0].kind.canonical_type_byte(), 0x2a);
     assert_eq!(
         scan.surfaces.rows[1].kind,
-        crate::surface::SurfaceKind::Extrusion
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder)
     );
-    assert_eq!(scan.surfaces.rows[1].type_byte, 0x2c);
+    assert_eq!(scan.surfaces.rows[1].kind.canonical_type_byte(), 0x2c);
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let rows = &result.ir().native.namespace("creo").unwrap().arenas["surface_rows"];
+    let rows = &result.ir().native.namespace("creo").unwrap().arenas()["surface_rows"];
     assert_eq!(rows[0].fields()["surface_variant"], "ruled_surface");
     assert_eq!(rows[1].fields()["surface_variant"], "tabulated_cylinder");
 }
@@ -89,7 +89,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()
         ["tabulated_cylinder_curve_replays"][0];
     assert_eq!(native.fields()["surface_id"], 7);
     assert_eq!(native.fields()["control_point_ids"][2], 34);
@@ -116,18 +116,18 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
     assert_eq!(scan.surfaces.parameters.len(), 2);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
     assert_eq!(scan.surfaces.parameters[0].body, vec![0x0f, 0xe4]);
-    assert_eq!(scan.surfaces.parameters[0].scalar_values, vec![0.0, 1.0]);
+    assert_eq!(scan.surfaces.parameters[0].scalar_values(), vec![0.0, 1.0]);
     assert_eq!(
         scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
     assert_eq!(scan.surfaces.parameters[1].surface_id, 8);
-    assert_eq!(scan.surfaces.parameters[1].scalar_values, vec![3.0]);
+    assert_eq!(scan.surfaces.parameters[1].scalar_values(), vec![3.0]);
     assert_eq!(
         scan.surfaces.parameters[1]
             .scalar_tokens
             .iter()
-            .map(|token| (token.offset, token.length))
+            .map(|token| (token.offset, token.raw.len()))
             .collect::<Vec<_>>(),
         [(0, 8)]
     );
@@ -149,7 +149,7 @@ fn scan_withholds_type24_carrier_when_eight_slot_forms_collide() {
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert!(scan.surfaces.parameters[0]
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .is_none());
 }
 
@@ -164,7 +164,7 @@ fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
-    assert_eq!(scan.surfaces.parameters[0].scalar_tokens[0].length, 8);
+    assert_eq!(scan.surfaces.parameters[0].scalar_tokens[0].raw.len(), 8);
     assert_eq!(
         scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
@@ -184,7 +184,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     let scan = container::scan_bytes(data.clone());
 
     let frame = scan.surfaces.parameters[0]
-        .torus_outline_frame(0x26)
+        .torus_outline_frame()
         .expect("typed torus outline frame");
     assert_eq!(
         frame.values,
@@ -192,14 +192,19 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     );
     assert_eq!(frame.selector, 80);
     assert_eq!(frame.offset, 0);
-    assert!(scan.surfaces.parameters[0]
-        .torus_outline_frame(0x24)
-        .is_none());
+    assert!(crate::surface::SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Cylinder
+        ),
+        ..scan.surfaces.parameters[0].clone()
+    }
+    .torus_outline_frame()
+    .is_none());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(native.fields()["torus_outline_frame"]["selector"], 80);
     assert_eq!(native.fields()["torus_outline_frame"]["values"][5], 52.5);
 }
@@ -233,24 +238,30 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         let scan = container::scan_bytes(data.clone());
 
         let overrides = scan.surfaces.parameters[0]
-            .torus_radius_overrides(0x26)
+            .torus_radius_overrides()
             .expect("tagged torus radius overrides");
         assert_eq!(overrides.radius1, 0.499_999_999_999_999_94);
         assert_eq!(overrides.radius2, expected_radius2);
         assert_eq!(overrides.radius2_encoding, expected_encoding);
         assert_eq!(overrides.offset, 0);
         assert_eq!(
-            scan.surfaces.parameters[0].scalar_values,
+            scan.surfaces.parameters[0].scalar_values(),
             [stored_radial_scalar, 0.499_999_999_999_999_94]
         );
-        assert!(scan.surfaces.parameters[0]
-            .torus_radius_overrides(0x24)
-            .is_none());
+        assert!(crate::surface::SurfaceParameterRecord {
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cylinder
+            ),
+            ..scan.surfaces.parameters[0].clone()
+        }
+        .torus_radius_overrides()
+        .is_none());
 
         let result = CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode");
-        let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+        let native =
+            &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
         assert_eq!(
             native.fields()["torus_radius_overrides"]["radius1"],
             0.499_999_999_999_999_94
@@ -269,7 +280,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(
             result
                 .report()
-                .coverage
+                .coverage()
                 .get("decoded_torus_radius_override_count")
                 .copied(),
             Some(1)
@@ -277,7 +288,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(
             result
                 .report()
-                .coverage
+                .coverage()
                 .get("decoded_torus_outline_extent_count")
                 .copied(),
             Some(0)
@@ -308,7 +319,7 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         [&[0xe3, 0x18, 0xe4][..], &half_angle[..]].concat()
     );
     assert_eq!(
-        scan.surfaces.parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values(),
         [0.0, 1.0, expected]
     );
     assert_eq!(
@@ -316,18 +327,23 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
     let override_value = scan.surfaces.parameters[0]
-        .cone_half_angle_override(0x25)
+        .cone_half_angle_override()
         .expect("terminal cone half-angle");
     assert_eq!(override_value.radians, expected);
     assert_eq!(override_value.offset, 3);
-    assert!(scan.surfaces.parameters[0]
-        .cone_half_angle_override(0x26)
-        .is_none());
+    assert!(crate::surface::SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::TorusOrSphere
+        ),
+        ..scan.surfaces.parameters[0].clone()
+    }
+    .cone_half_angle_override()
+    .is_none());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(
         native.fields()["cone_half_angle_override"]["radians"],
         expected
@@ -347,7 +363,7 @@ fn surface_parameter_body_ignores_compound_close_inside_scalar() {
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
     assert_eq!(
-        scan.surfaces.parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values(),
         [f64::from_be_bytes([0x40, 0x08, 0xe3, 0, 0, 0, 0, 0])]
     );
     assert_eq!(
@@ -387,7 +403,7 @@ fn surface_parameter_body_ignores_valid_looking_header_inside_scalar() {
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
     assert_eq!(
-        scan.surfaces.parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values(),
         [f64::from_be_bytes([0x3f, 0xe0, 0x01, b'x', 0, 0, 0, 0])]
     );
     assert_eq!(
@@ -428,9 +444,9 @@ fn scan_decodes_plane_local_system_support_frame() {
     let frame = &scan.planes.local_systems[0];
     assert_eq!(frame.surface_id, 7);
     assert_eq!(frame.slots.len(), 12);
-    assert_eq!(frame.origin, Some([3.0, 0.0, 1.0]));
-    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(frame.frame().origin, Some([3.0, 0.0, 1.0]));
+    assert_eq!(frame.frame().u_axis, Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.frame().normal, Some([0.0, 0.0, -1.0]));
     assert_eq!(
         frame.classification,
         crate::surface::LocalSystemClassification::Simple
@@ -450,7 +466,7 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
-    assert_eq!(scan.surfaces.parameters[0].scalar_values, vec![3.0]);
+    assert_eq!(scan.surfaces.parameters[0].scalar_values(), vec![3.0]);
 }
 
 #[test]
@@ -551,7 +567,10 @@ fn scan_keeps_depdb_cross_section_surfaces_out_of_model_namespace() {
     assert_eq!(scan.surfaces.rows[0].id, 7);
     assert_eq!(scan.surfaces.cross_section_rows.len(), 1);
     assert_eq!(scan.surfaces.cross_section_rows[0].id, 9);
-    assert_eq!(scan.surfaces.cross_section_rows[0].boundary_type, 0x06);
+    assert_eq!(
+        scan.surfaces.cross_section_rows[0].boundary_type.code(),
+        0x06
+    );
 }
 
 #[test]
@@ -581,7 +600,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
 
     assert_eq!(scan.surfaces.prototype_records.len(), 1);
     let prototype = &scan.surfaces.prototype_records[0];
-    assert_eq!(prototype.declared_family, "cylinder");
+    assert_eq!(prototype.family.name(), "cylinder");
     assert_eq!(
         prototype.family,
         crate::surface::SurfacePrototypeFamily::Cylinder
@@ -592,7 +611,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
             dimensions: 4,
             count: 3,
             values: vec![Some(1.0); 12],
-            tokens: Vec::new(),
+            tokens: None,
         })
     );
     assert_eq!(
@@ -609,12 +628,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     );
     assert_eq!(
         prototype.field("i_pnts").map(|field| &field.value),
-        Some(
-            &crate::surface::SurfaceNamedValue::ContiguousEntityReferences {
-                start_id: 128,
-                entity_ids: vec![128, 129, 130],
-            }
-        )
+        Some(&crate::surface::SurfaceNamedValue::ContiguousEntityReferences(vec![128, 129, 130]))
     );
     assert_eq!(
         prototype.field("id").map(|field| &field.value),
@@ -677,7 +691,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_prototypes"][0];
     assert_eq!(native.fields()["declared_family"], "cylinder");
     assert_eq!(native.fields()["family"], "cylinder");
     assert_eq!(native.fields()["parameters"][0]["name"], "local_sys");
@@ -878,9 +892,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
-            }, ..
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
         }])
     ));
 
@@ -911,9 +923,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
-            }, ..
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
         }])
     ));
     assert_eq!(
@@ -933,9 +943,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         result.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
-        }])
+        } if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
 }
 

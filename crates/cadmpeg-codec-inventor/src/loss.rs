@@ -27,8 +27,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InventorLossCode {
-    /// Container-only decode was requested; no entity transfer ran.
-    ContainerOnlyDecode,
     /// The active kernel carrier was not transferred into neutral geometry.
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
@@ -87,13 +85,18 @@ pub enum InventorLossCode {
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
     AssemblyPlacementNotTransferred,
+    /// The document was read with a grammar its own declarations do not select.
+    SourceDialectUnverified,
+    /// The active kernel carrier used an unverified Spatial ACIS grammar band.
+    KernelDialectUnverified,
+    /// The selected kernel carrier did not expose a parseable kernel header.
+    KernelCarrierUnparseable,
 }
 
 impl InventorLossCode {
     /// Every code, in declaration order.
     #[allow(dead_code)] // Catalog for crate tests and harness oracles.
     pub const ALL: &'static [InventorLossCode] = &[
-        Self::ContainerOnlyDecode,
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
@@ -123,13 +126,15 @@ impl InventorLossCode {
         Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
+        Self::SourceDialectUnverified,
+        Self::KernelDialectUnverified,
+        Self::KernelCarrierUnparseable,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Self::ContainerOnlyDecode => "container.only-decode",
             Self::GeometryKernelCarrierNotTransferred => "geometry.kernel-carrier-not-transferred",
             Self::GeometryProceduralSurfaceNotTransferred => {
                 "geometry.procedural-surface-not-transferred"
@@ -161,6 +166,9 @@ impl InventorLossCode {
             Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
+            Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
         }
     }
 
@@ -168,7 +176,6 @@ impl InventorLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::ContainerOnlyDecode => Severity::Info,
             Self::GeometryKernelCarrierNotTransferred => Severity::Blocking,
             _ => Severity::Warning,
         }
@@ -177,7 +184,6 @@ impl InventorLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
@@ -194,6 +200,7 @@ impl InventorLossCode {
             | Self::PropertySetStreamMalformed
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
+            Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::FeatureOperationGraphOpen
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
@@ -209,6 +216,9 @@ impl InventorLossCode {
                 LossTaxonomy::AssemblyComponentsExternal
             }
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
         }
     }
 
@@ -240,7 +250,6 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "container.only-decode",
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
                 "rse.segment-pair-untyped",
@@ -270,6 +279,9 @@ mod tests {
                 "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
+                "source.dialect-unverified",
+                "source.kernel-dialect-unverified",
+                "source.kernel-carrier-unparseable",
             ]
         );
     }

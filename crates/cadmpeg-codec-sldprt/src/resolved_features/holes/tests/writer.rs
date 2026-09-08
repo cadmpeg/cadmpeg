@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -19,21 +19,25 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         "Contents/Keywords",
         br#"<Keywords><Hole Name="Drill" Type="Hole" id="15"><Dimension Name="Diameter">0.25in</Dimension><Dimension Name="Depth">12mm</Dimension></Hole></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
             face: None,
             ref placements,
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(6.35)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(12.0),
             }),
             ..
-        } if placements.is_empty()
+        } if placements.is_none()
     ));
 
     {
@@ -45,15 +49,18 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             panic!("typed hole feature");
         };
         *diameter = Some(Length(8.0));
-        *extent = Some(Termination::Blind {
+        *extent = Some(LinearTermination::Blind {
             length: Length(16.0),
         });
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -64,7 +71,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleForm, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -77,30 +84,34 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         </Keywords>"#,
     ));
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: None,
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         }
     ));
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Unresolved {
-                form: Some(HoleForm::Counterbore),
-                counterbore_diameter: Some(Length(10.0)),
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::PartialCounterbore {
+                    diameter: Some(Length(10.0)),
+                    depth: None,
+                },
+                ..
             },
             diameter: Some(Length(6.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         }
     ));
@@ -108,17 +119,14 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Hole {
             ref placements,
-            kind: HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: Some(Length(11.0)),
-                counterbore_depth: Some(Length(3.0)),
-                countersink_diameter: Some(Length(9.0)),
-                countersink_angle: Some(_),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Unresolved(None),
+                ..
             },
             diameter: Some(Length(5.0)),
             extent: None,
             ..
-        } if placements.is_empty()
+        } if placements.is_none()
     ));
 
     for (index, message) in [
@@ -127,33 +135,42 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     ] {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(
-                &detached,
-                decoded.source_fidelity(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            &detached,
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains(message));
     }
     let mut detached = decoded.ir().clone();
     detached.model.features[2].native_ref = None;
-    let FeatureDefinition::Hole { kind, .. } = &mut detached.model.features[2].definition else {
+    let FeatureDefinition::Hole { construction, .. } = &mut detached.model.features[2].definition
+    else {
         panic!("partial hole");
     };
+    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        panic!("ordinary hole form");
+    };
     *kind = HoleKind::Simple;
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &detached,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("unresolved hole termination"));
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed hole {}", index + 1));
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -169,7 +186,9 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, HolePlacement, Termination};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, HolePlacement, LinearTermination,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -178,9 +197,10 @@ fn semantic_writer_round_trips_hole_placement() {
         "Contents/Keywords",
         br#"<Keywords><Hole Name="Placed" Type="Hole" id="28" Face="face:12" Position="1mm,2mm,3mm" Direction="0,0,-1" EndCondition="Blind"><Dimension Name="Diameter">6mm</Dimension><Dimension Name="Depth">10mm</Dimension></Hole></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let FeatureDefinition::Hole {
@@ -194,25 +214,30 @@ fn semantic_writer_round_trips_hole_placement() {
         };
         assert_eq!(face, &Some(FaceSelection::Native("face:12".into())));
         assert_eq!(
-            placements,
-            &[HolePlacement::Directed {
-                position: Point3::new(1.0, 2.0, 3.0),
-                direction: Vector3::new(0.0, 0.0, -1.0),
-            }]
+            placements.as_deref(),
+            Some(
+                &[HolePlacement::Directed {
+                    position: Point3::new(1.0, 2.0, 3.0),
+                    direction: Vector3::new(0.0, 0.0, -1.0),
+                }][..]
+            )
         );
 
         *face = Some(FaceSelection::Native("face:13".into()));
-        *placements = vec![HolePlacement::Directed {
+        *placements = Some(vec![HolePlacement::Directed {
             position: Point3::new(4.0, 5.0, 6.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
-        }];
-        *extent = Some(Termination::ThroughAll);
+        }]);
+        *extent = Some(LinearTermination::ThroughAll);
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -227,19 +252,19 @@ fn semantic_writer_round_trips_hole_placement() {
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(face)),
             placements,
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         } if face == "face:13"
-            && placements == &[HolePlacement::Directed {
+            && placements.as_deref() == Some(&[HolePlacement::Directed {
                 position: Point3::new(4.0, 5.0, 6.0),
                 direction: Vector3::new(0.0, 1.0, 0.0),
-            }]
+            }][..])
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, HoleKind, Length, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -250,17 +275,21 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             <Hole Name="Countersink" Type="Hole" id="52" EndCondition="ThroughAll"><Dimension Name="Diameter">5mm</Dimension><Dimension Name="CountersinkDiameter">9mm</Dimension><Dimension Name="CountersinkAngle">82deg</Dimension></Hole>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Counterbore {
-                diameter: Length(10.0),
-                depth: Length(4.0),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(10.0),
+                    depth: Length(4.0),
+                },
+                ..
             },
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(20.0),
             }),
             ..
@@ -269,43 +298,63 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Countersink {
-                diameter: Length(9.0),
-                angle: Angle(value),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Countersink {
+                    diameter: Length(9.0),
+                    angle: Angle(value),
+                },
+                ..
             },
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         } if (*value - 82f64.to_radians()).abs() < 1.0e-12
     ));
 
     {
         let mut ir = decoded.ir_mut();
-        let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[0].definition
+        let FeatureDefinition::Hole {
+            construction,
+            extent,
+            ..
+        } = &mut ir.model.features[0].definition
         else {
             panic!("counterbore hole");
+        };
+        let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+            panic!("ordinary hole form");
         };
         *kind = HoleKind::Counterbore {
             diameter: Length(12.0),
             depth: Length(5.0),
         };
-        *extent = Some(Termination::ThroughAll);
-        let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[1].definition
+        *extent = Some(LinearTermination::ThroughAll);
+        let FeatureDefinition::Hole {
+            construction,
+            extent,
+            ..
+        } = &mut ir.model.features[1].definition
         else {
             panic!("countersink hole");
+        };
+        let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+            panic!("ordinary hole form");
         };
         *kind = HoleKind::Countersink {
             diameter: Length(11.0),
             angle: Angle(90f64.to_radians()),
         };
-        *extent = Some(Termination::Blind {
+        *extent = Some(LinearTermination::Blind {
             length: Length(25.0),
         });
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

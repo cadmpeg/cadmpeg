@@ -8,25 +8,22 @@ use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::ids::BodyId;
-use cadmpeg_ir::report::DecodeReport;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
 fn configuration_partitions_require_explicit_source_identity() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
-        active: false.into(),
+        active: false,
         source_index,
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some(format!("native:{id}")),
@@ -40,9 +37,9 @@ fn configuration_partitions_require_explicit_source_identity() {
     ir.model
         .configurations
         .push(configuration("empty", 10, Some(8)));
-    let first = BodyId("body:first".into());
-    let second = BodyId("body:second".into());
-    let third = BodyId("body:third".into());
+    let first = BodyId::mint("test:model:entity#body:first").expect("identity grammar");
+    let second = BodyId::mint("test:model:entity#body:second").expect("identity grammar");
+    let third = BodyId::mint("test:model:entity#body:third").expect("identity grammar");
 
     assign_configuration_bodies(
         &mut ir,
@@ -66,25 +63,25 @@ fn configuration_partitions_require_explicit_source_identity() {
 
 #[test]
 fn duplicate_configuration_source_identity_does_not_select_a_partition() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId(format!("configuration:{ordinal}")),
+            id: ConfigurationId::mint(format!("configuration:{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
-            active: false.into(),
+            active: false,
             source_index: Some(5),
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{ordinal}")),
         });
     }
-    let body = BodyId("body:partition".into());
+    let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
     assign_configuration_bodies(&mut ir, &[(5, vec![body.clone()])]);
 
@@ -97,37 +94,31 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
 
 #[test]
 fn inferred_partition_does_not_fabricate_active_configuration_identity() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        attributes: BTreeMap::from([
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+        )),
+        BTreeMap::from([
             (
                 "active_parasolid_block".into(),
                 "Contents/Config-3-Partition".into(),
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        ..Default::default()
-    });
-    let body = BodyId("body:active".into());
+    ));
+    let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
     assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]);
     mark_active_configuration(&mut ir);
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
-    assert!(configuration.active.is_inactive());
+    assert!(!configuration.active);
     assert_eq!(configuration.source_index, Some(3));
     assert_eq!(configuration.bodies, vec![body]);
 
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
     append_design_losses(&ir, &mut report);
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -137,28 +128,29 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 
 #[test]
 fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        attributes: BTreeMap::from([
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+        )),
+        BTreeMap::from([
             (
                 "active_parasolid_block".into(),
                 "Contents/Config-3-Partition".into(),
             ),
             ("sw_configuration_name".into(), "Default".into()),
         ]),
-        ..Default::default()
-    });
+    ));
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
-        active: false.into(),
+        active: false,
         source_index: None,
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some("native:configuration".into()),
@@ -170,17 +162,9 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
     assert!(configuration.bodies.is_unresolved());
-    assert!(configuration.active.is_active());
+    assert!(configuration.active);
 
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: false,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(false);
     append_design_losses(&ir, &mut report);
     assert!(!report.losses.iter().any(|loss| {
         loss.message
@@ -190,33 +174,24 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
 
 #[test]
 fn duplicate_configuration_partition_identities_are_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId(id.into()),
+            id: ConfigurationId::mint(id).expect("identity grammar"),
             ordinal: ir.model.configurations.len() as u32,
-            active: false.into(),
+            active: false,
             source_index: Some(5),
             name: id.into(),
             material: None,
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -227,36 +202,28 @@ fn duplicate_configuration_partition_identities_are_reported() {
 
 #[test]
 fn incomplete_configuration_names_are_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (position, (ordinal, name)) in [(0, ""), (1, "Shared"), (2, "Shared"), (2, "Unique")]
         .into_iter()
         .enumerate()
     {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId(format!("configuration:{position}")),
+            id: ConfigurationId::mint(format!("configuration:{position}"))
+                .expect("identity grammar"),
             ordinal,
-            active: (position == 1).into(),
+            active: position == 1,
             source_index: Some(position as u32),
             name: name.into(),
             material: None,
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{position}")),
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -268,38 +235,31 @@ fn incomplete_configuration_names_are_reported() {
 
 #[test]
 fn active_configuration_partition_disagreement_is_reported() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta {
-        format: "sldprt".into(),
-        attributes: BTreeMap::from([(
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+        )),
+        BTreeMap::from([(
             "active_parasolid_block".into(),
             "Contents/Config-3-Partition".into(),
         )]),
-    });
+    ));
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(5),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some("native:configuration".into()),
     });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -314,16 +274,15 @@ fn incoherent_configuration_bodies_are_reported() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
-        active: (ordinal == 0).into(),
+        active: ordinal == 0,
         source_index: Some(ordinal),
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
         bodies,
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some(format!("native:{id}")),
@@ -337,19 +296,14 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration(
             "missing",
             1,
-            cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId("missing-body".into())]),
+            cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId::mint(
+                "test:model:entity#missing-body",
+            )
+            .expect("identity grammar")]),
         ),
         configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
     ];
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -360,8 +314,8 @@ fn incoherent_configuration_bodies_are_reported() {
 
 #[test]
 fn configuration_values_complete_parameters_without_baseline_values() {
-    let mut ir = CadIr::empty(Units::default());
-    let parameter = ParameterId("configured-parameter".into());
+    let mut ir = CadIr::empty();
+    let parameter = ParameterId::mint("configured-parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: parameter.clone(),
         owner: None,
@@ -376,29 +330,20 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::from([(parameter, ParameterValue::Length(Length(12.0)))]),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some("native:configuration".into()),
     });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -411,8 +356,8 @@ fn configuration_values_complete_parameters_without_baseline_values() {
 
 #[test]
 fn configuration_suppression_and_override_references_are_coherent() {
-    let mut ir = CadIr::empty(Units::default());
-    let feature = FeatureId("feature".into());
+    let mut ir = CadIr::empty();
+    let feature = FeatureId::mint("feature").expect("identity grammar");
     let definition = FeatureDefinition::TreeNode {
         role: FeatureTreeNodeRole::History,
         children: Vec::new(),
@@ -423,7 +368,6 @@ fn configuration_suppression_and_override_references_are_coherent() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -434,37 +378,30 @@ fn configuration_suppression_and_override_references_are_coherent() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
-        parameter_overrides: BTreeMap::from([(ParameterId("missing".into()), "1mm".into())]),
+        parameter_overrides: BTreeMap::from([(
+            ParameterId::mint("missing").expect("identity grammar"),
+            "1mm".into(),
+        )]),
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {
-                suppressed: true,
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
                 dependencies: Vec::new(),
-                outputs: Vec::new(),
                 definition,
             },
         )]),
         native_ref: Some("native:configuration".into()),
     });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 

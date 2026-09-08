@@ -1,31 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::math::Point3;
 
 use super::*;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];
     edge.param_range = Some([2.0, 5.0]);
-    ir.model.curves[1].geometry =
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            control_points: vec![
+    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            2,
+            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+            vec![
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(1.25, 0.5, 0.0),
                 Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: Some(vec![1.0, 0.75, 1.0]),
-            periodic: false,
-        });
+            Some(vec![1.0, 0.75, 1.0]),
+            false,
+        )
+        .expect("valid shared edge"),
+    );
     let expected = ir.model.curves[1].geometry.clone();
     for version in [
         RhinoArchiveVersion::V5,
@@ -34,11 +39,11 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -89,20 +94,24 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     let mut ir = adjacent_quad_sheet();
     ir.model.edges[1].param_range = Some([2.0, 5.0]);
-    ir.model.curves[1].geometry =
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            control_points: vec![
+    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            2,
+            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+            vec![
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(1.25, 0.5, 0.0),
                 Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: Some(vec![1.0, 0.75, 1.0]),
-            periodic: false,
-        });
+            Some(vec![1.0, 0.75, 1.0]),
+            false,
+        )
+        .expect("valid explicit edge"),
+    );
     for (coedge, reversed) in [(1_usize, false), (7, true)] {
-        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}").into();
+        let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}")
+            .try_into()
+            .expect("valid identity");
         let mut control_points = vec![
             cadmpeg_ir::math::Point2::new(1.0, 0.0),
             cadmpeg_ir::math::Point2::new(1.25, 0.5),
@@ -114,16 +123,20 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                degree: 2,
-                knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-                control_points,
-                weights: Some(vec![1.0, 0.75, 1.0]),
-                periodic: false,
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    2,
+                    vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                    control_points,
+                    Some(vec![1.0, 0.75, 1.0]),
+                    false,
+                )
+                .expect("valid explicit pcurve"),
             },
-            wrapper_reversed: Some(false),
-            native_tail_flags: None,
-            parameter_range: Some([2.0, 5.0]),
-            fit_tolerance: Some(0.001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                Some(false),
+                Some([2.0, 5.0]),
+                Some(0.001),
+            ),
         });
         ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -138,11 +151,11 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -153,12 +166,12 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
             .model
             .pcurves
             .iter()
-            .filter(|pcurve| pcurve.fit_tolerance == Some(0.001))
+            .filter(|pcurve| pcurve.fit_tolerance() == Some(0.001))
             .collect::<Vec<_>>();
         assert_eq!(explicit.len(), 2, "{version:?}");
         assert!(explicit.iter().all(|pcurve| {
-            pcurve.wrapper_reversed == Some(false)
-                && pcurve.parameter_range == Some([2.0, 5.0])
+            pcurve.wrapper_reversed() == Some(false)
+                && pcurve.parameter_range() == Some([2.0, 5.0])
                 && matches!(
                     pcurve.geometry,
                     cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
@@ -175,17 +188,20 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch".into();
+    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch"
+        .try_into()
+        .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
         id: id.clone(),
         geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
             origin: cadmpeg_ir::math::Point2::new(0.0, 1.0),
             direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: ir.model.edges[0].param_range,
-        fit_tolerance: None,
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            None,
+            ir.model.edges[0].param_range,
+            None,
+        ),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -193,11 +209,11 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         parameter_range: None,
     }];
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("does not exactly match"));
@@ -211,8 +227,12 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let first: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#first".into();
-    let second: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#second".into();
+    let first: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#first"
+        .try_into()
+        .expect("valid identity");
+    let second: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#second"
+        .try_into()
+        .expect("valid identity");
     for (id, origin) in [
         (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
         (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
@@ -223,10 +243,7 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
                 origin,
                 direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, 2.0]),
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 2.0]), None),
         });
     }
     ir.model.coedges[0].pcurves = vec![
@@ -243,11 +260,11 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
     ];
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -261,17 +278,20 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line".into();
+    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line"
+        .try_into()
+        .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
         id: id.clone(),
         geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
             origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
             direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: Some([0.0, 2.0]),
-        fit_tolerance: Some(0.002),
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            None,
+            Some([0.0, 2.0]),
+            Some(0.002),
+        ),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -285,11 +305,11 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -300,13 +320,13 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             .model
             .pcurves
             .iter()
-            .find(|pcurve| pcurve.fit_tolerance == Some(0.002))
+            .find(|pcurve| pcurve.fit_tolerance() == Some(0.002))
             .expect("explicit line C2");
-        assert_eq!(pcurve.parameter_range, Some([0.0, 2.0]));
-        assert!(matches!(
-            pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 1, .. }
-        ));
+        assert_eq!(pcurve.parameter_range(), Some([0.0, 2.0]));
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+            panic!("line C2 must decode as NURBS");
+        };
+        assert_eq!(nurbs.degree(), 1);
     }
 }
 
@@ -327,11 +347,11 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -361,7 +381,7 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
             .model
             .pcurves
             .iter()
-            .all(|pcurve| pcurve.fit_tolerance == Some(0.001)));
+            .all(|pcurve| pcurve.fit_tolerance() == Some(0.001)));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }
@@ -377,11 +397,11 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -420,7 +440,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
                 .model
                 .pcurves
                 .iter()
-                .filter(|pcurve| pcurve.fit_tolerance == Some(0.001))
+                .filter(|pcurve| pcurve.fit_tolerance() == Some(0.001))
                 .count(),
             4,
             "{version:?}"
@@ -431,7 +451,8 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
             .pcurves
             .iter()
             .find(|pcurve| {
-                pcurve.parameter_range == Some([30.0, 32.0]) && pcurve.fit_tolerance != Some(0.001)
+                pcurve.parameter_range() == Some([30.0, 32.0])
+                    && pcurve.fit_tolerance() != Some(0.001)
             })
             .expect("generated planar shared-edge pcurve");
         assert!(matches!(
@@ -465,27 +486,32 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         Point3::new(2.0, 0.25, 0.0),
         Point3::new(3.5, 0.75, 0.0),
     ];
-    ir.model.curves[0].geometry =
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![
+    ir.model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            2,
+            vec![
                 domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
             ],
-            control_points: poles.to_vec(),
-            weights: Some(vec![1.0, 0.8, 1.0]),
-            periodic: false,
-        });
+            poles.to_vec(),
+            Some(vec![1.0, 0.8, 1.0]),
+            false,
+        )
+        .expect("valid trimmed edge"),
+    );
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![
-            domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
-        ],
-        control_points: poles
-            .iter()
-            .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
-            .collect(),
-        weights: Some(vec![1.0, 0.8, 1.0]),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![
+                domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
+            ],
+            poles
+                .iter()
+                .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+                .collect(),
+            Some(vec![1.0, 0.8, 1.0]),
+            false,
+        )
+        .expect("valid trimmed pcurve"),
     };
     let expected_surface = ir.model.surfaces[0].geometry.clone();
     let expected_curve = ir.model.curves[0].geometry.clone();
@@ -496,11 +522,11 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -515,7 +541,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
             .model
             .pcurves
             .iter()
-            .all(|pcurve| pcurve.fit_tolerance == Some(0.0001)));
+            .all(|pcurve| pcurve.fit_tolerance() == Some(0.0001)));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }
@@ -535,11 +561,11 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
     };
     direction.v += 0.25;
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("misses directed edge curve"));
@@ -554,11 +580,11 @@ fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
         coedge.pcurves.clear();
     }
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("explicit pcurve"));

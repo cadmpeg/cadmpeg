@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::UseFlag;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
@@ -17,11 +19,32 @@ use super::presentation_use_flag_valid;
 #[test]
 fn presentation_copious_forms_require_the_annotation_use_flag() {
     for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
-        assert!(presentation_use_flag_valid(form, 1), "{form}");
-        assert!(!presentation_use_flag_valid(form, 0), "{form}");
-        assert!(!presentation_use_flag_valid(form, 2), "{form}");
+        assert!(
+            presentation_use_flag_valid(
+                form,
+                UseFlag::parse(1, crate::global::GlobalTable::V5Later)
+            ),
+            "{form}"
+        );
+        assert!(
+            !presentation_use_flag_valid(
+                form,
+                UseFlag::parse(0, crate::global::GlobalTable::V5Later)
+            ),
+            "{form}"
+        );
+        assert!(
+            !presentation_use_flag_valid(
+                form,
+                UseFlag::parse(2, crate::global::GlobalTable::V5Later)
+            ),
+            "{form}"
+        );
     }
-    assert!(presentation_use_flag_valid(11, 0));
+    assert!(presentation_use_flag_valid(
+        11,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later)
+    ));
 }
 
 #[test]
@@ -35,7 +58,7 @@ fn decode_refuses_a_copious_tuple_count_over_its_projection_limit() {
 
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Codec("iges_copious_tuples")
                 && limit.limit == 1_000_000
                 && limit.used == 1_000_000
@@ -93,10 +116,10 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
     else {
         panic!("expected a degree-one path carrier");
     };
-    assert_eq!(path.degree, 1);
-    assert_eq!(path.knots, vec![0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(path.degree(), 1);
+    assert_eq!(path.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, &path.knots, &path.control_points, None, 1.5),
+        cadmpeg_ir::eval::nurbs_curve_point(1, path.knots(), path.control_points(), None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
@@ -190,7 +213,7 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
     else {
         panic!("expected a degree-one path carrier");
     };
-    assert_eq!(path.control_points[0], path.control_points[1]);
+    assert_eq!(path.control_points()[0], path.control_points()[1]);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -213,10 +236,10 @@ fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
     else {
         panic!("expected a degree-one path carrier");
     };
-    assert_eq!(path.control_points.len(), 4);
-    assert!(path.control_points[1].x > path.control_points[0].x);
-    assert!(path.control_points[1].y > path.control_points[0].y);
-    assert!(path.control_points[3].x > path.control_points[0].x);
+    assert_eq!(path.control_points().len(), 4);
+    assert!(path.control_points()[1].x > path.control_points()[0].x);
+    assert!(path.control_points()[1].y > path.control_points()[0].y);
+    assert!(path.control_points()[3].x > path.control_points()[0].x);
     assert!(result.report().losses.is_empty());
 }
 
@@ -314,14 +337,14 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         })
         .expect("copious-data projection loss");
     let provenance = loss.provenance.as_ref().expect("Directory provenance");
-    assert_eq!(provenance.format, "iges");
-    assert_eq!(provenance.stream, "iges");
+    assert_eq!(provenance.format(), "iges");
+    assert_eq!(provenance.stream(), Some("iges"));
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(bytes[provenance.offset as usize + 72], b'D');
     let transfer = &result.report().transfer_ledger.entries[0];
     assert_eq!(transfer.source, "D1");
     assert_eq!(
-        transfer.note.as_deref(),
+        transfer.note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }
@@ -379,10 +402,10 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
         .any(|loss| loss.message.contains("tuple array is truncated")));
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let copious = &native.arenas["copious_data"][0];
+    let copious = &native.arenas()["copious_data"][0];
     assert_eq!(copious.fields()["declared_tuple_count"], 2);
     assert_eq!(copious.fields()["tuples"].as_array().unwrap().len(), 2);
-    let entity = native.arenas["entities"]
+    let entity = native.arenas()["entities"]
         .iter()
         .find(|record| record.fields()["directory_sequence"] == 1)
         .expect("copious entity");
@@ -422,9 +445,9 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
     assert_eq!(points.ir().model.points.len(), 2);
     assert_eq!(points.ir().model.vertices.len(), 2);
     let native = points.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["copious_data"].len(), 1);
+    assert_eq!(native.arenas()["copious_data"].len(), 1);
     assert_eq!(
-        native.arenas["copious_data"][0].fields()["tuples"][0][5],
+        native.arenas()["copious_data"][0].fields()["tuples"][0][5],
         1.0
     );
     assert!(points.report().losses.is_empty());
@@ -435,7 +458,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(!witness.report().geometry_transferred);
+    assert!(!witness.report().geometry_transferred());
     assert!(witness.ir().model.curves.is_empty());
     assert!(witness
         .report()
@@ -443,7 +466,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
     assert_eq!(
-        witness.report().transfer_ledger.entries[0].note.as_deref(),
+        witness.report().transfer_ledger.entries[0].note(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
     let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new());

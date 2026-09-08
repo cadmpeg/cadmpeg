@@ -14,7 +14,7 @@ mod surface;
 
 use crate::records::Feature;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureTreeNodeRole, UnresolvedFamily};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Native XML kind plus parameter and property maps for a written feature.
@@ -56,11 +56,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::SketchBlockInstance { block, placement } => {
                 self.encode_sketch_block_instance(block, placement)
             }
-            FeatureDefinition::Native {
-                kind,
-                parameters,
-                properties,
-            } => Ok(self.encode_native(kind, parameters, properties)),
+            FeatureDefinition::Native { kind, parameters } => {
+                Ok(self.encode_native(kind, parameters))
+            }
             FeatureDefinition::StoredGeometry => Ok(self.encode_stored_geometry()),
             FeatureDefinition::DerivedGeometry { .. } => self.encode_derived_geometry(),
             FeatureDefinition::ImportedGeometry { .. } => self.encode_imported_geometry(),
@@ -68,10 +66,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::DatumPrincipalPlane { plane } => {
                 self.encode_datum_principal_plane(plane)
             }
-            FeatureDefinition::DatumPlaneUnresolved => self.encode_datum_plane_unresolved(),
-            FeatureDefinition::BoundarySurfaceUnresolved => {
-                self.encode_boundary_surface_unresolved()
-            }
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            } => self.encode_datum_plane_unresolved(),
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::BoundarySurface,
+            } => self.encode_boundary_surface_unresolved(),
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -82,11 +82,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 distance,
             } => self.encode_datum_offset_plane(reference, distance),
             FeatureDefinition::TrimSurface {
-                faces,
-                tool,
-                keep,
-                cell_selection,
-            } => self.encode_trim_surface(faces, tool, keep, cell_selection),
+                faces, tool, keep, ..
+            } => self.encode_trim_surface(faces, tool, keep),
             FeatureDefinition::ExtendSurface {
                 faces,
                 distance,
@@ -140,24 +137,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 axis_origin,
                 axis_direction,
                 radius,
-                pitch,
+                shape,
                 revolutions,
                 start_angle,
                 clockwise,
-                radial_growth,
-                cone_angle,
                 segment_turns,
                 construction_style,
             } => self.encode_helix(
                 axis_origin,
                 axis_direction,
                 radius,
-                pitch,
+                shape,
                 revolutions,
                 start_angle,
                 clockwise,
-                radial_growth,
-                cone_angle,
                 segment_turns,
                 construction_style,
             ),
@@ -180,8 +173,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 profile,
                 face,
                 mode,
-                depth,
-            } => self.encode_wrap(profile, face, mode, depth),
+            } => self.encode_wrap(profile, face, mode),
             FeatureDefinition::Sketch { .. } => self.encode_sketch(),
             FeatureDefinition::SpatialSketch { .. } => self.encode_spatial_sketch(),
             FeatureDefinition::Extrude {
@@ -190,7 +182,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 start,
                 extent,
                 op,
-                direction_source,
                 solid,
                 face_maker,
                 inner_wire_taper,
@@ -202,7 +193,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 start,
                 extent,
                 op,
-                direction_source,
                 solid,
                 face_maker,
                 inner_wire_taper,
@@ -268,32 +258,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 boundary,
                 support_faces,
                 continuity,
-                boundary_continuities,
                 merge_result,
-            } => self.encode_filled_surface(
-                boundary,
-                support_faces,
-                continuity,
-                boundary_continuities,
-                merge_result,
-            ),
+            } => self.encode_filled_surface(boundary, support_faces, continuity, merge_result),
             FeatureDefinition::Draft {
                 faces: face_selection,
-                neutral_plane: plane_selection,
-                parting_tool,
-                pull_plane,
-                pull_direction,
+                anchor,
                 angle,
                 outward,
-            } => self.encode_draft(
-                face_selection,
-                plane_selection,
-                parting_tool,
-                pull_plane,
-                pull_direction,
-                angle,
-                outward,
-            ),
+            } => self.encode_draft(face_selection, anchor, angle, outward),
             FeatureDefinition::Combine {
                 target,
                 tools,
@@ -334,31 +306,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 profile,
                 profile_filter,
                 face,
-                position,
-                direction,
+                direction: _,
                 placements,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 extent,
                 bottom,
                 taper_angle,
-                specification,
                 allow_multi_profile_faces,
             } => self.encode_hole(
                 profile,
                 profile_filter,
                 face,
-                position,
-                direction,
                 placements,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 extent,
                 bottom,
                 taper_angle,
-                specification,
                 allow_multi_profile_faces,
             ),
             FeatureDefinition::Revolve { construction, op } => {
@@ -399,8 +366,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             ),
             FeatureDefinition::Loft {
                 sections,
-                guides,
-                centerline,
+                guidance,
                 op,
                 closed,
                 solid,
@@ -410,8 +376,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 allow_multi_profile_faces,
             } => self.encode_loft(
                 sections,
-                guides,
-                centerline,
+                guidance,
                 op,
                 closed,
                 solid,
@@ -424,13 +389,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::Pattern { seeds, pattern } => self.encode_pattern(seeds, pattern),
             FeatureDefinition::HelicalSweep { .. } => self.encode_helical_sweep(),
             FeatureDefinition::Binder { .. } => self.encode_binder(),
-            FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            FeatureDefinition::Unresolved {
+                family:
+                    UnresolvedFamily::DatumPoint
+                    | UnresolvedFamily::DatumCoordinateSystem
+                    | UnresolvedFamily::Loft
+                    | UnresolvedFamily::FreeformSurface
+                    | UnresolvedFamily::Draft,
+            }
             | FeatureDefinition::Block { .. }
             | FeatureDefinition::ExtractBody { .. }
-            | FeatureDefinition::LoftUnresolved
-            | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved
             | FeatureDefinition::FaceBlend { .. }
             | FeatureDefinition::SewBodies { .. }
             | FeatureDefinition::TrimBodies { .. } => self.encode_explicitly_unsupported(),

@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino 3DM container scanning and summary construction.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::DecodeReport;
-use cadmpeg_ir::units::Units;
+use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
     checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
@@ -17,7 +21,7 @@ use crate::chunks::{
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
 use crate::objects::{
-    degraded_object_record, parse_object_record, resolve_identities, ObjectDescriptor,
+    degraded_object_record, parse_object_record, resolve_identities, ObjectRecord,
 };
 use crate::wire::Uuid;
 /// Maximum direct table records retained or described in one document.
@@ -95,12 +99,60 @@ pub(crate) struct Record {
     pub(crate) typecode: u32,
     /// Complete chunk range, including header and checksum.
     pub(crate) range: std::ops::Range<usize>,
-    /// Payload/body range, excluding chunk header and checksum.
-    pub(crate) body: std::ops::Range<usize>,
-    /// Whether the record is a short chunk.
-    pub(crate) short: bool,
-    /// Inline value for a short chunk, or zero for a long chunk.
-    pub(crate) value: i64,
+    form: RecordBody,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecordBody {
+    Short(i64),
+    Long(std::ops::Range<usize>),
+}
+
+impl Record {
+    pub(crate) fn short(typecode: u32, range: std::ops::Range<usize>, value: i64) -> Self {
+        Self {
+            typecode,
+            range,
+            form: RecordBody::Short(value),
+        }
+    }
+
+    pub(crate) fn long(
+        typecode: u32,
+        range: std::ops::Range<usize>,
+        body: std::ops::Range<usize>,
+    ) -> Self {
+        Self {
+            typecode,
+            range,
+            form: RecordBody::Long(body),
+        }
+    }
+
+    fn from_chunk(chunk: &crate::chunks::Chunk) -> Self {
+        match chunk.short_value() {
+            Some(value) => Self::short(chunk.typecode, chunk.range(), value),
+            None => Self::long(chunk.typecode, chunk.range(), chunk.body()),
+        }
+    }
+
+    pub(crate) fn body(&self) -> std::ops::Range<usize> {
+        match &self.form {
+            RecordBody::Short(_) => self.range.end..self.range.end,
+            RecordBody::Long(body) => body.clone(),
+        }
+    }
+
+    pub(crate) fn is_short(&self) -> bool {
+        matches!(self.form, RecordBody::Short(_))
+    }
+
+    pub(crate) fn short_value(&self) -> Option<i64> {
+        match self.form {
+            RecordBody::Short(value) => Some(value),
+            RecordBody::Long(_) => None,
+        }
+    }
 }
 
 /// A complete direct table record whose payload has no typed owner.
@@ -110,6 +162,15 @@ pub(crate) struct OpaqueRecord {
     pub(crate) table_typecode: u32,
     /// Complete record descriptor.
     pub(crate) record: Record,
+}
+
+/// Losses and opaque records from one native-arena install pass.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NativeInstall {
+    /// Losses from records that could not be transferred.
+    pub(crate) losses: Vec<LossNote>,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
 /// A table descriptor with explicit source ranges.
@@ -143,7 +204,7 @@ pub(crate) struct Scan<'a> {
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
-    pub(crate) objects: Vec<ObjectDescriptor>,
+    pub(crate) objects: Vec<ObjectRecord>,
     /// Direct table records retained as opaque source data.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
     /// Parsed instance definitions and recoverable definition diagnostics.
@@ -215,7 +276,7 @@ fn checksum_warning(
         let Ok(children) = list_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if matches!(
         typecode,
@@ -224,48 +285,48 @@ fn checksum_warning(
         let Ok(children) = mesh_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
         let Ok(children) = render_settings_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let Ok(children) = settings_attributes_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
         let Ok(children) = plugin_list_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let Ok(children) = checksum_children_through_class_end(
             data,
-            chunk.body.clone(),
+            chunk.body().clone(),
             archive,
             "render-settings userdata",
         ) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
         let Ok(children) = compressed_preview_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let Ok(children) = user_table_uuid_checksum_children(data, &chunk, archive) else {
             return Ok(None);
         };
-        let direct = direct_checksum_ranges(&chunk.body, &children).map_err(framing_error)?;
+        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else {
         verify_checksum(data, &chunk)
@@ -290,7 +351,7 @@ fn mesh_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     Ok(mesh_subd_checksum_child(data, &mut reader, archive)?
         .into_iter()
         .collect())
@@ -344,10 +405,10 @@ fn render_settings_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    if View::u32_le_at(data, chunk.body.start) != Some(TCODE_ANONYMOUS) {
+    if View::u32_le_at(data, chunk.body().start) != Some(TCODE_ANONYMOUS) {
         return Ok(Vec::new());
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     Ok(vec![take_anonymous_checksum_child(
         data,
         &mut reader,
@@ -362,7 +423,7 @@ fn settings_attributes_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let packed_version = reader.u8()?;
     if packed_version >> 4 != 1 {
         return Ok(Vec::new());
@@ -430,7 +491,7 @@ fn compressed_preview_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     reader.i32()?;
     reader.i32()?;
     reader.i32()?;
@@ -554,13 +615,13 @@ fn take_anonymous_checksum_child(
 ) -> Result<std::ops::Range<usize>, FramingError> {
     let start = reader.position();
     let child = chunk_at(data, start, reader.end(), archive, false)?;
-    if child.typecode != TCODE_ANONYMOUS || child.short {
+    if child.typecode != TCODE_ANONYMOUS || child.short() {
         return Err(FramingError::structural(
             start,
             format!("{label} must be an anonymous long chunk"),
         ));
     }
-    reader.skip(child.next_offset - start)?;
+    reader.skip(child.next_offset() - start)?;
     Ok(child.range())
 }
 
@@ -570,7 +631,7 @@ fn user_table_uuid_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     reader.skip(16)?;
     if reader.position() == reader.end() {
         return Ok(Vec::new());
@@ -578,10 +639,10 @@ fn user_table_uuid_checksum_children(
 
     let start = reader.position();
     let child = chunk_at(data, start, reader.end(), archive, false)?;
-    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short {
+    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short() {
         return Ok(Vec::new());
     }
-    reader.skip(child.next_offset - start)?;
+    reader.skip(child.next_offset() - start)?;
     Ok(vec![child.range()])
 }
 
@@ -595,35 +656,29 @@ fn list_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let count = View::i32_le_at(data, chunk.body.start).ok_or(FramingError::Truncated {
-        offset: chunk.body.start,
+    let count = View::i32_le_at(data, chunk.body().start).ok_or(FramingError::Truncated {
+        offset: chunk.body().start,
         needed: 4,
     })?;
     let child_count = usize::try_from(count).unwrap_or(0);
     let mut offset = chunk
-        .body
+        .body()
         .start
         .checked_add(4)
         .ok_or(FramingError::Overflow {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
         })?;
-    if offset > chunk.body.end {
+    if offset > chunk.body().end {
         return Err(FramingError::Truncated {
-            offset: chunk.body.end,
-            needed: offset - chunk.body.end,
+            offset: chunk.body().end,
+            needed: offset - chunk.body().end,
         });
     }
     let mut children = Vec::new();
     for _ in 0..child_count {
-        let child = chunk_at(data, offset, chunk.body.end, archive, false)?;
-        if child.next_offset <= offset {
-            return Err(FramingError::structural(
-                offset,
-                "view-list child did not advance",
-            ));
-        }
+        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
         children.push(child.range());
-        offset = child.next_offset;
+        offset = child.next_offset();
     }
     Ok(children)
 }
@@ -638,7 +693,7 @@ fn plugin_list_checksum_children(
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let packed_version = reader.u8()?;
     if packed_version >> 4 != 1 {
         return Ok(Vec::new());
@@ -655,38 +710,16 @@ fn plugin_list_checksum_children(
     for _ in 0..child_count {
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.typecode != TCODE_ANONYMOUS || child.short {
+        if child.typecode != TCODE_ANONYMOUS || child.short() {
             return Err(FramingError::structural(
                 start,
                 "plugin-list child must be an anonymous long chunk",
             ));
         }
-        if child.next_offset <= start {
-            return Err(FramingError::structural(
-                start,
-                "plugin-list child did not advance",
-            ));
-        }
         children.push(child.range());
-        reader.skip(child.next_offset - start)?;
+        reader.skip(child.next_offset() - start)?;
     }
     Ok(children)
-}
-
-fn parse_record(
-    data: &[u8],
-    offset: usize,
-    end: usize,
-    archive: ArchiveVersion,
-) -> Result<Record, CodecError> {
-    let chunk = chunk_at(data, offset, end, archive, false).map_err(framing_error)?;
-    Ok(Record {
-        typecode: chunk.typecode,
-        range: offset..chunk.next_offset,
-        body: chunk.body,
-        short: chunk.short,
-        value: chunk.value,
-    })
 }
 
 fn table_rank(typecode: u32) -> Option<u8> {
@@ -822,8 +855,10 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
-    let comment = parse_record(data, comment_offset, data.len(), archive)?;
-    if comment.typecode != TCODE_COMMENT || comment.short {
+    let comment = Record::from_chunk(
+        &chunk_at(data, comment_offset, data.len(), archive, false).map_err(framing_error)?,
+    );
+    if comment.typecode != TCODE_COMMENT || comment.is_short() {
         return Err(CodecError::Malformed(
             "first post-header chunk is not a long comment".to_string(),
         ));
@@ -857,7 +892,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             parse_eof(data, offset, archive).map_err(framing_error)?;
             let mut metadata =
                 crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
-            resolve_identities(&mut all_objects, &metadata, &mut warnings);
+            let all_objects = resolve_identities(all_objects, &metadata, &mut warnings);
             opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
             return Ok(Scan {
                 data,
@@ -882,7 +917,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             TCODE_OBJECTS => saw_objects = true,
             _ => {}
         }
-        if chunk.short {
+        if chunk.short() {
             return Err(CodecError::Malformed(
                 "table chunks must use long framing".to_string(),
             ));
@@ -913,25 +948,23 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 .rev()
                 .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
                 .flat_map(|table| table.records.iter().rev())
-                .find_map(|record| {
-                    (record.typecode == TCODE_WRITER_VERSION && record.short)
-                        .then_some(record.value)
-                })
+                .filter(|record| record.typecode == TCODE_WRITER_VERSION)
+                .find_map(Record::short_value)
         } else {
             None
         };
-        let mut child_offset = chunk.body.start;
+        let mut child_offset = chunk.body().start;
         let mut terminated = false;
-        while child_offset < chunk.body.end {
-            let child = chunk_at(data, child_offset, chunk.body.end, archive, false)
+        while child_offset < chunk.body().end {
+            let child = chunk_at(data, child_offset, chunk.body().end, archive, false)
                 .map_err(framing_error)?;
             if child.typecode == TCODE_ENDOFTABLE {
-                if !child.short || child.value != 0 {
+                if !child.short() || child.value() != 0 {
                     return Err(CodecError::Malformed(
                         "end-of-table marker must be short with value zero".to_string(),
                     ));
                 }
-                if child.next_offset != chunk.body.end {
+                if child.next_offset() != chunk.body().end {
                     return Err(CodecError::Malformed(
                         "end-of-table marker is not the final table child".to_string(),
                     ));
@@ -950,16 +983,10 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             table_record_count = table_record_count
                 .checked_add(1)
                 .expect("document record budget bounds table count");
-            let record = Record {
-                typecode: child.typecode,
-                range: child_offset..child.next_offset,
-                body: child.body,
-                short: child.short,
-                value: child.value,
-            };
+            let record = Record::from_chunk(&child);
             let opaque = table_base(chunk.typecode) == TCODE_USER
-                || !record_is_allowed(chunk.typecode, record.typecode, record.short);
-            if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
+                || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
+            if !record_is_allowed(chunk.typecode, record.typecode, record.is_short()) {
                 if known_record(record.typecode) {
                     return Err(CodecError::malformed(format_args!(
                         "record typecode {:#x} is invalid or short-framed in table {:#x}",
@@ -971,9 +998,13 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                     record.typecode, chunk.typecode
                 ));
             }
-            if let Some(note) =
-                checksum_warning(data, record.typecode, child_offset, chunk.body.end, archive)?
-            {
+            if let Some(note) = checksum_warning(
+                data,
+                record.typecode,
+                child_offset,
+                chunk.body().end,
+                archive,
+            )? {
                 warnings.push(note);
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
@@ -993,7 +1024,9 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                         degraded_object_record(&record, &error)
                     }
                 };
-                *object_typecodes.entry(descriptor.object_type).or_insert(0) += 1;
+                *object_typecodes
+                    .entry(descriptor.framed().map_or(0, |object| object.object_type))
+                    .or_insert(0) += 1;
                 all_objects.push(descriptor);
             }
             if opaque {
@@ -1005,7 +1038,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             if retain_records {
                 records.push(record);
             }
-            child_offset = child.next_offset;
+            child_offset = child.next_offset();
         }
         if !terminated {
             warnings.push(format!(
@@ -1014,7 +1047,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             ));
         }
         if let Some(note) =
-            checksum_warning(data, chunk.typecode, offset, chunk.next_offset, archive)?
+            checksum_warning(data, chunk.typecode, offset, chunk.next_offset(), archive)?
         {
             warnings.push(note);
         }
@@ -1036,13 +1069,13 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         }
         tables.push(Table {
             typecode: chunk.typecode,
-            range: offset..chunk.next_offset,
-            body: chunk.body,
+            range: offset..chunk.next_offset(),
+            body: chunk.body(),
             records,
             record_count: table_record_count,
             object_typecodes,
         });
-        offset = chunk.next_offset;
+        offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
         "missing end-of-file chunk".to_string(),
@@ -1077,8 +1110,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         }
         entries.push(ContainerEntry {
             name: format!("table-{:#x}", table.typecode),
-            role: "table".to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::Table,
+            compression: EntryCompression::None,
             compressed_size: table.range.len() as u64,
             uncompressed_size: table.body.len() as u64,
             attributes,
@@ -1086,9 +1119,11 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     }
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
     for object in &scan.objects {
-        let entry = classes.entry(object.class_uuid).or_insert((0, 0));
+        // The container report groups degraded records under the nil class UUID.
+        let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
+        let entry = classes.entry(class_uuid).or_insert((0, 0));
         entry.0 += 1;
-        entry.1 += object.range.len();
+        entry.1 += object.range().len();
     }
     for (class_uuid, (count, bytes)) in classes {
         let mut attributes = BTreeMap::new();
@@ -1098,8 +1133,8 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         attributes.insert("total_record_bytes".to_string(), bytes.to_string());
         entries.push(ContainerEntry {
             name: format!("class-{class_uuid}"),
-            role: "object-class".to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::ObjectClass,
+            compression: EntryCompression::None,
             compressed_size: bytes as u64,
             uncompressed_size: bytes as u64,
             attributes,
@@ -1113,41 +1148,89 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .iter()
             .map(|diagnostic| diagnostic.message.clone()),
     );
-    ContainerSummary {
-        format: "rhino".to_string(),
-        container_kind: "3dm-chunks".to_string(),
+    let matched = dialect_match(scan);
+    let losses = crate::dialect::admission_loss(&matched)
+        .into_iter()
+        .collect();
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(matched),
+        cadmpeg_ir::ContainerKind::ThreeDmChunks,
         entries,
+        losses,
         notes,
-    }
+    )
 }
 
-fn source_meta(scan: &Scan<'_>) -> SourceMeta {
-    let mut attributes = BTreeMap::new();
-    attributes.insert(
-        "archive_version".to_string(),
-        scan.archive.value().to_string(),
-    );
-    attributes.insert("container_kind".to_string(), "3dm-chunks".to_string());
-    attributes.insert(
-        "comment_offset".to_string(),
-        scan.comment.range.start.to_string(),
-    );
-    attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
-    attributes.insert("table_count".to_string(), scan.tables.len().to_string());
-    attributes.insert(
-        "instance_definition_count".to_string(),
-        scan.definitions.definitions.len().to_string(),
-    );
-    SourceMeta {
-        format: "rhino".to_string(),
+/// Classifies a scanned archive.
+///
+/// Every report this module builds from a [`Scan`] goes through here, so the
+/// container summary, the container-only report, and the source metadata all
+/// carry the same match.
+pub(crate) fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
+    scan.archive
+        .classify(scan.metadata.properties.writer_version)
+}
+
+/// Path-specific source attributes supplied to the single metadata builder.
+pub(crate) enum SourceMetaDetail<'a> {
+    /// Facts available from the flat V1 archive.
+    FlatLegacyArchive,
+    /// Facts reported only by container inspection.
+    ContainerOnly(&'a Scan<'a>),
+    /// Facts reported only after full decoding.
+    Full {
+        scan: &'a Scan<'a>,
+        attributes: BTreeMap<String, String>,
+    },
+}
+
+/// Builds source metadata; `primary` is the one author of the document's identity.
+pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -> SourceMeta {
+    let attributes = match detail {
+        SourceMetaDetail::FlatLegacyArchive => {
+            BTreeMap::from([("archive_version".to_string(), "1".to_string())])
+        }
+        SourceMetaDetail::ContainerOnly(scan) => {
+            let mut attributes = chunked_source_attributes(scan);
+            attributes.insert(
+                "comment_offset".to_string(),
+                scan.comment.range.start.to_string(),
+            );
+            attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
+            attributes.insert("table_count".to_string(), scan.tables.len().to_string());
+            attributes.insert(
+                "instance_definition_count".to_string(),
+                scan.definitions.definitions.len().to_string(),
+            );
+            attributes
+        }
+        SourceMetaDetail::Full {
+            scan,
+            attributes: full,
+        } => {
+            let mut attributes = chunked_source_attributes(scan);
+            attributes.extend(full);
+            attributes
+        }
+    };
+    SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
-    }
+    )
+}
+
+fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (
+            "archive_version".to_string(),
+            scan.archive.value().to_string(),
+        ),
+        ("container_kind".to_string(), "3dm-chunks".to_string()),
+    ])
 }
 
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
-    let mut ir = CadIr::empty(Units::default());
-    ir.source = Some(source_meta(scan));
+pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     let mut notes = vec![scan.version_note()];
     notes.extend(scan.warnings.iter().cloned());
     notes.extend(
@@ -1164,85 +1247,61 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
         crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
             .note(diagnostic.message.clone())
-            .with_provenance(cadmpeg_ir::SourceProvenance {
-                format: "rhino".to_string(),
-                stream: String::new(),
-                offset: diagnostic.source_range.start as u64,
-                tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-            })
+            .with_provenance(
+                cadmpeg_ir::SourceProvenance::root("rhino", diagnostic.source_range.start as u64)
+                    .with_tag("INSTANCE_DEFINITION_TABLE"),
+            )
     }));
-    cadmpeg_ir::codec::DecodeResult::new(
+    let primary = dialect_match(scan);
+    losses.extend(crate::dialect::admission_loss(&primary));
+    let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));
+    Decoded {
         ir,
-        DecodeReport {
-            format: "rhino".to_string(),
-            container_only: true,
+        body: DecodeBody {
             geometry_transferred: false,
-            coverage: std::collections::BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            coverage: cadmpeg_ir::Coverage::default(),
             losses,
             notes,
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         },
-        cadmpeg_ir::SourceFidelity::default(),
-    )
-}
-
-/// Return whether a version is inspectable only from its header.
-pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
-    matches!(
-        archive,
-        ArchiveVersion::V1 | ArchiveVersion::LegacyV5 | ArchiveVersion::Other(_)
-    )
+        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+    }
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
 pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
-    if header_only(header.archive_version) {
-        return Ok(ContainerSummary {
-            format: "rhino".to_string(),
-            container_kind: "3dm-chunks".to_string(),
-            entries: Vec::new(),
-            notes: vec![format!(
+    if !header.archive_version.is_chunked() {
+        // The properties table is not read on this path, so no openNURBS
+        // writer-version stamp is declared.
+        let matched = header.archive_version.classify(None);
+        let losses = crate::dialect::admission_loss(&matched)
+            .into_iter()
+            .collect();
+        return Ok(ContainerSummary::classified(
+            cadmpeg_core::dialect::DialectLayers::of(matched),
+            cadmpeg_ir::ContainerKind::ThreeDmChunks,
+            Vec::new(),
+            losses,
+            vec![format!(
                 "archive version {}",
                 header.archive_version.value()
             )],
-        });
+        ));
     }
     Ok(summarize(&scan(data)?))
 }
 
 /// Decode a Rhino stream according to the supported container depth.
-pub(crate) fn decode(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    container_only: bool,
-) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
     if header.archive_version == ArchiveVersion::V1 {
         return crate::legacy::decode_v1(data);
     }
-    if header_only(header.archive_version) {
-        return Err(CodecError::NotImplemented(format!(
-            "Rhino archive version {} decode is not implemented",
-            header.archive_version.value()
-        )));
-    }
     let scan = scan(data)?;
-    if container_only
-        && matches!(
-            scan.archive,
-            ArchiveVersion::V2
-                | ArchiveVersion::V3
-                | ArchiveVersion::V4
-                | ArchiveVersion::V5
-                | ArchiveVersion::V6
-                | ArchiveVersion::V7
-                | ArchiveVersion::V8
-                | ArchiveVersion::V9
-        )
-    {
+    if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
     Ok(crate::decode::decode(

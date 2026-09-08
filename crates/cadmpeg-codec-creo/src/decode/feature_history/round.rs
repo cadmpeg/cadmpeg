@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Round and chamfer radius reconstruction from support geometry.
 
-use super::super::analytic::{
-    circular_cone, cross, dot, placed_planes, reconciled_model_plane, solve_planes, ConeEquation,
-    CylinderEquation, PlaneEquation,
-};
 use super::super::sketch::normalized;
 use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
 use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
+use crate::decode::analytic::equations::{
+    circular_cone, solve_planes, ConeEquation, CylinderEquation, PlaneEquation,
+};
+use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 use crate::legacy_feature::LegacyRoundRadius;
-use crate::surface::Type24RoundEnvelope;
+use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
+use crate::vecmath::{cross, dot};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -305,8 +306,10 @@ pub(in super::super) fn unique_section_torus_minor_radius(
         row.offset >= section.offset && row.offset < section.offset.saturating_add(section.length)
     })?;
     let prototype = exactly_one(scan.surfaces.prototype_records.iter().filter(|prototype| {
-        prototype.family == crate::surface::SurfacePrototypeFamily::Torus
-            && prototype.offset >= section.offset
+        matches!(
+            prototype.family,
+            crate::surface::SurfacePrototypeFamily::Torus(_)
+        ) && prototype.offset >= section.offset
             && prototype.offset < section.offset.saturating_add(section.length)
     }))?;
     prototype_scalar(prototype, "radius2").filter(|radius| radius.is_finite() && *radius > 0.0)
@@ -318,7 +321,7 @@ pub(in super::super) fn replayed_torus_minor_radius(
     record: &crate::surface::SurfaceParameterRecord,
 ) -> Option<f64> {
     let prototype_minor_radius = unique_section_torus_minor_radius(scan, row)?;
-    record.type26_replayed_minor_radius(row.type_byte, prototype_minor_radius)
+    record.type26_replayed_minor_radius(prototype_minor_radius)
 }
 
 pub(in super::super) fn prototype_round_radius(
@@ -330,8 +333,10 @@ pub(in super::super) fn prototype_round_radius(
         unique_surface_prototype_associations(scan)
             .into_iter()
             .filter(|(record, row, _)| {
-                record.family == crate::surface::SurfacePrototypeFamily::Torus
-                    && row.feature_id == feature_id
+                matches!(
+                    record.family,
+                    crate::surface::SurfacePrototypeFamily::Torus(_)
+                ) && row.feature_id == feature_id
                     && rows.iter().any(|candidate| candidate.offset == row.offset)
             })
             .filter_map(|(record, _, _)| {
@@ -347,19 +352,19 @@ pub(in super::super) fn prototype_round_radius(
             let Some(record) = unique_surface_parameter_record(scan, row) else {
                 return false;
             };
-            record.torus_radius_overrides(row.type_byte).is_none()
+            record.torus_radius_overrides().is_none()
                 && (replayed_torus_minor_radius(scan, row, record)
                     .is_some_and(|radius| radius.to_bits() == radius2.to_bits())
                     || record
-                        .torus_outline_frame(row.type_byte)
+                        .torus_outline_frame()
                         .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
                     || record
-                        .type26_five_coordinate_envelope(row.type_byte)
+                        .type26_five_coordinate_envelope()
                         .is_some_and(|envelope| {
                             five_coordinate_envelope_proves_torus_radii(envelope, radius1, radius2)
                         })
                     || record
-                        .type26_split_coordinate_envelope(row.type_byte)
+                        .type26_split_coordinate_envelope()
                         .is_some_and(|envelope| {
                             let [a1, a2, b1, b2] = envelope.values;
                             coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], radius1, radius2)
@@ -529,7 +534,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
         .iter()
         .map(|row| {
             unique_surface_parameter_record(scan, row)
-                .and_then(|record| record.type24_generated_round_radius(row.type_byte))
+                .and_then(SurfaceParameterRecord::type24_generated_round_radius)
         })
         .collect::<Option<Vec<_>>>()?;
     let placed_radii = cylinder_rows
@@ -582,23 +587,23 @@ pub(in super::super) fn mixed_torus_radius_samples(
 ) -> Option<Vec<f64>> {
     let parameters = rows
         .iter()
-        .map(|row| Some((row.type_byte, unique_surface_parameter_record(scan, row)?)))
+        .map(|row| unique_surface_parameter_record(scan, row))
         .collect::<Option<Vec<_>>>()?;
     if parameters
         .iter()
-        .all(|(type_byte, record)| record.torus_radius_overrides(*type_byte).is_some())
+        .all(|record| record.torus_radius_overrides().is_some())
     {
         return Some(
             parameters
                 .iter()
-                .filter_map(|(type_byte, record)| record.torus_radius_overrides(*type_byte))
+                .filter_map(|record| record.torus_radius_overrides())
                 .map(|overrides| overrides.radius2)
                 .collect(),
         );
     }
     if parameters
         .iter()
-        .any(|(type_byte, record)| record.torus_radius_overrides(*type_byte).is_some())
+        .any(|record| record.torus_radius_overrides().is_some())
     {
         return None;
     }
@@ -612,7 +617,7 @@ pub(in super::super) fn round_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     unique_surface_parameter_record(scan, row)
-        .and_then(|record| record.type24_generated_round_radius(row.type_byte))
+        .and_then(SurfaceParameterRecord::type24_generated_round_radius)
         .or_else(|| round_placed_cylinder_radius(ir, row))
 }
 
@@ -843,7 +848,8 @@ pub(in super::super) fn round_placed_cylinder_radius(
     ir: &CadIr,
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
-    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
             SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
@@ -875,11 +881,9 @@ pub(in super::super) fn round_observed_radii(scan: &ContainerScan, feature_id: u
         .filter_map(|row| {
             let parameters = unique_surface_parameter_record(scan, row)?;
             match row.kind {
-                crate::surface::SurfaceKind::Cylinder => {
-                    parameters.type24_generated_round_radius(row.type_byte)
-                }
+                crate::surface::SurfaceKind::Cylinder => parameters.type24_generated_round_radius(),
                 crate::surface::SurfaceKind::TorusOrSphere => parameters
-                    .torus_radius_overrides(row.type_byte)
+                    .torus_radius_overrides()
                     .map(|overrides| overrides.radius2)
                     .or_else(|| replayed_torus_minor_radius(scan, row, parameters)),
                 _ => None,
@@ -936,10 +940,10 @@ pub(in super::super) fn equal_distance_chamfer_setback(
     let setbacks = cones
         .iter()
         .map(|cone| {
-            let axis = normalized(cone.axis)?;
+            let axis = normalized(cone.axis())?;
             (circular_cone(*cone)
-                && cone.radius.abs() <= EPS_RADIUS_NONZERO
-                && (cone.half_angle - std::f64::consts::FRAC_PI_4).abs() <= EPS_CONE_ANGLE)
+                && cone.radius().abs() <= EPS_RADIUS_NONZERO
+                && (cone.half_angle() - std::f64::consts::FRAC_PI_4).abs() <= EPS_CONE_ANGLE)
                 .then_some(())?;
             support_planes
                 .iter()
@@ -948,9 +952,9 @@ pub(in super::super) fn equal_distance_chamfer_setback(
                     let denominator = dot(axis, normal);
                     (denominator.abs() >= 1.0 - EPS_DENOMINATOR_ALIGNMENT).then_some(())?;
                     let displacement = [
-                        plane.origin[0] - cone.origin[0],
-                        plane.origin[1] - cone.origin[1],
-                        plane.origin[2] - cone.origin[2],
+                        plane.origin[0] - cone.origin()[0],
+                        plane.origin[1] - cone.origin()[1],
+                        plane.origin[2] - cone.origin()[2],
                     ];
                     let setback = dot(displacement, normal) / denominator;
                     (setback.is_finite() && setback > EPS_SETBACK_NONZERO).then_some(setback)
@@ -977,18 +981,19 @@ fn chamfer_cone_equation(
     }
     if let Some(frame) = parameter_records
         .first()
-        .and_then(|record| record.positional_cone_frame)
+        .and_then(|record| record.positional_cone_frame())
     {
-        return Some(ConeEquation {
-            origin: frame.apex,
-            axis: frame.axis,
-            ref_direction: frame.ref_direction,
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle: frame.half_angle,
-        });
+        return ConeEquation::new(
+            frame.apex,
+            frame.axis,
+            frame.ref_direction,
+            0.0,
+            1.0,
+            frame.half_angle,
+        );
     }
-    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
     let SurfaceGeometry::Cone {
         origin,
@@ -1001,14 +1006,14 @@ fn chamfer_cone_equation(
     else {
         return None;
     };
-    Some(ConeEquation {
-        origin: [origin.x, origin.y, origin.z],
-        axis: [axis.x, axis.y, axis.z],
-        ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-        radius: *radius,
-        ratio: *ratio,
-        half_angle: *half_angle,
-    })
+    ConeEquation::new(
+        [origin.x, origin.y, origin.z],
+        [axis.x, axis.y, axis.z],
+        [ref_direction.x, ref_direction.y, ref_direction.z],
+        *radius,
+        *ratio,
+        *half_angle,
+    )
 }
 
 pub(in super::super) fn chamfer_constant_distance(
@@ -1048,7 +1053,8 @@ pub(in super::super) fn chamfer_constant_distance(
             .collect::<Vec<_>>();
         let is_support_plane = match rows.as_slice() {
             [] => {
-                let model_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+                let model_id = SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                    .expect("identity grammar");
                 let model_surfaces = ir
                     .model
                     .surfaces

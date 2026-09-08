@@ -45,13 +45,27 @@ pub(crate) struct MetaTables<'a> {
 pub(crate) struct RseRecordFrame<'a> {
     pub(crate) ordinal: u32,
     pub(crate) selector: u32,
-    pub(crate) type_index: u8,
     pub(crate) type_id: [u8; 16],
     pub(crate) payload_offset: u64,
     pub(crate) payload: View<'a>,
-    pub(crate) declared_payload_len: u32,
-    pub(crate) trailing_payload_len: u32,
+    pub(crate) trailing_length_written: bool,
     pub(crate) trailer: View<'a>,
+}
+
+impl RseRecordFrame<'_> {
+    pub(crate) fn type_index(&self) -> u8 {
+        self.selector as u8
+    }
+    pub(crate) fn payload_len(&self) -> u32 {
+        self.payload.window().len() as u32
+    }
+    pub(crate) fn trailing_payload_len(&self) -> u32 {
+        if self.trailing_length_written {
+            self.payload_len()
+        } else {
+            0
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -237,12 +251,10 @@ pub(crate) fn frame_bulk_records<'a>(
         records.push(RseRecordFrame {
             ordinal: block.ordinal,
             selector,
-            type_index,
             type_id: descriptor.id,
             payload_offset,
             payload,
-            declared_payload_len: block.payload_len,
-            trailing_payload_len,
+            trailing_length_written: trailing_payload_len != 0,
             trailer,
         });
     }

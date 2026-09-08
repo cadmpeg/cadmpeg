@@ -18,7 +18,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -834,6 +834,30 @@ Offsets are relative to the texture-table indexed header. The first variable fla
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes and a u32 flags-map count |
 | 21 | 4 | `flags_map_count` | `u32` | little | spec | a u32 flags-map count at offset 21 |
+
+## `paramesh_texture_flags_entry`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+Offsets are relative to one flags-map entry. The GUID count is 36.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `guid_count` | `u32` | little | spec | a 36-byte LP-ASCII resource GUID |
+| 4 | 36 | `resource_guid` | `bytes[36]` | little | spec | a 36-byte LP-ASCII resource GUID |
+| 40 | 4 | `flags` | `u32` | little | spec | followed by an opaque u32 flags value |
+
+## `paramesh_texture_filename_entry`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to one filename-map entry. The GUID count is 36.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `guid_count` | `u32` | little | spec | a 36-byte LP-ASCII resource GUID |
+| 4 | 36 | `resource_guid` | `bytes[36]` | little | spec | a 36-byte LP-ASCII resource GUID |
+| 40 | 11 | `filename_record_reference` | `bytes[11]` | little | spec | followed by a marked same-segment filename-record reference |
 
 ## `paramesh_texture_filename_prefix`
 
@@ -4736,6 +4760,90 @@ Unstated regions:
 - `26..34` (8 B): Eight zero bytes follow the first relation member.
 - `39..46` (7 B): Seven zero bytes follow the middle relation member.
 - `51..57` (6 B): Six zero bytes follow the scope back-reference.
+
+## `canvas_geometry_payload`
+
+Spec §3.1 · layout: byte offsets · size: 77 B
+
+Offsets are relative to the Canvas geometry payload at geometry-record offset 69.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `opacity` | `f32` | little | spec | Its first four bytes are a normalized finite f32 opacity followed by one zero byte. |
+| 4 | 1 | `reserved_zero` | `u8` | little | spec | Its first four bytes are a normalized finite f32 opacity followed by one zero byte. |
+| 5 | 24 | `origin_centimetres` | `f64[3]` | little | spec | Three consecutive f64 triples begin at payload offsets 5, 29, and 53. |
+| 29 | 24 | `u_axis` | `f64[3]` | little | spec | Three consecutive f64 triples begin at payload offsets 5, 29, and 53. |
+| 53 | 24 | `v_axis` | `f64[3]` | little | spec | Three consecutive f64 triples begin at payload offsets 5, 29, and 53. |
+
+## `canvas_geometry_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean. |
+| 10 | 1 | `first_flag` | `u8` | little | spec | Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean. |
+| 11 | 3 | `zero_run_3` | `bytes[3]` | little | spec | Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean. |
+| 14 | 1 | `visibility` | `u8` | little | spec | Its first ten bytes and bytes 11 through 13 are zero, byte 10 is zero or one, and byte 14 is the Canvas visibility Boolean. |
+
+## `canvas_geometry_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 217 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The referenced geometry record stores a 15-byte prologue after its eleven-byte indexed header. |
+| 11 | 15 | `geometry_prologue` | `bytes[15]` | little | spec | The referenced geometry record stores a 15-byte prologue after its eleven-byte indexed header. |
+| 26 | 32 | `first_boundary` | `f64[4]` | little | spec | Four f64 values at record offsets 26, 34, 42, and 50 form the first plane-local boundary segment. |
+| 58 | 11 | `plane_reference` | `bytes[11]` | little | spec | A marked supporting-plane entity suffix occurs at offset 58 with six trailing zero bytes. |
+| 69 | 77 | `geometry_payload` | `bytes[77]` | little | spec | A 77-byte fixed payload occupies offsets 69 through 145. |
+| 146 | 11 | `scope_reference` | `bytes[11]` | little | spec | Marked references at record offsets 146, 157, and 169 name the Canvas scope, owning component entity suffix, and image-asset record; their trailing fields contain six, seven, and six zero bytes respectively. |
+| 157 | 12 | `component_reference` | `bytes[12]` | little | spec | Marked references at record offsets 146, 157, and 169 name the Canvas scope, owning component entity suffix, and image-asset record; their trailing fields contain six, seven, and six zero bytes respectively. |
+| 169 | 11 | `asset_reference` | `bytes[11]` | little | spec | Marked references at record offsets 146, 157, and 169 name the Canvas scope, owning component entity suffix, and image-asset record; their trailing fields contain six, seven, and six zero bytes respectively. |
+| 180 | 1 | `second_boundary_present` | `u8` | little | spec | The image-asset reference is followed by `01` at offset 180 and four f64 values at offsets 181, 189, 197, and 205 forming the opposite boundary segment. |
+| 181 | 32 | `second_boundary` | `f64[4]` | little | spec | The image-asset reference is followed by `01` at offset 180 and four f64 values at offsets 181, 189, 197, and 205 forming the opposite boundary segment. |
+| 213 | 4 | `label_code_unit_count` | `u32` | little | spec | An LP-UTF16 persistent label begins at offset 213 and ends at the paired same-index geometry header. |
+
+## `canvas_geometry_base`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes. |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes. |
+| 19 | 11 | `component_reference` | `bytes[11]` | little | spec | The paired header is followed by eight zero bytes and a marked reference to the same owning component with six trailing zero bytes. |
+
+## `canvas_image_asset_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header. |
+| 21 | 4 | `name_code_unit_count` | `u32` | little | spec | A standalone image-asset record follows immediately; its eleven-byte indexed header is followed by ten zero bytes and an LP-UTF16 archive-entry basename ending at the Canvas scope header. |
+
+## `canvas_scope_compact_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21. |
+| 21 | 5 | `geometry_reference` | `bytes[5]` | little | spec | The compact prologue has ten zero bytes at offsets 11 through 20 and the marked geometry-record reference at offset 21. |
+
+## `canvas_scope_expanded_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
+| 20 | 5 | `null_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
+| 25 | 5 | `geometry_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 
 ## Not tabulated
 

@@ -59,8 +59,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle, None);
     let first = entity(

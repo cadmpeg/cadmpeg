@@ -214,10 +214,7 @@ impl<'a> View<'a> {
     fn eof(self, needed: u64) -> ParseError {
         ParseError {
             location: self.location(),
-            kind: ParseErrorKind::UnexpectedEof {
-                needed,
-                remaining: self.remaining() as u64,
-            },
+            kind: ParseErrorKind::UnexpectedEof { needed },
             operation: "required_read",
         }
     }

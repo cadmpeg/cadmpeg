@@ -4,6 +4,7 @@
 #![allow(clippy::default_trait_access)]
 
 use super::super::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn move_body_selection_uses_unique_owning_history() {
@@ -13,31 +14,31 @@ fn move_body_selection_uses_unique_owning_history() {
     };
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "Move",
+        crate::records::feature::DesignFeatureKind::Move,
         10,
     );
     scope.history_state_id = Some(42);
     scope.previous_history_state_id = Some(41);
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
-    let group = crate::records::DesignConstructionOperandGroup {
+    let group = crate::records::topology::DesignConstructionOperandGroup {
         id: group_id.into(),
         scope_record_index: 10,
         scope_reference_ordinal: 0,
         record_index: 20,
         byte_offset: 0,
-        class_tag: "280".into(),
-        members: vec![21],
+        class_tag: crate::records::DesignClassTag::try_from("280".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: 21,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: Vec::new(),
-            trailing_record_offsets: Vec::new(),
+            trailing_records: Vec::new(),
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -47,11 +48,11 @@ fn move_body_selection_uses_unique_owning_history() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0004_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
         role_offset: 0,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let topology = || AsmHistoricalTopology {
@@ -77,8 +78,7 @@ fn move_body_selection_uses_unique_owning_history() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology()),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology()),
             transition,
         }
     };
@@ -91,8 +91,7 @@ fn move_body_selection_uses_unique_owning_history() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: true,
         states: vec![
@@ -103,15 +102,14 @@ fn move_body_selection_uses_unique_owning_history() {
     let unrelated_history = AsmHistory {
         id: "unrelated-history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: true,
         states: vec![state(41, "unrelated-history", None)],
     };
     let histories = [history, unrelated_history];
     let mut feature = Feature::new(
-        FeatureId("f3d:feature#move".into()),
+        FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),

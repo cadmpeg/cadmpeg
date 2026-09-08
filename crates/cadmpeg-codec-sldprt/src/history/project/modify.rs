@@ -3,9 +3,9 @@
 
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    EdgeSelection, FaceMotion, FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length,
-    RadiusForm, RadiusSpec, ScaleCenter, ScaleFactors, VariableRadius,
+    Angle, AxisAngle, BodyRetentionMode, BodySelection, ChamferSpec, EdgeSelection, FaceMotion,
+    FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length, RadiusSpec, ScaleCenter,
+    ScaleFactors, VariableRadius,
 };
 use cadmpeg_ir::math::Vector3;
 
@@ -70,19 +70,22 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                 .then_some(points)
             })
             .map_or_else(
-                || RadiusSpec::Unresolved {
-                    form: feature
+                || {
+                    if feature
                         .parameters
                         .keys()
                         .any(|name| indexed_name(name, "Radius"))
-                        .then_some(RadiusForm::Variable)
-                        .or_else(|| {
-                            feature
-                                .parameters
-                                .keys()
-                                .any(|name| matches!(name.as_str(), "Radius" | "D1"))
-                                .then_some(RadiusForm::Constant)
-                        }),
+                    {
+                        RadiusSpec::UnresolvedVariable
+                    } else if feature
+                        .parameters
+                        .keys()
+                        .any(|name| matches!(name.as_str(), "Radius" | "D1"))
+                    {
+                        RadiusSpec::UnresolvedConstant
+                    } else {
+                        RadiusSpec::Unresolved
+                    }
                 },
                 |points| RadiusSpec::Variable {
                     points: points.into_iter().map(|(_, point)| point).collect(),
@@ -203,20 +206,26 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
         .get("Direction")
         .and_then(|value| parse_vector3(value))
         .filter(|direction| direction.norm().is_finite() && direction.norm() > 0.0);
+    let neutral_plane = feature
+        .properties
+        .get("NeutralPlane")
+        .cloned()
+        .map_or(FaceSelection::Unresolved, FaceSelection::Native);
+    let pull = pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
+        direction,
+        plane: None,
+    });
+    let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+        plane: neutral_plane,
+        pull,
+    };
     FeatureDefinition::Draft {
         faces: feature
             .properties
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        neutral_plane: feature
-            .properties
-            .get("NeutralPlane")
-            .cloned()
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        parting_tool: None,
-        pull_direction,
-        pull_plane: None,
+        anchor,
         angle: feature
             .parameters
             .get("Angle")
@@ -234,10 +243,9 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
     let op = feature
         .properties
         .get("Operation")
-        .map_or(Some(BooleanOp::Unresolved), |value| parse_boolean_op(value))?;
-    if op == BooleanOp::NewBody {
-        return None;
-    }
+        .and_then(|value| parse_boolean_op(value))?
+        .try_into()
+        .ok()?;
     Some(FeatureDefinition::Combine {
         target: feature
             .properties
@@ -447,25 +455,12 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
             _ => None,
         }
     });
-    let mode = match form {
-        Some(FlexForm::Bending) if angle.is_some() => FlexMode::Bending {
-            angle: angle.expect("guarded above"),
-        },
-        Some(FlexForm::Twisting) if angle.is_some() => FlexMode::Twisting {
-            angle: angle.expect("guarded above"),
-        },
-        Some(FlexForm::Tapering) if factor.is_some() => FlexMode::Tapering {
-            factor: factor.expect("guarded above"),
-        },
-        Some(FlexForm::Stretching) if distance.is_some() => FlexMode::Stretching {
-            distance: distance.expect("guarded above"),
-        },
-        _ => FlexMode::Unresolved {
-            form,
-            angle,
-            factor,
-            distance,
-        },
+    let mode = match (form, angle, factor, distance) {
+        (Some(FlexForm::Bending), Some(angle), _, _) => FlexMode::Bending { angle },
+        (Some(FlexForm::Twisting), Some(angle), _, _) => FlexMode::Twisting { angle },
+        (Some(FlexForm::Tapering), _, Some(factor), _) => FlexMode::Tapering { factor },
+        (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
+        (form, _, _, _) => FlexMode::Unresolved(form),
     };
     FeatureDefinition::Flex { axis, mode }
 }
@@ -494,6 +489,16 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .and_then(|value| value.trim().parse::<f64>().ok())
             .filter(|value| value.is_finite() && *value != 0.0)
     };
+    let factors = match (
+        factor("Factor"),
+        factor("ScaleX"),
+        factor("ScaleY"),
+        factor("ScaleZ"),
+    ) {
+        (Some(uniform), None, None, None) => ScaleFactors::Uniform(uniform),
+        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis(Vector3::new(x, y, z)),
+        _ => ScaleFactors::Unresolved,
+    };
     FeatureDefinition::Scale {
         bodies: feature
             .properties
@@ -501,12 +506,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .cloned()
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         center,
-        factors: ScaleFactors {
-            uniform: factor("Factor"),
-            x: factor("ScaleX"),
-            y: factor("ScaleY"),
-            z: factor("ScaleZ"),
-        },
+        factors,
     }
 }
 
@@ -577,20 +577,20 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         )
     })()
     .or_else(ordered_spec)
-    .unwrap_or_else(|| ChamferSpec::Unresolved {
-        form: if feature.parameters.contains_key("Angle") {
-            Some(ChamferForm::DistanceAngle)
+    .unwrap_or_else(|| {
+        if feature.parameters.contains_key("Angle") {
+            ChamferSpec::UnresolvedDistanceAngle
         } else if feature.parameters.contains_key("Distance1")
             || feature.parameters.contains_key("Distance2")
         {
-            Some(ChamferForm::TwoDistances)
+            ChamferSpec::UnresolvedTwoDistances
         } else if feature.parameters.contains_key("Distance")
             || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
         {
-            Some(ChamferForm::Distance)
+            ChamferSpec::UnresolvedDistance
         } else {
-            None
-        },
+            ChamferSpec::Unresolved
+        }
     });
     FeatureDefinition::Chamfer {
         groups: vec![cadmpeg_ir::features::ChamferGroup {

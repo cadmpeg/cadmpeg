@@ -12,12 +12,12 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{OpaqueRecord, Record, Scan};
+use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::{
     apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
     parse_class_wrapper_with_userdata, parse_user_string_list, AttributeUserdataDescriptor,
-    ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
+    ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
 use crate::settings::{self, utf16};
 use crate::wire::{scaled_coordinate, Uuid};
@@ -142,23 +142,70 @@ struct MaterialRecord {
     reflectivity: f64,
     shine: f64,
     transparency: f64,
-    texture_count: usize,
+    #[serde(flatten, serialize_with = "serialize_material_textures")]
     textures: Vec<TextureRecord>,
     shareable: bool,
     disable_lighting: bool,
-    fresnel_reflections: bool,
-    reflection_glossiness: Option<f64>,
-    refraction_glossiness: Option<f64>,
-    fresnel_index_of_refraction: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_material_fresnel")]
+    fresnel: Option<MaterialFresnelSettings>,
     rdk_instance_uuid: Option<String>,
     diffuse_texture_alpha_transparency: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     physically_based: Option<PhysicallyBasedMaterialRecord>,
 }
 
+#[derive(Debug)]
+struct MaterialFresnelSettings {
+    reflections: bool,
+    reflection_glossiness: f64,
+    refraction_glossiness: f64,
+    index_of_refraction: f64,
+}
+
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
+fn serialize_material_fresnel<S: serde::Serializer>(
+    settings: &Option<MaterialFresnelSettings>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut fields = serializer.serialize_map(Some(4))?;
+    fields.serialize_entry(
+        "fresnel_reflections",
+        &settings.as_ref().is_some_and(|value| value.reflections),
+    )?;
+    fields.serialize_entry(
+        "reflection_glossiness",
+        &settings.as_ref().map(|value| value.reflection_glossiness),
+    )?;
+    fields.serialize_entry(
+        "refraction_glossiness",
+        &settings.as_ref().map(|value| value.refraction_glossiness),
+    )?;
+    fields.serialize_entry(
+        "fresnel_index_of_refraction",
+        &settings.as_ref().map(|value| value.index_of_refraction),
+    )?;
+    fields.end()
+}
+
+fn serialize_material_textures<S: serde::Serializer>(
+    textures: &[TextureRecord],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut fields = serializer.serialize_map(Some(2))?;
+    fields.serialize_entry("texture_count", &textures.len())?;
+    fields.serialize_entry("textures", textures)?;
+    fields.end()
+}
+
 #[derive(Debug, Serialize)]
 struct PhysicallyBasedMaterialRecord {
-    version: i32,
+    #[serde(flatten)]
+    revision: PhysicallyBasedMaterialRevision,
     base_color: [f32; 4],
     brdf: i32,
     subsurface: f64,
@@ -178,7 +225,39 @@ struct PhysicallyBasedMaterialRecord {
     opacity: f64,
     opacity_roughness: f64,
     emission: [f32; 4],
-    alpha: f64,
+}
+
+#[derive(Debug)]
+enum PhysicallyBasedMaterialRevision {
+    V1,
+    V2 { alpha: f64 },
+}
+
+impl PhysicallyBasedMaterialRevision {
+    fn version(&self) -> i32 {
+        match self {
+            Self::V1 => 1,
+            Self::V2 { .. } => 2,
+        }
+    }
+
+    fn alpha(&self) -> f64 {
+        match self {
+            Self::V1 => 1.0,
+            Self::V2 { alpha } => *alpha,
+        }
+    }
+}
+
+impl Serialize for PhysicallyBasedMaterialRevision {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut fields = serializer.serialize_map(Some(2))?;
+        fields.serialize_entry("version", &self.version())?;
+        fields.serialize_entry("alpha", &self.alpha())?;
+        fields.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -289,10 +368,14 @@ struct HatchPatternRecord {
     fill_type: i32,
     description: String,
     lines: Vec<HatchLineRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pattern_unit_system: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    always_model_distances: Option<bool>,
+    #[serde(flatten)]
+    distance_settings: Option<HatchPatternDistanceSettings>,
+}
+
+#[derive(Debug, Copy, Clone, Serialize)]
+struct HatchPatternDistanceSettings {
+    pattern_unit_system: u8,
+    always_model_distances: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -328,10 +411,66 @@ struct DimensionStyleRecord {
     dimension_line_extension_mm: f64,
     suppress_extension_line_1: bool,
     suppress_extension_line_2: bool,
-    parent_style_uuid: Option<String>,
-    controls: BTreeMap<String, serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    v5_extra: Option<V5DimensionStyleExtraRecord>,
+    #[serde(flatten)]
+    details: DimensionStyleDetails,
+}
+
+#[derive(Debug)]
+enum DimensionStyleDetails {
+    V5 {
+        controls: BTreeMap<String, serde_json::Value>,
+        extra: Option<V5DimensionStyleExtraRecord>,
+    },
+    Modern {
+        parent_style_uuid: Option<String>,
+        controls: BTreeMap<String, serde_json::Value>,
+    },
+}
+
+impl DimensionStyleDetails {
+    fn parent_style_uuid(&self) -> Option<&String> {
+        match self {
+            Self::V5 { extra, .. } => extra.as_ref()?.parent_style_uuid.as_ref(),
+            Self::Modern {
+                parent_style_uuid, ..
+            } => parent_style_uuid.as_ref(),
+        }
+    }
+
+    fn controls(&self) -> &BTreeMap<String, serde_json::Value> {
+        match self {
+            Self::V5 { controls, .. } | Self::Modern { controls, .. } => controls,
+        }
+    }
+}
+
+impl Serialize for DimensionStyleDetails {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let extra = match self {
+            Self::V5 { extra, .. } => extra.as_ref(),
+            Self::Modern { .. } => None,
+        };
+        let mut controls = self.controls().clone();
+        if let Some(extra) = extra {
+            controls.insert(
+                "v5_extra_dimension_scale".to_string(),
+                serde_json::json!(extra.dimension_scale),
+            );
+            controls.insert(
+                "v5_extra_dimension_scale_source".to_string(),
+                serde_json::json!(extra.dimension_scale_source),
+            );
+        }
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("parent_style_uuid", &self.parent_style_uuid())?;
+        map.serialize_entry("controls", &controls)?;
+        if let Some(extra) = extra {
+            map.serialize_entry("v5_extra", extra)?;
+        }
+        map.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -355,13 +494,11 @@ struct V5DimensionStyleExtraRecord {
 #[derive(Debug, Default, Serialize)]
 struct FontRecord {
     characteristics: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    legacy_italic: Option<bool>,
+    #[serde(flatten)]
+    weight: FontWeight,
     windows_logfont_name: String,
     postscript_name: String,
     obsolete_description: String,
-    windows_logfont_weight: Option<i32>,
-    apple_weight_trait: Option<f64>,
     point_size: Option<f64>,
     family_name: String,
     locale_name: String,
@@ -377,6 +514,38 @@ struct FontRecord {
     quartet_member: Option<u8>,
 }
 
+#[derive(Debug, Default)]
+enum FontWeight {
+    #[default]
+    Unspecified,
+    Legacy {
+        windows: i32,
+        italic: bool,
+    },
+    Modern {
+        windows: i32,
+        apple: f64,
+    },
+}
+
+impl Serialize for FontWeight {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        let (windows, apple) = match self {
+            Self::Unspecified => (None, None),
+            Self::Legacy { windows, italic } => {
+                map.serialize_entry("legacy_italic", italic)?;
+                (Some(*windows), None)
+            }
+            Self::Modern { windows, apple } => (Some(*windows), Some(*apple)),
+        };
+        map.serialize_entry("windows_logfont_weight", &windows)?;
+        map.serialize_entry("apple_weight_trait", &apple)?;
+        map.end()
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct TextStyleRecord {
     id: String,
@@ -389,6 +558,21 @@ struct TextStyleRecord {
     font: FontRecord,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmbeddedImageCompression {
+    Raw,
+    Compressed,
+}
+
+impl Serialize for EmbeddedImageCompression {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_i32(match self {
+            Self::Raw => 0,
+            Self::Compressed => 1,
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct EmbeddedImageRecord {
     id: String,
@@ -397,7 +581,7 @@ struct EmbeddedImageRecord {
     name: String,
     file_path: String,
     image_crc32: u32,
-    compression_method: i32,
+    compression_method: EmbeddedImageCompression,
     uncompressed_byte_len: u64,
     buffer_offset: u64,
     buffer_byte_len: u64,
@@ -444,8 +628,35 @@ struct TextureMappingRecord {
 struct RenderingMaterialReference {
     plugin_uuid: String,
     front_material_uuid: String,
+    #[serde(flatten, serialize_with = "serialize_material_back_face")]
+    back_face: Option<RenderingMaterialBackFace>,
+}
+
+#[derive(Debug)]
+struct RenderingMaterialBackFace {
     back_material_uuid: Option<String>,
-    material_source: Option<u8>,
+    material_source: u8,
+}
+
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
+fn serialize_material_back_face<S: serde::Serializer>(
+    back_face: &Option<RenderingMaterialBackFace>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+    let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
+    fields.serialize_field(
+        "back_material_uuid",
+        &back_face
+            .as_ref()
+            .and_then(|value| value.back_material_uuid.as_ref()),
+    )?;
+    fields.serialize_field(
+        "material_source",
+        &back_face.as_ref().map(|value| value.material_source),
+    )?;
+    fields.end()
 }
 
 #[derive(Debug, Serialize)]
@@ -551,7 +762,7 @@ struct CurvePipingRecord {
     segments: i32,
     faceted: bool,
     accuracy: i32,
-    cap_type: String,
+    cap_type: crate::mesh_modifiers::CapType,
 }
 
 #[derive(Debug, Serialize)]
@@ -657,7 +868,7 @@ fn curve_piping_record(
         segments: curve_piping.segments,
         faceted: curve_piping.faceted,
         accuracy: curve_piping.accuracy,
-        cap_type: curve_piping.cap_type.clone(),
+        cap_type: curve_piping.cap_type,
     }
 }
 
@@ -683,15 +894,62 @@ fn shut_lining_record(shut_lining: &crate::mesh_modifiers::ShutLiningModifier) -
     }
 }
 
-#[derive(Debug, Serialize)]
-struct LayerPerViewportPresentationRecord {
-    viewport_uuid: String,
-    settings_mask: u32,
-    color: Option<[u8; 4]>,
-    plot_color: Option<[u8; 4]>,
-    plot_weight_mm: Option<f64>,
-    visible: Option<u8>,
-    persistent_visibility: Option<u8>,
+impl Serialize for settings::LayerPerViewportSettings {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut record = serializer.serialize_struct("LayerPerViewportPresentationRecord", 7)?;
+        record.serialize_field("viewport_uuid", &self.viewport_id.to_string())?;
+        record.serialize_field("settings_mask", &self.settings_mask())?;
+        record.serialize_field("color", &self.color)?;
+        record.serialize_field("plot_color", &self.plot_color)?;
+        record.serialize_field("plot_weight_mm", &self.plot_weight_mm)?;
+        record.serialize_field(
+            "visible",
+            &self.visible.map(settings::LayerVisibility::as_u8),
+        )?;
+        record.serialize_field(
+            "persistent_visibility",
+            &self
+                .persistent_visibility
+                .map(settings::LayerVisibility::as_u8),
+        )?;
+        record.end()
+    }
+}
+
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
+fn serialize_layer_hierarchy<S: serde::Serializer>(
+    hierarchy: &Option<settings::LayerHierarchy>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+
+    let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
+    record.serialize_field(
+        "parent_uuid",
+        &hierarchy
+            .map(|value| value.parent_id)
+            .filter(|id| !id.is_nil())
+            .map(|id| id.to_string()),
+    )?;
+    record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
+    record.end()
+}
+
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
+fn serialize_layer_plot<S: serde::Serializer>(
+    plot: &Option<settings::LayerPlot>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+
+    let mut record = serializer.serialize_struct("LayerPlot", 2)?;
+    record.serialize_field("plot_color", &plot.map(|value| value.color))?;
+    record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
+    record.end()
 }
 
 #[derive(Debug, Serialize)]
@@ -700,7 +958,8 @@ struct LayerPresentationRecord {
     source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
-    parent_uuid: Option<String>,
+    #[serde(flatten, serialize_with = "serialize_layer_hierarchy")]
+    hierarchy: Option<settings::LayerHierarchy>,
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
@@ -708,19 +967,18 @@ struct LayerPresentationRecord {
     iges_level: Option<i32>,
     visible: bool,
     locked: bool,
-    expanded: Option<bool>,
     color: [u8; 4],
     material_index: i32,
     linetype_index: Option<i32>,
-    plot_color: Option<[u8; 4]>,
-    plot_weight_mm: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_layer_plot")]
+    plot: Option<settings::LayerPlot>,
     display_material_uuid: Option<String>,
     clipping_planes_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     visible_in_new_details: Option<bool>,
     rendering_materials: Vec<RenderingMaterialReference>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    per_viewport_settings: Vec<LayerPerViewportPresentationRecord>,
+    per_viewport_settings: Vec<settings::LayerPerViewportSettings>,
 }
 
 #[derive(Debug, Serialize)]
@@ -823,7 +1081,7 @@ fn first_user_string_records(
     losses: &mut Vec<LossNote>,
 ) -> (Vec<UserStringRecord>, Vec<UserStringRecord>) {
     let geometry = class_userdata
-        .iter()
+        .iter().filter_map(UserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .and_then(|value| {
             match parse_user_string_list(data, value.payload_range.clone(), archive) {
@@ -838,17 +1096,12 @@ fn first_user_string_records(
         })
         .unwrap_or_default();
     let mut attributes = attribute_userdata
-        .iter()
+        .iter().filter_map(AttributeUserdataDescriptor::known)
         .find(|value| {
-            value.class_uuid == Some(USER_STRING_LIST) && value.item_uuid == Some(USER_STRING_LIST)
+            value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST
         })
         .and_then(|value| {
-            let Some(payload_range) = value.payload_range.clone() else {
-                losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
-                    "object-attributes user-string userdata at offset {source_offset} has no payload"
-                )));
-                return None;
-            };
+            let payload_range = value.payload_range.clone();
             match parse_user_string_list(data, payload_range, archive) {
                 Ok(entries) => Some(user_string_records(entries)),
                 Err(error) => {
@@ -1016,13 +1269,13 @@ fn anonymous(
     archive: ArchiveVersion,
 ) -> Result<(BoundedReader<'_>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "presentation wrapper is invalid",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (reader.i32()?, reader.i32()?);
     Ok((reader, version))
 }
@@ -1033,13 +1286,13 @@ fn component(
     archive: ArchiveVersion,
 ) -> Result<Component, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if !matches!(chunk.typecode, MODEL_ATTRIBUTES | ANONYMOUS) || chunk.short {
+    if !matches!(chunk.typecode, MODEL_ATTRIBUTES | ANONYMOUS) || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "model-component attributes are missing",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (value.i32()?, value.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1071,7 +1324,7 @@ fn component(
             value.skip(8)?;
         }
         value.skip_remaining()?;
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
         return Ok(Component { index, id, name });
     }
     match value.u8()? {
@@ -1100,7 +1353,7 @@ fn component(
         _ => String::new(),
     };
     value.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(Component { index, id, name })
 }
 
@@ -1135,14 +1388,16 @@ fn parse_physically_based_material(
     let opacity = read_finite(&mut reader, "opacity")?;
     let opacity_roughness = read_finite(&mut reader, "opacity roughness")?;
     let emission = read_color_f32(&mut reader, "emission")?;
-    let alpha = if version >= 2 {
-        read_finite(&mut reader, "alpha")?
+    let revision = if version == 2 {
+        PhysicallyBasedMaterialRevision::V2 {
+            alpha: read_finite(&mut reader, "alpha")?,
+        }
     } else {
-        1.0
+        PhysicallyBasedMaterialRevision::V1
     };
     reader.skip_remaining()?;
     Ok(PhysicallyBasedMaterialRecord {
-        version,
+        revision,
         base_color,
         brdf,
         subsurface,
@@ -1162,7 +1417,6 @@ fn parse_physically_based_material(
         opacity,
         opacity_roughness,
         emission,
-        alpha,
     })
 }
 
@@ -1294,6 +1548,7 @@ fn classify_rdk_material_payload(
 fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor]) -> Option<Uuid> {
     userdata
         .iter()
+        .filter_map(UserdataDescriptor::known)
         .filter(|value| {
             value.class_uuid == RDK_CLASS
                 && value.item_uuid == RDK_USERDATA
@@ -1311,6 +1566,7 @@ fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor])
 fn rdk_material_userdata_requires_opaque(data: &[u8], userdata: &[UserdataDescriptor]) -> bool {
     userdata
         .iter()
+        .filter_map(UserdataDescriptor::known)
         .filter(|value| {
             value.class_uuid == RDK_CLASS
                 && value.item_uuid == RDK_USERDATA
@@ -1331,13 +1587,13 @@ fn wide_string(
     archive: ArchiveVersion,
 ) -> Result<String, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != UTF8_STRING_CHUNK || chunk.short {
+    if chunk.typecode != UTF8_STRING_CHUNK || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "wide-string wrapper is invalid",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let format = value.u8()?;
     let result = match format {
         0 if value.remaining() == 0 => String::new(),
@@ -1351,7 +1607,7 @@ fn wide_string(
             ))
         }
     };
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(result)
 }
 
@@ -1361,7 +1617,7 @@ fn class_data(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let class = parse_class_wrapper(data, record.body.clone(), archive, &mut Vec::new())?;
+    let class = parse_class_wrapper(data, record.body(), archive, &mut Vec::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1377,10 +1633,10 @@ fn class_data_prefix(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
+    let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let class = parse_class_wrapper(
         data,
-        wrapper.header_start..wrapper.next_offset,
+        wrapper.header_start..wrapper.next_offset(),
         archive,
         &mut Vec::new(),
     )?;
@@ -1402,23 +1658,22 @@ fn parse_light_record_attributes(
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
     let mut warnings = Vec::new();
     let _ = class_data_prefix(data, record, archive, LIGHT)?;
-    let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
-    let mut offset = wrapper.next_offset;
+    let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
+    let mut offset = wrapper.next_offset();
     let mut attributes_chunk = None;
-    let mut attributes_body_range = None;
     let mut attributes_userdata_body_range = None;
     let mut phase = 0_u8;
     let mut record_end_seen = false;
-    while offset < record.body.end {
-        let item = chunk_at(data, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let item = chunk_at(data, offset, record.body().end, archive, false)?;
         if item.typecode == LIGHT_RECORD_END {
-            if !item.short || item.value != 0 {
+            if !item.short() || item.value() != 0 {
                 return Err(FramingError::structural(
                     item.header_start,
                     "light record end must be short with value zero",
                 ));
             }
-            if item.next_offset != record.body.end {
+            if item.next_offset() != record.body().end {
                 return Err(FramingError::structural(
                     item.header_start,
                     "light record end is not final",
@@ -1429,24 +1684,23 @@ fn parse_light_record_attributes(
         }
         match item.typecode {
             LIGHT_RECORD_ATTRIBUTES if phase == 0 => {
-                if item.short {
+                if item.short() {
                     return Err(FramingError::structural(
                         item.header_start,
                         "light record attributes must be a long chunk",
                     ));
                 }
                 attributes_chunk = Some(item.clone());
-                attributes_body_range = Some(item.body.clone());
                 phase = 1;
             }
             LIGHT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
-                if item.short {
+                if item.short() {
                     return Err(FramingError::structural(
                         item.header_start,
                         "light attribute userdata must be a long chunk",
                     ));
                 }
-                attributes_userdata_body_range = Some(item.body.clone());
+                attributes_userdata_body_range = Some(item.body().clone());
                 phase = 2;
             }
             _ => {
@@ -1456,24 +1710,22 @@ fn parse_light_record_attributes(
                 ));
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     if !record_end_seen {
         return Err(FramingError::structural(
-            record.body.end,
+            record.body().end,
             "light record is missing light record end",
         ));
     }
 
-    let mut attributes = attributes_body_range
+    let mut attributes = attributes_chunk
         .as_ref()
-        .map(|body_range| {
+        .map(|chunk| {
             parse_attributes(
                 data,
-                body_range.clone(),
-                attributes_chunk
-                    .as_ref()
-                    .map_or_else(|| body_range.clone(), crate::chunks::Chunk::range),
+                chunk.body(),
+                chunk.range(),
                 archive,
                 writer_version,
                 &mut warnings,
@@ -1485,20 +1737,15 @@ fn parse_light_record_attributes(
         .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
     let userdata_requires_opaque = attributes_userdata.iter().any(|descriptor| {
-        if !descriptor.known {
+        let Some(descriptor) = descriptor.known() else {
             return true;
-        }
-        let is_user_string = descriptor.class_uuid == Some(USER_STRING_LIST)
-            && descriptor.item_uuid == Some(USER_STRING_LIST);
+        };
+        let is_user_string =
+            descriptor.class_uuid == USER_STRING_LIST && descriptor.item_uuid == USER_STRING_LIST;
         if !is_user_string {
             return false;
         }
-        descriptor
-            .payload_range
-            .as_ref()
-            .is_none_or(|payload_range| {
-                parse_user_string_list(data, payload_range.clone(), archive).is_err()
-            })
+        parse_user_string_list(data, descriptor.payload_range.clone(), archive).is_err()
     });
     if attributes.is_none() && !attributes_userdata.is_empty() {
         return Err(FramingError::structural(
@@ -1512,7 +1759,7 @@ fn parse_light_record_attributes(
             .and_then(|value| value.rendering_range.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let direct = direct_checksum_ranges(&item.body, &children)?;
+        let direct = direct_checksum_ranges(&item.body(), &children)?;
         if let Some(note) = match verify_checksum_ranges(data, item, &direct)? {
             ChecksumStatus::Mismatch { expected, actual } => Some(format!(
                 "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
@@ -1565,7 +1812,7 @@ fn class_data_with_userdata(
     expected: Uuid,
 ) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body.clone(), archive, &mut Vec::new())?;
+        parse_class_wrapper_with_userdata(data, record.body(), archive, &mut Vec::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1669,13 +1916,13 @@ fn texture_array(
     archive: ArchiveVersion,
 ) -> Result<Vec<TextureRecord>, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "texture array is not anonymous",
         ));
     }
-    let mut values = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut values = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (values.i32()?, values.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1695,7 +1942,7 @@ fn texture_array(
     let mut textures = Vec::new();
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
-        if object.short {
+        if object.short() {
             return Err(FramingError::structural(
                 values.position(),
                 "texture object is short-framed",
@@ -1703,7 +1950,7 @@ fn texture_array(
         }
         let class = parse_class_wrapper(
             data,
-            object.header_start..object.next_offset,
+            object.header_start..object.next_offset(),
             archive,
             &mut Vec::new(),
         )?;
@@ -1719,23 +1966,39 @@ fn texture_array(
             archive,
             object.header_start,
         )?);
-        values.skip(object.next_offset - values.position())?;
+        values.skip(object.next_offset() - values.position())?;
     }
     values.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(textures)
+}
+
+#[derive(Clone, Copy)]
+enum LegacyTextureKind {
+    Bitmap,
+    Bump,
+    Environment,
+}
+
+impl LegacyTextureKind {
+    fn texture_type(self) -> u32 {
+        match self {
+            Self::Bitmap => 1,
+            Self::Bump => 2,
+            Self::Environment => 86,
+        }
+    }
 }
 
 fn parse_v2_v3_texture(
     reader: &mut BoundedReader<'_>,
     source_offset: usize,
-    texture_type: u32,
-    is_bump: bool,
+    kind: LegacyTextureKind,
 ) -> Result<Option<TextureRecord>, FramingError> {
     let legacy_file_path = utf16(reader)?;
     let mode = reader.i32()?;
     let _obsolete_index = reader.i32()?;
-    let bump_scale = if is_bump {
+    let bump_scale = if matches!(kind, LegacyTextureKind::Bump) {
         [0.0, read_finite(reader, "legacy bump scale")?]
     } else {
         [0.0, 1.0]
@@ -1749,7 +2012,7 @@ fn parse_v2_v3_texture(
         mapping_channel_id: 1,
         legacy_file_path,
         enabled: true,
-        texture_type,
+        texture_type: kind.texture_type(),
         mode: if mode == 2 { 2 } else { 1 },
         minification_filter: 1,
         magnification_filter: 1,
@@ -1799,13 +2062,18 @@ fn parse_v2_v3_material(
     reader.skip(20)?;
 
     let mut textures = Vec::with_capacity(3);
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 1, false)? {
+    if let Some(texture) =
+        parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bitmap)?
+    {
         textures.push(texture);
     }
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 2, true)? {
+    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bump)?
+    {
         textures.push(texture);
     }
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 86, false)? {
+    if let Some(texture) =
+        parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Environment)?
+    {
         textures.push(texture);
     }
 
@@ -1846,14 +2114,10 @@ fn parse_v2_v3_material(
         reflectivity: 0.0,
         shine,
         transparency,
-        texture_count: textures.len(),
         textures,
         shareable: false,
         disable_lighting: false,
-        fresnel_reflections: false,
-        reflection_glossiness: None,
-        refraction_glossiness: None,
-        fresnel_index_of_refraction: None,
+        fresnel: None,
         rdk_instance_uuid: None,
         diffuse_texture_alpha_transparency: None,
         physically_based,
@@ -1867,6 +2131,7 @@ fn parse_material(
     writer_version: Option<i64>,
     source_offset: usize,
     physically_based: Option<PhysicallyBasedMaterialRecord>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<MaterialRecord, FramingError> {
     if matches!(archive, ArchiveVersion::V2 | ArchiveVersion::V3) {
         return parse_v2_v3_material(data, range, source_offset, physically_based);
@@ -1892,7 +2157,7 @@ fn parse_material(
             ));
         }
         let chunk = chunk_at(data, outer.position(), outer.end(), archive, false)?;
-        let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let version = (reader.i32()?, reader.i32()?);
         if version.0 != 1 || version.1 < 0 {
             return Err(FramingError::structural(
@@ -1921,18 +2186,25 @@ fn parse_material(
     let specular = reader.array()?;
     let reflection = reader.array()?;
     let mut transparent = reader.array()?;
-    if !modern
-        && writer_version.is_some_and(|version| version < 200_912_010)
-        && transparent[..3] == [128, 128, 128]
-    {
-        transparent = diffuse;
+    // A pre-2009 writer stores a bogus [128, 128, 128] transparent color that
+    // the diffuse color replaces. Without a stamp the stored color stands, so
+    // the emitted color rests on the missing stamp - but only where the two
+    // readings disagree. Where diffuse already equals the stored color, both
+    // readings give the same IR and nothing was substituted.
+    if !modern && transparent[..3] == [128, 128, 128] {
+        if writer_version.is_some_and(|version| version < 200_912_010) {
+            transparent = diffuse;
+        } else if writer_version.is_none() && diffuse != transparent {
+            losses.push(crate::loss::writer_stamp_unverified(format!(
+                "legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"
+            )));
+        }
     }
     let index_of_refraction = read_finite(&mut reader, "index of refraction")?;
     let reflectivity = read_finite(&mut reader, "reflectivity")?;
     let shine = read_finite(&mut reader, "shine")?;
     let transparency = read_finite(&mut reader, "transparency")?;
     let textures = texture_array(data, &mut reader, archive)?;
-    let texture_count = textures.len();
     if !modern && minor >= 1 {
         let _obsolete_library = utf16(&mut reader)?;
     }
@@ -1957,23 +2229,13 @@ fn parse_material(
     } else {
         false
     };
-    let fresnel_reflections = if minor >= 4 || modern {
-        reader.bool_with_writer_version(writer_version)?
-    } else {
-        false
-    };
-    let reflection_glossiness = if minor >= 4 || modern {
-        Some(read_finite(&mut reader, "reflection glossiness")?)
-    } else {
-        None
-    };
-    let refraction_glossiness = if minor >= 4 || modern {
-        Some(read_finite(&mut reader, "refraction glossiness")?)
-    } else {
-        None
-    };
-    let fresnel_index_of_refraction = if minor >= 4 || modern {
-        Some(read_finite(&mut reader, "Fresnel index")?)
+    let fresnel = if minor >= 4 || modern {
+        Some(MaterialFresnelSettings {
+            reflections: reader.bool_with_writer_version(writer_version)?,
+            reflection_glossiness: read_finite(&mut reader, "reflection glossiness")?,
+            refraction_glossiness: read_finite(&mut reader, "refraction glossiness")?,
+            index_of_refraction: read_finite(&mut reader, "Fresnel index")?,
+        })
     } else {
         None
     };
@@ -2010,14 +2272,10 @@ fn parse_material(
         reflectivity,
         shine,
         transparency,
-        texture_count,
         textures,
         shareable,
         disable_lighting,
-        fresnel_reflections,
-        reflection_glossiness,
-        refraction_glossiness,
-        fresnel_index_of_refraction,
+        fresnel,
         rdk_instance_uuid: rdk.filter(|id| !id.is_nil()).map(|id| id.to_string()),
         diffuse_texture_alpha_transparency: alpha,
         physically_based,
@@ -2188,11 +2446,6 @@ fn parse_linetype(
     let component = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
         let name = utf16(&mut reader)?;
-        let value = Component {
-            index: Some(index),
-            id: Uuid::nil(),
-            name,
-        };
         let values = segments(&mut reader)?;
         let id = if version.1 >= 1 {
             uuid(&mut reader)?
@@ -2201,8 +2454,11 @@ fn parse_linetype(
         };
         reader.skip_remaining()?;
         return Ok(linetype_record(
-            value,
-            id,
+            Component {
+                index: Some(index),
+                id,
+                name,
+            },
             values,
             source_offset,
             0,
@@ -2285,10 +2541,8 @@ fn parse_linetype(
     // the anonymous chunk. Its value has no generic width and remains a
     // bounded suffix.
     reader.skip_remaining()?;
-    let component_id = component.id;
     Ok(linetype_record(
         component,
-        component_id,
         values,
         source_offset,
         cap,
@@ -2303,7 +2557,6 @@ fn parse_linetype(
 #[allow(clippy::too_many_arguments)]
 fn linetype_record(
     component: Component,
-    fallback_id: Uuid,
     segments: Vec<LinetypeSegment>,
     source_offset: usize,
     line_cap: u8,
@@ -2313,11 +2566,7 @@ fn linetype_record(
     taper_points: Vec<[f64; 2]>,
     always_model_distance: bool,
 ) -> LinetypeRecord {
-    let id = if component.id.is_nil() {
-        fallback_id
-    } else {
-        component.id
-    };
+    let id = component.id;
     let key = if id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -2397,8 +2646,7 @@ fn parse_hatch_pattern(
     source_offset: usize,
 ) -> Result<HatchPatternRecord, FramingError> {
     let modern = data.get(range.start).copied() == Some(0);
-    let mut pattern_unit_system = None;
-    let mut always_model_distances = None;
+    let mut distance_settings = None;
     let (component, fill_type, description, lines) = if modern {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 < 0 {
@@ -2411,7 +2659,7 @@ fn parse_hatch_pattern(
         let fill_type = reader.i32()?;
         let description = utf16(&mut reader)?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        let mut line_reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut line_reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let count = line_reader.i32()?;
         let count = usize::try_from(count).map_err(|_| {
             FramingError::structural(line_reader.position() - 4, "negative hatch-line count")
@@ -2431,7 +2679,7 @@ fn parse_hatch_pattern(
                 archive,
                 false,
             )?;
-            let mut payload = BoundedReader::new(data, line.body.start, line.body.end)?;
+            let mut payload = BoundedReader::new(data, line.body().start, line.body().end)?;
             let version = (payload.i32()?, payload.i32()?);
             if version.0 != 1 || version.1 < 0 {
                 return Err(FramingError::structural(
@@ -2441,13 +2689,15 @@ fn parse_hatch_pattern(
             }
             lines.push(hatch_line_fields(&mut payload, scale)?);
             payload.skip_remaining()?;
-            line_reader.skip(line.next_offset - line_reader.position())?;
+            line_reader.skip(line.next_offset() - line_reader.position())?;
         }
         line_reader.skip_remaining()?;
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
         if archive.value() >= 90 {
-            pattern_unit_system = Some(reader.u8()?);
-            always_model_distances = Some(reader.bool()?);
+            distance_settings = Some(HatchPatternDistanceSettings {
+                pattern_unit_system: reader.u8()?,
+                always_model_distances: reader.bool()?,
+            });
         }
         reader.skip_remaining()?;
         (component, fill_type, description, lines)
@@ -2509,8 +2759,7 @@ fn parse_hatch_pattern(
         fill_type,
         description,
         lines,
-        pattern_unit_system,
-        always_model_distances,
+        distance_settings,
     })
 }
 
@@ -2532,17 +2781,17 @@ fn named_child(
 ) -> Result<serde_json::Value, FramingError> {
     let offset = reader.position();
     let chunk = chunk_at(data, offset, reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             offset,
             "dimension-style child wrapper is invalid",
         ));
     }
-    reader.skip(chunk.next_offset - offset)?;
+    reader.skip(chunk.next_offset() - offset)?;
     Ok(serde_json::json!({
         "offset": offset,
-        "byte_len": chunk.next_offset - offset,
-        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset]),
+        "byte_len": chunk.next_offset() - offset,
+        "sha256": cadmpeg_ir::hash::sha256_hex(&data[offset..chunk.next_offset()]),
     }))
 }
 
@@ -2744,7 +2993,7 @@ fn dimension_style_controls(
 
 fn parse_v5_dimension_style_extra(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<V5DimensionStyleExtraRecord, FramingError> {
@@ -2948,19 +3197,6 @@ fn parse_v5_dimension_style(
         "v5_leader_arrow_type".to_string(),
         serde_json::json!(leader_arrow_type),
     );
-    let parent_style_uuid = extra
-        .as_ref()
-        .and_then(|value| value.parent_style_uuid.clone());
-    if let Some(value) = extra.as_ref() {
-        controls.insert(
-            "v5_extra_dimension_scale".to_string(),
-            serde_json::json!(value.dimension_scale),
-        );
-        controls.insert(
-            "v5_extra_dimension_scale_source".to_string(),
-            serde_json::json!(value.dimension_scale_source),
-        );
-    }
     let key = if id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -2997,9 +3233,7 @@ fn parse_v5_dimension_style(
         dimension_line_extension_mm,
         suppress_extension_line_1,
         suppress_extension_line_2,
-        parent_style_uuid,
-        controls,
-        v5_extra: extra,
+        details: DimensionStyleDetails::V5 { controls, extra },
     })
 }
 
@@ -3083,9 +3317,10 @@ fn parse_dimension_style(
         dimension_line_extension_mm,
         suppress_extension_line_1,
         suppress_extension_line_2,
-        parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
-        controls,
-        v5_extra: None,
+        details: DimensionStyleDetails::Modern {
+            parent_style_uuid: (!parent.is_nil()).then(|| parent.to_string()),
+            controls,
+        },
     })
 }
 
@@ -3119,24 +3354,27 @@ fn parse_embedded_image(
     }
     let file_path = utf16(&mut reader)?;
     let image_crc32 = reader.u32()?;
-    let compression_method = reader.i32()?;
-    if !matches!(compression_method, 0 | 1) {
-        return Err(FramingError::structural(
-            reader.position() - 4,
-            "embedded-image compression method is unsupported",
-        ));
-    }
+    let compression_method = match reader.i32()? {
+        0 => EmbeddedImageCompression::Raw,
+        1 => EmbeddedImageCompression::Compressed,
+        _ => {
+            return Err(FramingError::structural(
+                reader.position() - 4,
+                "embedded-image compression method is unsupported",
+            ));
+        }
+    };
     let buffer_offset = reader.position();
     let uncompressed_byte_len = u64::from(reader.u32()?);
     match compression_method {
-        0 => {
+        EmbeddedImageCompression::Raw => {
             if uncompressed_byte_len != 0 {
                 let size = usize::try_from(uncompressed_byte_len)
                     .map_err(|_| FramingError::structural(buffer_offset, "image size overflow"))?;
                 reader.skip(size)?;
             }
         }
-        1 => {
+        EmbeddedImageCompression::Compressed => {
             if uncompressed_byte_len != 0 {
                 reader.skip(4)?;
                 let method = reader.u8()?;
@@ -3153,17 +3391,16 @@ fn parse_embedded_image(
                     reader.skip(size)?;
                 } else {
                     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-                    if chunk.typecode != ANONYMOUS || chunk.short {
+                    if chunk.typecode != ANONYMOUS || chunk.short() {
                         return Err(FramingError::structural(
                             reader.position(),
                             "compressed image chunk is invalid",
                         ));
                     }
-                    reader.skip(chunk.next_offset - reader.position())?;
+                    reader.skip(chunk.next_offset() - reader.position())?;
                 }
             }
         }
-        _ => unreachable!("embedded image compression method checked"),
     }
     let buffer_end = reader.position();
     let source_uuid = if packed & 0x0f >= 1 {
@@ -3212,13 +3449,13 @@ fn bitmap_buffer(
         0 => reader.skip(uncompressed_byte_len)?,
         1 => {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            if chunk.typecode != ANONYMOUS || chunk.short || chunk.body.is_empty() {
+            if chunk.typecode != ANONYMOUS || chunk.short() || chunk.body().is_empty() {
                 return Err(FramingError::structural(
                     reader.position(),
                     "Windows bitmap compressed buffer chunk is invalid",
                 ));
             }
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
         }
         _ => {
             return Err(FramingError::structural(
@@ -3378,20 +3615,24 @@ fn parse_texture_mapping(
     let uvw_transform = xform(&mut reader)?;
     let name = utf16(&mut reader)?;
     let object = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    let (primitive_class_uuid, cache_requires_opaque) = if object.short {
+    let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
         (None, false)
     } else {
         let mut warnings = Vec::new();
         let (value, userdata) =
             parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
-        let cache_requires_opaque = userdata.iter().any(|value| {
-            value.class_uuid == MAPPING_CRC_CACHE
-                && value.item_uuid == MAPPING_CRC_CACHE
-                && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
-        });
+        let cache_requires_opaque =
+            userdata
+                .iter()
+                .filter_map(UserdataDescriptor::known)
+                .any(|value| {
+                    value.class_uuid == MAPPING_CRC_CACHE
+                        && value.item_uuid == MAPPING_CRC_CACHE
+                        && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+                });
         (Some(value.class_uuid.to_string()), cache_requires_opaque)
     };
-    reader.skip(object.next_offset - reader.position())?;
+    reader.skip(object.next_offset() - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
     let capped = version.1 >= 1 && reader.bool()?;
     reader.skip_remaining()?;
@@ -3425,13 +3666,13 @@ fn parse_rendering_mapping_channel(
     archive: ArchiveVersion,
 ) -> Result<(RenderingMappingChannel, usize), FramingError> {
     let chunk = chunk_at(data, start, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             start,
             "rendering mapping channel is not an anonymous long chunk",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if value.i32()? != 1 {
         return Err(FramingError::structural(
             value.position() - 4,
@@ -3453,7 +3694,7 @@ fn parse_rendering_mapping_channel(
             mapping_uuid,
             object_transform,
         },
-        chunk.next_offset,
+        chunk.next_offset(),
     ))
 }
 
@@ -3488,7 +3729,7 @@ fn rendering_attributes(
         for _ in 0..material_count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             let parsed = (|| {
-                let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+                let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
                     return Err(FramingError::structural(
                         value.position(),
@@ -3514,24 +3755,26 @@ fn rendering_attributes(
                     )?;
                     value.skip(next_offset - value.position())?;
                 }
-                let (back_material_uuid, material_source) = if minor >= 1 {
+                let back_face = if minor >= 1 {
                     let id = uuid(&mut value)?;
                     let source = value.u8()?;
                     value.skip(3)?;
-                    ((!id.is_nil()).then(|| id.to_string()), Some(source))
+                    Some(RenderingMaterialBackFace {
+                        back_material_uuid: (!id.is_nil()).then(|| id.to_string()),
+                        material_source: source,
+                    })
                 } else {
-                    (None, None)
+                    None
                 };
                 value.skip_remaining()?;
                 Ok(RenderingMaterialReference {
                     plugin_uuid,
                     front_material_uuid,
-                    back_material_uuid,
-                    material_source,
+                    back_face,
                 })
             })();
             presentation.materials.push(parsed?);
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
         }
         if matches!(kind, settings::RenderingAttributesKind::Object) {
             let mapping_count = checked_count_bytes(
@@ -3543,7 +3786,7 @@ fn rendering_attributes(
             )?;
             for _ in 0..mapping_count {
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-                let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+                let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
                     return Err(FramingError::structural(
                         value.position() - 4,
@@ -3575,7 +3818,7 @@ fn rendering_attributes(
                     plugin_uuid,
                     channels,
                 });
-                reader.skip(chunk.next_offset - reader.position())?;
+                reader.skip(chunk.next_offset() - reader.position())?;
             }
         }
         if matches!(kind, settings::RenderingAttributesKind::Object) && version.1 >= 2 {
@@ -3604,13 +3847,13 @@ fn parse_font(
     writer_version: Option<i64>,
 ) -> Result<FontRecord, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "font wrapper is invalid",
         ));
     }
-    let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let (major, minor) = (value.i32()?, value.i32()?);
     if major != 1 || minor < 0 {
         return Err(FramingError::structural(
@@ -3628,8 +3871,10 @@ fn parse_font(
         font.obsolete_description = utf16(&mut value)?;
     }
     if minor >= 2 {
-        font.windows_logfont_weight = Some(value.i32()?);
-        font.apple_weight_trait = Some(read_finite(&mut value, "Apple font weight trait")?);
+        font.weight = FontWeight::Modern {
+            windows: value.i32()?,
+            apple: read_finite(&mut value, "Apple font weight trait")?,
+        };
     }
     if minor >= 3 {
         font.point_size = Some(read_finite(&mut value, "font point size")?);
@@ -3651,13 +3896,13 @@ fn parse_font(
         font.localized_face_name = utf16(&mut value)?;
         font.english_face_name = utf16(&mut value)?;
         let panose = chunk_at(data, value.position(), value.end(), archive, false)?;
-        if panose.typecode != ANONYMOUS || panose.short {
+        if panose.typecode != ANONYMOUS || panose.short() {
             return Err(FramingError::structural(
                 value.position(),
                 "font PANOSE wrapper is invalid",
             ));
         }
-        let mut bytes = BoundedReader::new(data, panose.body.start, panose.body.end)?;
+        let mut bytes = BoundedReader::new(data, panose.body().start, panose.body().end)?;
         if bytes.u8()? != 0x10 || bytes.remaining() != 10 {
             return Err(FramingError::structural(
                 bytes.position(),
@@ -3665,13 +3910,13 @@ fn parse_font(
             ));
         }
         font.panose = Some(bytes.array()?);
-        value.skip(panose.next_offset - value.position())?;
+        value.skip(panose.next_offset() - value.position())?;
     }
     if minor >= 6 {
         font.quartet_member = Some(value.u8()?);
     }
     value.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(font)
 }
 
@@ -3682,6 +3927,7 @@ fn parse_text_style(
     writer_version: Option<i64>,
     apple_runtime: bool,
     source_offset: usize,
+    losses: &mut Vec<LossNote>,
 ) -> Result<TextStyleRecord, FramingError> {
     if data.get(range.start).copied() != Some(0) {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
@@ -3700,12 +3946,18 @@ fn parse_text_style(
         }
         let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
         let windows_logfont_name = String::from_utf16_lossy(&face_units[..face_end]);
-        let postscript_name = if !description.is_empty()
-            && !description.eq_ignore_ascii_case("Default")
+        let named_description =
+            !description.is_empty() && !description.eq_ignore_ascii_case("Default");
+        let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
             description.clone()
         } else {
+            if named_description && !apple_runtime && writer_version.is_none() {
+                losses.push(crate::loss::writer_stamp_unverified(format!(
+                    "legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"
+                )));
+            }
             String::new()
         };
         let mut font = FontRecord {
@@ -3715,7 +3967,7 @@ fn parse_text_style(
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {
-            font.windows_logfont_weight = Some(reader.i32()?);
+            let windows = reader.i32()?;
             let italic = reader.i32()?;
             if !matches!(italic, 0 | 1) {
                 return Err(FramingError::structural(
@@ -3724,7 +3976,10 @@ fn parse_text_style(
                 ));
             }
             let _linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
-            font.legacy_italic = Some(italic != 0);
+            font.weight = FontWeight::Legacy {
+                windows,
+                italic: italic != 0,
+            };
         }
         let id = if packed & 0x0f >= 2 {
             uuid(&mut reader)?
@@ -3789,20 +4044,13 @@ fn parse_text_style(
 }
 
 /// Results of transferring table-owned presentation records.
-pub(crate) struct PresentationInstall {
-    /// Losses from records that could not be transferred.
-    pub(crate) losses: Vec<LossNote>,
-    /// Complete records whose registered class payload was not admitted.
-    pub(crate) opaque_records: Vec<OpaqueRecord>,
-}
-
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
     let scale = scan
         .metadata
         .settings
         .units
         .as_ref()
-        .and_then(|units| units.millimeters_per_unit)
+        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
         .unwrap_or(1.0);
     let mut groups = Vec::new();
     let mut materials = Vec::new();
@@ -3821,7 +4069,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
     for object in &scan.objects {
-        if let Some(identity) = &object.identity {
+        if let Some(identity) = object.identity() {
             *object_id_counts.entry(identity.object_id).or_default() += 1;
         }
     }
@@ -3863,7 +4111,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                         )));
                     }
                     let physically_based = userdata
-                        .iter()
+                        .iter().filter_map(UserdataDescriptor::known)
                         .find(|value| {
                             value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
                                 && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
@@ -3896,6 +4144,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                         scan.metadata.properties.writer_version,
                         record.range.start,
                         physically_based,
+                        &mut losses,
                     ) {
                         if let Some(instance_id) = legacy_rdk_instance_id {
                             material.plugin_uuid = UNIVERSAL_RENDER_ENGINE.to_string();
@@ -3979,13 +4228,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                     if let Ok((range, userdata)) =
                         class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE)
                     {
-                        let extra = userdata.into_iter().find(|value| {
-                            value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA
-                        });
+                        let extra =
+                            userdata
+                                .iter()
+                                .filter_map(UserdataDescriptor::known)
+                                .find(|value| {
+                                    value.class_uuid == DIMSTYLE_EXTRA
+                                        && value.item_uuid == DIMSTYLE_EXTRA
+                                });
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
                                 scan.data,
-                                &value,
+                                value,
                                 scan.archive,
                                 scale,
                             ) {
@@ -4040,12 +4294,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                         images.push(value);
                         parsed = true;
                     }
-                } else if let Ok(class) = parse_class_wrapper(
-                    scan.data,
-                    record.body.clone(),
-                    scan.archive,
-                    &mut Vec::new(),
-                ) {
+                } else if let Ok(class) =
+                    parse_class_wrapper(scan.data, record.body(), scan.archive, &mut Vec::new())
+                {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         if let Ok(value) = parse_windows_bitmap(
                             scan.data,
@@ -4090,6 +4341,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                                 |application| application.name.to_ascii_lowercase().contains("mac"),
                             ),
                             record.range.start,
+                            &mut losses,
                         )
                     {
                         text_styles.push(value);
@@ -4111,7 +4363,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     }
     let mut group_members = BTreeMap::<i32, Vec<String>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        if let Some(attributes) = &object.attributes {
+        let Some(object) = object.framed() else {
+            continue;
+        };
+        if let Some(attributes) = object.attributes.parsed() {
             for group in &attributes.groups {
                 group_members
                     .entry(*group)
@@ -4135,7 +4390,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                 ))),
             }
         }
-        if let (Some(identity), Some(attributes)) = (&object.identity, &object.attributes) {
+        if let Some(attributes) = object.attributes.parsed() {
+            let identity = &object.identity;
             let key = if identity.object_id.is_nil()
                 || object_id_counts.get(&identity.object_id).copied() != Some(1)
             {
@@ -4193,21 +4449,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
             source_offset: layer.source.range.start as u64,
             archive_index: layer.index,
             source_uuid: layer.id.map(|id| id.to_string()),
-            parent_uuid: layer
-                .parent_id
-                .filter(|id| !id.is_nil())
-                .map(|id| id.to_string()),
+            hierarchy: layer.hierarchy,
             name: layer.name.clone(),
             description: layer.description.clone(),
             iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
             visible: layer.visible,
             locked: layer.locked,
-            expanded: layer.expanded,
             color: layer.color,
             material_index: layer.render_material_index,
             linetype_index: layer.linetype_index,
-            plot_color: layer.plot_color,
-            plot_weight_mm: layer.plot_weight,
+            plot: layer.plot,
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())
@@ -4215,19 +4466,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             visible_in_new_details: layer.visible_in_new_details,
             rendering_materials: rendering.materials,
-            per_viewport_settings: layer
-                .per_viewport_settings
-                .iter()
-                .map(|settings| LayerPerViewportPresentationRecord {
-                    viewport_uuid: settings.viewport_id.to_string(),
-                    settings_mask: settings.settings_mask,
-                    color: settings.color,
-                    plot_color: settings.plot_color,
-                    plot_weight_mm: settings.plot_weight_mm,
-                    visible: settings.visible,
-                    persistent_visibility: settings.persistent_visibility,
-                })
-                .collect(),
+            per_viewport_settings: layer.per_viewport_settings.clone(),
         });
     }
     let mut group_index_counts = BTreeMap::<i32, usize>::new();
@@ -4252,7 +4491,6 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
         group.links.sort();
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.version = namespace.version.max(2);
     namespace
         .set_arena("groups", &groups)
         .expect("Rhino groups serialize");
@@ -4289,7 +4527,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     namespace
         .set_arena("object_presentation", &object_presentation)
         .expect("Rhino object presentation serializes");
-    PresentationInstall {
+    NativeInstall {
         losses,
         opaque_records,
     }
@@ -4299,6 +4537,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
 mod tests {
     use super::*;
     use crate::chunks::ArchiveVersion;
+    use crate::objects::AttributeUserdata;
     use std::io::Write;
 
     fn utf16(value: &str) -> Vec<u8> {
@@ -4726,13 +4965,7 @@ mod tests {
             0x8200_006f,
             0,
         ));
-        let record = Record {
-            typecode: 0x2000_8060,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
 
         let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
         assert_eq!(&body[range], payload);
@@ -4786,13 +5019,7 @@ mod tests {
             LIGHT_RECORD_END,
             0,
         ));
-        let record = Record {
-            typecode: 0x2000_8060,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
         let mut losses = Vec::new();
         let value = parse_light_record_attributes(
             &body,
@@ -4848,13 +5075,16 @@ mod tests {
         assert_eq!(minor_one.source_uuid, Some(id.to_string()));
         assert_eq!(minor_one.name, "preview");
         assert_eq!(minor_one.image_crc32, 0x1122_3344);
-        assert_eq!(minor_one.compression_method, 1);
+        assert_eq!(
+            minor_one.compression_method,
+            EmbeddedImageCompression::Compressed
+        );
         assert_eq!(minor_one.buffer_byte_len, 4);
 
         let raw_bytes = embedded_bitmap_payload(0, id, 0);
         let raw = parse_embedded_image(&raw_bytes, 0..raw_bytes.len(), ArchiveVersion::V8, 42)
             .expect("raw embedded bitmap");
-        assert_eq!(raw.compression_method, 0);
+        assert_eq!(raw.compression_method, EmbeddedImageCompression::Raw);
         assert_eq!(raw.uncompressed_byte_len, 3);
         assert_eq!(raw.buffer_byte_len, 7);
     }
@@ -4978,8 +5208,46 @@ mod tests {
         .is_err());
     }
 
+    /// The PostScript name only comes from the description when the stamp says
+    /// the writer is newer than 2018-02-23. An unstamped archive drops it.
     #[test]
-    fn legacy_text_style_preserves_font_identity_and_characteristics() {
+    fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
+        let bytes = legacy_text_style_bytes();
+        let mut losses = Vec::new();
+        let value = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            false,
+            42,
+            &mut losses,
+        )
+        .expect("legacy text style without a writer stamp");
+        assert_eq!(value.font.postscript_name, "");
+        assert_eq!(losses.len(), 1, "{losses:?}");
+        assert_eq!(
+            losses[0].code.local_code(),
+            RhinoLossCode::SourceWriterStampUnverified.code()
+        );
+
+        let mut stamped_losses = Vec::new();
+        let stamped = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            Some(201_802_231),
+            false,
+            42,
+            &mut stamped_losses,
+        )
+        .expect("legacy text style with a modern writer stamp");
+        assert_eq!(stamped.font.postscript_name, "Helvetica Neue");
+        assert!(stamped_losses.is_empty(), "{stamped_losses:?}");
+    }
+
+    /// One legacy text style whose description carries a real font name.
+    fn legacy_text_style_bytes() -> Vec<u8> {
         let mut bytes = vec![0x12];
         bytes.extend(7_i32.to_le_bytes());
         bytes.extend(utf16("Helvetica Neue"));
@@ -4994,6 +5262,12 @@ mod tests {
         bytes.extend(1_i32.to_le_bytes());
         bytes.extend(1.6_f64.to_le_bytes());
         bytes.extend([0x11; 16]);
+        bytes
+    }
+
+    #[test]
+    fn legacy_text_style_preserves_font_identity_and_characteristics() {
+        let bytes = legacy_text_style_bytes();
         let value = parse_text_style(
             &bytes,
             0..bytes.len(),
@@ -5001,13 +5275,20 @@ mod tests {
             Some(201_802_231),
             false,
             42,
+            &mut Vec::new(),
         )
         .expect("valid legacy text style");
         assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.font.windows_logfont_name, "Helvetica Neue");
-        assert_eq!(value.font.windows_logfont_weight, Some(700));
+        assert!(matches!(
+            value.font.weight,
+            FontWeight::Legacy { windows: 700, .. }
+        ));
         assert_eq!(value.font.characteristics, 0);
-        assert_eq!(value.font.legacy_italic, Some(true));
+        assert!(matches!(
+            value.font.weight,
+            FontWeight::Legacy { italic: true, .. }
+        ));
         assert_eq!(value.source_offset, 42);
     }
 
@@ -5044,8 +5325,16 @@ mod tests {
         body.extend(utf16("Arial style"));
         body.extend([0xee, 0xff]);
         let bytes = anonymous(2, &body);
-        let value = parse_text_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, None, false, 99)
-            .expect("modern text style with future suffixes");
+        let value = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            false,
+            99,
+            &mut Vec::new(),
+        )
+        .expect("modern text style with future suffixes");
         assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.name, "Arial style");
         assert_eq!(value.font_description, "ArialMT");
@@ -5062,15 +5351,24 @@ mod tests {
         assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.name, "dimension style");
         assert_eq!(value.extension_line_extension_mm, 1.0);
-        assert_eq!(value.controls["decimal_separator"], serde_json::json!(112));
-        assert_eq!(value.controls["use_kerning"], serde_json::json!(true));
-        assert_eq!(value.controls["line_space_scale"], serde_json::json!(1.75));
         assert_eq!(
-            value.controls["dimension_length_display"],
+            value.details.controls()["decimal_separator"],
+            serde_json::json!(112)
+        );
+        assert_eq!(
+            value.details.controls()["use_kerning"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value.details.controls()["line_space_scale"],
+            serde_json::json!(1.75)
+        );
+        assert_eq!(
+            value.details.controls()["dimension_length_display"],
             serde_json::json!(107)
         );
         assert_eq!(
-            value.controls["font_characteristics"]["byte_len"],
+            value.details.controls()["font_characteristics"]["byte_len"],
             serde_json::json!(24)
         );
         assert_eq!(value.source_offset, 321);
@@ -5081,8 +5379,14 @@ mod tests {
         let bytes = current_dimension_style_chunk();
         let value = parse_dimension_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 1.0, 654)
             .expect("dimension style with current minor");
-        assert_eq!(value.controls["use_kerning"], serde_json::json!(true));
-        assert_eq!(value.controls["line_space_scale"], serde_json::json!(1.75));
+        assert_eq!(
+            value.details.controls()["use_kerning"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value.details.controls()["line_space_scale"],
+            serde_json::json!(1.75)
+        );
         assert_eq!(value.source_offset, 654);
     }
 
@@ -5090,7 +5394,7 @@ mod tests {
     fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         let base = v5_dimension_style_chunk();
         let extra_bytes = v5_dimension_style_extra_chunk();
-        let descriptor = UserdataDescriptor {
+        let descriptor = ClassUserdata {
             range: 0..extra_bytes.len(),
             version: (2, 2),
             class_uuid: DIMSTYLE_EXTRA,
@@ -5098,11 +5402,8 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..extra_bytes.len(),
-            unknown_version: false,
         };
         let extra =
             parse_v5_dimension_style_extra(&extra_bytes, &descriptor, ArchiveVersion::V5, 2.0)
@@ -5126,15 +5427,21 @@ mod tests {
         assert_eq!(value.length_factor, 15.0);
         assert_eq!(value.alternate_length_format, 17);
         assert_eq!(
-            value.parent_style_uuid,
+            value.details.parent_style_uuid().cloned(),
             Some(Uuid::from_canonical([0x11; 16]).to_string())
         );
-        assert_eq!(value.controls["v5_arrow_type"], serde_json::json!(7));
+        assert_eq!(
+            value.details.controls()["v5_arrow_type"],
+            serde_json::json!(7)
+        );
         assert_eq!(
             value.source_uuid,
             Some(Uuid::from_canonical([0x33; 16]).to_string())
         );
-        assert!(value.v5_extra.is_some());
+        assert!(matches!(
+            value.details,
+            DimensionStyleDetails::V5 { extra: Some(_), .. }
+        ));
 
         let mut minor_zero_body = Vec::new();
         minor_zero_body.extend([0; 16]);
@@ -5191,28 +5498,28 @@ mod tests {
         let geometry_start = 0;
         let attributes_start = geometry.len();
         let data = [geometry, attributes].concat();
-        let descriptor = |range: Range<usize>| UserdataDescriptor {
-            range: range.clone(),
-            version: (2, 2),
-            class_uuid: USER_STRING_LIST,
-            item_uuid: USER_STRING_LIST,
-            copy_count: 1,
-            transform_range: 0..0,
-            application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
-            payload_range: range,
-            unknown_version: false,
+        let descriptor = |range: Range<usize>| {
+            UserdataDescriptor::Known(ClassUserdata {
+                range: range.clone(),
+                version: (2, 2),
+                class_uuid: USER_STRING_LIST,
+                item_uuid: USER_STRING_LIST,
+                copy_count: 1,
+                transform_range: 0..0,
+                application_uuid: None,
+                save_context: None,
+                payload_range: range,
+            })
         };
-        let attribute_descriptor = |range: Range<usize>| AttributeUserdataDescriptor {
-            range,
-            known: true,
-            class_uuid: Some(USER_STRING_LIST),
-            item_uuid: Some(USER_STRING_LIST),
-            application_uuid: None,
-            writer_version: None,
-            payload_range: Some(attributes_start..data.len()),
+        let attribute_descriptor = |range: Range<usize>| {
+            AttributeUserdataDescriptor::Known(AttributeUserdata {
+                range,
+                class_uuid: USER_STRING_LIST,
+                item_uuid: USER_STRING_LIST,
+                application_uuid: None,
+                writer_version: None,
+                payload_range: attributes_start..data.len(),
+            })
         };
         let mut losses = Vec::new();
         let (geometry_values, attribute_values) = first_user_string_records(
@@ -5247,7 +5554,6 @@ mod tests {
                 id: Uuid::nil(),
                 name: String::new(),
             },
-            Uuid::nil(),
             Vec::new(),
             7,
             0,
@@ -5393,14 +5699,15 @@ mod tests {
         assert_eq!(light.hotspot, -1.234_321_012_343_21e308);
     }
 
-    #[test]
-    fn legacy_material_preserves_core_appearance_and_switches() {
+    /// One legacy (outer version 2.0) material whose transparent color is the
+    /// bogus [128, 128, 128] that the pre-2009 rule replaces with `diffuse`.
+    fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
         let mut body = [[0x11; 16].as_slice(), 2_i32.to_le_bytes().as_slice()].concat();
         body.extend(utf16("steel"));
         body.extend([0x22; 16]);
         for color in [
             [1, 2, 3, 4],
-            [5, 6, 7, 8],
+            diffuse,
             [9, 10, 11, 12],
             [13, 14, 15, 16],
             [17, 18, 19, 20],
@@ -5425,6 +5732,12 @@ mod tests {
         let inner = anonymous(7, &body);
         let mut bytes = vec![0x20];
         bytes.extend(inner);
+        bytes
+    }
+
+    #[test]
+    fn legacy_material_preserves_core_appearance_and_switches() {
+        let bytes = legacy_material_bytes([5, 6, 7, 8]);
         let material = parse_material(
             &bytes,
             0..bytes.len(),
@@ -5432,6 +5745,7 @@ mod tests {
             Some(200_912_009),
             0,
             None,
+            &mut Vec::new(),
         )
         .expect("required invariant");
         assert_eq!(material.name, "steel");
@@ -5440,6 +5754,64 @@ mod tests {
         assert_eq!(material.index_of_refraction, 1.5);
         assert!(material.shareable);
         assert!(!material.disable_lighting);
+    }
+
+    /// The pre-2009 transparency substitution rests on the stamp.
+    ///
+    /// The same bytes give diffuse under an old stamp and the stored
+    /// [128, 128, 128] under none, so an unstamped archive emits a color the
+    /// archive does not vouch for - unless diffuse already equals the stored
+    /// color, where both readings agree and nothing was substituted.
+    #[test]
+    fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
+        let bytes = legacy_material_bytes([5, 6, 7, 8]);
+        let mut losses = Vec::new();
+        let material = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            None,
+            0,
+            None,
+            &mut losses,
+        )
+        .expect("legacy material without a writer stamp");
+        assert_eq!(material.transparent, [128, 128, 128, 24]);
+        assert_eq!(losses.len(), 1, "{losses:?}");
+        assert_eq!(
+            losses[0].code.local_code(),
+            RhinoLossCode::SourceWriterStampUnverified.code()
+        );
+
+        let mut stamped_losses = Vec::new();
+        let stamped = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            Some(200_912_010),
+            0,
+            None,
+            &mut stamped_losses,
+        )
+        .expect("legacy material with a modern writer stamp");
+        assert_eq!(stamped.transparent, [128, 128, 128, 24]);
+        assert!(stamped_losses.is_empty(), "{stamped_losses:?}");
+
+        // Both readings give the same color, so no color was substituted.
+        let agreeing = legacy_material_bytes([128, 128, 128, 24]);
+        let mut agreeing_losses = Vec::new();
+        let material = parse_material(
+            &agreeing,
+            0..agreeing.len(),
+            ArchiveVersion::V5,
+            None,
+            0,
+            None,
+            &mut agreeing_losses,
+        )
+        .expect("legacy material whose diffuse equals its transparent color");
+        assert_eq!(material.transparent, material.diffuse);
+        assert!(agreeing_losses.is_empty(), "{agreeing_losses:?}");
     }
 
     fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
@@ -5491,8 +5863,16 @@ mod tests {
     fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
         for archive in [ArchiveVersion::V2, ArchiveVersion::V3] {
             let bytes = v2_v3_material_payload(1);
-            let material = parse_material(&bytes, 0..bytes.len(), archive, None, 77, None)
-                .expect("V2/V3 material payload");
+            let material = parse_material(
+                &bytes,
+                0..bytes.len(),
+                archive,
+                None,
+                77,
+                None,
+                &mut Vec::new(),
+            )
+            .expect("V2/V3 material payload");
             assert_eq!(material.archive_index, Some(7));
             assert_eq!(material.name, "old steel");
             assert_eq!(
@@ -5510,7 +5890,7 @@ mod tests {
                 material.source_uuid,
                 Some(Uuid::from_wire([0x55; 16]).to_string())
             );
-            assert_eq!(material.texture_count, 3);
+            assert_eq!(material.textures.len(), 3);
             assert_eq!(material.textures[0].legacy_file_path, "bitmap.png");
             assert_eq!(material.textures[0].texture_type, 1);
             assert_eq!(material.textures[0].mode, 2);
@@ -5530,8 +5910,16 @@ mod tests {
     #[test]
     fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity() {
         let bytes = v2_v3_material_payload(0);
-        let material = parse_material(&bytes, 0..bytes.len(), ArchiveVersion::V2, None, 77, None)
-            .expect("V2 minor-zero material payload");
+        let material = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V2,
+            None,
+            77,
+            None,
+            &mut Vec::new(),
+        )
+        .expect("V2 minor-zero material payload");
         assert_eq!(material.id, "rhino:presentation:material#record-77");
         assert_eq!(material.source_uuid, None);
         assert_eq!(material.reflection, [255, 255, 255, 0]);
@@ -5544,9 +5932,9 @@ mod tests {
         let bytes = physically_based_payload(2, &[0xaa, 0xbb]);
         let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
             .expect("outer userdata payload");
-        let material = parse_physically_based_material(&bytes, payload.body, ArchiveVersion::V8)
+        let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
             .expect("physically based material");
-        assert_eq!(material.version, 2);
+        assert_eq!(material.revision.version(), 2);
         assert_eq!(material.base_color, [0.1, 0.2, 0.3, 0.4]);
         assert_eq!(material.brdf, 1);
         assert_eq!(material.subsurface, 0.5);
@@ -5566,7 +5954,7 @@ mod tests {
         assert_eq!(material.opacity, 13.0);
         assert_eq!(material.opacity_roughness, 14.0);
         assert_eq!(material.emission, [0.11, 0.22, 0.33, 0.44]);
-        assert_eq!(material.alpha, 0.77);
+        assert_eq!(material.revision.alpha(), 0.77);
     }
 
     #[test]
@@ -5574,10 +5962,10 @@ mod tests {
         let bytes = physically_based_payload(1, &[0xcc, 0xdd]);
         let payload = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false)
             .expect("outer userdata payload");
-        let material = parse_physically_based_material(&bytes, payload.body, ArchiveVersion::V8)
+        let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
             .expect("version one physically based material");
-        assert_eq!(material.version, 1);
-        assert_eq!(material.alpha, 1.0);
+        assert_eq!(material.revision.version(), 1);
+        assert_eq!(material.revision.alpha(), 1.0);
     }
 
     fn legacy_rdk_payload(xml: &str, terminated: bool, suffix: &[u8]) -> Vec<u8> {
@@ -5593,7 +5981,7 @@ mod tests {
     }
 
     fn legacy_rdk_descriptor(payload_range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor {
+        UserdataDescriptor::Known(ClassUserdata {
             range: payload_range.clone(),
             version: (2, 2),
             class_uuid: RDK_CLASS,
@@ -5601,12 +5989,13 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: Some(RDK_APPLICATION),
-            last_saved_as_goo: Some(false),
-            archive_version: Some(5),
-            writer_version: Some(0),
+            save_context: Some(crate::objects::UserdataSaveContext {
+                last_saved_as_goo: false,
+                archive_version: 5,
+                writer_version: 0,
+            }),
             payload_range,
-            unknown_version: false,
-        }
+        })
     }
 
     #[test]
@@ -5722,10 +6111,19 @@ mod tests {
             Uuid::from_wire([0x22; 16]).to_string()
         );
         assert_eq!(
-            value.materials[0].back_material_uuid,
+            value.materials[0]
+                .back_face
+                .as_ref()
+                .and_then(|value| value.back_material_uuid.clone()),
             Some(Uuid::from_wire([0x44; 16]).to_string())
         );
-        assert_eq!(value.materials[0].material_source, Some(3));
+        assert_eq!(
+            value.materials[0]
+                .back_face
+                .as_ref()
+                .map(|value| value.material_source),
+            Some(3)
+        );
     }
 
     #[test]
@@ -5994,8 +6392,18 @@ mod tests {
         assert_eq!(value.lines[0].base_millimeters, [12.5, -25.0]);
         assert_eq!(value.lines[0].offset_millimeters, [35.0, 47.5]);
         assert_eq!(value.lines[0].dashes_millimeters, [12.5, -7.5, 5.0]);
-        assert_eq!(value.pattern_unit_system, None);
-        assert_eq!(value.always_model_distances, None);
+        assert_eq!(
+            value
+                .distance_settings
+                .map(|settings| settings.pattern_unit_system),
+            None
+        );
+        assert_eq!(
+            value
+                .distance_settings
+                .map(|settings| settings.always_model_distances),
+            None
+        );
 
         let mut v9_body = body;
         v9_body.extend([2, 1]);
@@ -6003,7 +6411,15 @@ mod tests {
         let v9_bytes = anonymous(0, &v9_body);
         let v9 = parse_hatch_pattern(&v9_bytes, 0..v9_bytes.len(), ArchiveVersion::V9, 10.0, 321)
             .expect("archive-90 hatch pattern");
-        assert_eq!(v9.pattern_unit_system, Some(2));
-        assert_eq!(v9.always_model_distances, Some(true));
+        assert_eq!(
+            v9.distance_settings
+                .map(|settings| settings.pattern_unit_system),
+            Some(2)
+        );
+        assert_eq!(
+            v9.distance_settings
+                .map(|settings| settings.always_model_distances),
+            Some(true)
+        );
     }
 }

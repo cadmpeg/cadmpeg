@@ -36,12 +36,13 @@ fn transformed_reference_plane_requires_fixed_prefix() {
 fn semantic_writer_preserves_transformed_reference_plane_prefix() {
     use cadmpeg_ir::attributes::AttributeValue;
 
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_envelope(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let transformed = ir
@@ -57,9 +58,12 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
     }
 
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
 
     let scan = container::scan_bytes(&written);
     let payload = scan
@@ -90,7 +94,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         .iter()
         .find(|attribute| attribute.name == "transformed_reference_plane")
         .unwrap();
-    assert!(transformed.id.0.ends_with(":147"));
+    assert!(transformed.id.as_str().ends_with(":147"));
 }
 
 #[test]
@@ -114,12 +118,13 @@ fn decode_does_not_scan_past_unit_name_record_start() {
 
 #[test]
 fn semantic_writer_preserves_document_metadata() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_envelope(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let expected = decoded
@@ -130,9 +135,12 @@ fn semantic_writer_preserves_document_metadata() {
         .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -187,7 +195,7 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "transformed_reference_plane")
         .expect("transformed reference plane");
-    assert!(transformed.id.0.ends_with(":147"));
+    assert!(transformed.id.as_str().ends_with(":147"));
     assert_eq!(
         transformed.values,
         vec![

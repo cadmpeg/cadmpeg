@@ -69,7 +69,7 @@ pub(crate) fn sketch_table_headers(
             table.entity_ref,
             None,
             Vec::new(),
-            table.retained_row_count(),
+            table.rows.len(),
             table.offset,
         );
     }
@@ -145,25 +145,25 @@ pub(crate) fn sketch_table_headers(
             table.rows.len(),
             table.offset,
         );
-        if let Some(header) = &table.skamp_header {
+        if let Some(header) = table.skamps.as_ref().and_then(|table| table.header()) {
             push(
                 "solver_incidences",
                 Some(header.declared_count),
                 Some(header.entity_ref),
                 None,
                 Vec::new(),
-                table.skamps.len(),
+                table.skamps().len(),
                 header.offset,
             );
         }
-        if let Some(header) = &table.triples_header {
+        if let Some(header) = table.triples.as_ref().and_then(|table| table.header()) {
             push(
                 "relation_triples",
                 Some(header.declared_count),
                 Some(header.entity_ref),
                 None,
                 Vec::new(),
-                table.triples.len(),
+                table.triples().len(),
                 header.offset,
             );
         }
@@ -198,17 +198,21 @@ pub(crate) fn feature_definition_record_id(
         .features
         .definitions
         .iter()
-        .filter(|candidate| candidate.id == definition.id)
+        .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
-        || (definition.id == 0 && definition.owner_feature_id.is_none())
+        || (definition.identity.schema_id().is_none()
+            && definition.identity.owner_feature_id().is_none())
     {
         format!(
             "creo:featdefs:feature_definition#offset:{}",
             definition.offset
         )
     } else {
-        format!("creo:featdefs:feature_definition#{}", definition.id)
+        format!(
+            "creo:featdefs:feature_definition#{}",
+            definition.identity.id()
+        )
     }
 }
 
@@ -220,14 +224,15 @@ pub(crate) fn feature_sketch_record_id_in_scan(
         .features
         .definitions
         .iter()
-        .filter(|candidate| candidate.id == definition.id)
+        .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
-        || (definition.id == 0 && definition.owner_feature_id.is_none())
+        || (definition.identity.schema_id().is_none()
+            && definition.identity.owner_feature_id().is_none())
     {
         format!("creo:featdefs:sketch#offset:{}", definition.offset)
     } else {
-        format!("creo:featdefs:sketch#{}", definition.id)
+        format!("creo:featdefs:sketch#{}", definition.identity.id())
     }
 }
 
@@ -282,10 +287,11 @@ pub(crate) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
 }
 
 pub(crate) fn sketch_feature_id(sketch: &SketchId) -> IrFeatureId {
-    IrFeatureId(format!(
+    IrFeatureId::mint(format!(
         "creo:model:sketch_feature#{}",
         sketch_identity_scope(sketch)
     ))
+    .expect("identity grammar")
 }
 
 pub(crate) fn section_owner_feature_id(
@@ -295,7 +301,9 @@ pub(crate) fn section_owner_feature_id(
 ) -> IrFeatureId {
     owned_section_feature_id(scan, definition_id).map_or_else(
         || sketch_feature_id(sketch),
-        |feature_id| IrFeatureId(format!("creo:model:feature#{feature_id}")),
+        |feature_id| {
+            IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar")
+        },
     )
 }
 
@@ -307,7 +315,7 @@ pub(crate) fn owning_feature_definition_ref(
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.owner_feature_id == Some(feature_id))
+        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
         .collect::<Vec<_>>();
     let [definition] = definitions.as_slice() else {
         return None;

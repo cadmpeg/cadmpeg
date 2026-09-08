@@ -3,17 +3,19 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
-use crate::global::{Dialect, NumericLimits, RealPrecision, ResolvedGlobal};
+use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
+use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 /// One typed lexical value in an entity parameter record.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
@@ -28,55 +30,155 @@ pub(crate) struct Token {
     pub(crate) span: Range<usize>,
 }
 
+impl Serialize for Token {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            start: usize,
+            end: usize,
+            value: &'a TokenValue,
+        }
+        Wire {
+            start: self.span.start,
+            end: self.span.end,
+            value: &self.value,
+        }
+        .serialize(serializer)
+    }
+}
+
 /// One entity's assembled Parameter Data.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParameterRecord {
     pub(crate) directory_sequence: u32,
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
-    pub(crate) tokens: Vec<Token>,
+    tokens: Vec<Token>,
     /// Exclusive end of the entity-specific Parameter Data sequence.
     ///
     /// `tokens` retains the complete record so native preservation and
     /// relationship analysis can inspect trailing pointer groups. Entity
     /// accessors stop at this boundary.
-    pub(crate) parameter_end: usize,
+    parameter_end: usize,
     pub(crate) comment: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointerGroups {
     pub(crate) token_start: usize,
-    pub(crate) associations: Vec<u32>,
-    pub(crate) properties: Vec<u32>,
     pub(crate) association_pointers: Vec<TrailingPointer>,
     pub(crate) property_pointers: Vec<TrailingPointer>,
-    pub(crate) fully_valid: bool,
+}
+
+impl TrailingPointerGroups {
+    pub(crate) fn fully_valid(&self) -> bool {
+        self.association_pointers
+            .iter()
+            .chain(&self.property_pointers)
+            .all(|pointer| pointer.resolved.is_some())
+    }
+
+    pub(crate) fn associations(&self) -> impl Iterator<Item = &u32> {
+        self.association_pointers
+            .iter()
+            .filter_map(|pointer| pointer.resolved.as_ref())
+    }
+
+    pub(crate) fn properties(&self) -> impl Iterator<Item = &u32> {
+        self.property_pointers
+            .iter()
+            .filter_map(|pointer| pointer.resolved.as_ref())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TrailingPointerAnalysis {
-    pub(crate) candidate_count: usize,
-    pub(crate) valid_candidate_count: usize,
-    pub(crate) groups: Option<TrailingPointerGroups>,
+pub(crate) enum TrailingPointerAnalysis {
+    Macro,
+    Unambiguous {
+        groups: TrailingPointerGroups,
+        candidates: usize,
+    },
+    SingleInvalid(TrailingPointerGroups),
+    Ambiguous {
+        candidates: usize,
+        valid: usize,
+    },
+}
+
+#[cfg(test)]
+impl TrailingPointerAnalysis {
+    fn candidate_count(&self) -> usize {
+        match self {
+            Self::Macro => 0,
+            Self::Unambiguous { candidates, .. } | Self::Ambiguous { candidates, .. } => {
+                *candidates
+            }
+            Self::SingleInvalid(_) => 1,
+        }
+    }
+
+    fn valid_candidate_count(&self) -> usize {
+        match self {
+            Self::Macro | Self::SingleInvalid(_) => 0,
+            Self::Unambiguous { .. } => 1,
+            Self::Ambiguous { valid, .. } => *valid,
+        }
+    }
+
+    fn groups(&self) -> Option<TrailingPointerGroups> {
+        match self {
+            Self::Unambiguous { groups, .. } | Self::SingleInvalid(groups) => Some(groups.clone()),
+            Self::Macro | Self::Ambiguous { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointer {
     pub(crate) token_index: usize,
     pub(crate) raw_pointer: i64,
+    pub(crate) resolved: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OverdeclaredCount {
+    pub(crate) declared: usize,
+    pub(crate) present: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DefaultTailCount {
     Held(usize),
-    Overdeclared { declared: usize, present: usize },
+    Overdeclared(OverdeclaredCount),
     Unreadable,
 }
 
 impl ParameterRecord {
+    pub(crate) fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_tokens(
+        directory_sequence: u32,
+        line_range: Range<u32>,
+        bytes: Vec<u8>,
+        parameter_end: usize,
+        tokens: Vec<Token>,
+        comment: Vec<u8>,
+    ) -> Self {
+        Self {
+            directory_sequence,
+            line_range,
+            bytes,
+            tokens,
+            parameter_end,
+            comment,
+        }
+    }
+
     pub(crate) fn parameter_end(&self) -> usize {
-        self.parameter_end.min(self.tokens.len())
+        self.parameter_end
     }
 
     pub(crate) fn token(&self, index: usize) -> Option<&Token> {
@@ -275,10 +377,10 @@ impl ParameterRecord {
         if count <= present {
             DefaultTailCount::Held(count)
         } else {
-            DefaultTailCount::Overdeclared {
+            DefaultTailCount::Overdeclared(OverdeclaredCount {
                 declared: count,
                 present,
-            }
+            })
         }
     }
 
@@ -303,10 +405,10 @@ impl ParameterRecord {
         if count <= present {
             DefaultTailCount::Held(count)
         } else {
-            DefaultTailCount::Overdeclared {
+            DefaultTailCount::Overdeclared(OverdeclaredCount {
                 declared: count,
                 present,
-            }
+            })
         }
     }
 
@@ -348,62 +450,54 @@ pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
     })
 }
 
-fn analyze_trailing_pointer_groups_for_dialect(
+fn analyze_trailing_pointer_groups_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return TrailingPointerAnalysis {
-            candidate_count: 0,
-            valid_candidate_count: 0,
-            groups: None,
-        };
+        return TrailingPointerAnalysis::Macro;
     }
     analyze_trailing_pointer_groups_from_end(
         record,
         directory,
-        entity_primary_end_for_dialect(record, directory, dialect),
+        entity_primary_end_for_global_table(record, directory, global_table),
     )
 }
 
 #[cfg(test)]
 // Existing boundary fixtures use the fully specified later-profile default;
-// every production caller supplies the resolved file dialect explicitly.
+// every production caller supplies the resolved file global_table explicitly.
 pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_dialect(record, directory, Dialect::V5_3)
+    analyze_trailing_pointer_groups_for_global_table(record, directory, GlobalTable::V5Later)
 }
 
-fn analyze_trailing_pointer_groups_with_records_for_dialect(
+fn analyze_trailing_pointer_groups_with_records_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return TrailingPointerAnalysis {
-            candidate_count: 0,
-            valid_candidate_count: 0,
-            groups: None,
-        };
+        return TrailingPointerAnalysis::Macro;
     }
     let is_attribute_table_instance = directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
     if !is_attribute_table_instance {
-        return analyze_trailing_pointer_groups_for_dialect(record, directory, dialect);
+        return analyze_trailing_pointer_groups_for_global_table(record, directory, global_table);
     }
     let primary_end =
-        entity_primary_end_with_records_for_dialect(record, directory, records, dialect);
+        entity_primary_end_with_records_for_global_table(record, directory, records, global_table);
     analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
 }
 
@@ -413,11 +507,11 @@ fn analyze_trailing_pointer_groups_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_with_records_for_dialect(
+    analyze_trailing_pointer_groups_with_records_for_global_table(
         record,
         directory,
         records,
-        Dialect::V5_3,
+        GlobalTable::V5Later,
     )
 }
 
@@ -442,17 +536,27 @@ fn analyze_trailing_pointer_groups_from_end(
     let valid_groups = candidates
         .iter()
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
-        .filter(|groups| groups.fully_valid);
+        .filter(TrailingPointerGroups::fully_valid);
     let valid_groups = valid_groups.collect::<Vec<_>>();
-    let groups = match valid_groups.as_slice() {
-        [groups] => Some(groups.clone()),
-        [] if candidates.len() == 1 => groups_for_candidate(record, directory, candidates[0]),
-        _ => None,
-    };
-    TrailingPointerAnalysis {
-        candidate_count: candidates.len(),
-        valid_candidate_count: valid_groups.len(),
-        groups,
+    let valid = valid_groups.len();
+    match valid_groups.into_iter().next() {
+        Some(groups) if valid == 1 => TrailingPointerAnalysis::Unambiguous {
+            groups,
+            candidates: candidates.len(),
+        },
+        None if candidates.len() == 1 => {
+            match groups_for_candidate(record, directory, candidates[0]) {
+                Some(groups) => TrailingPointerAnalysis::SingleInvalid(groups),
+                None => TrailingPointerAnalysis::Ambiguous {
+                    candidates: 1,
+                    valid: 0,
+                },
+            }
+        }
+        Some(_) | None => TrailingPointerAnalysis::Ambiguous {
+            candidates: candidates.len(),
+            valid,
+        },
     }
 }
 
@@ -726,34 +830,84 @@ fn analyze_trailing_pointer_groups_from_end(
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct SignalStringLayout {
-    pub(crate) signal_name_count: usize,
-    pub(crate) connection_count: usize,
-    pub(crate) schematic_count: usize,
-    pub(crate) physical_count: usize,
-    pub(crate) signal_names_start: usize,
-    pub(crate) connections_start: usize,
-    pub(crate) schematic_start: usize,
-    pub(crate) physical_start: usize,
-    pub(crate) primary_end: usize,
+    signal_names: Range<usize>,
+    connections: Range<usize>,
+    schematic: Range<usize>,
+    physical: Range<usize>,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl SignalStringLayout {
+    /// Signal name token indices.
+    pub(crate) fn signal_names(&self) -> Range<usize> {
+        self.signal_names.clone()
+    }
+
+    /// Connection token indices.
+    pub(crate) fn connections(&self) -> Range<usize> {
+        self.connections.clone()
+    }
+
+    /// Schematic geometry token indices.
+    pub(crate) fn schematic(&self) -> Range<usize> {
+        self.schematic.clone()
+    }
+
+    /// Physical geometry token indices.
+    pub(crate) fn physical(&self) -> Range<usize> {
+        self.physical.clone()
+    }
+
+    /// First token after the primary fields.
+    pub(crate) fn primary_end(&self) -> usize {
+        self.physical.end
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct TextNodeLayout {
-    pub(crate) geometry_count: usize,
-    pub(crate) geometry_start: usize,
-    pub(crate) description_start: usize,
-    pub(crate) primary_end: usize,
+    geometry: Range<usize>,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl TextNodeLayout {
+    /// Geometry token indices.
+    pub(crate) fn geometry(&self) -> Range<usize> {
+        self.geometry.clone()
+    }
+
+    /// First text description token.
+    pub(crate) fn description_start(&self) -> usize {
+        self.geometry.end
+    }
+
+    /// First token after the primary fields.
+    pub(crate) fn primary_end(&self) -> usize {
+        self.geometry.end + 7
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ConnectNodeLayout {
-    pub(crate) point_count: usize,
-    pub(crate) data_count: usize,
-    pub(crate) points_start: usize,
-    pub(crate) data_start: usize,
-    pub(crate) primary_end: usize,
+    points: Range<usize>,
+    data: Range<usize>,
+}
+
+impl ConnectNodeLayout {
+    /// Point pointer token indices.
+    pub(crate) fn points(&self) -> Range<usize> {
+        self.points.clone()
+    }
+
+    /// Connection data token indices.
+    pub(crate) fn data(&self) -> Range<usize> {
+        self.data.clone()
+    }
+
+    /// First token after the primary fields.
+    pub(crate) fn primary_end(&self) -> usize {
+        self.data.end
+    }
 }
 
 fn legacy_count(record: &ParameterRecord, index: usize) -> Option<usize> {
@@ -773,15 +927,10 @@ pub(crate) fn signal_string_layout(record: &ParameterRecord) -> Option<SignalStr
     let physical_start = schematic_start.checked_add(schematic_count)?;
     let primary_end = physical_start.checked_add(physical_count)?;
     (primary_end <= record.parameter_end()).then_some(SignalStringLayout {
-        signal_name_count,
-        connection_count,
-        schematic_count,
-        physical_count,
-        signal_names_start,
-        connections_start,
-        schematic_start,
-        physical_start,
-        primary_end,
+        signal_names: signal_names_start..connections_start,
+        connections: connections_start..schematic_start,
+        schematic: schematic_start..physical_start,
+        physical: physical_start..primary_end,
     })
 }
 
@@ -793,10 +942,7 @@ pub(crate) fn text_node_layout(record: &ParameterRecord) -> Option<TextNodeLayou
     let primary_end = description_start.checked_add(7)?;
     (text_description_count == 1 && primary_end <= record.parameter_end()).then_some(
         TextNodeLayout {
-            geometry_count,
-            geometry_start,
-            description_start,
-            primary_end,
+            geometry: geometry_start..description_start,
         },
     )
 }
@@ -808,38 +954,35 @@ pub(crate) fn connect_node_layout(record: &ParameterRecord) -> Option<ConnectNod
     let data_start = points_start.checked_add(point_count)?;
     let primary_end = data_start.checked_add(data_count)?;
     (primary_end <= record.parameter_end()).then_some(ConnectNodeLayout {
-        point_count,
-        data_count,
-        points_start,
-        data_start,
-        primary_end,
+        points: points_start..data_start,
+        data: data_start..primary_end,
     })
 }
 
 fn signal_string_primary_end(record: &ParameterRecord) -> usize {
-    signal_string_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+    signal_string_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end())
 }
 
 fn text_node_primary_end(record: &ParameterRecord) -> usize {
-    text_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+    text_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end())
 }
 
 fn connect_node_primary_end(record: &ParameterRecord) -> usize {
-    connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+    connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end())
 }
 
-pub(crate) fn entity_primary_end_for_dialect(
+pub(crate) fn entity_primary_end_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
-        (402, 3) => Some(view_visibility_primary_end(record, 1, dialect)),
-        (402, 4) => Some(view_visibility_primary_end(record, 5, dialect)),
+        (402, 3) => Some(view_visibility_primary_end(record, 1, global_table)),
+        (402, 4) => Some(view_visibility_primary_end(record, 5, global_table)),
         (402, 2 | 12) => Some(external_reference_index_primary_end(record)),
         (402, 8) => Some(signal_string_primary_end(record)),
         (402, 10) => Some(text_node_primary_end(record)),
@@ -980,20 +1123,20 @@ pub(crate) fn entity_primary_end_for_dialect(
 }
 
 #[cfg(test)]
-// Keep the legacy test fixture adapter dialect-explicit so it cannot be used
-// by production assembly when a file's resolved dialect is available.
+// Keep the legacy test fixture adapter global_table-explicit so it cannot be used
+// by production assembly when a file's resolved global_table is available.
 pub(crate) fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
-    entity_primary_end_for_dialect(record, directory, Dialect::V5_3)
+    entity_primary_end_for_global_table(record, directory, GlobalTable::V5Later)
 }
 
-fn entity_primary_end_with_records_for_dialect(
+fn entity_primary_end_with_records_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
@@ -1001,7 +1144,7 @@ fn entity_primary_end_with_records_for_dialect(
             record, entry, directory, records,
         ));
     }
-    entity_primary_end_for_dialect(record, directory, dialect)
+    entity_primary_end_for_global_table(record, directory, global_table)
 }
 
 #[cfg(test)]
@@ -1010,7 +1153,12 @@ fn entity_primary_end_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<usize> {
-    entity_primary_end_with_records_for_dialect(record, directory, records, Dialect::V5_3)
+    entity_primary_end_with_records_for_global_table(
+        record,
+        directory,
+        records,
+        GlobalTable::V5Later,
+    )
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {
@@ -1336,9 +1484,9 @@ fn planar_associativity_primary_end(record: &ParameterRecord) -> usize {
 
 pub(crate) fn view_visibility_entity_count(
     record: &ParameterRecord,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Option<usize> {
-    let value = if dialect == Dialect::V4_0 {
+    let value = if global_table == GlobalTable::V4_0 {
         record.integer(2)
     } else {
         record.integer_or(2, 0)
@@ -1349,13 +1497,13 @@ pub(crate) fn view_visibility_entity_count(
 fn view_visibility_primary_end(
     record: &ParameterRecord,
     block_width: usize,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> usize {
     let view_count = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0);
-    let entity_count = view_visibility_entity_count(record, dialect);
+    let entity_count = view_visibility_entity_count(record, global_table);
     view_count
         .zip(entity_count)
         .and_then(|(view_count, entity_count)| {
@@ -2331,59 +2479,39 @@ fn groups_for_candidate(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
 ) -> Option<TrailingPointerGroups> {
-    let association_pointers = (candidate.association_start..candidate.property_count_index)
-        .map(|token_index| {
-            Some(TrailingPointer {
-                token_index,
-                raw_pointer: record.raw_integer(token_index)?,
+    let pointers = |range: Range<usize>, admitted: fn(i64) -> bool| {
+        range
+            .map(|token_index| {
+                let raw_pointer = record.raw_integer(token_index)?;
+                let resolved = u32::try_from(raw_pointer)
+                    .ok()
+                    .filter(|sequence| sequence % 2 == 1)
+                    .filter(|sequence| {
+                        directory
+                            .get(sequence)
+                            .is_some_and(|entry| admitted(entry.entity_type))
+                    });
+                Some(TrailingPointer {
+                    token_index,
+                    raw_pointer,
+                    resolved,
+                })
             })
-        })
-        .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<Vec<_>>>()
+    };
+    let association_pointers = pointers(
+        candidate.association_start..candidate.property_count_index,
+        |kind| matches!(kind, 212 | 312 | 402),
+    )?;
     let property_start = candidate.property_count_index.checked_add(1)?;
     let property_end = property_start.checked_add(candidate.property_count)?;
-    let property_pointers = (property_start..property_end)
-        .map(|token_index| {
-            Some(TrailingPointer {
-                token_index,
-                raw_pointer: record.raw_integer(token_index)?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let associations: Vec<u32> = association_pointers
-        .iter()
-        .filter_map(|pointer| {
-            u32::try_from(pointer.raw_pointer)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-                .filter(|sequence| {
-                    directory
-                        .get(sequence)
-                        .is_some_and(|entry| matches!(entry.entity_type, 212 | 312 | 402))
-                })
-        })
-        .collect();
-    let properties: Vec<u32> = property_pointers
-        .iter()
-        .filter_map(|pointer| {
-            u32::try_from(pointer.raw_pointer)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-                .filter(|sequence| {
-                    directory
-                        .get(sequence)
-                        .is_some_and(|entry| matches!(entry.entity_type, 316 | 322 | 406 | 422))
-                })
-        })
-        .collect();
-    let fully_valid = associations.len() == association_pointers.len()
-        && properties.len() == property_pointers.len();
+    let property_pointers = pointers(property_start..property_end, |kind| {
+        matches!(kind, 316 | 322 | 406 | 422)
+    })?;
     Some(TrailingPointerGroups {
         token_start: candidate.token_start,
-        associations,
-        properties,
         association_pointers,
         property_pointers,
-        fully_valid,
     })
 }
 
@@ -2411,6 +2539,12 @@ pub(crate) enum ParameterDefect {
     NoOwnedCards,
     DeclaredCountZero,
     OwnershipConflict,
+}
+
+impl Serialize for ParameterDefect {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.key())
+    }
 }
 
 impl ParameterDefect {
@@ -2449,7 +2583,7 @@ impl ParameterDefect {
                 "a Hollerith count and H delimiter cross a card boundary"
             }
             Self::HollerithForbiddenByte => {
-                "a Hollerith string contains a byte forbidden by the declared dialect"
+                "a Hollerith string contains a byte forbidden by the effective specification family"
             }
             Self::NumericCrossesCard => "a numeric field or its delimiter crosses a card boundary",
             Self::NumericContainsBlanks => "a numeric field contains embedded or trailing blanks",
@@ -2485,38 +2619,65 @@ impl ParameterDefect {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QuarantinedParameterRecord {
     pub(crate) sequence: u32,
-    pub(crate) source_offset: u64,
-    pub(crate) cards: usize,
-    pub(crate) bytes: Vec<u8>,
-    line_range: Option<Range<u32>>,
-    provenance_offset: u64,
+    ownership: QuarantinedCards,
+    failing_offset: Option<u64>,
     pub(crate) defect: ParameterDefect,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum QuarantinedCards {
+    Owned {
+        range: Range<u32>,
+        bytes: Vec<u8>,
+        first_offset: u64,
+    },
+    None {
+        directory_offset: u64,
+    },
+}
+
 impl QuarantinedParameterRecord {
+    pub(crate) fn source_offset(&self) -> u64 {
+        match &self.ownership {
+            QuarantinedCards::Owned { first_offset, .. } => *first_offset,
+            QuarantinedCards::None { directory_offset } => *directory_offset,
+        }
+    }
+
+    pub(crate) fn cards(&self) -> usize {
+        self.bytes().len() / crate::card::CARD_WIDTH
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        match &self.ownership {
+            QuarantinedCards::Owned { bytes, .. } => bytes,
+            QuarantinedCards::None { .. } => &[],
+        }
+    }
+
     /// The stable native identity of this quarantined record.
     pub(crate) fn identity(&self) -> String {
         format!("iges:quarantine:parameter#{}", self.sequence)
     }
 
     pub(crate) fn loss_note(&self) -> LossNote {
-        let owned = match &self.line_range {
-            Some(range) => format!("P{} through P{}", range.start, range.end.saturating_sub(1)),
-            None => "no owned Parameter Data card".to_owned(),
+        let owned = match &self.ownership {
+            QuarantinedCards::Owned { range, .. } => {
+                format!("P{} through P{}", range.start, range.end.saturating_sub(1))
+            }
+            QuarantinedCards::None { .. } => "no owned Parameter Data card".to_owned(),
         };
         IgesLossCode::ParameterDataQuarantined
             .note(format!(
                 "IGES Parameter Data of D{} ({owned}) is quarantined because {}; its {} raw card(s) are retained and no token was interpreted",
                 self.sequence,
                 self.defect.describe(),
-                self.cards
+                self.cards()
             ))
-            .with_provenance(SourceProvenance {
-                format: "iges".into(),
-                stream: "iges".into(),
-                offset: self.provenance_offset,
-                tag: Some(format!("D{}:parameter", self.sequence)),
-            })
+        .with_provenance(
+            SourceProvenance::in_stream("iges", "iges", self.failing_offset.unwrap_or_else(|| self.source_offset()))
+                .with_tag(format!("D{}:parameter", self.sequence)),
+        )
     }
 }
 
@@ -2663,7 +2824,7 @@ fn hollerith(
     bytes: &[u8],
     card_boundaries: &[usize],
     start: usize,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -2702,7 +2863,7 @@ fn hollerith(
         start,
     ))?;
     if payload.iter().copied().any(|byte| {
-        !byte.is_ascii() || (byte.is_ascii_control() && !matches!(dialect, Dialect::V4_0))
+        !byte.is_ascii() || (byte.is_ascii_control() && !matches!(global_table, GlobalTable::V4_0))
     }) {
         return Err(TokenizeFailure::Defect(
             ParameterDefect::HollerithForbiddenByte,
@@ -3121,7 +3282,7 @@ fn tokenize_with_limits(
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
     limits: NumericLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
@@ -3144,7 +3305,8 @@ fn tokenize_with_limits(
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) = hollerith(bytes, card_boundaries, cursor, dialect)?
+        let (token, end) = if let Some(value) =
+            hollerith(bytes, card_boundaries, cursor, global_table)?
         {
             value
         } else {
@@ -3203,7 +3365,7 @@ fn tokenize(
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    dialect: Dialect,
+    global_table: GlobalTable,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     tokenize_with_limits(
@@ -3211,7 +3373,7 @@ fn tokenize(
         card_boundaries,
         parameter_delimiter,
         record_delimiter,
-        dialect,
+        global_table,
         NumericLimits::default(),
         ctx,
     )
@@ -3328,26 +3490,32 @@ fn quarantine(
     defect: ParameterDefect,
     failing_offset: Option<usize>,
 ) -> QuarantinedParameterRecord {
-    let first = cards
-        .first()
-        .and_then(|sequence| lines.get(sequence))
-        .map_or(entry.source_offset, |line| line.offset);
+    let mut retained = cards
+        .iter()
+        .filter_map(|sequence| lines.get(sequence).map(|line| (*sequence, *line)));
+    let ownership = match retained.next() {
+        Some((first, line)) => {
+            let first_offset = line.offset;
+            let mut range = first..first.saturating_add(1);
+            let mut bytes = line.payload.clone();
+            for (sequence, line) in retained {
+                range.end = sequence.saturating_add(1);
+                bytes.extend_from_slice(&line.payload);
+            }
+            QuarantinedCards::Owned {
+                range,
+                bytes,
+                first_offset,
+            }
+        }
+        None => QuarantinedCards::None {
+            directory_offset: entry.source_offset,
+        },
+    };
     QuarantinedParameterRecord {
         sequence: entry.sequence,
-        source_offset: first,
-        cards: cards.len(),
-        bytes: cards
-            .iter()
-            .filter_map(|sequence| lines.get(sequence))
-            .flat_map(|line| line.payload.iter().copied())
-            .collect(),
-        line_range: cards.first().zip(cards.last()).map(|(first, last)| {
-            let end = last.saturating_add(1);
-            *first..end
-        }),
-        provenance_offset: failing_offset
-            .and_then(|offset| stream_offset(offset, cards, lines))
-            .unwrap_or(first),
+        ownership,
+        failing_offset: failing_offset.and_then(|offset| stream_offset(offset, cards, lines)),
         defect,
     }
 }
@@ -3510,12 +3678,7 @@ pub(crate) fn assemble_with_context(
     global: &ResolvedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ParameterAssembly, CodecError> {
-    let lines = scan
-        .lines
-        .iter()
-        .filter(|line| line.section == Some(Section::Parameter))
-        .map(|line| (line.sequence.unwrap_or_default(), line))
-        .collect::<BTreeMap<_, _>>();
+    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
     let back_pointers = lines
         .iter()
         .map(|(sequence, line)| (*sequence, back_pointer(line)))
@@ -3550,7 +3713,7 @@ pub(crate) fn assemble_with_context(
                 &owned_bytes.card_boundaries,
                 global.parameter_delimiter,
                 global.record_delimiter,
-                global.dialect(),
+                global.global_table(),
                 global.numeric_limits(),
                 ctx,
             )
@@ -3606,11 +3769,11 @@ pub(crate) fn assemble_with_context(
             .map(|record| (record.directory_sequence, record))
             .collect::<BTreeMap<_, _>>();
         for record in &records {
-            let analysis = analyze_trailing_pointer_groups_with_records_for_dialect(
+            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
                 record,
                 &entries,
                 &record_by_directory,
-                global.dialect(),
+                global.global_table(),
             );
             trailing_pointer_analysis.insert(record.directory_sequence, analysis);
         }
@@ -3618,8 +3781,10 @@ pub(crate) fn assemble_with_context(
     for record in &mut records {
         record.parameter_end = trailing_pointer_analysis
             .get(&record.directory_sequence)
-            .and_then(|analysis| analysis.groups.as_ref())
-            .filter(|groups| groups.fully_valid)
+            .and_then(|analysis| match analysis {
+                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                _ => None,
+            })
             .map_or(record.tokens.len(), |groups| groups.token_start);
     }
     let accounted = ownership

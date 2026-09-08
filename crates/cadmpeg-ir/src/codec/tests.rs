@@ -4,118 +4,25 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use crate::codec::{CadirEncoder, Encoder};
-use crate::examples::{directed_subd_sum, unit_cube};
-use crate::report::{LossKind, LossNote, LossTaxonomy, TransferLedger};
-use crate::source_fidelity::RetainedSourceRecord;
-use crate::validate::validate_neutral;
+use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+
+use crate::examples::unit_cube;
+use crate::report::{LossKind, LossNote, LossTaxonomy};
+use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
 use super::*;
 
-#[test]
-fn cadir_encoder_streams_the_canonical_json_shape() {
-    let ir = unit_cube();
-    let mut encoded = Vec::new();
-    CadirEncoder
-        .plan(crate::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
-    let mut canonical = ir.to_canonical_json().unwrap();
-    canonical.push('\n');
-    assert_eq!(encoded, canonical.as_bytes());
-}
-
-#[test]
-fn cadir_encoder_census_matches_validation_counts() {
-    let ir = directed_subd_sum();
-    let validation_counts = validate_neutral(&ir, Vec::new()).entity_counts;
-    let plan = CadirEncoder
-        .plan(crate::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .expect("plan CADIR export");
-
-    assert_eq!(plan.report().census.counts, validation_counts);
+fn decoded(ir: CadIr) -> Decoded {
+    Decoded {
+        ir,
+        body: DecodeBody::new(true),
+        source_fidelity: SourceFidelity::default(),
+    }
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(
-        ir,
-        DecodeReport {
-            format: "test".into(),
-            container_only: false,
-            geometry_transferred: true,
-            coverage: BTreeMap::new(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
-        },
-        SourceFidelity::default(),
-    )
-}
-
-fn retained_record(id: &str, offset: u64) -> RetainedSourceRecord {
-    RetainedSourceRecord {
-        id: id.into(),
-        stream: "test".into(),
-        offset,
-        byte_len: 0,
-        sha256: String::new(),
-        data: None,
-    }
-}
-
-#[test]
-fn decode_result_edit_guards_restore_finalization() {
-    let mut result = decode_result(unit_cube());
-    {
-        let mut ir = result.ir_mut();
-        ir.model.points.reverse();
-    }
-    assert!(result
-        .ir()
-        .model
-        .points
-        .windows(2)
-        .all(|pair| pair[0].id < pair[1].id));
-
-    {
-        let mut fidelity = result.source_fidelity_mut();
-        fidelity
-            .retained_records
-            .extend([retained_record("b", 2), retained_record("a", 1)]);
-    }
-    assert_eq!(
-        result
-            .source_fidelity()
-            .retained_records
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<Vec<_>>(),
-        ["a", "b"]
-    );
-}
-
-#[test]
-fn decode_result_edit_guard_finalizes_during_unwind() {
-    let mut result = decode_result(unit_cube());
-    let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut ir = result.ir_mut();
-        ir.model.points.reverse();
-        panic!("abort edit");
-    }));
-    assert!(unwind.is_err());
-    assert!(result
-        .ir()
-        .model
-        .points
-        .windows(2)
-        .all(|pair| pair[0].id < pair[1].id));
+    DecodeResult::new(decoded(ir), FormatId::new("test"), false)
 }
 
 struct RejectFloorCodec;
@@ -125,11 +32,9 @@ fn reject_floor_kind() -> LossKind {
 }
 
 impl CodecBackend for RejectFloorCodec {
-    fn id(&self) -> &'static str {
-        "reject-floor"
-    }
+    const FORMAT: FormatId = FormatId::new("test");
 
-    fn detect(&self, _prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
         Confidence::No
     }
 
@@ -143,18 +48,92 @@ impl CodecBackend for RejectFloorCodec {
 
     fn decode_impl(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         _root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        let mut result = decode_result(unit_cube());
-        let report = result.report_mut();
-        // Deliberately lie in both directions; the wrapper owns this field.
-        report.container_only = !ctx.container_only();
-        report
+    ) -> Result<Decoded, CodecError> {
+        let mut decoded = decoded(unit_cube());
+        decoded
+            .body
             .losses
             .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
-        Ok(result)
+        Ok(decoded)
     }
+}
+
+struct ForeignIdentityCodec;
+
+impl CodecBackend for ForeignIdentityCodec {
+    const FORMAT: FormatId = FormatId::new("selected");
+
+    fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
+        Confidence::No
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        Ok(ContainerSummary::unclassified(
+            "foreign",
+            crate::ContainerKind::Flat,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ))
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube();
+        ir.source = Some(crate::SourceMeta::classified(
+            DialectLayers::of(DialectMatch::admitted(DialectId::pinned("foreign:test"))),
+            BTreeMap::new(),
+        ));
+        Ok(decoded(ir))
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_reports_the_backend_format() {
+    assert_eq!(Codec::id(&ForeignIdentityCodec), FormatId::new("selected"));
+    assert_eq!(ForeignIdentityCodec.detect(&[]), Confidence::No);
+}
+
+#[test]
+fn sealed_inspect_rejects_a_backend_that_reports_another_format() {
+    let error = ForeignIdentityCodec
+        .inspect(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &InspectOptions::default(),
+        )
+        .expect_err("the sealed wrapper owns inspect format identity");
+
+    let CodecError::WrongFormat(message) = error else {
+        panic!("expected a wrong-format refusal, got {error:?}")
+    };
+    assert_eq!(
+        message,
+        "codec \"selected\" inspected a \"foreign\" container"
+    );
+}
+
+#[test]
+fn sealed_decode_rejects_a_document_authored_for_another_format() {
+    let error = ForeignIdentityCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &DecodeOptions::default(),
+        )
+        .expect_err("the sealed wrapper owns decode format identity");
+
+    let DecodeFailure::Codec(CodecError::WrongFormat(message)) = error else {
+        panic!("expected a wrong-format refusal, got {error:?}")
+    };
+    assert_eq!(message, "codec \"selected\" decoded a \"foreign\" document");
 }
 
 fn strict_options(container_only: bool) -> DecodeOptions {
@@ -173,8 +152,14 @@ fn the_strict_gate_refuses_a_full_decode_on_a_reject_floor_loss() {
         .unwrap_err();
 
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => {
-            assert_eq!(loss_code, reject_floor_kind().to_string());
+        DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(rejection.loss().code, reject_floor_kind());
+            assert_eq!(rejection.report().losses.len(), 1);
+            assert_eq!(rejection.report().losses[0].code, reject_floor_kind());
+            assert_eq!(
+                rejection.report().losses[0].message,
+                "synthetic reject floor"
+            );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
@@ -186,7 +171,8 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
         .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &strict_options(true))
         .unwrap();
 
-    assert!(result.report().container_only);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert_eq!(
         result
             .report()
@@ -196,4 +182,83 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
             .count(),
         1
     );
+}
+
+#[test]
+fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
+    let mut ir = unit_cube();
+    let primary = dialect_layer("test:only")
+        .with_declared(BTreeMap::from([("version".into(), "only".into())]));
+    let layers = DialectLayers::of(primary.clone())
+        .with(dialect_layer("acis:save-format-217").with_instance("body.sab"));
+    ir.source = Some(crate::SourceMeta::classified(
+        layers.clone(),
+        BTreeMap::from([("attribute".into(), "retained".into())]),
+    ));
+
+    let result = decode_result(ir);
+
+    assert_eq!(result.report().format(), "test");
+    assert_eq!(result.report().dialects(), Some(&layers));
+    let source = result
+        .ir()
+        .source
+        .as_ref()
+        .expect("source metadata remains");
+    assert_eq!(source.dialect(), Some(&primary));
+    assert_eq!(source.dialects(), result.report().dialects());
+    assert_eq!(source.attributes["attribute"], "retained");
+}
+
+#[test]
+fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
+    let mut ir = unit_cube();
+    ir.source = Some(
+        serde_json::from_value(serde_json::json!({
+            "format": "test",
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
+
+    let result = decode_result(ir);
+
+    assert_eq!(result.report().format(), "test");
+    assert!(result.report().dialects().is_none());
+}
+
+#[test]
+fn a_decode_result_without_source_metadata_reports_the_codec_format() {
+    let mut ir = unit_cube();
+    ir.source = None;
+
+    let result = DecodeResult::new(decoded(ir), FormatId::new("test"), false);
+
+    assert_eq!(result.report().format(), "test");
+    assert!(result.report().dialects().is_none());
+    assert!(result.ir().source.is_none());
+}
+
+#[test]
+fn a_decode_result_keeps_the_body_it_was_given() {
+    let mut body = DecodeBody::new(false);
+    body.notes.push("kept".into());
+    body.coverage.record(crate::CoverageKey::new("entities"), 3);
+    let result = DecodeResult::new(
+        Decoded {
+            ir: unit_cube(),
+            body,
+            source_fidelity: SourceFidelity::default(),
+        },
+        FormatId::new("test"),
+        true,
+    );
+
+    assert!(result.report().container_only());
+    assert_eq!(result.report().notes, ["kept"]);
+    assert_eq!(result.report().coverage()["entities"], 3);
+}
+
+fn dialect_layer(id: &'static str) -> DialectMatch {
+    DialectMatch::admitted(DialectId::pinned(id))
 }

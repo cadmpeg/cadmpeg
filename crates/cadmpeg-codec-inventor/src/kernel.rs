@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
@@ -19,7 +20,8 @@ const KERNEL_RECORD_TYPE_ID: [u8; 16] = [
     0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47, 0xb5,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum KernelFamily {
     Asm,
     Acis,
@@ -46,6 +48,7 @@ pub(crate) struct ActiveCarrier<'a> {
     pub(crate) schema: u32,
     pub(crate) carrier_offset: u64,
     pub(crate) bytes: View<'a>,
+    pub(crate) header: Result<Box<KernelHeader>, String>,
     pub(crate) selected_key: u32,
     pub(crate) enabled: bool,
     pub(crate) delta_state: i32,
@@ -55,7 +58,6 @@ pub(crate) struct ActiveCarrier<'a> {
 #[derive(Debug)]
 pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
-    NotExpanded,
     Selected(ActiveCarrier<'a>),
     Unavailable(String),
 }
@@ -65,41 +67,42 @@ pub(crate) struct DecodedKernelCarrier {
     pub(crate) brep: AsmBrep,
 }
 
+fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<KernelHeader, String> {
+    match family {
+        KernelFamily::Asm => asm_header::parse(bytes)
+            .ok_or_else(|| "Inventor ASM carrier has no parseable header".into()),
+        KernelFamily::Acis => acis_header::parse(bytes)
+            .ok_or_else(|| "Inventor ACIS carrier has no parseable header".into()),
+    }
+}
+
 pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
+    header: &KernelHeader,
 ) -> Result<DecodedKernelCarrier, CodecError> {
     let bytes = carrier.bytes.window();
-    let (header, start, solved_limit) = match carrier.family {
+    let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
-            asm_header::parse(bytes).ok_or_else(|| {
-                CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
-            })?,
-            asm_header::record_stream_start(bytes).ok_or_else(|| {
+            asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
-            asm_header::solved_record_limit(bytes),
+            asm_header::solved_record_limit_with_header(bytes, header),
         ),
         KernelFamily::Acis => {
-            let header = acis_header::parse(bytes).ok_or_else(|| {
-                CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())
-            })?;
-            if !matches!(header.save_format_major(), Some(217 | 218)) {
-                return Err(CodecError::NotImplemented(format!(
-                    "Inventor ACIS save-format band {:?} is not implemented",
-                    header.save_format_major()
-                )));
-            }
+            // Every save-format band frames and decodes the same way. The band
+            // moves the carrier's `acis:` admission and its
+            // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
+            // whether the records are read.
             (
-                header,
-                acis_header::record_stream_start(bytes).ok_or_else(|| {
+                acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                     CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
                 })?,
-                acis_header::solved_record_limit(bytes),
+                acis_header::solved_record_limit_with_header(bytes, header),
             )
         }
     };
-    let width = usize::from(header.width);
+    let width = header.width;
     let records = match solved_limit {
         Some(limit) => sab::frame(bytes, start, limit, width),
         None => sab::frame_history(bytes, start, bytes.len(), width),
@@ -123,7 +126,10 @@ pub(crate) fn decode_kernel_carrier(
         IdFormat("inventor"),
         DecodePurpose::Model,
     );
-    Ok(DecodedKernelCarrier { header, brep })
+    Ok(DecodedKernelCarrier {
+        header: header.clone(),
+        brep,
+    })
 }
 
 pub(crate) fn select_active_carrier<'a>(
@@ -147,7 +153,6 @@ pub(crate) fn select_active_carrier<'a>(
         return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".into());
     };
     let table = match &bulk.records {
-        RecordFrameState::NotExpanded => return ActiveCarrierState::NotExpanded,
         RecordFrameState::Framed(table) => table,
         RecordFrameState::Unavailable(_) => {
             return ActiveCarrierState::Unavailable("PmBRep record table is unavailable".into());
@@ -164,7 +169,7 @@ pub(crate) fn select_active_carrier<'a>(
             carriers.len()
         ));
     };
-    let Some(version) = segment.registry_version_major else {
+    let Some(version) = segment.registry.map(|join| join.version_major) else {
         return ActiveCarrierState::Unavailable(
             "PmBRep segment version is unavailable from the registry".into(),
         );
@@ -190,13 +195,8 @@ fn parse_carrier<'a>(
 ) -> Result<ActiveCarrier<'a>, CodecError> {
     let bytes = payload.window();
     let footer_len = match segment_version_major {
-        15..=22 => 17,
+        0..=22 => 17,
         23..=u8::MAX => 18,
-        value => {
-            return Err(CodecError::NotImplemented(format!(
-                "Inventor kernel-carrier envelope for segment version {value} is not implemented"
-            )));
-        }
     };
     if bytes.len() < carrier_header::LEN + footer_len {
         return Err(CodecError::Malformed(
@@ -224,6 +224,7 @@ fn parse_carrier<'a>(
             payload.start() + carrier_end,
         )
         .ok_or_else(|| CodecError::Malformed("Inventor kernel-carrier range is invalid".into()))?;
+    let header = parse_kernel_header(family, carrier.window()).map(Box::new);
     let mut offset = carrier_end;
     let selected_key = read_u32(bytes, offset, "carrier selected key")?;
     offset += 4;
@@ -267,6 +268,7 @@ fn parse_carrier<'a>(
         schema,
         carrier_offset: record_payload_offset + carrier_header::LEN as u64,
         bytes: carrier,
+        header,
         selected_key,
         enabled,
         delta_state,
@@ -294,6 +296,18 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::*;
+    use crate::test_support::acis_sphere_kernel_stream;
+
+    fn decode_test_carrier(
+        ctx: &DecodeContext<'_>,
+        carrier: &ActiveCarrier<'_>,
+    ) -> Result<DecodedKernelCarrier, CodecError> {
+        let header = carrier
+            .header
+            .as_ref()
+            .map_err(|detail| CodecError::Malformed(detail.clone()))?;
+        decode_kernel_carrier(ctx, carrier, header)
+    }
 
     #[test]
     fn typed_carrier_envelope_selects_family_and_exact_footer() {
@@ -340,9 +354,9 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
         let carrier = parse_carrier(view, "token", 7, 100, 23).expect("carrier parses");
-        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ASM carrier decodes");
+        let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
-        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.width.bytes(), 4);
         assert_eq!(decoded.header.save_format_version, Some(700));
         assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.brep.bodies.is_empty());
@@ -357,14 +371,97 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
         let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
-        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
+        let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
         assert_eq!(carrier.family, KernelFamily::Acis);
-        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.width.bytes(), 4);
         assert_eq!(decoded.header.save_format_version, Some(21_800));
         assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.brep.bodies.is_empty());
         assert!(decoded.brep.unknowns.is_empty());
+    }
+
+    #[test]
+    fn an_acis_carrier_outside_the_verified_band_reads_the_same_records() {
+        // The save format bands the label the decode carries, never whether the
+        // carrier is read. Proved on records, not on an empty stream: the same
+        // sphere body decodes at 70000 as at 21800.
+        let decode = |save_format_version: u32| {
+            let bytes = carrier_fixture(&acis_sphere_kernel_stream(save_format_version), 17);
+            let arena = DecodeArena::new();
+            let (ctx, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic carrier fits policy");
+            let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+            assert_eq!(carrier.family, KernelFamily::Acis);
+            decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
+        };
+
+        let verified = decode(21_800);
+        let unverified = decode(70_000);
+
+        assert_eq!(unverified.header.width.bytes(), 4);
+        assert_eq!(unverified.header.save_format_version, Some(70_000));
+        assert_eq!(
+            unverified.header.product_family.as_deref(),
+            Some("Inventor")
+        );
+        assert_eq!(unverified.brep.bodies.len(), 1);
+        assert_eq!(unverified.brep.faces.len(), 1);
+        assert_eq!(
+            unverified.brep.surfaces.len(),
+            verified.brep.surfaces.len(),
+            "the substituted grammar read the same carriers"
+        );
+        assert!(unverified.brep.unknowns.is_empty());
+    }
+
+    #[test]
+    fn pre_15_segment_version_attempts_the_nearest_footer_and_reads_the_same_records() {
+        let decode = |segment_version_major| {
+            let bytes = carrier_fixture(&acis_sphere_kernel_stream(21_800), segment_version_major);
+            let arena = DecodeArena::new();
+            let (ctx, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic carrier fits policy");
+            let carrier = parse_carrier(view, "token", 7, 100, segment_version_major)
+                .expect("nearest footer frames");
+            decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
+        };
+
+        let in_band = decode(15);
+        let recovered = decode(14);
+        assert_eq!(recovered.brep.bodies.len(), in_band.brep.bodies.len());
+        assert_eq!(recovered.brep.faces.len(), in_band.brep.faces.len());
+        assert_eq!(recovered.brep.surfaces.len(), in_band.brep.surfaces.len());
+    }
+
+    #[test]
+    fn pre_15_segment_version_over_garbage_is_malformed() {
+        let bytes = carrier_fixture(b"not a kernel carrier", 14);
+        with_view(&bytes, |view| {
+            assert!(matches!(
+                parse_carrier(view, "token", 7, 100, 14),
+                Err(CodecError::Malformed(_))
+            ));
+        });
+    }
+
+    #[test]
+    fn a_carrier_whose_header_does_not_parse_is_still_refused() {
+        // Structural refusal stands: the magic matched and the fixed header did
+        // not read, so there is nothing to frame.
+        let mut acis = b"ACIS BinaryFile".to_vec();
+        acis.extend_from_slice(&70_000_u32.to_le_bytes());
+        let bytes = carrier_fixture(&acis, 17);
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic carrier fits policy");
+        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+        assert!(matches!(
+            decode_test_carrier(&ctx, &carrier),
+            Err(CodecError::Malformed(_))
+        ));
     }
 
     fn carrier_fixture(carrier: &[u8], version: u8) -> Vec<u8> {
@@ -404,8 +501,14 @@ mod tests {
     }
 
     fn empty_acis_fixture() -> Vec<u8> {
+        acis_fixture(21_800)
+    }
+
+    /// The same carrier at one save format, so a band no `acis:` row verifies
+    /// can be read beside a verified one.
+    fn acis_fixture(save_format_version: u32) -> Vec<u8> {
         let mut bytes = b"ACIS BinaryFile".to_vec();
-        for value in [21_800_u32, 0, 0, 0] {
+        for value in [save_format_version, 0, 0, 0] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         for value in ["Inventor", "ASM 218 test", "2000-01-01"] {

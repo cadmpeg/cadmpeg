@@ -1,0 +1,431 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Render every published capability table from the dialect registries.
+
+The identity and support registries are the only data input. This script owns
+marker-delimited regions inside
+``docs/format-support.md``, the root ``README.md``, each codec crate's
+``README.md``, and each codec crate's ``src/lib.rs`` doc header. Prose outside
+a region is hand-written and is never touched.
+
+A region begins with ``<!-- generated: <marker> -->`` and ends with
+``<!-- /generated: <marker> -->``, each on its own line. In a ``lib.rs`` doc
+header both marker lines carry the ``//! `` prefix.
+
+``--check`` re-renders every target and compares it to the committed file
+**byte for byte**. There is no whitespace normalization: a rendered table is
+either the current render or it is stale. This retires the honour-system proof
+criterion "This document matches the code and tests" for the score tables.
+
+Run ``--self-test`` to execute ``scripts/test_render_format_support.py``.
+
+Exit codes: 0 clean, 1 a committed file is stale (``--check``), 2 a structural
+error in the registries, the target map, or a target file.
+"""
+
+from __future__ import annotations
+
+import argparse
+import difflib
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+from dialect_support_data import (
+    REGISTRY_ONLY_FORMATS,
+    RegistryDataError,
+    joined_rows,
+    load_identity_support,
+)
+
+ROOT = Path(__file__).resolve().parent.parent
+IDENTITY_REL = Path("docs") / "dialects.toml"
+SUPPORT_REL = Path("docs") / "dialect-support.toml"
+LADDER_REL = Path("docs") / "format-support.md"
+README_REL = Path("README.md")
+SELF_TEST_REL = Path("scripts") / "test_render_format_support.py"
+
+# Where the ladder document lives for a reader outside the repository. The
+# crate READMEs and the rustdoc headers ship to crates.io and docs.rs, so their
+# links cannot be repository-relative.
+BLOB = "https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md"
+
+MARKER_LADDER_TABLE = "ladder-table"
+MARKER_README_LINES = "capability-lines"
+MARKER_CAPABILITY = "capability"
+
+
+class RenderError(Exception):
+    """A structural fault that no re-render can fix. Exit code 2."""
+
+
+# --------------------------------------------------------------------------
+# Registries
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Row:
+    """One identity row joined to its capability row."""
+
+    dialect: str
+    read: str
+    write: str
+
+
+@dataclass(frozen=True)
+class Format:
+    """One format's owner-declared level and rows."""
+
+    fmt: str
+    level: int | None
+    rows: tuple[Row, ...]
+
+    @property
+    def headline(self) -> str:
+        if self.level is None:
+            raise RenderError(f"{SUPPORT_REL}: format.{self.fmt} has no level")
+        return f"L{self.level}"
+
+
+def load_formats(root: Path) -> dict[str, Format]:
+    """Join the registries into per-format row sets."""
+    try:
+        identity, capability = load_identity_support(root)
+        declared, joined = joined_rows(identity, capability)
+    except RegistryDataError as error:
+        raise RenderError(str(error)) from error
+    format_levels = capability.get("format")
+    if not isinstance(format_levels, dict):
+        raise RenderError(f"{SUPPORT_REL}: no [format.<id>] entries")
+    grouped: dict[str, list[Row]] = {fmt: [] for fmt in declared}
+    for entry, support in joined:
+        dialect = entry["id"]
+        fmt, _, _ = dialect.partition(":")
+        grouped[fmt].append(
+            Row(
+                dialect=dialect,
+                read=support.get("read", ""),
+                write=support.get("write", ""),
+            )
+        )
+
+    result = {}
+    for fmt, rows in grouped.items():
+        block = format_levels.get(fmt)
+        level = block.get("level") if isinstance(block, dict) else None
+        result[fmt] = Format(
+            fmt=fmt,
+            level=level if isinstance(level, int) else None,
+            rows=tuple(rows),
+        )
+    return result
+
+
+# --------------------------------------------------------------------------
+# Region splicing
+# --------------------------------------------------------------------------
+
+
+def _markers(marker: str, prefix: str) -> tuple[str, str]:
+    return f"{prefix}<!-- generated: {marker} -->", f"{prefix}<!-- /generated: {marker} -->"
+
+
+def splice(text: str, marker: str, body: str, *, rel: Path, prefix: str = "") -> str:
+    """Replace the region named by ``marker``. The marker lines survive."""
+    begin, end = _markers(marker, prefix)
+    lines = text.split("\n")
+    starts = [i for i, line in enumerate(lines) if line == begin]
+    ends = [i for i, line in enumerate(lines) if line == end]
+    if len(starts) != 1:
+        raise RenderError(f"{rel}: expected one {begin!r} line, found {len(starts)}")
+    if len(ends) != 1:
+        raise RenderError(f"{rel}: expected one {end!r} line, found {len(ends)}")
+    if ends[0] < starts[0]:
+        raise RenderError(f"{rel}: {end!r} precedes {begin!r}")
+    replacement = body.split("\n") if body else []
+    return "\n".join(lines[: starts[0] + 1] + replacement + lines[ends[0] :])
+
+
+def _table(header: tuple[str, ...], rows: list[tuple[str, ...]]) -> str:
+    widths = [len(cell) for cell in header]
+    for row in rows:
+        widths = [max(width, len(cell)) for width, cell in zip(widths, row)]
+
+    def line(cells: tuple[str, ...]) -> str:
+        return "| " + " | ".join(cell.ljust(width) for cell, width in zip(cells, widths)) + " |"
+
+    out = [line(header), "| " + " | ".join("-" * width for width in widths) + " |"]
+    out.extend(line(row) for row in rows)
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------------
+# Bodies
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Profile:
+    """One hand-authored format profile that owns its name and ordering."""
+
+    name: str
+    anchor: str
+
+
+def ladder_table(formats: dict[str, Format], profiles: dict[str, Profile]) -> str:
+    rows = [(profile.name, formats[fmt].headline) for fmt, profile in profiles.items()]
+    return f"\n{_table(('Format', 'Level'), rows)}\n"
+
+
+def format_section(fmt: str, formats: dict[str, Format]) -> str:
+    entry = formats[fmt]
+    rows = [(f"`{row.dialect}`", row.read, row.write) for row in entry.rows]
+    header = ("Dialect", "Read", "Write")
+    return f"\n**Ladder: {entry.headline}.**\n\n{_table(header, rows)}\n"
+
+
+def readme_lines(formats: dict[str, Format], profiles: dict[str, Profile]) -> str:
+    lines = [
+        f"- **{profile.name}** — {formats[fmt].headline} "
+        f"([profile](docs/format-support.md#{profile.anchor}))"
+        for fmt, profile in profiles.items()
+    ]
+    return "\n" + "\n".join(lines) + "\n"
+
+
+def crate_line(fmt: str, formats: dict[str, Format], profiles: dict[str, Profile]) -> str:
+    return f"Support: {formats[fmt].headline} ([ladder]({BLOB}#{profiles[fmt].anchor}))."
+
+
+# --------------------------------------------------------------------------
+# Anchors
+# --------------------------------------------------------------------------
+
+ANCHOR_DROP = re.compile(r"[^a-z0-9 -]")
+
+
+def _anchor(heading: str) -> str:
+    return ANCHOR_DROP.sub("", heading.strip().lower()).replace(" ", "-")
+
+
+def section_profiles(ladder: str) -> dict[str, Profile]:
+    """Name and anchor of the ``##`` heading enclosing each format region.
+
+    The profile document owns published names and ordering. Deriving both from
+    that document means a renamed or moved heading cannot leave a parallel
+    renderer catalog or a dangling link behind.
+    """
+    profiles: dict[str, Profile] = {}
+    heading = None
+    begin = re.compile(r"^<!-- generated: dialects ([a-z0-9]+) -->$")
+    for line in ladder.split("\n"):
+        if line.startswith("## "):
+            heading = line[3:]
+        match = begin.match(line)
+        if not match:
+            continue
+        if heading is None:
+            raise RenderError(f"{LADDER_REL}: {line} precedes every '## ' heading")
+        fmt = match.group(1)
+        if fmt in profiles:
+            raise RenderError(f"{LADDER_REL}: several profile regions name {fmt}")
+        profiles[fmt] = Profile(name=heading, anchor=_anchor(heading))
+    return profiles
+
+
+def capability_targets(root: Path) -> dict[str, tuple[Path, Path]]:
+    """Find codec-owned generated regions by their format-qualified markers."""
+    targets: dict[str, tuple[Path, Path]] = {}
+    begin = re.compile(r"^<!-- generated: capability ([a-z0-9]+) -->$", re.MULTILINE)
+    lib_begin = re.compile(
+        r"^//! <!-- generated: capability ([a-z0-9]+) -->$", re.MULTILINE
+    )
+    for crate in sorted((root / "crates").glob("cadmpeg-codec-*")):
+        readme = crate / "README.md"
+        lib = crate / "src" / "lib.rs"
+        if not readme.is_file() or not lib.is_file():
+            continue
+        readme_matches = begin.findall(_read(root, readme.relative_to(root)))
+        lib_matches = lib_begin.findall(_read(root, lib.relative_to(root)))
+        if not readme_matches and not lib_matches:
+            continue
+        if len(readme_matches) != 1 or readme_matches != lib_matches:
+            raise RenderError(
+                f"{crate.relative_to(root)}: README.md and src/lib.rs must name "
+                "the same one capability format"
+            )
+        fmt = readme_matches[0]
+        if fmt in targets:
+            raise RenderError(f"several codec crates own capability format {fmt}")
+        targets[fmt] = (readme.relative_to(root), lib.relative_to(root))
+    return targets
+
+
+# --------------------------------------------------------------------------
+# Targets
+# --------------------------------------------------------------------------
+
+
+def render(root: Path) -> dict[Path, str]:
+    """Return the full rendered text of every target file, keyed by rel path."""
+    formats = load_formats(root)
+
+    ladder_rel = LADDER_REL
+    ladder = _read(root, ladder_rel)
+    profiles = section_profiles(ladder)
+    expected = set(formats) - REGISTRY_ONLY_FORMATS
+    if set(profiles) != expected:
+        missing = ", ".join(sorted(expected - set(profiles))) or "none"
+        extra = ", ".join(sorted(set(profiles) - expected)) or "none"
+        raise RenderError(
+            f"{ladder_rel}: per-format regions do not match the codec formats "
+            f"(missing: {missing}; unexpected: {extra})"
+        )
+
+    ladder = splice(
+        ladder, MARKER_LADDER_TABLE, ladder_table(formats, profiles), rel=ladder_rel
+    )
+    for fmt in profiles:
+        ladder = splice(
+            ladder, f"dialects {fmt}", format_section(fmt, formats), rel=ladder_rel
+        )
+    out = {ladder_rel: ladder}
+
+    readme = _read(root, README_REL)
+    out[README_REL] = splice(
+        readme, MARKER_README_LINES, readme_lines(formats, profiles), rel=README_REL
+    )
+
+    targets = capability_targets(root)
+    if set(targets) != set(profiles):
+        missing = ", ".join(sorted(set(profiles) - set(targets))) or "none"
+        extra = ", ".join(sorted(set(targets) - set(profiles))) or "none"
+        raise RenderError(
+            "codec capability regions do not match the format profiles "
+            f"(missing: {missing}; unexpected: {extra})"
+        )
+    for fmt, (crate_readme, crate_lib) in targets.items():
+        line = crate_line(fmt, formats, profiles)
+        out[crate_readme] = splice(
+            _read(root, crate_readme),
+            f"{MARKER_CAPABILITY} {fmt}",
+            f"\n{line}\n",
+            rel=crate_readme,
+        )
+        out[crate_lib] = splice(
+            _read(root, crate_lib),
+            f"{MARKER_CAPABILITY} {fmt}",
+            f"//! {line}",
+            rel=crate_lib,
+            prefix="//! ",
+        )
+    return out
+
+
+def _read(root: Path, rel: Path) -> str:
+    path = root / rel
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise RenderError(f"{rel}: not found") from exc
+    except UnicodeDecodeError as exc:
+        raise RenderError(f"{rel}: not UTF-8: {exc}") from exc
+
+
+# --------------------------------------------------------------------------
+# Modes
+# --------------------------------------------------------------------------
+
+
+def check(root: Path) -> list[str]:
+    """Return a unified diff per stale target. Empty means every file matches."""
+    stale = []
+    for rel, text in render(root).items():
+        committed = _read(root, rel)
+        if committed == text:
+            continue
+        diff = difflib.unified_diff(
+            committed.splitlines(keepends=True),
+            text.splitlines(keepends=True),
+            fromfile=f"{rel} (committed)",
+            tofile=f"{rel} (rendered)",
+        )
+        stale.append("".join(diff))
+    return stale
+
+
+def write(root: Path) -> list[Path]:
+    written = []
+    for rel, text in render(root).items():
+        path = root / rel
+        if path.read_text(encoding="utf-8") == text:
+            continue
+        path.write_text(text, encoding="utf-8")
+        written.append(rel)
+    return written
+
+
+def self_test() -> int:
+    import unittest
+
+    suite = unittest.defaultTestLoader.discover(
+        start_dir=str(ROOT / "scripts"),
+        pattern=SELF_TEST_REL.name,
+        top_level_dir=str(ROOT / "scripts"),
+    )
+    return 0 if unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful() else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "root",
+        nargs="?",
+        type=Path,
+        default=ROOT,
+        help="repository root (default: parent of scripts/)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="compare every committed target to a fresh render, byte for byte",
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run the renderer's own suite instead of rendering",
+    )
+    args = parser.parse_args(argv)
+    if args.self_test:
+        return self_test()
+
+    root = args.root.resolve()
+    try:
+        if args.check:
+            stale = check(root)
+            for diff in stale:
+                sys.stdout.write(diff)
+            if stale:
+                print(
+                    f"error: {len(stale)} file(s) do not match a fresh render; "
+                    "run scripts/render-format-support.py",
+                    file=sys.stderr,
+                )
+                return 1
+            print("format-support: ok (every rendered table matches the registries)")
+            return 0
+        written = write(root)
+        for rel in written:
+            print(f"rendered: {rel}")
+        if not written:
+            print("format-support: ok (already current)")
+        return 0
+    except RenderError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

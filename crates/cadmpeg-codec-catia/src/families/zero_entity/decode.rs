@@ -1,25 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Zero-entity decode route for independently complete geometry carriers.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
+    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
 use crate::assemble::{
-    annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload, source_meta,
+    annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
@@ -49,13 +48,13 @@ struct WireSourceProcedural {
     cache_fit_tolerance: Option<f64>,
 }
 
-type ClosedWireMember<'a> = (
-    &'a crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
-    CurveId,
-    [Point3; 2],
-    bool,
-    Option<[f64; 2]>,
-);
+struct ClosedWireMember<'a> {
+    support: &'a crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
+    curve: CurveId,
+    endpoints: [Point3; 2],
+    forward: bool,
+    parameter_range: Option<[f64; 2]>,
+}
 
 const ZERO_ENTITY_WIRE_TOLERANCE: f64 = 2e-3;
 
@@ -92,22 +91,28 @@ fn closed_wire_loop_members<'a>(
             let parameter_range = support.model_parameters.filter(|parameters| {
                 parameters.iter().all(|value| value.is_finite()) && parameters[0] != parameters[1]
             });
-            Some((support, curve, *endpoints, *forward, parameter_range))
+            Some(ClosedWireMember {
+                support,
+                curve,
+                endpoints: *endpoints,
+                forward: *forward,
+                parameter_range,
+            })
         })
         .collect::<Option<Vec<_>>>();
     let members = members?;
-    if members
-        .iter()
-        .any(|(_, _, [start, end], _, _)| !finite_point(*start) || !finite_point(*end))
-    {
+    if members.iter().any(|member| {
+        let [start, end] = member.endpoints;
+        !finite_point(start) || !finite_point(end)
+    }) {
         return None;
     }
     members
         .iter()
         .enumerate()
-        .all(|(index, (_, _, [_, end], _, _))| {
-            let next_start = members[(index + 1) % member_count].2[0];
-            end.distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE
+        .all(|(index, member)| {
+            let next_start = members[(index + 1) % member_count].endpoints[0];
+            member.endpoints[1].distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE
         })
         .then_some(members)
 }
@@ -121,7 +126,9 @@ fn append_oriented_wire_curve(
     procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
 ) {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
-        let construction_id = ProceduralCurveId(format!("{}-construction", curve_id.0));
+        let construction_id =
+            ProceduralCurveId::mint(format!("{}-construction", curve_id.as_str()))
+                .expect("identity grammar");
         annotate(
             annotations,
             &construction_id,
@@ -133,14 +140,20 @@ fn append_oriented_wire_curve(
         annotations
             .derived(&construction_id, "curve")
             .derived(&construction_id, "definition");
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: construction_id.clone(),
-            curve: curve_id.clone(),
-            definition,
-            cache_fit_tolerance,
-        });
-        CurveGeometry::Procedural {
-            construction: construction_id,
+        match ProceduralCurve::try_new(construction_id.clone(), definition, cache_fit_tolerance) {
+            Ok(procedural) => {
+                let cache = match geometry {
+                    CurveGeometry::Procedural { cache, .. } => cache,
+                    CurveGeometry::Unknown { .. } => None,
+                    geometry => SolvedCurveGeometry::new(geometry).ok(),
+                };
+                ir.model.procedural_curves.push(procedural);
+                CurveGeometry::Procedural {
+                    construction: construction_id,
+                    cache,
+                }
+            }
+            Err(_) => geometry,
         }
     } else {
         geometry
@@ -161,22 +174,18 @@ fn append_oriented_wire_curve(
     });
 }
 
-fn source_wire_procedural(
-    ir: &CadIr,
-    curve_id: &CurveId,
-    geometry: &CurveGeometry,
-) -> Option<WireSourceProcedural> {
-    let CurveGeometry::Procedural { construction } = geometry else {
+fn source_wire_procedural(ir: &CadIr, geometry: &CurveGeometry) -> Option<WireSourceProcedural> {
+    let CurveGeometry::Procedural { construction, .. } = geometry else {
         return None;
     };
     ir.model
         .procedural_curves
         .iter()
-        .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)
+        .find(|candidate| candidate.id == *construction)
         .map(|candidate| WireSourceProcedural {
             construction_id: candidate.id.clone(),
-            definition: candidate.definition.clone(),
-            cache_fit_tolerance: candidate.cache_fit_tolerance,
+            definition: candidate.definition().clone(),
+            cache_fit_tolerance: candidate.cache_fit_tolerance(),
         })
 }
 
@@ -205,7 +214,7 @@ fn transfer_closed_wire_loops(
             continue;
         };
 
-        for loop_record in &face.loops {
+        for loop_record in face.loops.iter().flatten() {
             let Some(members) = closed_wire_loop_members(run, loop_record, support_curve_ids)
             else {
                 continue;
@@ -216,9 +225,12 @@ fn transfer_closed_wire_loops(
                 "{}-{}-{}",
                 run.carrier_record_ordinal, face.record_ordinal, loop_record.record_ordinal
             );
-            let body_id = BodyId(format!("catia:zero-entity:wire-body#{identity}"));
-            let region_id = RegionId(format!("catia:zero-entity:wire-region#{identity}"));
-            let shell_id = ShellId(format!("catia:zero-entity:wire-shell#{identity}"));
+            let body_id = BodyId::mint(format!("catia:zero-entity:wire-body#{identity}"))
+                .expect("identity grammar");
+            let region_id = RegionId::mint(format!("catia:zero-entity:wire-region#{identity}"))
+                .expect("identity grammar");
+            let shell_id = ShellId::mint(format!("catia:zero-entity:wire-shell#{identity}"))
+                .expect("identity grammar");
             if !root_owns_support_runs {
                 annotate(
                     annotations,
@@ -247,10 +259,14 @@ fn transfer_closed_wire_loops(
             }
 
             let mut vertex_ids = Vec::with_capacity(member_count);
-            for (index, (_, _, [start, _], _, _)) in members.iter().enumerate() {
-                let point_id = PointId(format!("catia:zero-entity:wire-point#{identity}-{index}"));
+            for (index, member) in members.iter().enumerate() {
+                let start = member.endpoints[0];
+                let point_id =
+                    PointId::mint(format!("catia:zero-entity:wire-point#{identity}-{index}"))
+                        .expect("identity grammar");
                 let vertex_id =
-                    VertexId(format!("catia:zero-entity:wire-vertex#{identity}-{index}"));
+                    VertexId::mint(format!("catia:zero-entity:wire-vertex#{identity}-{index}"))
+                        .expect("identity grammar");
                 annotate(
                     annotations,
                     &point_id,
@@ -272,7 +288,7 @@ fn transfer_closed_wire_loops(
                     .derived(&vertex_id, "point");
                 ir.model.points.push(Point {
                     id: point_id.clone(),
-                    position: *start,
+                    position: start,
                     source_object: None,
                 });
                 ir.model.vertices.push(Vertex {
@@ -286,9 +302,17 @@ fn transfer_closed_wire_loops(
             }
 
             let mut edge_ids = Vec::with_capacity(member_count);
-            for (index, (support, curve, _, forward, parameter_range)) in members.iter().enumerate()
-            {
-                let edge_id = EdgeId(format!("catia:zero-entity:wire-edge#{identity}-{index}"));
+            for (index, member) in members.iter().enumerate() {
+                let ClosedWireMember {
+                    support,
+                    curve,
+                    forward,
+                    parameter_range,
+                    ..
+                } = member;
+                let edge_id =
+                    EdgeId::mint(format!("catia:zero-entity:wire-edge#{identity}-{index}"))
+                        .expect("identity grammar");
                 let (curve_id, param_range) = if let Some(parameters) = *parameter_range {
                     let oriented_range = if *forward {
                         parameters
@@ -324,13 +348,10 @@ fn transfer_closed_wire_loops(
                     let existing = source_curve_orientations.get(curve).copied();
                     if canonical_source_range.is_none() {
                         (curve.clone(), None)
-                    } else if existing.is_some_and(|orientation| {
+                    } else if let Some(orientation) = existing.filter(|orientation| {
                         orientation.reversed == reversed && orientation.source_range == source_range
                     }) {
-                        (
-                            curve.clone(),
-                            Some(existing.expect("checked above").edge_range),
-                        )
+                        (curve.clone(), Some(orientation.edge_range))
                     } else if !reversed && existing.is_some_and(|orientation| !orientation.reversed)
                     {
                         (curve.clone(), Some(source_range))
@@ -341,7 +362,7 @@ fn transfer_closed_wire_loops(
                                     .entry(curve.clone())
                                     .or_insert_with(|| {
                                         source_geometry.as_ref().and_then(|geometry| {
-                                            source_wire_procedural(ir, curve, geometry)
+                                            source_wire_procedural(ir, geometry)
                                         })
                                     })
                                     .is_some()
@@ -362,7 +383,7 @@ fn transfer_closed_wire_loops(
                     } else if let Some(geometry) = source_geometry {
                         let source_procedural = source_curve_procedurals
                             .entry(curve.clone())
-                            .or_insert_with(|| source_wire_procedural(ir, curve, &geometry))
+                            .or_insert_with(|| source_wire_procedural(ir, &geometry))
                             .clone();
                         let oriented = if reversed {
                             match source_procedural.as_ref() {
@@ -405,10 +426,9 @@ fn transfer_closed_wire_loops(
                                             .iter_mut()
                                             .find(|candidate| {
                                                 candidate.id == source_procedural.construction_id
-                                                    && candidate.curve == *curve
                                             })
                                             .map(|candidate| {
-                                                candidate.definition = definition.clone();
+                                                candidate.replace_definition(definition.clone());
                                             })
                                             .is_some()
                                     } else {
@@ -436,9 +456,10 @@ fn transfer_closed_wire_loops(
                                     (curve.clone(), None)
                                 }
                             } else {
-                                let oriented_curve_id = CurveId(format!(
+                                let oriented_curve_id = CurveId::mint(format!(
                                     "catia:zero-entity:wire-curve#{identity}-{index}"
-                                ));
+                                ))
+                                .expect("identity grammar");
                                 append_oriented_wire_curve(
                                     ir,
                                     annotations,
@@ -528,10 +549,13 @@ fn transfer_closed_wire_loops(
         let Some(root) = ownership_root else {
             return counts;
         };
-        let identity = root.body_record_ordinal;
-        let body_id = BodyId(format!("catia:zero-entity:owned-wire-body#{identity}"));
-        let region_id = RegionId(format!("catia:zero-entity:owned-wire-region#{identity}"));
-        let shell_id = ShellId(format!("catia:zero-entity:owned-wire-shell#{identity}"));
+        let identity = root.body_record_ordinal();
+        let body_id = BodyId::mint(format!("catia:zero-entity:owned-wire-body#{identity}"))
+            .expect("identity grammar");
+        let region_id = RegionId::mint(format!("catia:zero-entity:owned-wire-region#{identity}"))
+            .expect("identity grammar");
+        let shell_id = ShellId::mint(format!("catia:zero-entity:owned-wire-shell#{identity}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &body_id,
@@ -604,10 +628,9 @@ pub(crate) fn try_decode_zero_entity(
         &scan.data, preamble,
     );
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     preserve_raw_payload(
         &mut unknowns,
         &mut annotations,
@@ -617,7 +640,8 @@ pub(crate) fn try_decode_zero_entity(
 
     let mut surface_ids_by_position = HashMap::new();
     for (index, surface) in surfaces.into_iter().enumerate() {
-        let id = SurfaceId(format!("catia:zero-entity:surf#{index}"));
+        let id =
+            SurfaceId::mint(format!("catia:zero-entity:surf#{index}")).expect("identity grammar");
         annotate(
             &mut annotations,
             &id,
@@ -642,10 +666,11 @@ pub(crate) fn try_decode_zero_entity(
             continue;
         };
         for support in &run.supports {
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "catia:zero-entity:support-curve#{}",
                 support.record_ordinal
-            ));
+            ))
+            .expect("identity grammar");
             if let Some(geometry) = support.model_curve.clone() {
                 annotate(
                     &mut annotations,
@@ -690,19 +715,16 @@ pub(crate) fn try_decode_zero_entity(
                     else {
                         continue;
                     };
-                    let PcurveGeometry::Nurbs {
-                        degree,
-                        knots,
-                        control_points,
-                        ..
-                    } = &pcurve
-                    else {
+                    let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
                         continue;
                     };
-                    let Some(parameter_range) = usize::try_from(*degree)
+                    let Some(parameter_range) = usize::try_from(nurbs.degree())
                         .ok()
                         .and_then(|degree| {
-                            Some([*knots.get(degree)?, *knots.get(control_points.len())?])
+                            Some([
+                                *nurbs.knots().get(degree)?,
+                                *nurbs.knots().get(nurbs.control_points().len())?,
+                            ])
                         })
                         .filter(|range| {
                             range.iter().all(|value| value.is_finite()) && range[0] < range[1]
@@ -713,32 +735,32 @@ pub(crate) fn try_decode_zero_entity(
                     transferred_parametric_surface_curves += 1;
                     (
                         ProceduralCurveDefinition::SurfaceCurve {
-                            family: SurfaceCurveFamily::Parametric,
-                            context: IntcurveSupportContext {
-                                sides: [
-                                    IntcurveSupportSide {
-                                        surface: Some(surface.clone()),
-                                        pcurve: Some(pcurve),
-                                        pcurve_parameter_range: None,
-                                    },
-                                    IntcurveSupportSide {
-                                        surface: None,
-                                        pcurve: None,
-                                        pcurve_parameter_range: None,
-                                    },
-                                ],
-                                parameter_range,
-                                discontinuities: std::array::from_fn(|_| Vec::new()),
+                            family: SurfaceCurveFamily::Parametric {
+                                context: IntcurveSupportContext {
+                                    sides: [
+                                        IntcurveSupportSide {
+                                            surface: Some(surface.clone()),
+                                            pcurve: Some(pcurve.into()),
+                                        },
+                                        IntcurveSupportSide {
+                                            surface: None,
+                                            pcurve: None,
+                                        },
+                                    ],
+                                    parameter_range,
+                                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                                },
+                                tail: None,
                             },
-                            tail: None,
                         },
                         "parametric_surface_curve",
                     )
                 };
-            let construction_id = ProceduralCurveId(format!(
+            let construction_id = ProceduralCurveId::mint(format!(
                 "catia:zero-entity:support-curve-construction#{}",
                 support.record_ordinal
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 &mut annotations,
                 &curve_id,
@@ -755,15 +777,13 @@ pub(crate) fn try_decode_zero_entity(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Procedural {
                     construction: construction_id.clone(),
+                    cache: None,
                 },
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: construction_id,
-                curve: curve_id.clone(),
-                definition,
-                cache_fit_tolerance: None,
-            });
+            ir.model
+                .procedural_curves
+                .push(ProceduralCurve::new(construction_id, definition));
             support_curve_ids.insert(support.record_ordinal, curve_id);
             transferred_support_curves += 1;
         }
@@ -806,100 +826,74 @@ pub(crate) fn try_decode_zero_entity(
     };
 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
-    let mut coverage = BTreeMap::from([
+    let mut coverage: cadmpeg_ir::Coverage = [
         (
-            "transferred_zero_entity_support_curve_count".to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
             transferred_support_curves,
         ),
         (
-            "transferred_zero_entity_parametric_surface_curve_count".to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT,
             transferred_parametric_surface_curves,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT,
             wire_counts.bodies,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT,
             wire_counts.owned_bodies,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT,
             wire_counts.loops,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT,
             wire_counts.edges,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
             wire_counts.vertices,
         ),
         (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT
-                .0
-                .to_string(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
             wire_counts.points,
         ),
-    ]);
+    ]
+    .into_iter()
+    .collect();
     if let Some(counts) = topology_counts {
         coverage.extend([
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT,
                 counts.bodies,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT,
                 counts.faces,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT,
                 counts.loops,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT,
                 counts.coedges,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT,
                 counts.edges,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT,
                 counts.vertices,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT,
                 counts.points,
             ),
             (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT
-                    .0
-                    .to_string(),
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT,
                 counts.pcurves,
             ),
         ]);
@@ -928,18 +922,15 @@ pub(crate) fn try_decode_zero_entity(
     };
     Some(FamilyOutput {
         ir,
-        report: DecodeReport {
-            format: "catia".to_string(),
-            container_only: false,
+        report: DecodeBody {
             geometry_transferred: true,
             coverage,
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: vec![topology_loss.note(topology_message)],
-            notes: container::summarize(scan).notes,
+            notes: Vec::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         },
         annotations: annotations.build(),
         unknowns,
-        standard_face_population: false,
     })
 }
 
@@ -982,20 +973,23 @@ mod tests {
     fn closed_wire_clamps_nurbs_range_at_the_domain_boundary() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:nurbs#0".to_string()),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![first, corner],
-                weights: None,
-                periodic: false,
-            }),
+            id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![first, corner],
+                    None,
+                    false,
+                )
+                .expect("valid linear NURBS"),
+            ),
             source_object: None,
         });
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:line#1".to_string()),
+            id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: corner,
                 direction: Vector3::new(-1.0, 0.0, 0.0),
@@ -1011,21 +1005,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 5],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, true],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 5],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, true],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![
                     support_with_parameters(
@@ -1039,8 +1035,14 @@ mod tests {
             },
         ];
         let support_curve_ids = HashMap::from([
-            (4, CurveId("catia:test:nurbs#0".to_string())),
-            (5, CurveId("catia:test:line#1".to_string())),
+            (
+                4,
+                CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
+            ),
+            (
+                5,
+                CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
+            ),
         ]);
         let mut annotations = AnnotationBuilder::new();
 
@@ -1060,7 +1062,7 @@ mod tests {
     fn closed_face_local_loop_uses_ownership_root_with_untransferred_sibling() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for (index, (origin, direction)) in [
             (corner, Vector3::new(-1.0, 0.0, 0.0)),
             (first, Vector3::new(1.0, 0.0, 0.0)),
@@ -1069,7 +1071,7 @@ mod tests {
         .enumerate()
         {
             ir.model.curves.push(Curve {
-                id: CurveId(format!("catia:test:curve#{index}")),
+                id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
                 geometry: CurveGeometry::Line { origin, direction },
                 source_object: None,
             });
@@ -1083,8 +1085,7 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![9, 8],
-                    loop_terminals: vec![1, 1, 1],
-                    loops: vec![
+                    loops: Some(vec![
                         crate::families::zero_entity::records::ZeroEntityLoop {
                             pos: 20,
                             record_ordinal: 3,
@@ -1124,8 +1125,9 @@ mod tests {
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, corner]],
                         },
-                    ],
-                    terminal_control: 0x05,
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![
                     support_with_parameters(4, 30, [first, corner], Some([1.0, 0.0])),
@@ -1134,17 +1136,21 @@ mod tests {
             },
         ];
         let support_curve_ids = HashMap::from([
-            (4, CurveId("catia:test:curve#0".to_string())),
-            (5, CurveId("catia:test:curve#1".to_string())),
+            (
+                4,
+                CurveId::mint("catia:test:curve#0".to_string()).expect("identity grammar"),
+            ),
+            (
+                5,
+                CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"),
+            ),
         ]);
         let ownership_root = crate::families::zero_entity::records::ZeroEntityOwnershipRoot {
             face_roster_pos: 50,
             face_roster_record_ordinal: 6,
             face_slots: vec![1],
             shell_pos: 60,
-            shell_record_ordinal: 7,
             body_pos: 70,
-            body_record_ordinal: 8,
         };
         let mut annotations = AnnotationBuilder::new();
 
@@ -1164,7 +1170,8 @@ mod tests {
         assert_eq!(counts.points, 4);
         assert_eq!(
             ir.model.bodies[0].id,
-            BodyId("catia:zero-entity:owned-wire-body#8".to_string())
+            BodyId::mint("catia:zero-entity:owned-wire-body#8".to_string())
+                .expect("identity grammar")
         );
         assert!(matches!(ir.model.bodies[0].kind, BodyKind::Wire));
         assert_eq!(ir.model.shells[0].wire_edges.len(), 4);
@@ -1172,24 +1179,30 @@ mod tests {
         assert_eq!(ir.model.edges[1].param_range, Some([0.0, 1.0]));
         assert_eq!(
             ir.model.edges[1].curve,
-            Some(CurveId("catia:test:curve#1".to_string()))
+            Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
         );
         assert!(matches!(
             ir.model
                 .curves
                 .iter()
-                .find(|curve| curve.id == CurveId("catia:test:curve#1".to_string()))
+                .find(|curve| curve.id == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Line { origin, direction })
                 if *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
         ));
         assert_eq!(
             ir.model.edges[2].curve,
-            Some(CurveId("catia:zero-entity:wire-curve#1-2-6-0".to_string()))
+            Some(
+                CurveId::mint("catia:zero-entity:wire-curve#1-2-6-0".to_string())
+                    .expect("identity grammar")
+            )
         );
         assert_eq!(
             ir.model.edges[3].curve,
-            Some(CurveId("catia:zero-entity:wire-curve#1-2-6-1".to_string()))
+            Some(
+                CurveId::mint("catia:zero-entity:wire-curve#1-2-6-1".to_string())
+                    .expect("identity grammar")
+            )
         );
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
     }
@@ -1201,9 +1214,9 @@ mod tests {
         let first = Point3::new(start_angle.cos(), start_angle.sin(), 0.0);
         let corner = Point3::new(end_angle.cos(), end_angle.sin(), 0.0);
         let chord = first.distance(corner);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:circle#0".to_string()),
+            id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1213,7 +1226,7 @@ mod tests {
             source_object: None,
         });
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:line#1".to_string()),
+            id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: corner,
                 direction: first.vector_from(corner).scale(1.0 / chord),
@@ -1229,21 +1242,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 5],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, true],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 5],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, true],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![
                     support_with_parameters(
@@ -1260,8 +1275,14 @@ mod tests {
             },
         ];
         let support_curve_ids = HashMap::from([
-            (4, CurveId("catia:test:circle#0".to_string())),
-            (5, CurveId("catia:test:line#1".to_string())),
+            (
+                4,
+                CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
+            ),
+            (
+                5,
+                CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
+            ),
         ]);
         let mut annotations = AnnotationBuilder::new();
 
@@ -1283,11 +1304,16 @@ mod tests {
     }
 
     #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
     fn closed_wire_reverses_helix_construction_and_clones_mixed_orientation() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
-        let curve_id = CurveId("catia:test:helix-curve#0".to_string());
-        let construction_id = ProceduralCurveId("catia:test:helix-construction#0".to_string());
+        let curve_id =
+            CurveId::mint("catia:test:helix-curve#0".to_string()).expect("identity grammar");
+        let construction_id =
+            ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
+                .expect("identity grammar");
         let definition = ProceduralCurveDefinition::Helix {
             angle_range: [0.0, 1.0],
             center: Point3::new(0.0, 0.0, 0.0),
@@ -1297,20 +1323,21 @@ mod tests {
             apex_factor: 0.2,
             axis: Vector3::new(0.0, 0.0, 1.0),
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: construction_id.clone(),
+                cache: None,
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: construction_id.clone(),
-            curve: curve_id.clone(),
-            definition: definition.clone(),
-            cache_fit_tolerance: None,
-        });
+        ir.model
+            .add_procedural_curve(
+                curve_id.clone(),
+                ProceduralCurve::new(construction_id.clone(), definition.clone()),
+            )
+            .unwrap();
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
                 carrier_pos: 0,
@@ -1320,21 +1347,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 4],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, false],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 4],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, false],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![support_with_parameters(
                     4,
@@ -1361,7 +1390,8 @@ mod tests {
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[1].param_range, Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[0].curve, Some(curve_id.clone()));
-        let derived_curve_id = CurveId("catia:zero-entity:wire-curve#1-2-3-1".to_string());
+        let derived_curve_id = CurveId::mint("catia:zero-entity:wire-curve#1-2-3-1".to_string())
+            .expect("identity grammar");
         assert_eq!(ir.model.edges[1].curve, Some(derived_curve_id.clone()));
         let source_definition = ir
             .model
@@ -1369,7 +1399,7 @@ mod tests {
             .iter()
             .find(|construction| construction.id == construction_id)
             .expect("source construction")
-            .definition
+            .definition()
             .clone();
         assert_ne!(source_definition, definition);
         let derived_construction = match &ir
@@ -1380,7 +1410,7 @@ mod tests {
             .expect("derived curve")
             .geometry
         {
-            CurveGeometry::Procedural { construction } => construction.clone(),
+            CurveGeometry::Procedural { construction, .. } => construction.clone(),
             _ => panic!("derived curve remains procedural"),
         };
         assert_ne!(derived_construction, construction_id);
@@ -1390,8 +1420,8 @@ mod tests {
                 .iter()
                 .find(|construction| construction.id == derived_construction)
                 .expect("derived construction")
-                .definition,
-            definition
+                .definition(),
+            &definition
         );
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
     }
@@ -1409,26 +1439,28 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![9, 8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7],
-                        typed_references: vec![1],
-                        support_record_ordinals: vec![4],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true],
-                        oriented_model_endpoints: vec![[first, second]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7],
+                            typed_references: vec![1],
+                            support_record_ordinals: vec![4],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true],
+                            oriented_model_endpoints: vec![[first, second]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![support(4, 30, [first, second])],
             },
         ];
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut annotations = AnnotationBuilder::new();
 
         let counts = transfer_closed_wire_loops(

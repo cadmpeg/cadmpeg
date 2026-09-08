@@ -1,34 +1,45 @@
 use super::*;
+use crate::native::features::payload_name::FeaturePayloadName;
+use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::super::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records,
-        FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
+        FeatureConstructionPayload, FeatureSketchPayloadFixedPair,
     };
-    let payload = FeatureSketchConstructionPayload {
+    let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
         operation_label: "sketch".to_string(),
-        construction_inputs: "inputs".to_string(),
-        data_blocks: vec!["block".to_string()],
-        byte_len: 100,
-        sha256: "00".repeat(32),
-        block_payload_offsets: vec![0],
-        block_byte_lengths: vec![100],
-        block_source_offsets: vec![1000],
+        owner: crate::native::features::FeatureConstructionOwner::Sketch {
+            construction_inputs: "inputs".to_string(),
+        },
+        content: crate::native::features::payload_content::FeaturePayloadContent::new(
+            vec![
+                crate::native::features::payload_content::FeaturePayloadBlock {
+                    id: "block".to_string(),
+                    byte_len: 100,
+                    source_offset: 1000,
+                },
+            ],
+            "00".repeat(32),
+        )
+        .unwrap(),
     };
-    let name = |id: &str, ordinal, offset| FeatureSketchPayloadName {
+    let name = |id: &str, ordinal, offset| FeaturePayloadName {
         id: id.to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal,
-        type_code: Some(1),
-        raw_type_code: Some(vec![1]),
-        type_code_payload_offset: Some(offset + 1),
-        type_code_source_offset: Some(1001 + offset),
-        payload_leading: false,
-        value: format!("Point{}", ordinal + 1),
-        payload_offset: offset,
+        frame: crate::om::name_field::NameField::new(
+            format!("Point{}", ordinal + 1),
+            offset,
+            Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
+                target: Some(1001 + offset),
+            }),
+        )
+        .unwrap(),
         source_offset: 1000 + offset,
     };
     let pair = FeatureSketchPayloadFixedPair {
@@ -36,11 +47,9 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        values: [0.5, -0.5],
-        raw_values: [[0; 7]; 2],
-        discriminator: vec![0x04],
-        payload_offset: 20,
-        value_payload_offsets: [28, 37],
+        values: [[0; 7], [8, 0, 0, 0, 0, 0, 0]]
+            .map(crate::om::sketch_scalar::SketchScaledAtom::from_raw),
+        position: PairPosition::new(SketchPairForm::Legacy, 20).unwrap(),
         source_offset: 1020,
         value_source_offsets: [1028, 1037],
     };
@@ -49,10 +58,8 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let auxiliary_pair = FeatureSketchPayloadFixedPair {
         id: "auxiliary-pair".to_string(),
         ordinal: 1,
-        discriminator: vec![0x0b],
-        payload_offset: 40,
+        position: PairPosition::new(SketchPairForm::ThreeMember, 40).unwrap(),
         source_offset: 1040,
-        value_payload_offsets: [55, 64],
         value_source_offsets: [1055, 1064],
         ..pair.clone()
     };
@@ -63,7 +70,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let points = feature_sketch_fixed_points(&records, &names, &pairs);
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point1");
-    assert_eq!(points[0].values, [0.5, -0.5]);
+    assert_eq!(points[0].values, [0.5, 0.75]);
 }
 
 #[test]
@@ -76,27 +83,34 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         id: "nx:offset-store:named-point#2-10".to_string(),
         name: "Point1".to_string(),
         data_blocks: vec!["block-10".to_string(), "block-11".to_string()],
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [100, 120],
+        values: [(1.0, 100), (2.0, 120)].map(|(value, source_offset)| {
+            crate::native::features::FeatureBinary64ScalarToken {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value))
+                    .unwrap(),
+                source_offset,
+            }
+        }),
         source_offset: 90,
     };
-    let reference = |id: &str, ordinal: u32, block: Option<&str>| FeatureSketchReference {
-        id: id.to_string(),
-        operation_label: "nx:feature-history:operation-label#1-4".to_string(),
-        ordinal,
-        declared_count: 2,
-        terminal: ordinal == 1,
-        object_index: 10 + ordinal,
-        raw_object_index: vec![0xf0, (10 + ordinal) as u8],
-        data_block: block.map(str::to_string),
-        source_offset: 200 + u64::from(ordinal),
-    };
+    let reference =
+        |id: &str, ordinal: u32, count: u8, block: Option<&str>| FeatureSketchReference {
+            id: id.to_string(),
+            operation_label: "nx:feature-history:operation-label#1-4".to_string(),
+            position: crate::om::sketch_references::SketchReferencePosition::new(count, ordinal)
+                .unwrap(),
+            token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                10 + ordinal,
+                &[0xf0, (10 + ordinal) as u8],
+            )
+            .unwrap(),
+            data_block: block.map(str::to_string),
+            source_offset: 200 + u64::from(ordinal),
+        };
     let uses = feature_sketch_named_point_block_uses(
         &[
-            reference("miss", 0, Some("block-9")),
-            reference("hit", 1, Some("block-11")),
-            reference("unresolved", 2, None),
+            reference("miss", 0, 2, Some("block-9")),
+            reference("hit", 1, 2, Some("block-11")),
+            reference("unresolved", 2, 3, None),
         ],
         &[point],
     );
@@ -113,28 +127,37 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         feature_sketch_preceding_named_point_uses, FeatureSketchReference, OffsetStoreNamedPoint,
     };
 
-    let reference = |ordinal, terminal, block: Option<&str>| FeatureSketchReference {
+    let reference = |ordinal, declared_count, block: Option<&str>| FeatureSketchReference {
         id: format!("reference-{ordinal}"),
         operation_label: "nx:feature-history:operation-label#1-4".to_string(),
-        ordinal,
-        declared_count: 2,
-        terminal,
-        object_index: 12 + ordinal,
-        raw_object_index: vec![0xf0, (12 + ordinal) as u8],
+        position: crate::om::sketch_references::SketchReferencePosition::new(
+            declared_count,
+            ordinal,
+        )
+        .unwrap(),
+        token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+            12 + ordinal,
+            &[0xf0, (12 + ordinal) as u8],
+        )
+        .unwrap(),
         data_block: block.map(str::to_string),
         source_offset: 300 + u64::from(ordinal),
     };
     let references = [
-        reference(0, false, Some("nx:om-data-blocks-2:block#12")),
-        reference(1, true, Some("nx:om-data-blocks-2:block#13")),
+        reference(0, 2, Some("nx:om-data-blocks-2:block#12")),
+        reference(1, 2, Some("nx:om-data-blocks-2:block#13")),
     ];
     let point = |id: &str, blocks: &[&str]| OffsetStoreNamedPoint {
         id: id.to_string(),
         name: "Point1".to_string(),
         data_blocks: blocks.iter().map(|block| (*block).to_string()).collect(),
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [200, 220],
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| {
+            crate::native::features::FeatureBinary64ScalarToken {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value))
+                    .unwrap(),
+                source_offset,
+            }
+        }),
         source_offset: 190,
     };
     let preceding = point(
@@ -170,7 +193,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     );
     assert!(feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty());
 
-    let unresolved = [references[0].clone(), reference(1, true, None)];
+    let unresolved = [references[0].clone(), reference(1, 2, None)];
     assert!(feature_sketch_preceding_named_point_uses(
         &unresolved,
         std::slice::from_ref(&preceding)
@@ -178,18 +201,21 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     .is_empty());
     let noncontiguous = [
         references[0].clone(),
-        reference(2, true, Some("nx:om-data-blocks-2:block#13")),
+        reference(2, 3, Some("nx:om-data-blocks-2:block#13")),
     ];
     assert!(feature_sketch_preceding_named_point_uses(
         &noncontiguous,
         std::slice::from_ref(&preceding),
     )
     .is_empty());
-    let bad_terminal = [
-        references[0].clone(),
-        reference(1, false, Some("nx:om-data-blocks-2:block#13")),
-    ];
-    assert!(feature_sketch_preceding_named_point_uses(&bad_terminal, &[preceding]).is_empty());
+    let mut bad_terminal = serde_json::to_value(&references[1]).unwrap();
+    bad_terminal["terminal"] = serde_json::json!(false);
+    assert!(
+        serde_json::from_value::<FeatureSketchReference>(bad_terminal)
+            .unwrap_err()
+            .to_string()
+            .contains("terminal")
+    );
 }
 
 #[test]
@@ -212,9 +238,13 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         id: "named-point".to_string(),
         name: "Point1".to_string(),
         data_blocks: vec!["block-10".to_string()],
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [200, 220],
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| {
+            crate::native::features::FeatureBinary64ScalarToken {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value))
+                    .unwrap(),
+                source_offset,
+            }
+        }),
         source_offset: 190,
     };
     let block_use = FeatureSketchNamedPointBlockUse {
@@ -242,9 +272,23 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_point_group, groups[0].id);
     assert_eq!(uses[0].named_point, named_point.id);
-    assert_eq!(uses[0].sketch_references, ["reference", "reference-2"]);
-    assert_eq!(uses[0].block_uses.len(), 2);
-    assert_eq!(uses[0].source_offsets, [300, 301]);
+    assert_eq!(
+        uses[0]
+            .references
+            .iter()
+            .map(|reference| reference.sketch_reference.as_str())
+            .collect::<Vec<_>>(),
+        ["reference", "reference-2"]
+    );
+    assert_eq!(uses[0].references.len(), 2);
+    assert_eq!(
+        uses[0]
+            .references
+            .iter()
+            .map(|reference| reference.source_offset)
+            .collect::<Vec<_>>(),
+        [300, 301]
+    );
 
     let mut different = point.clone();
     different.id = "different".to_string();

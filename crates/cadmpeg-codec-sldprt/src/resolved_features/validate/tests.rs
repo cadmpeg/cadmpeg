@@ -11,34 +11,44 @@ use crate::SldprtCodec;
 
 #[test]
 fn native_validation_rejects_duplicate_history_ordinals() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].ordinal = 0;
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("repeats feature ordinal")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("repeats feature ordinal"))
+    );
 }
 
 #[test]
 fn native_validation_rejects_broken_feature_graph() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_histories[0].features[1].tree_parent = Some("missing-record".into());
+        native.feature_histories[0].features[1].tree_parent =
+            Some(crate::records::TreeParent::Record {
+                record_id: "missing-record".into(),
+                source_id: None,
+            });
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("missing tree parent")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("missing tree parent"))
+    );
 }
 
 #[test]
@@ -51,9 +61,10 @@ fn native_validation_rejects_broken_history_root_graph() {
         "Contents/Keywords",
         br#"<Keywords><Configuration Name="Default"/><Feature Name="Root" Type="Custom" id="1"><Feature Name="Nested" Type="Custom" id="2"/></Feature></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let history = &mut native.feature_histories[0];
         let nested = history
@@ -69,7 +80,7 @@ fn native_validation_rejects_broken_history_root_graph() {
         ];
     });
 
-    let messages = crate::validate_native(decoded.ir())
+    let messages = crate::resolved_features::validate::validate_native(decoded.ir())
         .into_iter()
         .map(|finding| finding.message)
         .collect::<Vec<_>>();
@@ -89,17 +100,18 @@ fn native_validation_rejects_broken_history_root_graph() {
 
 #[test]
 fn native_validation_rejects_orphan_history_records() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let orphan = decoded
         .ir_mut()
         .native
         .namespace_mut("sldprt")
-        .arenas
+        .arenas_mut()
         .get_mut("features")
         .unwrap()[0]
         .clone();
@@ -112,17 +124,23 @@ fn native_validation_rejects_orphan_history_records() {
         .ir_mut()
         .native
         .namespace_mut("sldprt")
-        .arenas
+        .arenas_mut()
         .get_mut("features")
-        .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
-    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
-        finding.message.contains("invalid owner") && finding.message.contains("missing-history")
-    }));
+        .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
+        .expect("valid native identity");
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| {
+                finding.message.contains("invalid owner")
+                    && finding.message.contains("missing-history")
+            })
+    );
 }
 
 #[test]
 fn native_validation_rejects_edited_relation_binding() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -131,23 +149,27 @@ fn native_validation_rejects_edited_relation_binding() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_bindings[0].family =
             crate::records::FeatureInputRelationFamily::LineLineDistance;
     });
 
-    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
-        finding
-            .message
-            .contains("relation bindings do not match the native payload")
-    }));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| {
+                finding
+                    .message
+                    .contains("relation bindings do not match the native payload")
+            })
+    );
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("edited relation bindings"));
 }
 
@@ -159,24 +181,30 @@ fn native_validation_rejects_edited_relation_instance() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].relation_instances[0].parameter_scalar_ref = None;
+        native.feature_input_lanes[0].relation_instances[0]
+            .scalars
+            .clear_parameter();
     });
 
-    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
-        finding
-            .message
-            .contains("relation instances do not match the native payload")
-    }));
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| {
+                finding
+                    .message
+                    .contains("relation instances do not match the native payload")
+            })
+    );
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("edited relation instances"));
 }

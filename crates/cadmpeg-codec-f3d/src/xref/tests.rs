@@ -61,9 +61,9 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     let occurrences = super::project_occurrences(&table);
 
     assert_eq!(occurrences.len(), 1);
-    assert_eq!(occurrences[0].id.0, "f3d:model:occurrence#xref-0-0");
+    assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
     assert_eq!(
-        occurrences[0].transform.rows,
+        occurrences[0].transform.rows(),
         [
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
@@ -78,11 +78,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     assert_eq!(
         occurrences[0].prototype,
         cadmpeg_ir::products::PrototypeReference::External {
-            document: cadmpeg_ir::products::ExternalDocumentReference {
-                path: Some("part.f3d".into()),
-                document_id: None,
-                resolution: cadmpeg_ir::products::ExternalResolution::Unresolved,
-            },
+            document: cadmpeg_ir::products::ExternalDocumentReference::path("part.f3d"),
             object: None,
         }
     );
@@ -207,7 +203,7 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = super::occurrence_path(&bytes).expect("synthetic path").2;
+    let path_end = super::occurrence_path(&bytes).expect("synthetic path").1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
@@ -271,8 +267,6 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements.len(), 6);
-    assert_eq!(placements[0].discriminators, vec![1]);
-    assert_eq!(placements[1].discriminators, vec![1]);
     assert_eq!(
         super::occurrence_transforms(&placements, role),
         vec![None, None, None, Some(matrix), Some(matrix), Some(matrix)]
@@ -351,7 +345,6 @@ fn grouped_identity_carriers_decode_as_identity_placements() {
         placements,
         vec![OccurrencePlacement {
             link_names: vec![role.into()],
-            discriminators: vec![1],
             transform: None,
         }]
     );
@@ -430,8 +423,6 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements.len(), 2);
-    assert_eq!(placements[0].discriminators, vec![1]);
-    assert_eq!(placements[1].discriminators, vec![1]);
     assert_eq!(
         super::occurrence_transforms(&placements, role),
         vec![None, Some(matrix)]
@@ -728,11 +719,10 @@ fn malformed_typed_role_placement_reports_a_loss() {
 }
 
 #[test]
-fn placement_keeps_the_instance_discriminator_of_every_path_element() {
+fn placement_keeps_the_link_name_of_a_multi_element_path() {
     let bytes = occurrence_record("role", 10, &[7, 4, 2], None);
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
-    assert_eq!(placements[0].discriminators, vec![7, 4, 2]);
     assert_eq!(placements[0].link_names, vec!["role".to_owned()]);
 }
 
@@ -785,7 +775,6 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     ];
     let structured = OccurrencePlacement {
         link_names: vec!["role".into()],
-        discriminators: vec![1],
         transform: Some([
             [1.0, 0.0, 0.0, -5.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -822,19 +811,29 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selected_construction = crate::records::DesignComponentInsertConstruction {
+    let selected_construction = crate::records::feature::DesignComponentInsertConstruction {
         relation_record_index: 1,
         carrier_record_index: 2,
         occurrence_identity: None,
         neutron_role: "role".into(),
         neutron_role_offset: 0,
-        transform: selected,
-        transform_offset: Some(0),
-        carrier_transform_offset: Some(0),
+        placement: Some(crate::records::feature::DesignComponentInsertMatrix {
+            scope: crate::records::Located {
+                value: selected,
+                offset: 0,
+            },
+            carrier_offset: Some(0),
+        }),
     };
-    let ignored_construction = crate::records::DesignComponentInsertConstruction {
+    let ignored_construction = crate::records::feature::DesignComponentInsertConstruction {
         neutron_role: "other".into(),
-        transform: ignored,
+        placement: Some(crate::records::feature::DesignComponentInsertMatrix {
+            scope: crate::records::Located {
+                value: ignored,
+                offset: 0,
+            },
+            carrier_offset: Some(0),
+        }),
         ..selected_construction.clone()
     };
 

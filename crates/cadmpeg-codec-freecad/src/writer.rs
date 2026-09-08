@@ -1,66 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Lossless retained-document serialization.
+//! Lossless retained-document serialization: the ZIP repack and the
+//! `Document.xml` patch.
+//!
+//! What to write is decided in [`target`], which is the one resolution gate this
+//! codec has. This module carries out what that gate settled, and gates nothing
+//! of its own.
+
+pub(crate) mod target;
 
 use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::report::ExportReport;
 use zip::write::SimpleFileOptions;
 
-use crate::native::{
-    DocumentFacts, EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord,
-};
-use crate::FcstdWriteOptions;
+use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use target::Resolution;
 
 pub(crate) trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
 pub(crate) fn write(
-    ir: &CadIr,
     output: &mut dyn Write,
-    options: FcstdWriteOptions,
-) -> Result<ExportReport, CodecError> {
+    resolution: &Resolution<'_>,
+) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(ir, &mut staged, options)?;
+    let report = write_seekable(&mut staged, resolution)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
     Ok(report)
 }
 
+/// Repack the retained entry set with a patched `Document.xml`.
+///
+/// The replay law is already settled when this runs. A [`Resolution`] comes only
+/// from [`resolve`], which takes its options from [`retained_baseline`], so the
+/// dialect written here is the one the retained document already declares.
+/// This function carries out that decision; it does not gate it.
 pub(crate) fn write_seekable(
-    ir: &CadIr,
     output: &mut dyn WriteSeek,
-    options: FcstdWriteOptions,
-) -> Result<ExportReport, CodecError> {
-    if (options.schema_version, options.file_version) != (4, 1) {
-        return Err(CodecError::NotImplemented(format!(
-            "FCStd write target SchemaVersion={} FileVersion={}",
-            options.schema_version, options.file_version
-        )));
-    }
-    let namespace = ir.native.namespace("fcstd").ok_or_else(|| {
-        CodecError::NotImplemented(
-            "source-less FCStd generation requires a constructed native document graph".into(),
-        )
-    })?;
-    let documents = namespace.arena_as::<DocumentFacts>("document")?;
-    let document = exactly_one(&documents, "document record")?;
-    if document.schema_version != options.schema_version.to_string()
-        || document.file_version != options.file_version.to_string()
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "cannot transcode retained SchemaVersion={} FileVersion={} to SchemaVersion={} FileVersion={}",
-            document.schema_version,
-            document.file_version,
-            options.schema_version,
-            options.file_version
-        )));
-    }
+    resolution: &Resolution<'_>,
+) -> Result<WriteOutcome, CodecError> {
+    let target = resolution.target();
+    let ir = resolution.ir();
+    let namespace = resolution.namespace();
+    let document = resolution.document();
     let entry_records = namespace
-        .arenas
+        .arenas()
         .get("entries")
         .map_or(&[][..], Vec::as_slice);
     let mut entries = entry_records
@@ -87,10 +73,9 @@ pub(crate) fn write_seekable(
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
     let source_document = entry_at(namespace, source_document_slot.record_index)?;
-    validate_entry(&source_document)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
     drop(source_document);
-    let written_graph = crate::persistence::parse(&document_xml)?;
+    let written_graph = crate::persistence::parse_with_context(&document_xml, document, None)?;
     validate_declarations(
         &objects,
         &extensions,
@@ -98,7 +83,7 @@ pub(crate) fn write_seekable(
         &written_graph.extensions,
     )?;
     for property in &written_graph.properties {
-        for entry in &property.side_entries {
+        for entry in property.side_entries() {
             if !entries.iter().any(|candidate| candidate.name == *entry) {
                 return Err(CodecError::malformed(format_args!(
                     "edited property {} references missing side entry {entry}",
@@ -119,7 +104,6 @@ pub(crate) fn write_seekable(
         });
         for slot in &entries {
             let entry = entry_at(namespace, slot.record_index)?;
-            validate_entry(&entry)?;
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
@@ -135,34 +119,25 @@ pub(crate) fn write_seekable(
             CodecError::malformed(format_args!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    Ok(ExportReport {
-        format: "fcstd".into(),
+    let notes = vec![
+        format!(
+            "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
+            document.schema_version, document.file_version
+        ),
+        "unsupported retained entries and unedited XML records were preserved".into(),
+    ];
+    Ok(WriteOutcome {
         census: cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
             counts: ir.census(),
         },
-        fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
-        // Refuses without a retained `fcstd` native graph, then rewrites
-        // `Document.xml` inside that entry set and repacks the rest.
-        write_path: cadmpeg_ir::WritePath::Patched,
-        losses: Vec::new(),
-        notes: vec![
-            format!(
-                "semantic FCStd archive written for SchemaVersion={} FileVersion={}",
-                options.schema_version, options.file_version
-            ),
-            "unsupported retained entries and unedited XML records were preserved".into(),
-        ],
+        notes,
     })
 }
 
-fn exactly_one<'a, T>(values: &'a [T], description: &str) -> Result<&'a T, CodecError> {
-    if values.len() != 1 {
-        return Err(CodecError::malformed(format_args!(
-            "FCStd native graph must contain exactly one {description}"
-        )));
-    }
-    Ok(&values[0])
+pub(crate) struct WriteOutcome {
+    pub(crate) census: cadmpeg_ir::EntityCensus,
+    pub(crate) notes: Vec<String>,
 }
 
 struct EntrySlot {
@@ -202,16 +177,6 @@ fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
                 entry.name
             )));
         }
-    }
-    Ok(())
-}
-
-fn validate_entry(entry: &EntryRecord) -> Result<(), CodecError> {
-    if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
-        return Err(CodecError::malformed(format_args!(
-            "FCStd output entry {} has stale length or digest metadata",
-            entry.name
-        )));
     }
     Ok(())
 }
@@ -323,14 +288,14 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         })
         .map(|node| (node.range().start - 6, node.range().end - 6))
         .collect::<Vec<_>>();
-    if source_ranges.len() != property.values.len() {
+    if source_ranges.len() != property.values().len() {
         return Err(CodecError::malformed(format_args!(
             "property {} value provenance count changed",
             property.id
         )));
     }
     let mut edits = Vec::new();
-    for (value, (start, end)) in property.values.iter().zip(source_ranges) {
+    for (value, (start, end)) in property.values().iter().zip(source_ranges) {
         let serialized = serialize_value(value)?;
         if serialized == value.raw_xml {
             continue;
@@ -365,7 +330,7 @@ fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError
         .root_element()
         .first_element_child()
         .ok_or_else(|| CodecError::Malformed("retained property has no element".into()))?;
-    let expected_tag = if property.transient {
+    let expected_tag = if property.is_transient() {
         "_Property"
     } else {
         "Property"
@@ -457,256 +422,4 @@ pub(crate) fn escape_xml(value: &str, output: &mut String, attribute: bool) {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-    use crate::test_support::*;
-    use crate::FcstdCodec;
-    use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
-    use std::io::Cursor;
-
-    #[test]
-    fn property_edits_use_value_order_when_raw_xml_is_identical() {
-        let raw_value = r#"<String value="same"/>"#;
-        let mut values = (0..2)
-            .map(|order| ValueRecord {
-                tag: "String".into(),
-                order,
-                attributes: [("value".into(), "same".into())].into(),
-                text: None,
-                raw_xml: raw_value.into(),
-            })
-            .collect::<Vec<_>>();
-        values[1]
-            .attributes
-            .insert("value".into(), "changed".into());
-        let property = PropertyRecord {
-            id: "test:property#values".into(),
-            owner: "test:object#owner".into(),
-            name: "Values".into(),
-            type_name: "App::PropertyStringList".into(),
-            family: crate::native::PropertyFamily::List,
-            status: None,
-            transient: false,
-            dynamic: None,
-            order: 0,
-            values,
-            links: Vec::new(),
-            side_entries: Vec::new(),
-            raw_xml: format!(
-                r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
-            ),
-            byte_start: 0,
-            byte_end: 0,
-        };
-        let output = String::from_utf8(serialize_property(&property).expect("required invariant"))
-            .expect("required invariant");
-        assert_eq!(output.matches(r#"value="same""#).count(), 1);
-        assert_eq!(output.matches(r#"value="changed""#).count(), 1);
-        assert!(
-            output.find("same").expect("required invariant")
-                < output.find("changed").expect("required invariant")
-        );
-    }
-
-    #[test]
-    fn xml_serialization_preserves_normalized_whitespace() {
-        let value = ValueRecord {
-            tag: "String".into(),
-            order: 0,
-            attributes: [("value".into(), "a\tb\nc\rd".into())].into(),
-            text: Some("a\tb\nc\rd".into()),
-            raw_xml: r#"<String value="old">old</String>"#.into(),
-        };
-        let serialized = serialize_value(&value).expect("required invariant");
-        assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
-        assert_eq!(serialized.matches("&#9;").count(), 2);
-        assert_eq!(serialized.matches("&#10;").count(), 2);
-        assert_eq!(serialized.matches("&#13;").count(), 2);
-    }
-
-    #[test]
-    fn writes_typed_property_edits_and_preserves_other_entries() {
-        let decoded = FcstdCodec
-            .decode(
-                &mut Cursor::new(CORE_DESIGN_PRODUCT),
-                &DecodeOptions::default(),
-            )
-            .expect("decode source");
-        let source_entries = decoded
-            .ir()
-            .native
-            .namespace("fcstd")
-            .expect("namespace")
-            .arena_as::<crate::native::EntryRecord>("entries")
-            .expect("entries");
-        let mut edited = decoded.ir().clone();
-        FcstdCodec
-            .set_property_value_attribute(
-                &mut edited,
-                crate::FcstdPropertyOwner::Document,
-                "Label",
-                0,
-                "value",
-                "edited & verified",
-            )
-            .expect("edit Label");
-
-        let mut encoded = Vec::new();
-        let report = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &edited,
-                fidelity: None,
-            })
-            .and_then(|plan| plan.write_to(&mut encoded))
-            .expect("encode edit");
-        assert!(report.losses.is_empty());
-        let round_trip = FcstdCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .expect("decode output");
-        let output_namespace = round_trip
-            .ir()
-            .native
-            .namespace("fcstd")
-            .expect("namespace");
-        let output_properties = output_namespace
-            .arena_as::<crate::native::PropertyRecord>("properties")
-            .expect("properties");
-        let output_label = output_properties
-            .iter()
-            .find(|property| {
-                property.owner == crate::native::native_id("document", "0")
-                    && property.name == "Label"
-            })
-            .expect("document Label");
-        assert_eq!(
-            output_label.values[0]
-                .attributes
-                .get("value")
-                .map(String::as_str),
-            Some("edited & verified")
-        );
-        let output_entries = output_namespace
-            .arena_as::<crate::native::EntryRecord>("entries")
-            .expect("entries");
-        for source in source_entries
-            .iter()
-            .filter(|entry| entry.name != "Document.xml")
-        {
-            let output = output_entries
-                .iter()
-                .find(|entry| entry.name == source.name)
-                .expect("preserved entry");
-            assert_eq!(output.data, source.data, "{}", source.name);
-        }
-        assert!(crate::validate_native(round_trip.ir()).is_empty());
-    }
-
-    #[test]
-    pub(crate) fn write_target_and_source_requirements_are_explicit() {
-        let decoded = FcstdCodec
-            .decode(
-                &mut Cursor::new(CORE_DESIGN_PRODUCT),
-                &DecodeOptions::default(),
-            )
-            .expect("decode source");
-        let unsupported = FcstdCodec
-            .encode_with_options(
-                decoded.ir(),
-                &mut Vec::new(),
-                crate::FcstdWriteOptions {
-                    schema_version: 3,
-                    file_version: 1,
-                },
-            )
-            .expect_err("unsupported target must fail");
-        assert!(unsupported.to_string().contains("SchemaVersion=3"));
-
-        let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let missing_graph = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &source_less,
-                fidelity: None,
-            })
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("missing graph must fail");
-        assert!(missing_graph.to_string().contains("source-less"));
-    }
-
-    #[test]
-    fn seekable_encoder_matches_the_write_only_fallback() {
-        let decoded = FcstdCodec
-            .decode(
-                &mut Cursor::new(CORE_DESIGN_PRODUCT),
-                &DecodeOptions::default(),
-            )
-            .expect("decode source");
-        let mut staged = Vec::new();
-        FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: decoded.ir(),
-                fidelity: None,
-            })
-            .and_then(|plan| plan.write_to(&mut staged))
-            .expect("write-only fallback");
-        let mut streamed = Cursor::new(Vec::new());
-        crate::writer::write_seekable(
-            decoded.ir(),
-            &mut streamed,
-            crate::FcstdWriteOptions::default(),
-        )
-        .expect("seekable writer");
-
-        assert_eq!(streamed.into_inner(), staged);
-    }
-
-    #[test]
-    pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
-        let decoded = FcstdCodec
-            .decode(
-                &mut Cursor::new(CORE_DESIGN_PRODUCT),
-                &DecodeOptions::default(),
-            )
-            .expect("decode source");
-
-        let mut declaration_edit = decoded.ir().clone();
-        let namespace = declaration_edit.native.namespace_mut("fcstd");
-        let mut objects = namespace
-            .arena_as::<crate::native::ObjectRecord>("objects")
-            .expect("objects");
-        objects[0].type_name = "App::FeaturePython".into();
-        namespace
-            .set_arena("objects", &objects)
-            .expect("replace objects");
-        let error = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &declaration_edit,
-                fidelity: None,
-            })
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("unserialized declaration edit must fail");
-        assert!(error.to_string().contains("declaration edits"));
-
-        let (mut stale_entry, _, _) = decoded.into_parts();
-        let namespace = stale_entry.native.namespace_mut("fcstd");
-        let mut entries = namespace
-            .arena_as::<crate::native::EntryRecord>("entries")
-            .expect("entries");
-        entries
-            .iter_mut()
-            .find(|entry| entry.name != "Document.xml")
-            .expect("side entry")
-            .data
-            .push(0);
-        namespace
-            .set_arena("entries", &entries)
-            .expect("replace entries");
-        let error = FcstdCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &stale_entry,
-                fidelity: None,
-            })
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("stale entry metadata must fail");
-        assert!(error.to_string().contains("stale length or digest"));
-    }
-}
+pub(crate) mod tests;

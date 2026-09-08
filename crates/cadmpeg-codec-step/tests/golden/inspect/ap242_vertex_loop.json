@@ -1,5 +1,17 @@
 {
   "container_kind": "iso-10303-21-clear-text",
+  "dialects": {
+    "extra": [],
+    "primary": {
+      "admission": "admitted",
+      "declared": {
+        "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:ap242",
+      "format": "step"
+    }
+  },
   "entries": [
     {
       "attributes": {},
@@ -22,7 +34,18 @@
     }
   ],
   "format": "step",
+  "losses": [
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    }
+  ],
   "notes": [
-    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; edition unspecified"
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
   ]
 }

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let center = Point3::new(0.0, 2.0, 3.0);
     let radius = 2.0;
     ir.model.points.extend(
@@ -13,7 +13,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         .into_iter()
         .enumerate()
         .map(|(index, position)| Point {
-            id: PointId(format!("point-{index}")),
+            id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
             position,
             source_object: None,
         }),
@@ -25,8 +25,8 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         radius,
     };
     let surface_ids = [
-        SurfaceId("sphere-0".to_string()),
-        SurfaceId("sphere-1".to_string()),
+        SurfaceId::mint("catia:test:surface#sphere-0".to_string()).expect("identity grammar"),
+        SurfaceId::mint("catia:test:surface#sphere-1".to_string()).expect("identity grammar"),
     ];
     ir.model
         .surfaces

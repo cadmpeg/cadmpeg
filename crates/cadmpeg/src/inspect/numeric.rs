@@ -38,43 +38,36 @@ pub fn parse_offset(text: &str) -> Result<u64, String> {
 }
 
 /// Byte order applied to a multi-byte scalar read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Endian {
     /// Least significant byte first.
-    Little,
+    Le,
     /// Most significant byte first.
-    Big,
+    Be,
 }
 
 impl Endian {
     /// Returns the two-letter suffix used in output and in layout specs.
     pub const fn suffix(self) -> &'static str {
         match self {
-            Self::Little => "le",
-            Self::Big => "be",
+            Self::Le => "le",
+            Self::Be => "be",
         }
     }
 }
 
-/// Mutually exclusive byte-order selection flags.
+/// Byte-order selection.
 #[derive(Debug, Clone, Args)]
 pub struct EndianArgs {
-    /// Read little-endian. This is the default.
-    #[arg(long, conflicts_with = "be")]
-    le: bool,
-    /// Read big-endian.
-    #[arg(long)]
-    be: bool,
+    /// Byte order; defaults to little-endian.
+    #[arg(long = "endian", value_enum)]
+    endian: Option<Endian>,
 }
 
 impl EndianArgs {
     /// Returns the selected byte order, defaulting to little-endian.
-    pub const fn endian(&self) -> Endian {
-        if self.be {
-            Endian::Big
-        } else {
-            Endian::Little
-        }
+    pub fn mode(&self) -> Endian {
+        self.endian.unwrap_or(Endian::Le)
     }
 }
 
@@ -98,7 +91,7 @@ impl clap::builder::TypedValueParser for ScalarTypeParser {
         let redirect = match value.to_str().map(str::to_ascii_lowercase).as_deref() {
             Some("ascii" | "string" | "str" | "text" | "utf8") => Some(
                 "--type takes a fixed-width scalar; for text use `cadmpeg inspect strings`, \
-                 or `cadmpeg inspect find --ascii TEXT` to locate it",
+                 or `cadmpeg inspect find FILE --encoding ascii TEXT` to locate it",
             ),
             Some("hex" | "bytes") => {
                 Some("--type takes a fixed-width scalar; for a hex dump use `cadmpeg inspect hex`")
@@ -224,40 +217,54 @@ impl ScalarType {
         );
         let mut raw = [0u8; 8];
         raw[..bytes.len()].copy_from_slice(bytes);
-        if endian == Endian::Big {
+        if endian == Endian::Be {
             raw[..bytes.len()].reverse();
         }
         let bits = assemble_u64_le(raw);
         match self {
-            Self::U8 | Self::U16 | Self::U32 | Self::U64 => ScalarValue::Unsigned(bits),
-            Self::I8 | Self::I16 | Self::I32 | Self::I64 => {
-                let shift = 64 - self.width() * 8;
-                ScalarValue::Signed(((bits << shift) as i64) >> shift)
-            }
-            Self::F32 => ScalarValue::Float(f64::from(f32::from_bits(bits as u32))),
-            Self::F64 => ScalarValue::Float(f64::from_bits(bits)),
+            Self::U8 => ScalarValue::U8(bits as u8),
+            Self::I8 => ScalarValue::I8(bits as i8),
+            Self::U16 => ScalarValue::U16(bits as u16),
+            Self::I16 => ScalarValue::I16(bits as i16),
+            Self::U32 => ScalarValue::U32(bits as u32),
+            Self::I32 => ScalarValue::I32(bits as i32),
+            Self::U64 => ScalarValue::U64(bits),
+            Self::I64 => ScalarValue::I64(bits as i64),
+            Self::F32 => ScalarValue::F32(f32::from_bits(bits as u32)),
+            Self::F64 => ScalarValue::F64(f64::from_bits(bits)),
         }
     }
 }
 
-/// A decoded scalar, kept in the widest lane of its numeric family.
+/// A decoded scalar whose variant retains its exact encoded type.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScalarValue {
-    /// An unsigned integer, zero-extended.
-    Unsigned(u64),
-    /// A signed integer, sign-extended.
-    Signed(i64),
-    /// A floating-point value, widened to binary64.
-    Float(f64),
+    U8(u8),
+    I8(i8),
+    U16(u16),
+    I16(i16),
+    U32(u32),
+    I32(i32),
+    U64(u64),
+    I64(i64),
+    F32(f32),
+    F64(f64),
 }
 
 impl ScalarValue {
     /// Renders the value the way a human reads it.
     pub fn decimal(self) -> String {
         match self {
-            Self::Unsigned(value) => value.to_string(),
-            Self::Signed(value) => value.to_string(),
-            Self::Float(value) => format!("{value:?}"),
+            Self::U8(value) => value.to_string(),
+            Self::I8(value) => value.to_string(),
+            Self::U16(value) => value.to_string(),
+            Self::I16(value) => value.to_string(),
+            Self::U32(value) => value.to_string(),
+            Self::I32(value) => value.to_string(),
+            Self::U64(value) => value.to_string(),
+            Self::I64(value) => value.to_string(),
+            Self::F32(value) => format!("{:?}", f64::from(value)),
+            Self::F64(value) => format!("{value:?}"),
         }
     }
 
@@ -265,29 +272,26 @@ impl ScalarValue {
     ///
     /// Signed values print their two's-complement pattern and floats print
     /// their IEEE-754 bits, so the text always matches what is in the file.
-    pub fn hex(self, ty: ScalarType) -> String {
-        let digits = ty.width() * 2;
+    pub fn hex(self) -> String {
         let bits = match self {
-            Self::Unsigned(value) => value,
-            Self::Signed(value) => (value as u64) & mask(ty.width()),
-            Self::Float(value) => {
-                if ty == ScalarType::F32 {
-                    u64::from((value as f32).to_bits())
-                } else {
-                    value.to_bits()
-                }
-            }
+            Self::U8(value) => u64::from(value),
+            Self::I8(value) => u64::from(value as u8),
+            Self::U16(value) => u64::from(value),
+            Self::I16(value) => u64::from(value as u16),
+            Self::U32(value) => u64::from(value),
+            Self::I32(value) => u64::from(value as u32),
+            Self::U64(value) => value,
+            Self::I64(value) => value as u64,
+            Self::F32(value) => u64::from(value.to_bits()),
+            Self::F64(value) => value.to_bits(),
+        };
+        let digits = match self {
+            Self::U8(_) | Self::I8(_) => 2,
+            Self::U16(_) | Self::I16(_) => 4,
+            Self::U32(_) | Self::I32(_) | Self::F32(_) => 8,
+            Self::U64(_) | Self::I64(_) | Self::F64(_) => 16,
         };
         format!("0x{bits:0digits$x}")
-    }
-}
-
-/// Returns a low-`width`-byte mask, saturating at the full 64-bit word.
-const fn mask(width: usize) -> u64 {
-    if width >= 8 {
-        u64::MAX
-    } else {
-        (1u64 << (width * 8)) - 1
     }
 }
 
@@ -323,32 +327,32 @@ mod tests {
         // 0x0102 big-endian is 258; the same bytes little-endian are 0x0201.
         let bytes = [0x01, 0x02];
         assert_eq!(
-            ScalarType::U16.read(&bytes, Endian::Big),
-            ScalarValue::Unsigned(258)
+            ScalarType::U16.read(&bytes, Endian::Be),
+            ScalarValue::U16(258)
         );
         assert_eq!(
-            ScalarType::U16.read(&bytes, Endian::Little),
-            ScalarValue::Unsigned(513)
+            ScalarType::U16.read(&bytes, Endian::Le),
+            ScalarValue::U16(513)
         );
     }
 
     #[test]
     fn signed_reads_sign_extend_at_each_width() {
         assert_eq!(
-            ScalarType::I8.read(&[0xff], Endian::Little),
-            ScalarValue::Signed(-1)
+            ScalarType::I8.read(&[0xff], Endian::Le),
+            ScalarValue::I8(-1)
         );
         assert_eq!(
-            ScalarType::I16.read(&[0x00, 0x80], Endian::Little),
-            ScalarValue::Signed(-32768)
+            ScalarType::I16.read(&[0x00, 0x80], Endian::Le),
+            ScalarValue::I16(-32768)
         );
         assert_eq!(
-            ScalarType::I32.read(&[0xff, 0xff, 0xff, 0xff], Endian::Big),
-            ScalarValue::Signed(-1)
+            ScalarType::I32.read(&[0xff, 0xff, 0xff, 0xff], Endian::Be),
+            ScalarValue::I32(-1)
         );
         assert_eq!(
-            ScalarType::I64.read(&[0, 0, 0, 0, 0, 0, 0, 0x80], Endian::Little),
-            ScalarValue::Signed(i64::MIN)
+            ScalarType::I64.read(&[0, 0, 0, 0, 0, 0, 0, 0x80], Endian::Le),
+            ScalarValue::I64(i64::MIN)
         );
     }
 
@@ -357,35 +361,29 @@ mod tests {
         // 1.5f64 is sign 0, exponent 0x3ff, mantissa 0x8000000000000.
         let one_point_five = 0x3ff8_0000_0000_0000u64.to_le_bytes();
         assert_eq!(
-            ScalarType::F64.read(&one_point_five, Endian::Little),
-            ScalarValue::Float(1.5)
+            ScalarType::F64.read(&one_point_five, Endian::Le),
+            ScalarValue::F64(1.5)
         );
         // -2.0f32 is sign 1, exponent 0x80, mantissa 0.
         let minus_two = 0xc000_0000u32.to_be_bytes();
         assert_eq!(
-            ScalarType::F32.read(&minus_two, Endian::Big),
-            ScalarValue::Float(-2.0)
+            ScalarType::F32.read(&minus_two, Endian::Be),
+            ScalarValue::F32(-2.0)
         );
     }
 
     #[test]
     fn hex_rendering_pads_to_the_type_width() {
-        assert_eq!(ScalarValue::Unsigned(1).hex(ScalarType::U32), "0x00000001");
-        assert_eq!(ScalarValue::Signed(-1).hex(ScalarType::I16), "0xffff");
-        assert_eq!(
-            ScalarValue::Signed(-1).hex(ScalarType::I64),
-            "0xffffffffffffffff"
-        );
-        assert_eq!(
-            ScalarValue::Float(1.5).hex(ScalarType::F64),
-            "0x3ff8000000000000"
-        );
-        assert_eq!(ScalarValue::Float(-2.0).hex(ScalarType::F32), "0xc0000000");
+        assert_eq!(ScalarValue::U32(1).hex(), "0x00000001");
+        assert_eq!(ScalarValue::I16(-1).hex(), "0xffff");
+        assert_eq!(ScalarValue::I64(-1).hex(), "0xffffffffffffffff");
+        assert_eq!(ScalarValue::F64(1.5).hex(), "0x3ff8000000000000");
+        assert_eq!(ScalarValue::F32(-2.0).hex(), "0xc0000000");
     }
 
     #[test]
     fn display_names_carry_a_suffix_only_for_wide_types() {
-        assert_eq!(ScalarType::U8.display_name(Endian::Big), "u8");
-        assert_eq!(ScalarType::F64.display_name(Endian::Big), "f64be");
+        assert_eq!(ScalarType::U8.display_name(Endian::Be), "u8");
+        assert_eq!(ScalarType::F64.display_name(Endian::Be), "f64be");
     }
 }

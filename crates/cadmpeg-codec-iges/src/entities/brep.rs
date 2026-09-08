@@ -4,7 +4,7 @@
 use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::trimming::pcurve_geometry;
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
@@ -16,8 +16,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
-    VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
+    Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -49,8 +49,23 @@ enum LoopUse {
 #[derive(Clone)]
 struct FaceDefinition {
     surface: u32,
-    loops: Vec<u32>,
-    has_outer_loop: bool,
+    loops: FaceLoopPointers,
+}
+
+#[derive(Clone)]
+enum FaceLoopPointers {
+    OuterFirst { outer: u32, inner: Vec<u32> },
+    Unclassified { first: u32, rest: Vec<u32> },
+}
+
+impl FaceLoopPointers {
+    fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        let (first, rest) = match self {
+            Self::OuterFirst { outer, inner } => (outer, inner),
+            Self::Unclassified { first, rest } => (first, rest),
+        };
+        std::iter::once(*first).chain(rest.iter().copied())
+    }
 }
 
 #[derive(Clone)]
@@ -112,8 +127,11 @@ fn topology_vertex(
     vertex_ids
         .entry((list, index))
         .or_insert_with(|| {
-            let point_id = PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
-            let vertex_id = VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
+            let point_id = PointId::mint(format!("iges:model:point#{stem}:D{list}:{}", index + 1))
+                .expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1))
+                    .expect("identity grammar");
             candidate.model_mut().points.push(Point {
                 source_object: None,
                 id: point_id.clone(),
@@ -169,14 +187,15 @@ fn project_pcurve_uses(
         .zip(resolved)
         .enumerate()
         .map(|(index, ((isoparametric, _), (geometry, range)))| {
-            let id = PcurveId(format!("{id_stem}:{index}"));
+            let id = PcurveId::mint(format!("{id_stem}:{index}")).expect("identity grammar");
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: Some(range),
-                fit_tolerance,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    Some(range),
+                    fit_tolerance,
+                ),
             });
             PcurveUse {
                 pcurve: id,
@@ -425,7 +444,7 @@ pub(super) fn project(
                 };
                 if entries
                     .get(&sequence)
-                    .is_none_or(|entry| entry.status.use_flag != 5)
+                    .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
                 {
                     pcurves.clear();
                     break;
@@ -517,16 +536,25 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(face_loops) = (0..count)
-            .map(|index| pointer(record, 4 + index))
-            .collect::<Option<Vec<_>>>()
-        else {
+        let Some((first, rest)) = pointer(record, 4).zip(
+            (1..count)
+                .map(|index| pointer(record, 4 + index))
+                .collect::<Option<Vec<_>>>(),
+        ) else {
             losses.push(entity_loss(entry, "face loop pointer is invalid"));
             continue;
         };
+        let face_loops = if has_outer_loop {
+            FaceLoopPointers::OuterFirst {
+                outer: first,
+                inner: rest,
+            }
+        } else {
+            FaceLoopPointers::Unclassified { first, rest }
+        };
         if face_loops
             .iter()
-            .any(|sequence| !loops.contains_key(sequence))
+            .any(|sequence| !loops.contains_key(&sequence))
         {
             losses.push(entity_loss(entry, "face loop is missing"));
             continue;
@@ -536,7 +564,6 @@ pub(super) fn project(
             FaceDefinition {
                 surface,
                 loops: face_loops,
-                has_outer_loop,
             },
         );
     }
@@ -716,12 +743,12 @@ pub(super) fn project(
     if !body_definitions.is_empty() {
         for (position, surface) in ir.model.surfaces.iter().enumerate() {
             surface_positions
-                .entry(surface.id.0.clone())
+                .entry(surface.id.as_str().to_owned())
                 .or_insert(position);
         }
         for (position, curve) in ir.model.curves.iter().enumerate() {
             curve_positions
-                .entry(curve.id.0.clone())
+                .entry(curve.id.as_str().to_owned())
                 .or_insert(position);
         }
     }
@@ -747,8 +774,9 @@ pub(super) fn project(
         let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
-        let body_id = BodyId(format!("iges:model:body#{stem}"));
-        let region_id = RegionId(format!("iges:model:region#{stem}"));
+        let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+        let region_id =
+            RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
@@ -762,28 +790,33 @@ pub(super) fn project(
             } else {
                 format!("{stem}:D{shell_sequence}")
             };
-            let shell_id = ShellId(format!("iges:model:shell#{shell_stem}"));
+            let shell_id =
+                ShellId::mint(format!("iges:model:shell#{shell_stem}")).expect("identity grammar");
             let mut shell_faces = Vec::new();
             for (face_sequence, native_face_sense) in shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = faces[&face_sequence].clone();
                 let surface_id =
-                    SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
+                    SurfaceId::mint(format!("iges:model:surface#D{}", face_definition.surface))
+                        .expect("identity grammar");
                 let Some(support_geometry) = surface_positions
-                    .get(surface_id.0.as_str())
+                    .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
                     .map(|surface| surface.geometry.clone())
                 else {
                     valid = false;
                     break;
                 };
-                let face_id = FaceId(format!("iges:model:face#{shell_stem}:D{face_sequence}"));
-                let mut face_loops = Vec::new();
-                for (face_loop_index, loop_sequence) in
-                    face_definition.loops.into_iter().enumerate()
-                {
+                let face_id =
+                    FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
+                        .expect("identity grammar");
+                let loop_id_for = |sequence| {
+                    LoopId::mint(format!("iges:model:loop#{shell_stem}:D{sequence}"))
+                        .expect("identity grammar")
+                };
+                for loop_sequence in face_definition.loops.iter() {
                     let uses = loops[&loop_sequence].clone();
-                    let loop_id = LoopId(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"));
+                    let loop_id = loop_id_for(loop_sequence);
                     let edge_use_indices = uses
                         .iter()
                         .enumerate()
@@ -794,9 +827,10 @@ pub(super) fn project(
                     let coedge_ids = edge_use_indices
                         .iter()
                         .map(|index| {
-                            CoedgeId(format!(
+                            CoedgeId::mint(format!(
                                 "iges:model:coedge#{shell_stem}:D{loop_sequence}:{index}"
                             ))
+                            .expect("identity grammar")
                         })
                         .collect::<Vec<_>>();
                     let coedge_by_use = edge_use_indices
@@ -868,11 +902,7 @@ pub(super) fn project(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
                             );
-                            loop_vertex_uses.push(VertexUse {
-                                vertex,
-                                after,
-                                pcurves: projected,
-                            });
+                            loop_vertex_uses.push((vertex, after, projected));
                             continue;
                         };
                         let edge_definition = edge_lists[edge_list][*edge_index];
@@ -923,26 +953,26 @@ pub(super) fn project(
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             id.clone()
                         } else {
-                            let curve_id =
-                                CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
+                            let curve_id = CurveId::mint(format!(
+                                "iges:model:curve#D{}",
+                                edge_definition.curve
+                            ))
+                            .expect("identity grammar");
                             let curve_edges = edges_by_curve.get_or_insert_with(|| {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
                                     if let Some(curve) = &edge.curve {
-                                        positions
-                                            .entry(curve.0.as_str())
-                                            .or_default()
-                                            .push(position);
+                                        positions.entry(curve.as_str()).or_default().push(position);
                                     }
                                 }
                                 positions
                             });
-                            let Some(candidates) = curve_edges.get(curve_id.0.as_str()) else {
+                            let Some(candidates) = curve_edges.get(curve_id.as_str()) else {
                                 valid = false;
                                 break;
                             };
                             let Some(curve) = curve_positions
-                                .get(curve_id.0.as_str())
+                                .get(curve_id.as_str())
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
                                 losses.push(entity_loss(
@@ -978,11 +1008,12 @@ pub(super) fn project(
                                     break;
                                 }
                             };
-                            let id = EdgeId(format!(
+                            let id = EdgeId::mint(format!(
                                 "iges:model:edge#{stem}:D{}:{}",
                                 edge_key.0,
                                 edge_key.1 + 1
-                            ));
+                            ))
+                            .expect("identity grammar");
                             candidate.model_mut().edges.push(Edge {
                                 id: id.clone(),
                                 curve: Some(curve_id),
@@ -1021,34 +1052,61 @@ pub(super) fn project(
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
-                            next: coedge_ids[(coedge_position + 1) % coedge_ids.len()].clone(),
-                            previous: coedge_ids
-                                [(coedge_position + coedge_ids.len() - 1) % coedge_ids.len()]
-                            .clone(),
                             radial_next: coedge_id.clone(),
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
-                            use_curve_parameter_range: None,
                         });
                     }
                     if !valid {
                         break;
                     }
+                    let boundary = if coedge_ids.is_empty() {
+                        let [(vertex, None, pcurves)] = loop_vertex_uses.as_slice() else {
+                            losses.push(entity_loss(
+                                entry,
+                                "vertex-only loop does not contain exactly one unanchored vertex",
+                            ));
+                            valid = false;
+                            break;
+                        };
+                        LoopBoundary::Vertex {
+                            vertex: vertex.clone(),
+                            pcurves: pcurves.clone(),
+                        }
+                    } else {
+                        let Some(vertex_uses) = loop_vertex_uses
+                            .into_iter()
+                            .map(|(vertex, after, pcurves)| {
+                                let after = after?;
+                                coedge_ids.contains(&after).then_some(AnchoredVertexUse {
+                                    vertex,
+                                    after,
+                                    pcurves,
+                                })
+                            })
+                            .collect::<Option<Vec<_>>>()
+                        else {
+                            losses.push(entity_loss(
+                                entry,
+                                "edge loop contains an unanchored vertex use",
+                            ));
+                            valid = false;
+                            break;
+                        };
+                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
+                        else {
+                            losses.push(entity_loss(entry, "edge loop has no coedges"));
+                            valid = false;
+                            break;
+                        };
+                        LoopBoundary::Ring(ring)
+                    };
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
-                        boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                        } else if face_definition.has_outer_loop {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                        } else {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
-                        },
-                        coedges: coedge_ids,
-                        vertex_uses: loop_vertex_uses,
+                        boundary,
                     });
-                    face_loops.push(loop_id);
                     consumed.insert(loop_sequence);
                 }
                 if !valid {
@@ -1059,7 +1117,22 @@ pub(super) fn project(
                     shell: shell_id.clone(),
                     surface: surface_id,
                     sense: face_sense,
-                    loops: face_loops,
+                    loops: match face_definition.loops {
+                        FaceLoopPointers::OuterFirst { outer, inner } => {
+                            cadmpeg_ir::topology::FaceLoops::classified(
+                                Some(loop_id_for(outer)),
+                                inner.into_iter().map(loop_id_for).collect(),
+                            )
+                        }
+                        FaceLoopPointers::Unclassified { first, rest } => {
+                            cadmpeg_ir::topology::FaceLoops::unspecified(
+                                std::iter::once(first)
+                                    .chain(rest)
+                                    .map(loop_id_for)
+                                    .collect(),
+                            )
+                        }
+                    },
                     name: None,
                     color: None,
                     tolerance: None,

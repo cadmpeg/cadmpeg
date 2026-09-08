@@ -6,7 +6,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
@@ -29,16 +28,23 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
         diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
     }
 
-    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingLoops];
-    assert_eq!(evidence.count, 6);
-    assert_eq!(evidence.sample_ids, vec![10, 11, 12, 13]);
+    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingLoops);
+    let samples = samples.collect::<Vec<_>>();
+    assert_eq!(count, 6);
+    assert_eq!(
+        samples
+            .iter()
+            .map(|detail| detail.face_id)
+            .collect::<Vec<_>>(),
+        vec![10, 11, 12, 13]
+    );
     let records = diagnostics.face_admission_rejection_records();
     assert_eq!(records.len(), 6);
     assert_eq!(records[0].id, "creo:brep:face_admission_rejection#10");
     assert_eq!(records[0].face_id, 10);
     assert_eq!(records[0].reason, "missing_loops");
     assert_eq!(records[5].face_id, 15);
-    let mut coverage = BTreeMap::new();
+    let mut coverage = cadmpeg_ir::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_candidate_face_count"], 6);
     assert_eq!(coverage["brep_admitted_face_count"], 1);
@@ -52,10 +58,17 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
     let mut diagnostics = BrepTransferDiagnostics::default();
     diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, 42);
 
-    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingSurfaceCarrier];
-    assert_eq!(evidence.count, 1);
-    assert_eq!(evidence.sample_ids, vec![42]);
-    let mut coverage = BTreeMap::new();
+    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingSurfaceCarrier);
+    let samples = samples.collect::<Vec<_>>();
+    assert_eq!(count, 1);
+    assert_eq!(
+        samples
+            .iter()
+            .map(|detail| detail.face_id)
+            .collect::<Vec<_>>(),
+        vec![42]
+    );
+    let mut coverage = cadmpeg_ir::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_rejected_face_count"], 1);
     assert_eq!(
@@ -71,7 +84,7 @@ fn brep_diagnostics_report_component_gate_inputs() {
         selected_body_count: None,
         ..BrepTransferDiagnostics::default()
     };
-    let mut coverage = BTreeMap::new();
+    let mut coverage = cadmpeg_ir::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
 
     assert_eq!(coverage["brep_admitted_component_count"], 3);
@@ -93,14 +106,14 @@ fn explicit_single_body_merges_disconnected_components() {
 fn face_admission_diagnostics_record_unresolved_boundary_operands() {
     let resolved = crate::topology::HalfEdgeId {
         curve_id: 10,
-        side: 0,
+        side: crate::topology::Side::Zero,
     };
     let unresolved = crate::topology::HalfEdgeId {
         curve_id: 11,
-        side: 1,
+        side: crate::topology::Side::One,
     };
     let loop_record = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![resolved, unresolved],
     };
     let resolved_binding = crate::topology::HalfEdgeVertexIncidence {
@@ -130,28 +143,31 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
 
     let mut diagnostics = BrepTransferDiagnostics::default();
     diagnostics.reject_face_with_detail(FaceAdmissionRejection::UnresolvedBoundaryVertices, detail);
-    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::UnresolvedBoundaryVertices];
-    assert_eq!(evidence.count, 1);
-    assert_eq!(evidence.sample_ids, vec![5]);
-    assert_eq!(evidence.sample_details.len(), 1);
+    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::UnresolvedBoundaryVertices);
+    let samples = samples.collect::<Vec<_>>();
+    assert_eq!(count, 1);
     assert_eq!(
-        evidence.sample_details[0].boundary_half_edges,
-        vec![unresolved]
+        samples
+            .iter()
+            .map(|detail| detail.face_id)
+            .collect::<Vec<_>>(),
+        vec![5]
     );
-    assert_eq!(evidence.sample_details[0].vertex_ids, vec![3, 4]);
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].boundary_half_edges, vec![unresolved]);
+    assert_eq!(samples[0].vertex_ids, vec![3, 4]);
 }
 
 #[test]
 fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -191,7 +207,7 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         all_components
     );
 
-    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.framing.layout = crate::test_support::legacy_layout();
     assert!(!legacy_body_ownership_is_unambiguous(&scan, 2));
     assert!(legacy_body_ownership_is_unambiguous(&scan, 1));
     scan.framing.declared_body_count = Some(2);
@@ -201,14 +217,13 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
 #[test]
 fn legacy_brep_admission_excludes_nonvisible_face_references() {
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -216,11 +231,10 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
         .nonvisible_rows
         .push(crate::surface::SurfaceRow {
             id: 7,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 0,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         });
@@ -313,28 +327,28 @@ fn closed_component_counts_two_uses_of_one_face() {
         (
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             crate::topology::HalfEdge {
                 id: crate::topology::HalfEdgeId {
                     curve_id: 7,
-                    side: 0,
+                    side: crate::topology::Side::Zero,
                 },
-                face_id: 5,
+                face_id: std::num::NonZeroU32::new(5),
                 next: None,
             },
         ),
         (
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
             crate::topology::HalfEdge {
                 id: crate::topology::HalfEdgeId {
                     curve_id: 7,
-                    side: 1,
+                    side: crate::topology::Side::One,
                 },
-                face_id: 5,
+                face_id: std::num::NonZeroU32::new(5),
                 next: None,
             },
         ),
@@ -349,11 +363,11 @@ fn closed_component_counts_two_uses_of_one_face() {
         &BTreeSet::from([
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             },
             crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 1,
+                side: crate::topology::Side::One,
             },
         ]),
         &half_edges,
@@ -363,7 +377,7 @@ fn closed_component_counts_two_uses_of_one_face() {
         &BTreeSet::from([7]),
         &BTreeSet::from([crate::topology::HalfEdgeId {
             curve_id: 7,
-            side: 0,
+            side: crate::topology::Side::Zero,
         }]),
         &half_edges,
         &[5],
@@ -379,11 +393,11 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         radius: 2.0,
     };
     let make_loop = |first_curve| crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0_u32..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: first_curve + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -462,24 +476,33 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
     let outer = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [10_u32, 11]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     };
     let inner = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [20_u32, 21]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     };
     let bindings = [(10, 1, 2), (11, 2, 1), (20, 3, 4), (21, 4, 3)]
         .into_iter()
         .map(|(curve_id, start_vertex_id, end_vertex_id)| {
             crate::topology::HalfEdgeVertexIncidence {
-                half_edge: crate::topology::HalfEdgeId { curve_id, side: 0 },
+                half_edge: crate::topology::HalfEdgeId {
+                    curve_id,
+                    side: crate::topology::Side::Zero,
+                },
                 start_vertex_id,
                 end_vertex_id: Some(end_vertex_id),
             }
@@ -502,7 +525,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         ((21, 5), vec![([[-1.0, 0.0], [1.0, 0.0]], 0)]),
     ]);
     let circle = |id, radius| Curve {
-        id: CurveId(format!("creo:visibgeom:curve#{id}")),
+        id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -565,11 +588,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     scan.framing.declared_body_count = Some(1);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -594,7 +616,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             type_byte: 0,
             feature_id: 0,
             directions: [0x01, 0xf6],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [id, 0],
             offset: 0,
         })
@@ -604,7 +626,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .zip(points)
         .map(|(curve_id, endpoints)| crate::curve::PcurveEndpoints {
             curve_id,
-            faces: [5, 0],
+            faces: [5, 0].map(std::num::NonZeroU32::new),
             face_0_endpoints: endpoints,
             face_1_endpoints: [[0.0, 0.0], [0.0, 0.0]],
             offset: 0,
@@ -613,25 +635,34 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     scan.topology.half_edges = [10_u32, 11, 12]
         .into_iter()
         .map(|curve_id| crate::topology::HalfEdge {
-            id: crate::topology::HalfEdgeId { curve_id, side: 0 },
-            face_id: 5,
+            id: crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            },
+            face_id: std::num::NonZeroU32::new(5),
             next: None,
         })
         .chain(
             [10_u32, 11, 12]
                 .into_iter()
                 .map(|curve_id| crate::topology::HalfEdge {
-                    id: crate::topology::HalfEdgeId { curve_id, side: 1 },
-                    face_id: 0,
+                    id: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::One,
+                    },
+                    face_id: None,
                     next: None,
                 }),
         )
         .collect();
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [10_u32, 11, 12]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     });
     scan.topology
@@ -645,7 +676,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .zip([10_u32, 11, 12])
         .map(|(id, curve_id)| crate::topology::TopologicalVertex {
             id,
-            half_edges: vec![crate::topology::HalfEdgeId { curve_id, side: 0 }],
+            half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            }],
         })
         .collect();
     let endpoint_pairs = [(10, 1, 2), (11, 2, 3), (12, 3, 1)];
@@ -654,12 +688,18 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         .flat_map(|(curve_id, start, end)| {
             [
                 crate::topology::HalfEdgeVertexIncidence {
-                    half_edge: crate::topology::HalfEdgeId { curve_id, side: 0 },
+                    half_edge: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::Zero,
+                    },
                     start_vertex_id: start,
                     end_vertex_id: Some(end),
                 },
                 crate::topology::HalfEdgeVertexIncidence {
-                    half_edge: crate::topology::HalfEdgeId { curve_id, side: 1 },
+                    half_edge: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::One,
+                    },
                     start_vertex_id: end,
                     end_vertex_id: Some(start),
                 },
@@ -667,9 +707,9 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         })
         .collect();
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#5".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -687,7 +727,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ),
     ] {
         let curve = Curve {
-            id: CurveId(format!("creo:visibgeom:curve#{id}")),
+            id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Line { origin, direction },
             source_object: None,
         };
@@ -723,13 +763,13 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .iter()
             .map(|point| {
                 let source = point.source_object.as_ref().expect("point provenance");
-                (source.format.clone(), source.object_id.clone())
+                (source.format.as_str(), source.object_id.as_str())
             })
             .collect::<Vec<_>>(),
         vec![
-            ("creo".to_string(), "topology:vertex#1".to_string()),
-            ("creo".to_string(), "topology:vertex#2".to_string()),
-            ("creo".to_string(), "topology:vertex#3".to_string()),
+            ("creo", "topology:vertex#1"),
+            ("creo", "topology:vertex#2"),
+            ("creo", "topology:vertex#3"),
         ]
     );
     assert!(ir.model.vertices.is_empty());
@@ -744,20 +784,19 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ir.model.curves.clear();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
     for pcurve in &mut scan.curves.pcurves {
-        pcurve.faces = [5, 6];
+        pcurve.faces = [5, 6].map(std::num::NonZeroU32::new);
         pcurve.face_1_endpoints = pcurve.face_0_endpoints;
     }
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#5".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -766,7 +805,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

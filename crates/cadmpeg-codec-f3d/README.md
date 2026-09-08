@@ -6,7 +6,11 @@ container metadata, ASM B-rep topology, analytic and cached NURBS geometry,
 body transforms, design and sketch records, construction history, and
 appearances. Multi-document `.f3z` archives decode into one merged document.
 
-Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+<!-- generated: capability f3d -->
+
+Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
+
+<!-- /generated: capability f3d -->
 
 ## Install
 
@@ -42,7 +46,8 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 
 ```rust,no_run
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,10 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.f3d")?;
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &result.ir(),
-            fidelity: Some(&result.source_fidelity()),
-        })?
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )?
         .write_to(&mut output)?;
     Ok(())
 }

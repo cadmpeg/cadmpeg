@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -12,14 +11,15 @@ use super::prelude::*;
 
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
-    use crate::records::DesignCircularPatternAxis;
+    use crate::records::feature::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {
-        wrapper_record_indices: vec![11],
-        persistent_identities: vec![17],
-        identity_offsets: vec![23],
-        resolved_origin: None,
-        resolved_direction: None,
+        wrappers: vec![crate::records::feature::DesignPatternAxisWrapper {
+            record_index: 11,
+            identity_offset: 23,
+        }],
+        persistent_identity: 17,
+        resolved: None,
     };
     let inline = DesignCircularPatternAxis::Inline {
         origin: [1.0, 2.0, 3.0],
@@ -172,86 +172,31 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
         byte_offset: 0,
-        class_tag: "291".into(),
+        class_tag: crate::records::DesignClassTag::try_from("291".to_owned()).unwrap(),
         record_index: scope_record_index,
         frame_length: 329,
-        kind: "C-Pattern".into(),
         kind_offset: 0,
-        extrude_prologue: None,
-        coil_operation: None,
-        coil_operation_offset: None,
-        coil_extent: None,
-        coil_extent_offset: None,
-        coil_section: None,
-        coil_section_offset: None,
-        coil_section_placement: None,
-        coil_section_placement_offset: None,
-        coil_clockwise: None,
-        coil_clockwise_offset: None,
-        coil_placement: None,
-        coil_transform: None,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
-        history_state_id_offset: 0,
+
         previous_history_state_id: Some(1),
-        previous_history_state_id_offset: 0,
+        previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: vec![
-            count_record_index,
-            angle_record_index,
-            axis_record_index,
-            selection_record_index,
-        ],
-        reference_member_offsets: vec![0; 4],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange_operation: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_extrude_parameters: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature_construction: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
-        work_plane_construction: None,
-        work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
-        work_point_construction: None,
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![
+                count_record_index,
+                angle_record_index,
+                axis_record_index,
+                selection_record_index,
+            ],
+            vec![0; 4],
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::feature::DesignFeatureKind::CPattern.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        extrude_profile: None,
-        sweep_profile: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 329,
     };
     assert_eq!(
@@ -268,7 +213,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             angle: std::f64::consts::TAU,
             angle_record_index,
             angle_offset: (angle_start + 40) as u64,
-            axis: crate::records::DesignCircularPatternAxis::Inline {
+            axis: crate::records::feature::DesignCircularPatternAxis::Inline {
                 origin: [1.0, 2.0, 3.0],
                 origin_offset: (axis_start + 25) as u64,
                 direction: [-1.0, 0.0, 0.0],
@@ -290,7 +235,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &[],
     )
     .expect("non-unit axis displacement is normalized");
-    let crate::records::DesignCircularPatternAxis::Inline { direction, .. } = normalized.axis
+    let crate::records::feature::DesignCircularPatternAxis::Inline { direction, .. } =
+        normalized.axis
     else {
         panic!("inline axis expected");
     };
@@ -313,7 +259,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "457".into(),
+            class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -374,9 +320,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
     bytes[axis_start + 57..axis_start + 65].fill(0);
-    scope
-        .reference_members
-        .extend([axis_record_index, selection_record_index]);
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.extend([axis_record_index, selection_record_index]);
+        crate::records::ReferenceRun::unlocated(values)
+    };
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,
@@ -387,7 +335,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.kind = "R-Pattern".into();
+    scope.payload = crate::records::feature::DesignFeatureKind::RPattern.into();
     let rectangular_owners = [
         owner(50, 0, 3.0, 501),
         owner(51, 1, 1.0, 502),
@@ -417,7 +365,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     append_transform_record(&mut bytes, 120, [2.0, 3.0, 9.0]);
     append_transform_record(&mut bytes, 130, [2.0, 3.0, 14.0]);
     append_header(&mut bytes, 140);
-    scope.reference_members = vec![100, 50, 51, 52, 53, 110, 120, 130, 140];
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![100, 50, 51, 52, 53, 110, 120, 130, 140]);
     let rectangular = exact_rectangular_pattern_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -426,12 +375,17 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     )
     .expect("rectangular-pattern placement run");
     let instances = rectangular.instances.expect("exact placement run");
-    assert_eq!(instances.record_indices, [100, 120, 130]);
     assert_eq!(
         instances
-            .transforms
-            .iter()
-            .map(|transform| transform[2][3])
+            .frames()
+            .map(|frame| frame.record_index)
+            .collect::<Vec<_>>(),
+        [100, 120, 130]
+    );
+    assert_eq!(
+        instances
+            .frames()
+            .map(|frame| frame.transform.value[2][3])
             .collect::<Vec<_>>(),
         [4.0, 9.0, 14.0]
     );
@@ -470,9 +424,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.kind = "Assemble".into();
+    scope.payload = crate::records::feature::DesignFeatureKind::Assemble.into();
     scope.frame_length = 627;
-    scope.reference_members = vec![50, 51, 52, 53];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -482,9 +436,23 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle, 3.0);
     assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
-    assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
-    assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
-    assert_eq!(alignment.operand_frames, None);
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [50, 51, 52, 53]
+    );
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.offset)
+            .collect::<Vec<_>>(),
+        [501, 502, 503, 504]
+    );
+    assert_eq!(alignment.operand_frames(), None);
 
     let mut placement_and_alignment_owners = rectangular_owners.to_vec();
     placement_and_alignment_owners.extend([
@@ -493,7 +461,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(62, 6, 5.0, 603),
         owner(63, 7, 6.0, 604),
     ]);
-    scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63];
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63]);
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -511,7 +480,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("assembly alignment after four placement lanes");
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
-    assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [60, 61, 62, 63]
+    );
     scope.frame_length = 604;
     let datum_envelope_alignment = exact_assembly_alignment(
         &bytes,
@@ -523,14 +499,18 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(datum_envelope_alignment.angle, 0.25);
     assert_eq!(datum_envelope_alignment.offset, [4.0, 5.0, 6.0]);
     assert_eq!(
-        datum_envelope_alignment.owner_record_indices,
+        datum_envelope_alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
         [60, 61, 62, 63]
     );
-    assert!(datum_envelope_alignment.operand_frames.is_none());
+    assert!(datum_envelope_alignment.operand_frames().is_none());
 
     let mut short_axial_owners = rectangular_owners.to_vec();
     short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
-    scope.reference_members = vec![50, 51, 52, 53, 64, 65];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 64, 65]);
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -551,7 +531,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     let mut legacy_alignment_owners = placement_and_alignment_owners.clone();
     legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
-    scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65];
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65]);
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -569,21 +550,35 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("legacy assembly axial alignment lanes");
     assert_eq!(alignment.angle, 0.5);
     assert_eq!(alignment.offset, [0.0, 0.0, 2.0]);
-    assert_eq!(alignment.owner_record_indices, [64, 65]);
-    assert_eq!(alignment.value_offsets, [605, 606]);
-    scope.reference_members = vec![50, 51, 52, 53];
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [64, 65]
+    );
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.offset)
+            .collect::<Vec<_>>(),
+        [605, 606]
+    );
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
 
     let assembly_bytes = assembly_operand_frame_fixture(scope_record_index);
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
-    scope.paired_class_tag = "259".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     let frames = exact_assembly_alignment(
         &assembly_bytes,
         &IndexedRecordOffsets::build(&assembly_bytes),
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_frames)
+    .and_then(|alignment| alignment.operand_frames())
     .expect("exact assembly operand frames");
     assert_eq!(
         frames.map(|frame| (
@@ -617,7 +612,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let legacy_assembly_scope = DesignParameterScope {
         frame_length: 633,
         paired_byte_offset: 633,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         ..scope.clone()
     };
     let legacy_frames = exact_assembly_alignment(
@@ -626,7 +621,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &legacy_assembly_scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_frames)
+    .and_then(|alignment| alignment.operand_frames())
     .expect("compact assembly operand frames");
     assert_eq!(legacy_frames[0].reference_offset, 25);
     assert_eq!(legacy_frames[0].transform_offset, 36);
@@ -634,7 +629,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut dynamic_standard_bytes = assembly_bytes.clone();
     dynamic_standard_bytes[641..644].copy_from_slice(b"262");
     let dynamic_standard_scope = DesignParameterScope {
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         ..scope.clone()
     };
     assert!(exact_assembly_alignment(
@@ -643,12 +638,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &dynamic_standard_scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
     let dynamic_compact_scope = DesignParameterScope {
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         ..legacy_assembly_scope.clone()
     };
     assert!(exact_assembly_alignment(
@@ -657,7 +652,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &dynamic_compact_scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut axial_assembly_bytes = vec![0_u8; 772];
     axial_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
@@ -676,8 +671,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let axial_assembly_scope = DesignParameterScope {
         frame_length: 772,
         paired_byte_offset: 772,
-        paired_class_tag: "261".into(),
-        reference_members: vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65],
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+        reference_members: crate::records::ReferenceRun::unlocated(vec![
+            50, 51, 52, 53, 60, 61, 62, 63, 64, 65,
+        ]),
         ..scope.clone()
     };
     let axial_alignment = exact_assembly_alignment(
@@ -689,7 +686,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("legacy assembly alignment and operand frames");
     assert_eq!(axial_alignment.angle, 0.5);
     assert_eq!(axial_alignment.offset, [0.0, 0.0, 2.0]);
-    let axial_frames = axial_alignment.operand_frames.as_ref().unwrap();
+    let axial_frames = axial_alignment.operand_frames().unwrap();
     assert_eq!(axial_frames[0].reference_offset, 29);
     assert_eq!(axial_frames[0].transform_offset, 39);
     assert_eq!(axial_frames[1].reference_offset, 168);
@@ -702,8 +699,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let short_axial_scope = DesignParameterScope {
         frame_length: 705,
         paired_byte_offset: 705,
-        paired_class_tag: "261".into(),
-        reference_members: vec![50, 51, 52, 53, 64, 65],
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+        reference_members: crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 64, 65]),
         ..scope.clone()
     };
     let short_axial_alignment = exact_assembly_alignment(
@@ -715,11 +712,17 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("short axial assembly alignment and operand frames");
     assert_eq!(short_axial_alignment.angle, 0.5);
     assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
-    assert_eq!(short_axial_alignment.owner_record_indices, [64, 65]);
+    assert_eq!(
+        short_axial_alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [64, 65]
+    );
     assert!(short_axial_alignment.operand_paths().is_none());
     let short_axial_frames = short_axial_alignment
-        .operand_frames
-        .as_ref()
+        .operand_frames()
         .expect("short axial operand frames");
     assert_eq!(short_axial_frames[0].reference_offset, 29);
     assert_eq!(short_axial_frames[0].transform_offset, 39);
@@ -727,30 +730,33 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_frames[1].transform_offset, 178);
 
     let mut first_joint_origin = scope.clone();
-    first_joint_origin.kind = "JointOrigin".into();
+    first_joint_origin.payload = crate::records::feature::DesignFeatureKind::JointOrigin.into();
     first_joint_origin.record_index = 70;
-    first_joint_origin.reference_members.clear();
+    first_joint_origin.reference_members = crate::records::ReferenceRun::unlocated(Vec::new());
     let mut second_joint_origin = first_joint_origin.clone();
     second_joint_origin.record_index = 80;
     let mut linked_assembly = axial_assembly_scope.clone();
-    linked_assembly.assembly_alignment = Some(axial_alignment.clone());
+    if let crate::records::feature::DesignScopePayload::Assemble(slot)
+    | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut linked_assembly.payload
+    {
+        *slot = Some(axial_alignment.clone());
+    }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
     bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
-    assert_eq!(linked_scopes[1].joint_origin_transform_offset, Some(39));
+    assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
-        linked_scopes[1].joint_origin_transform,
+        linked_scopes[1].joint_origin_transform(),
         Some(axial_frames[0].transform)
     );
-    assert_eq!(linked_scopes[2].joint_origin_transform_offset, Some(178));
+    assert_eq!(linked_scopes[2].joint_origin_transform_offset(), Some(178));
     assert_eq!(
-        linked_scopes[2].joint_origin_transform,
+        linked_scopes[2].joint_origin_transform(),
         Some(axial_frames[1].transform)
     );
     assert_eq!(
-        linked_scopes[0]
-            .assembly_alignment
-            .as_ref()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        linked_scopes[0].assembly_alignment().and_then(
+            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+        ),
         None
     );
 
@@ -763,87 +769,97 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_bytes[165..169].copy_from_slice(&91_u32.to_le_bytes());
     single_frame_bytes[175..179].copy_from_slice(&1_u32.to_le_bytes());
     let mut single_frame_assembly = scope.clone();
-    single_frame_assembly.class_tag = "276".into();
-    single_frame_assembly.paired_class_tag = "258".into();
+    single_frame_assembly.class_tag =
+        crate::records::DesignClassTag::try_from("276".to_owned()).unwrap();
+    single_frame_assembly.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     single_frame_assembly.frame_length = 604;
     single_frame_assembly.paired_byte_offset = 604;
-    single_frame_assembly.reference_members = placement_and_alignment_owners
-        .iter()
-        .map(|owner| owner.record_index)
-        .collect();
-    single_frame_assembly.assembly_alignment = Some(datum_envelope_alignment);
+    single_frame_assembly.reference_members = crate::records::ReferenceRun::unlocated(
+        placement_and_alignment_owners
+            .iter()
+            .map(|owner| owner.record_index)
+            .collect(),
+    );
+    if let crate::records::feature::DesignScopePayload::Assemble(slot)
+    | crate::records::feature::DesignScopePayload::AsBuilt(slot) =
+        &mut single_frame_assembly.payload
+    {
+        *slot = Some(datum_envelope_alignment);
+    }
     let mut single_frame_joint_origin = scope.clone();
-    single_frame_joint_origin.kind = "JointOrigin".into();
+    single_frame_joint_origin.payload =
+        crate::records::feature::DesignFeatureKind::JointOrigin.into();
     single_frame_joint_origin.record_index = 91;
-    single_frame_joint_origin.reference_members.clear();
+    single_frame_joint_origin.reference_members =
+        crate::records::ReferenceRun::unlocated(Vec::new());
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
     assert_eq!(
-        single_frame_scopes[1].joint_origin_transform_offset,
+        single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
     );
     assert_eq!(
-        single_frame_scopes[1].joint_origin_transform,
+        single_frame_scopes[1].joint_origin_transform(),
         Some(axial_frames[0].transform)
     );
-    assert_eq!(single_frame_scopes[1].joint_origin_reference, Some(90));
+    assert_eq!(single_frame_scopes[1].joint_origin_reference(), Some(90));
     assert_eq!(
-        single_frame_scopes[1].joint_origin_reference_offset,
+        single_frame_scopes[1].joint_origin_reference_offset(),
         Some(25)
     );
     assert_eq!(
-        single_frame_scopes[0]
-            .assembly_alignment
-            .as_ref()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        single_frame_scopes[0].assembly_alignment().and_then(
+            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+        ),
         Some(91)
     );
 
     let mut conflicting_assembly = single_frame_scopes[0].clone();
-    conflicting_assembly
-        .assembly_alignment
-        .as_mut()
-        .unwrap()
-        .joint_origin_scope_record_index = None;
+    conflicting_assembly.assembly_alignment_mut().unwrap().form = None;
     let mut conflicting_joint_origin = single_frame_scopes[1].clone();
     conflicting_joint_origin
-        .joint_origin_transform
-        .as_mut()
-        .unwrap()[2][3] += 1.0;
+        .joint_origin_frame_mut()
+        .unwrap()
+        .joint_origin_transform[2][3] += 1.0;
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
-        conflicting_scopes[0]
-            .assembly_alignment
-            .as_ref()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        conflicting_scopes[0].assembly_alignment().and_then(
+            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+        ),
         None
     );
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
     let mut invalid_joint_origin = single_frame_scopes[1].clone();
-    invalid_joint_origin.joint_origin_transform = None;
-    invalid_joint_origin.joint_origin_transform_offset = None;
-    invalid_joint_origin.joint_origin_reference = None;
-    invalid_joint_origin.joint_origin_reference_offset = None;
+    if let crate::records::feature::DesignScopePayload::JointOrigin(slot) =
+        &mut invalid_joint_origin.payload
+    {
+        *slot = None;
+    }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
-    assert_eq!(invalid_single_frame_scopes[1].joint_origin_transform, None);
+    assert_eq!(
+        invalid_single_frame_scopes[1].joint_origin_transform(),
+        None
+    );
 
     let mut compact_bytes = assembly_bytes[..627].to_vec();
     compact_bytes.extend_from_slice(&3_u32.to_le_bytes());
     compact_bytes.extend_from_slice(b"264");
     compact_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
     let mut compact_scope = scope.clone();
-    compact_scope.class_tag = "459".into();
+    compact_scope.class_tag = crate::records::DesignClassTag::try_from("459".to_owned()).unwrap();
     compact_scope.frame_length = 627;
     compact_scope.paired_byte_offset = 627;
-    compact_scope.paired_class_tag = "264".into();
+    compact_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &compact_bytes,
         &IndexedRecordOffsets::build(&compact_bytes),
         &compact_scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 }

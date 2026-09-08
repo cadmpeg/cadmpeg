@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded `FCStd` archive scanning and physical byte accounting.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Component, Path};
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
 use crate::gui;
 use crate::native::{
-    ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord, LogicalSpan,
-    PropertyFamily, PropertyRecord, StringTableRecord,
+    ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord,
+    LogicalClassification, LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
@@ -75,7 +78,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
     for file in archive.entries() {
         let name = file.name.clone();
         validate_name(&name)?;
-        let view = archive.open(ctx, file)?;
+        let view = archive.open(ctx, &file.name)?;
         data.insert(name, view);
     }
 
@@ -88,14 +91,19 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         .physical_ledger()?
         .into_iter()
         .enumerate()
-        .map(|(index, span)| ArchiveSpan {
-            id: crate::native::native_id("archive-span", index.to_string()),
-            start: span.start,
-            end: span.end,
-            role: span.role,
-            entry: span.entry,
+        .map(|(index, span)| {
+            Ok(ArchiveSpan {
+                id: crate::native::native_id("archive-span", index.to_string()),
+                start: span.start,
+                end: span.end,
+                role: crate::native::ArchiveSpanRole::from_label(
+                    span.role.label(),
+                    span.role.entry().map(str::to_owned),
+                )
+                .map_err(CodecError::malformed)?,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(Scan {
         entries: archive.container_entries(classify),
         document,
@@ -106,23 +114,33 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 
 /// Summarize one scan.
 pub fn summarize(scan: &Scan) -> ContainerSummary {
+    let matched = crate::dialect::FcstdDialect::classify(&scan.document);
+    let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
+        .into_iter()
+        .collect();
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(matched),
+        cadmpeg_ir::ContainerKind::Zip,
+        scan.entries.clone(),
+        losses,
+        summary_notes(scan),
+    )
+}
+
+/// Notes shared by inspect and decode without reclassifying host identity.
+pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
     let mut notes = vec![
         format!("SchemaVersion={}", scan.document.schema_version),
         format!("FileVersion={}", scan.document.file_version),
         format!("document root={}", scan.document.root_name),
-        format!("document kind={}", scan.document.document_kind),
+        format!("document kind={}", scan.document.document_kind.as_str()),
         format!("object count={}", scan.document.object_count),
         format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ];
     if let Some(version) = &scan.document.program_version {
         notes.push(format!("ProgramVersion={version}"));
     }
-    ContainerSummary {
-        format: "fcstd".into(),
-        container_kind: "zip".into(),
-        entries: scan.entries.clone(),
-        notes,
-    }
+    notes
 }
 
 fn validate_name(name: &str) -> Result<(), CodecError> {
@@ -144,19 +162,19 @@ fn validate_name(name: &str) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn classify(name: &str) -> &'static str {
+fn classify(name: &str) -> ContainerRole {
     match name {
-        "Document.xml" => "document",
-        "GuiDocument.xml" => "gui-document",
-        "thumbnails/Thumbnail.png" | "Thumbnail.png" => "thumbnail",
-        _ if name.ends_with('/') => "directory",
+        "Document.xml" => ContainerRole::Document,
+        "GuiDocument.xml" => ContainerRole::GuiDocument,
+        "thumbnails/Thumbnail.png" | "Thumbnail.png" => ContainerRole::Thumbnail,
+        _ if name.ends_with('/') => ContainerRole::Directory,
         _ if Path::new(name).extension().is_some_and(|extension| {
             extension.eq_ignore_ascii_case("brp") || extension.eq_ignore_ascii_case("brep")
         }) =>
         {
-            "brep"
+            ContainerRole::Brep
         }
-        _ => "auxiliary",
+        _ => ContainerRole::Auxiliary,
     }
 }
 
@@ -194,7 +212,7 @@ fn unique_section<'a, 'input>(
     }
 }
 
-fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
+pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -214,23 +232,10 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
     file_version
-        .parse::<u32>()
+        .parse::<usize>()
         .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
-    let declaration_tag = if schema_version == "2" {
-        "Features"
-    } else {
-        "Objects"
-    };
-    let record_tag = if schema_version == "2" {
-        "Feature"
-    } else {
-        "Object"
-    };
-    let data_tag = if schema_version == "2" {
-        "FeatureData"
-    } else {
-        "ObjectData"
-    };
+    let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
+    let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
     let _ = unique_section(root, data_tag)?;
     let declarations = unique_section(root, declaration_tag)?
         .into_iter()
@@ -250,20 +255,19 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         .into_iter()
         .collect::<Vec<_>>();
     let document_kind = if domains.iter().any(|domain| domain == "Assembly") {
-        "assembly"
+        crate::native::DocumentKind::Assembly
     } else if domains.iter().any(|domain| domain == "TechDraw") {
-        "drawing"
+        crate::native::DocumentKind::Drawing
     } else if domains.iter().any(|domain| domain == "PartDesign") {
-        "part-design"
+        crate::native::DocumentKind::PartDesign
     } else if domains.iter().any(|domain| domain == "Part") {
-        "part"
+        crate::native::DocumentKind::Part
     } else if object_count == 0 {
-        "empty"
+        crate::native::DocumentKind::Empty
     } else {
-        "application-document"
-    }
-    .to_owned();
-    Ok(DocumentFacts {
+        crate::native::DocumentKind::ApplicationDocument
+    };
+    let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         schema_version,
         file_version,
@@ -272,7 +276,8 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         object_count,
         document_kind,
         domains,
-    })
+    };
+    Ok(document)
 }
 
 pub(crate) fn logical_ledger(
@@ -305,9 +310,10 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len,
-                "typed",
-                Some(entry.id.clone()),
+                entry.byte_len(),
+                LogicalClassification::Typed {
+                    owner: entry.id.clone(),
+                },
             );
         } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
             let mut ranges = if entry.name == "Document.xml" {
@@ -354,32 +360,42 @@ pub(crate) fn logical_ledger(
             ranges.sort_by_key(|range| range.0);
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
-                if start < cursor || end < start || end > entry.byte_len {
+                if start < cursor || end < start || end > entry.byte_len() {
                     return Err(CodecError::malformed(format_args!(
                         "overlapping or invalid {} record spans",
                         entry.name
                     )));
                 }
-                push_logical_span(&mut output, entry, cursor, start, "structural", None);
-                push_logical_span(&mut output, entry, start, end, classification, Some(owner));
+                push_logical_span(
+                    &mut output,
+                    entry,
+                    cursor,
+                    start,
+                    LogicalClassification::Structural,
+                );
+                let classification = match classification {
+                    "typed" => LogicalClassification::Typed { owner },
+                    _ => LogicalClassification::NamedOpaque { owner },
+                };
+                push_logical_span(&mut output, entry, start, end, classification);
                 cursor = end;
             }
             push_logical_span(
                 &mut output,
                 entry,
                 cursor,
-                entry.byte_len,
-                "structural",
-                None,
+                entry.byte_len(),
+                LogicalClassification::Structural,
             );
         } else {
             push_logical_span(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len,
-                "named_opaque",
-                Some(entry.id.clone()),
+                entry.byte_len(),
+                LogicalClassification::NamedOpaque {
+                    owner: entry.id.clone(),
+                },
             );
         }
     }
@@ -396,9 +412,12 @@ pub(crate) fn byte_coverage(
     let mut named_opaque_entries = BTreeSet::new();
     for span in logical {
         *classification_bytes
-            .entry(span.classification.clone())
+            .entry(span.classification.as_str().to_owned())
             .or_insert(0) += span.end.saturating_sub(span.start);
-        if span.classification == "named_opaque" {
+        if matches!(
+            span.classification,
+            LogicalClassification::NamedOpaque { .. }
+        ) {
             named_opaque_entries.insert(span.entry.clone());
         }
     }
@@ -412,33 +431,34 @@ pub(crate) fn byte_coverage(
         && ordered_physical
             .last()
             .is_some_and(|span| span.end == physical_byte_len);
-    let logical_exact = logical.iter().all(|span| {
-        entries.iter().any(|entry| entry.name == span.entry)
-            && span.start < span.end
-            && matches!(
-                span.classification.as_str(),
-                "structural" | "typed" | "named_opaque"
-            )
-    }) && entries.iter().all(|entry| {
-        let mut spans = logical
-            .iter()
-            .filter(|span| span.entry == entry.name)
-            .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.start);
-        if entry.byte_len == 0 {
-            spans.is_empty()
-        } else {
-            spans.first().is_some_and(|span| span.start == 0)
-                && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
-                && spans.last().is_some_and(|span| span.end == entry.byte_len)
-        }
-    });
+    let logical_exact = logical
+        .iter()
+        .all(|span| entries.iter().any(|entry| entry.name == span.entry) && span.start < span.end)
+        && entries.iter().all(|entry| {
+            let mut spans = logical
+                .iter()
+                .filter(|span| span.entry == entry.name)
+                .collect::<Vec<_>>();
+            spans.sort_by_key(|span| span.start);
+            if entry.byte_len() == 0 {
+                spans.is_empty()
+            } else {
+                spans.first().is_some_and(|span| span.start == 0)
+                    && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
+                    && spans
+                        .last()
+                        .is_some_and(|span| span.end == entry.byte_len())
+            }
+        });
     ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),
         physical_byte_len,
         physical_span_count: physical.len(),
         logical_entry_count: entries.len(),
-        logical_byte_len: entries.iter().map(|entry| entry.byte_len).sum(),
+        logical_byte_len: entries
+            .iter()
+            .map(super::native::EntryRecord::byte_len)
+            .sum(),
         logical_span_count: logical.len(),
         classification_bytes,
         named_opaque_entries: named_opaque_entries.into_iter().collect(),
@@ -451,8 +471,7 @@ fn push_logical_span(
     entry: &EntryRecord,
     start: u64,
     end: u64,
-    classification: &str,
-    owner: Option<String>,
+    classification: LogicalClassification,
 ) {
     if start < end {
         output.push(LogicalSpan {
@@ -460,8 +479,7 @@ fn push_logical_span(
             entry: entry.name.clone(),
             start,
             end,
-            classification: classification.into(),
-            owner,
+            classification,
         });
     }
 }

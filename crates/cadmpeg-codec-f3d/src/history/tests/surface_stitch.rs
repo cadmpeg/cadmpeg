@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SurfaceStitch` history-selection tests.
-#![allow(clippy::unwrap_used, unused_imports)]
+#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -12,13 +12,15 @@
 )]
 
 use super::super::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
-    use crate::records::{
+    use crate::records::feature::DesignParameterScope;
+    use crate::records::topology::{
         AsmHistoricalEntityKind, DesignConstructionOperandGroup,
         DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
-        DesignEntitySelectionOperand, DesignParameterScope,
+        DesignEntitySelectionOperand,
     };
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
@@ -27,27 +29,32 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#42");
     let history_id = format!("{stream}/BREP.surface:asm-1");
-    let mut scope = DesignParameterScope::empty(&scope_id, "SurfaceStitch", 42);
+    let mut scope = DesignParameterScope::empty(
+        &scope_id,
+        crate::records::feature::DesignFeatureKind::SurfaceStitch,
+        42,
+    );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.reference_members = vec![100, 200, 110, 210, 300, 301];
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
     let group = |record_index, scope_reference_ordinal, member| DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#{record_index}"),
         scope_record_index: 42,
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "282".into(),
-        members: vec![member],
+        class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
+        members: vec![crate::records::Located {
+            value: member,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: Vec::new(),
-            trailing_record_offsets: Vec::new(),
+            trailing_records: Vec::new(),
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -57,11 +64,11 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let groups = vec![group(100, 0, 200), group(110, 2, 210)];
@@ -72,25 +79,30 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         group_member_ordinal: 0,
         record_index,
         byte_offset: 0,
-        class_tag: "377".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         identity_record_index: record_index + 1,
         identity_record_offset: 0,
         primary_identity: face_slot as u64,
         primary_identity_offset: 0,
-        secondary_identity: None,
-        secondary_identity_offset: None,
-        curve_secondary_identity: None,
-        curve_secondary_identity_offset: None,
+        secondary: None,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
             history_id: history_id.clone(),
-            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-            historical_entity_ref: face_slot,
-            historical_state_ids: vec![1],
+            historical: crate::records::topology::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: face_slot,
+                state_ids: vec![1],
+            },
             face_slot,
         }],
         resolved_edge_slot: None,
@@ -113,15 +125,15 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition,
     };
     let history = AsmHistory {
         id: history_id.clone(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -136,7 +148,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             state(1, None),
         ],
     };
-    let feature_id = FeatureId("f3d:model:feature#42".into());
+    let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature::new(
         feature_id.clone(),
         0,
@@ -163,9 +175,11 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .historical_face_candidates
         .push(DesignEntitySelectionFaceCandidate {
             history_id: "other-history/BREP.other:asm-1".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-            historical_entity_ref: 99,
-            historical_state_ids: vec![1],
+            historical: crate::records::topology::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: 99,
+                state_ids: vec![1],
+            },
             face_slot: 99,
         });
     let mut ambiguous_topologies = input_topologies.clone();

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::om::counted_pattern_references::CountedPatternReferences;
+use crate::om::operation_record::OperationPayload;
 
 #[test]
 fn om_pattern_counted_reference_lane_requires_exact_terminator() {
@@ -15,33 +16,19 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     }
     payload.extend_from_slice(&TRAILER);
     let payload_offset = 200;
-    let record = OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset,
-        payload: &payload,
-        label: OperationLabel {
-            header_offset: 100,
-            offset: 119,
-            value: "Pattern Feature",
-            object_indices: [None; 4],
-            object_index_offsets: [115, 116, 117, 118],
-        },
-    };
-    let lane = pattern_payload_counted_reference_lane(record).expect("complete lane");
-    assert_eq!(lane.offset, payload_offset + 1);
-    assert_eq!(lane.declared_count, 4);
+    let record = OperationPayload::new(&payload, payload_offset, "Pattern Feature").unwrap();
+    let lane = CountedPatternReferences::read(record).expect("complete lane");
+    assert_eq!(lane.offset(), (payload_offset + 1) as u64);
+    assert_eq!(usize::from(lane.declared_count()), 4);
     assert_eq!(
-        lane.references
-            .iter()
-            .map(|reference| reference.object_index)
+        lane.iter()
+            .map(|(_, token, ())| token.value())
             .collect::<Vec<_>>(),
         [0x06b1, 0x06b2, 0x06b3]
     );
     assert_eq!(
-        lane.references
-            .iter()
-            .map(|reference| reference.raw_object_index.clone())
+        lane.iter()
+            .map(|(_, token, ())| token.raw().to_vec())
             .collect::<Vec<_>>(),
         references
             .iter()
@@ -51,17 +38,13 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
 
     let mut malformed = payload.clone();
     malformed.pop();
-    assert!(pattern_payload_counted_reference_lane(OperationRecord {
-        bytes: &malformed,
-        payload: &malformed,
-        ..record
-    })
+    assert!(CountedPatternReferences::read(
+        OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap()
+    )
     .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(pattern_payload_counted_reference_lane(OperationRecord {
-        bytes: &ambiguous,
-        payload: &ambiguous,
-        ..record
-    })
+    assert!(CountedPatternReferences::read(
+        OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap()
+    )
     .is_none());
 }

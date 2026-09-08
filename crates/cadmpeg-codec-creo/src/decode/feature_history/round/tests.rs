@@ -37,15 +37,14 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         .parameters
         .iter()
         .find(|record| record.surface_id == 7)
-        .is_some_and(|record| record.positional_cone_frame.is_none()));
+        .is_some_and(|record| record.positional_cone_frame().is_none()));
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 31,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 3,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 31,
     });
@@ -68,11 +67,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         });
 
     assert_eq!(
-        super::chamfer_constant_distance(
-            &scan,
-            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
-            4
-        ),
+        super::chamfer_constant_distance(&scan, &cadmpeg_ir::document::CadIr::empty(), 4),
         None
     );
 }
@@ -83,21 +78,19 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
-            type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cone,
             feature_id: 914,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 10,
         },
         crate::surface::SurfaceRow {
             id: 31,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 3,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 31,
         },
@@ -107,21 +100,18 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 10,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: Some(crate::surface::PositionalConeFrame {
-                apex: [0.5, 0.0, 0.0],
-                axis: [-1.0, 0.0, 0.0],
-                ref_direction: [0.0, 1.0, 0.0],
-                half_angle: std::f64::consts::FRAC_PI_4,
-            }),
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cone(crate::surface::PositionalConeFrame {
+                    apex: [0.5, 0.0, 0.0],
+                    axis: [-1.0, 0.0, 0.0],
+                    ref_direction: [0.0, 1.0, 0.0],
+                    half_angle: std::f64::consts::FRAC_PI_4,
+                }),
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
             body_offset: 11,
@@ -135,9 +125,10 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             offset: 0,
         });
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+            .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -176,37 +167,37 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
     let cylinder = super::slot_fillet_cylinder(
         [
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, -2.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, 3.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
             },
         ],
         &[
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-9.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-8.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-9.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [-8.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, 0.0, -7.0],
                 normal: [0.0, 0.0, 1.0],
             },
-            crate::decode::analytic::PlaneEquation {
+            crate::decode::analytic::equations::PlaneEquation {
                 origin: [0.0, 0.0, -6.0],
                 normal: [0.0, 0.0, 1.0],
             },
@@ -224,21 +215,19 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
-            type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cone,
             feature_id: 914,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 10,
         },
         crate::surface::SurfaceRow {
             id: 31,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 3,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 31,
         },
@@ -248,16 +237,13 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 10,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cone,
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
             body_offset: 11,
@@ -271,10 +257,11 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             offset: 0,
         });
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#10".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cone {
                 origin: cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
@@ -286,7 +273,8 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -344,12 +332,13 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             offset: 4,
         },
     ]);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
                 origin: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -440,7 +429,7 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
             offset: 4,
         },
     ]);
-    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
@@ -459,18 +448,18 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
 fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
     let row = crate::surface::SurfaceRow {
         id: 7,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 913,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -480,7 +469,8 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -500,49 +490,46 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 1,
         },
         crate::surface::SurfaceRow {
             id: 2,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 2,
         },
         crate::surface::SurfaceRow {
             id: 3,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 3,
         },
         crate::surface::SurfaceRow {
             id: 4,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 4,
         },
     ]);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     for id in [3, 4] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -562,11 +549,10 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     for id in [3, 4] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -574,33 +560,30 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
             value: Some(0.5),
             raw: vec![0x53, 0, 0, 0, 0, 0, 0],
             offset: 0,
-            length: 7,
         };
         scan.surfaces
             .parameters
             .push(crate::surface::SurfaceParameterRecord {
                 surface_id: id,
                 body: vec![0; 7],
-                scalar_values: vec![0.5],
                 scalar_tokens: vec![token.clone()],
                 opaque_spans: Vec::new(),
                 scalar_frames: Vec::new(),
                 terminal_scalar_frame: None,
-                tabulated_cylinder_frame: None,
-                positional_cylinder_frame: None,
-                split_cylinder_outline_bounds: None,
-                positional_cone_frame: None,
-                positional_torus_frame: None,
+                carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                    crate::surface::SurfaceKind::Cylinder,
+                ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                 offset: id as usize,
                 body_offset: id as usize + 1,
             });
     }
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (id, radius) in [(3, 0.5), (4, 0.5)] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -632,7 +615,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 0,
         length: 20,
         expanded_length: None,
-        role: crate::container::role::GEOMETRY,
+        role: crate::container::SectionRole::PsbGeometry,
     });
 
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -643,18 +626,16 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         value_offset: 0,
     };
     let prototype = |offset| crate::surface::SurfacePrototypeRecord {
-        declared_family: "torus".to_string(),
-        family: crate::surface::SurfacePrototypeFamily::Torus,
+        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
         offset,
     };
     let row = |id, offset| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::TorusOrSphere.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::TorusOrSphere,
         feature_id: 913,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset,
     };
@@ -663,12 +644,10 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
             value: Some(0.5),
             raw: vec![0],
             offset: 0,
-            length: 1,
         };
         crate::surface::SurfaceParameterRecord {
             surface_id,
             body: vec![0],
-            scalar_values: vec![0.5],
             scalar_tokens: vec![token.clone()],
             opaque_spans: Vec::new(),
             scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
@@ -679,11 +658,9 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
                 offset: 0,
                 slots: vec![token],
             }),
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset,
             body_offset: offset + 1,
@@ -711,7 +688,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 20,
         length: 20,
         expanded_length: None,
-        role: crate::container::role::GEOMETRY,
+        role: crate::container::SectionRole::PsbGeometry,
     });
     scan.surfaces.prototype_records.push(prototype(25));
     scan.surfaces.rows.push(row(2, 26));
@@ -732,7 +709,7 @@ fn legacy_round_dimension_supplies_constant_radius() {
             edge_ids: None,
             offset: 0,
         });
-    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(2.0));
 }
 
@@ -747,6 +724,6 @@ fn legacy_variable_round_dimension_withholds_radius() {
             edge_ids: None,
             offset: 0,
         });
-    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
 }

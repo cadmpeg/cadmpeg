@@ -3,15 +3,39 @@
 
 use cadmpeg_core::decode::View;
 
+/// Integer and reference payload width of a kernel stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefWidth {
+    /// Four-byte signed integers and references.
+    Four,
+    /// Eight-byte signed integers and references.
+    Eight,
+}
+
+impl RefWidth {
+    /// Encoded payload size in bytes.
+    #[must_use]
+    pub const fn bytes(self) -> usize {
+        match self {
+            Self::Four => 4,
+            Self::Eight => 8,
+        }
+    }
+}
+
+impl std::fmt::Display for RefWidth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.bytes().fmt(f)
+    }
+}
+
 /// The recognized metadata fields of an ASM or ACIS model stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KernelHeader {
     /// Integer and reference width used by the record stream.
-    pub width: u8,
+    pub width: RefWidth,
     /// ACIS save-format version, encoded as `100 * major + minor`.
     pub save_format_version: Option<u32>,
-    /// Record-count word when the header carries one.
-    pub record_count: Option<u32>,
     /// Entity-count word.
     pub entity_count: Option<u64>,
     /// Kernel flags word.
@@ -111,4 +135,46 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
     }
     let value = View::f64_le_at(bytes, at + 1)?;
     Some((value, at + 9))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn partial_binary_headers_retain_linear_tolerance_without_angular() {
+        for (magic, header_len) in [
+            (
+                b"ASM BinaryFile4".as_slice(),
+                crate::layout::asmheader_binaryfile4::LEN,
+            ),
+            (
+                b"ASM BinaryFile8".as_slice(),
+                crate::layout::asmheader_binaryfile8::LEN,
+            ),
+            (
+                b"ACIS BinaryFile".as_slice(),
+                crate::layout::acisheader_binaryfile4::LEN,
+            ),
+        ] {
+            let mut bytes = magic.to_vec();
+            bytes.resize(header_len, 0);
+            bytes.extend_from_slice(&[7, 0, 7, 0, 7, 0]);
+            for value in [1.0_f64, 0.125] {
+                bytes.push(6);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            let parse = if magic.starts_with(b"ASM") {
+                crate::asm_header::parse
+            } else {
+                crate::acis_header::parse
+            };
+            let header = parse(&bytes).expect("recognized partial header");
+            assert_eq!(header.linear, Some(0.125));
+            assert_eq!(header.angular, None);
+            bytes.push(6);
+            bytes.extend_from_slice(&0.25_f64.to_le_bytes());
+            let header = parse(&bytes).expect("recognized complete header");
+            assert_eq!(header.linear, Some(0.125));
+            assert_eq!(header.angular, Some(0.25));
+        }
+    }
 }

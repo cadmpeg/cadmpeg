@@ -16,8 +16,7 @@
       }
     },
     "fidelity": {
-      "reason": "preserved IGES source image is unavailable",
-      "status": "degraded"
+      "status": "not_provided"
     },
     "format": "iges",
     "losses": [
@@ -70,6 +69,7 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
+    "target": "iges:5.3-fixed-ascii",
     "write_path": "synthesized"
   }
 }

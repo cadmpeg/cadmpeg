@@ -31,34 +31,30 @@ fn decodes_var_arr_dictionary_sign_pairs() {
         ),
     ];
     for (bytes, expected) in cases {
-        let (value, next, dimension_driven) =
-            decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
-        assert_eq!(value, Some(expected));
+        let (value, next) = decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
+        assert_eq!(value, ScalarLane::Value(expected));
         assert_eq!(next, bytes.len());
-        assert!(!dimension_driven);
     }
 }
 
 #[test]
 fn decodes_var_arr_negative_subunit_form() {
     let bytes = [0xd5, 0xd9, 0x52, 0xa4, 0x85, 0x40, 0x39];
-    let (value, next, dimension_driven) =
+    let (value, next) =
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
 
-    assert_eq!(value, Some(-0.395_669_107_559_015_74));
+    assert_eq!(value, ScalarLane::Value(-0.395_669_107_559_015_74));
     assert_eq!(next, bytes.len());
-    assert!(!dimension_driven);
 }
 
 #[test]
 fn decodes_var_arr_positive_subunit_form() {
     let bytes = [0x4f, 0xdf, 0x46, 0xa2, 0x52, 0x96, 0xd1];
-    let (value, next, dimension_driven) =
+    let (value, next) =
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
 
-    assert_eq!(value, Some(0.488_686_161_664_432_46));
+    assert_eq!(value, ScalarLane::Value(0.488_686_161_664_432_46));
     assert_eq!(next, bytes.len());
-    assert!(!dimension_driven);
 }
 
 #[test]
@@ -72,11 +68,14 @@ fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
     };
 
     assert!(variables.is_complete());
-    assert_eq!(row.variable_type, 0);
+    assert_eq!(
+        row.variable_type,
+        crate::feature::definitions::VariableType::Dimension
+    );
     assert_eq!(row.key, 65);
-    assert_eq!(row.value, Some(0.0));
+    assert_eq!(row.value, ScalarLane::Value(0.0));
     assert_eq!(row.value_body, [0x18]);
-    assert_eq!(row.guess, None);
+    assert_eq!(row.guess, ScalarLane::Undefined);
     assert_eq!(row.guess_body, [0x20, 0x96, 0x61]);
     assert_eq!(row.known, Some(1));
     assert_eq!(row.homogeneity, Some(1));
@@ -99,12 +98,12 @@ fn variable_row_classifies_value_and_guess_sentinels_independently() {
         row.value_body,
         [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
     );
-    assert!(row.dimension_driven);
+    assert_eq!(row.value, ScalarLane::DimensionDriven);
     assert_eq!(
         row.guess_body,
         [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
     );
-    assert!(row.guess_dimension_driven);
+    assert_eq!(row.guess, ScalarLane::DimensionDriven);
     assert_eq!(row.known, Some(1));
     assert_eq!(row.homogeneity, Some(1));
     assert_eq!(row.uvar_id, Some(9));
@@ -113,15 +112,14 @@ fn variable_row_classifies_value_and_guess_sentinels_independently() {
 #[test]
 fn var_arr_world_coordinate_2d_is_positive() {
     let bytes = [0x2d, 0x34, 0x43, 0xf5, 0x12, 0xe8, 0x00, 0x45];
-    let (value, next, dimension_driven) =
+    let (value, next) =
         decode_section_coordinate_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
 
-    assert_eq!(value, Some(20.265_458_280_220_873));
+    assert_eq!(value, ScalarLane::Value(20.265_458_280_220_873));
     assert_eq!(next, bytes.len());
-    assert!(!dimension_driven);
     assert_eq!(
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()).0,
-        Some(-20.265_458_280_220_873)
+        ScalarLane::Value(-20.265_458_280_220_873)
     );
 }
 
@@ -165,24 +163,22 @@ fn decodes_var_arr_positional_dict_lattice() {
         ([0xd8, 1, 2, 3, 4, 5, 6], [0xc0, 0x06]),
         ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
     ] {
-        let (value, next, dimension_driven) =
+        let (value, next) =
             decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
         assert_eq!(
             value,
-            Some(f64::from_be_bytes([
+            ScalarLane::Value(f64::from_be_bytes([
                 head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
             ]))
         );
         assert_eq!(next, bytes.len());
-        assert!(!dimension_driven);
     }
     let bytes = [0x28, 1, 2, 3, 4, 5, 6, 7];
     assert_eq!(
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
         (
-            Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+            ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
             bytes.len(),
-            false,
         )
     );
     for prefix in [0x19, 0x32, 0x37, 0x41] {
@@ -190,9 +186,8 @@ fn decodes_var_arr_positional_dict_lattice() {
         assert_eq!(
             decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
             (
-                Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+                ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
                 bytes.len(),
-                false,
             )
         );
     }
@@ -203,7 +198,7 @@ fn decodes_var_arr_positional_dict_lattice() {
             3,
             &scalar::ScalarCache::default()
         ),
-        (None, 3, false)
+        (ScalarLane::Undefined, 3)
     );
     assert_eq!(
         decode_section_coordinate_scalar(
@@ -212,7 +207,7 @@ fn decodes_var_arr_positional_dict_lattice() {
             3,
             &scalar::ScalarCache::default()
         ),
-        (None, 3, false)
+        (ScalarLane::Undefined, 3)
     );
     assert_eq!(
         decode_section_coordinate_scalar(
@@ -221,7 +216,7 @@ fn decodes_var_arr_positional_dict_lattice() {
             4,
             &scalar::ScalarCache::default()
         ),
-        (None, 4, false)
+        (ScalarLane::Undefined, 4)
     );
 }
 
@@ -566,10 +561,9 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![FeatureSegment {
-            kind: FeatureSegmentKind::Arc,
+        rows: (vec![FeatureSegment {
+            kind: FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: Some(3),
             arc_orientation: Some(0),
             vertical_horizontal: None,
@@ -578,14 +572,10 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
             external_id: 42,
             body: Vec::new(),
             offset: 0,
-        }],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
 
@@ -673,10 +663,9 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![FeatureSegment {
-            kind: FeatureSegmentKind::Arc,
+        rows: (vec![FeatureSegment {
+            kind: FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: Some(3),
             arc_orientation: Some(0),
             vertical_horizontal: None,
@@ -685,14 +674,10 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
             external_id: 42,
             body: Vec::new(),
             offset: 0,
-        }],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
 
@@ -735,10 +720,9 @@ fn saved_generated_line_requires_its_orientation_invariant() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![FeatureSegment {
-            kind: FeatureSegmentKind::Line,
+        rows: (vec![FeatureSegment {
+            kind: FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
-            point_ids: [1, 2],
             center_id: None,
             arc_orientation: Some(0),
             vertical_horizontal: Some(1),
@@ -747,14 +731,10 @@ fn saved_generated_line_requires_its_orientation_invariant() {
             external_id: 43,
             body: Vec::new(),
             offset: 0,
-        }],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
 
@@ -785,12 +765,24 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
             icon\0cutrevolve\0Cut id 43\0\xe2\xe3Datum Plane id 44\0\xe3K\xc3\xb6rper ID 45\0";
     let operations = operations(payload);
     assert_eq!(operations.len(), 6);
-    assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeRevolve));
-    assert_eq!(operations[2].recipe, Some(FeatureRecipe::CutExtrude));
-    assert_eq!(operations[3].recipe, Some(FeatureRecipe::CutRevolve));
-    assert_eq!(operations[4].recipe, None);
-    assert_eq!(operations[5].kind, "Körper");
+    assert_eq!(
+        operations[0].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(
+        operations[1].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeRevolve)
+    );
+    assert_eq!(
+        operations[2].recipe.resolved(),
+        Some(FeatureRecipe::CutExtrude)
+    );
+    assert_eq!(
+        operations[3].recipe.resolved(),
+        Some(FeatureRecipe::CutRevolve)
+    );
+    assert_eq!(operations[4].recipe, crate::feature::RecipeResolution::None);
+    assert_eq!(operations[5].kind.as_str(), "Körper");
     assert_eq!(operations[5].feature_id, 45);
 }
 
@@ -807,24 +799,24 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
         (b'z', "zExtrude ID 7"),
     ]) {
         assert_eq!(state.feature_id, 7);
-        assert_eq!(state.kind, "Extrude");
-        assert_eq!(state.stored_name_prefix, Some(prefix));
+        assert_eq!(state.kind.as_str(), "Extrude");
+        assert_eq!(state.stored_name_prefix(), Some(prefix));
         assert!(state.display_state_conflict);
         assert_eq!(state.state_offset + 1, state.offset);
-        assert_eq!(state.stored_name.as_deref(), Some(expected_name));
+        assert_eq!(state.stored_name().as_deref(), Some(expected_name));
     }
-    assert_eq!(states[3].identifier_keyword.as_deref(), Some("ID"));
+    assert_eq!(states[3].identifier_keyword(), Some("ID"));
 
     let current_operations = operations(payload);
     let [current] = current_operations.as_slice() else {
         panic!("one current operation");
     };
-    assert_eq!(current.kind, "Extrude");
-    assert!(!current.display_name_stored);
-    assert_eq!(current.stored_name, None);
-    assert_eq!(current.stored_name_bytes, None);
-    assert_eq!(current.identifier_keyword, None);
-    assert_eq!(current.stored_name_prefix, None);
+    assert_eq!(current.kind.as_str(), "Extrude");
+    assert!(!current.display_name_stored());
+    assert_eq!(current.stored_name(), None);
+    assert_eq!(current.stored_name_bytes(), None);
+    assert_eq!(current.identifier_keyword(), None);
+    assert_eq!(current.stored_name_prefix(), None);
     assert!(current.display_state_conflict);
 }
 
@@ -834,17 +826,23 @@ fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
 
     let states = operation_states(payload);
     assert_eq!(states.len(), 2);
-    assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+    assert_eq!(
+        states[0].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(states[1].recipe.resolved(), Some(FeatureRecipe::CutExtrude));
 
     let current_operations = operations(payload);
     let [current] = current_operations.as_slice() else {
         panic!("one consensus operation");
     };
-    assert_eq!(current.kind, "Extrude");
+    assert_eq!(current.kind.as_str(), "Extrude");
     assert!(current.display_state_conflict);
-    assert!(current.recipe_conflict);
-    assert_eq!(current.recipe, None);
+    assert!(current.recipe.is_conflicting());
+    assert_eq!(
+        current.recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
 }
 
 #[test]
@@ -857,13 +855,29 @@ fn binds_depdb_recipe_records_to_compact_feature_ids() {
     let operations = operations(payload);
     assert_eq!(operations.len(), 2);
     assert_eq!(operations[0].feature_id, 247);
-    assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeRevolve));
-    assert_eq!(operations[0].root_schema_class, Some(917));
-    assert_eq!(operations[0].parent_feature_id, Some(32));
+    assert_eq!(
+        operations[0].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeRevolve)
+    );
+    assert_eq!(
+        operations[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
+    assert_eq!(operations[0].parent_feature_id(), Some(32));
     assert_eq!(operations[1].feature_id, 8053);
-    assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(operations[1].root_schema_class, Some(917));
-    assert_eq!(operations[1].parent_feature_id, Some(8051));
+    assert_eq!(
+        operations[1].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(
+        operations[1]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
+    assert_eq!(operations[1].parent_feature_id(), Some(8051));
 }
 
 #[test]
@@ -874,38 +888,71 @@ fn preserves_competing_depdb_recipe_bindings() {
     let states = operation_states(payload);
     assert_eq!(states.len(), 2);
     assert_eq!(states[0].feature_id, 8053);
-    assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert!(states[0].recipe_conflict);
-    assert_eq!(states[0].root_schema_class, Some(917));
+    assert_eq!(
+        states[0].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert!(states[0].recipe.is_conflicting());
+    assert_eq!(
+        states[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
     assert_eq!(states[1].feature_id, 8053);
-    assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
-    assert!(states[1].recipe_conflict);
-    assert_eq!(states[1].root_schema_class, Some(916));
+    assert_eq!(
+        states[1].recipe.candidate(),
+        Some(FeatureRecipe::CutExtrude)
+    );
+    assert!(states[1].recipe.is_conflicting());
+    assert_eq!(
+        states[1]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(916)
+    );
 
     let current = operations(payload);
     assert_eq!(current.len(), 1);
     assert_eq!(current[0].feature_id, 8053);
-    assert_eq!(current[0].kind, "Native Feature");
-    assert_eq!(current[0].recipe, None);
-    assert!(current[0].recipe_conflict);
-    assert_eq!(current[0].root_schema_class, None);
-    assert_eq!(current[0].parent_feature_id, None);
+    assert_eq!(current[0].kind.as_str(), "Native Feature");
+    assert_eq!(
+        current[0].recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
+    assert!(current[0].recipe.is_conflicting());
+    assert_eq!(
+        current[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        None
+    );
+    assert_eq!(current[0].parent_feature_id(), None);
 
     let repeated = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
     let repeated_states = operation_states(repeated);
     assert_eq!(repeated_states.len(), 2);
     assert_eq!(repeated_states[0].recipe, repeated_states[1].recipe);
+    assert_eq!(
+        repeated_states[0].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
     assert_ne!(repeated_states[0].offset, repeated_states[1].offset);
     let repeated_current = operations(repeated);
     assert_eq!(repeated_current.len(), 1);
-    assert_eq!(repeated_current[0].kind, "Extrude");
+    assert_eq!(repeated_current[0].kind.as_str(), "Extrude");
     assert_eq!(
-        repeated_current[0].recipe,
+        repeated_current[0].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
-    assert_eq!(repeated_current[0].root_schema_class, Some(917));
-    assert_eq!(repeated_current[0].parent_feature_id, Some(8051));
+    assert_eq!(
+        repeated_current[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
+    assert_eq!(repeated_current[0].parent_feature_id(), Some(8051));
 }
 
 #[test]
@@ -917,22 +964,30 @@ fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
     let states = operation_states(payload);
     let display = states
         .iter()
-        .find(|state| state.display_name_stored)
+        .find(|state| state.display_name_stored())
         .expect("stored display state");
-    assert_eq!(display.kind, "Extrude");
-    assert_eq!(display.recipe, None);
-    assert!(display.recipe_conflict);
-    assert_eq!(display.root_schema_class, None);
-    assert_eq!(display.parent_feature_id, None);
+    assert_eq!(display.kind.as_str(), "Extrude");
+    assert_eq!(display.recipe.candidate(), None);
+    assert!(display.recipe.is_conflicting());
+    assert_eq!(
+        display
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        None
+    );
+    assert_eq!(display.parent_feature_id(), None);
 
     let current = operations(payload);
     let [current] = current.as_slice() else {
         panic!("one current operation");
     };
-    assert_eq!(current.kind, "Extrude");
-    assert!(current.display_name_stored);
-    assert_eq!(current.recipe, None);
-    assert!(current.recipe_conflict);
+    assert_eq!(current.kind.as_str(), "Extrude");
+    assert!(current.display_name_stored());
+    assert_eq!(
+        current.recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
+    assert!(current.recipe.is_conflicting());
 }
 
 #[test]
@@ -944,11 +999,16 @@ fn leaves_inline_recipe_conflicts_unresolved() {
         panic!("one operation state");
     };
     assert_eq!(state.feature_id, 9);
-    assert_eq!(state.kind, "Extrude");
-    assert_eq!(state.recipe, None);
-    assert!(state.recipe_conflict);
-    assert_eq!(state.root_schema_class, None);
-    assert_eq!(state.parent_feature_id, None);
+    assert_eq!(state.kind.as_str(), "Extrude");
+    assert_eq!(state.recipe.candidate(), None);
+    assert!(state.recipe.is_conflicting());
+    assert_eq!(
+        state
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        None
+    );
+    assert_eq!(state.parent_feature_id(), None);
 }
 
 #[test]
@@ -959,10 +1019,18 @@ fn promotes_depdb_recipe_without_operation_display_name() {
     let operations = operations(payload);
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].feature_id, 8053);
-    assert_eq!(operations[0].kind, "Extrude");
-    assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(operations[0].root_schema_class, Some(917));
-    assert_eq!(operations[0].parent_feature_id, Some(8051));
+    assert_eq!(operations[0].kind.as_str(), "Extrude");
+    assert_eq!(
+        operations[0].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(
+        operations[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
+    assert_eq!(operations[0].parent_feature_id(), Some(8051));
     assert_eq!(operations[0].offset, 1);
 }
 
@@ -993,16 +1061,25 @@ fn decodes_count_bounded_saved_spline_interpolation_points() {
         b"\xf9\x02\x03\xe4\x0f\x0d\x0f\xe4\x0f"
     );
     assert_eq!(
-        spline.endpoint_tangents,
+        spline.endpoint_tangents.as_ref().map(|field| field.value),
         Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     );
     assert_eq!(
-        spline.endpoint_tangents_body.as_deref(),
+        spline
+            .endpoint_tangents
+            .as_ref()
+            .map(|field| field.body.as_slice()),
         Some(b"\xf9\x02\x03\xe4\x0f\x0f\xe4\x0f\x0f".as_slice())
     );
-    assert_eq!(spline.parameters, Some(vec![0.0, 1.0]));
     assert_eq!(
-        spline.parameters_body.as_deref(),
+        spline.parameters.as_ref().map(|field| field.value.clone()),
+        Some(vec![0.0, 1.0])
+    );
+    assert_eq!(
+        spline
+            .parameters
+            .as_ref()
+            .map(|field| field.body.as_slice()),
         Some(b"\xf8\x02\x0f\xe4".as_slice())
     );
 }
@@ -1053,9 +1130,7 @@ fn saved_spline_retains_its_declared_count_and_complete_point_prefix() {
         b"\xf9\x02\x03\x0f\x0f\x0f"
     );
     assert_eq!(spline.endpoint_tangents, None);
-    assert_eq!(spline.endpoint_tangents_body, None);
     assert_eq!(spline.parameters, None);
-    assert_eq!(spline.parameters_body, None);
 }
 
 #[test]
@@ -1157,15 +1232,16 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
     let payload = b"\0\xf7\x71\x2a\x05\x29Datum Plane id 41\0\x2a\x2a\x10\0\
             \xf7\x71\x30\x05\x2fBroken\0\x30\x31";
 
+    let names = reference_names(payload);
     assert_eq!(
-        reference_names(payload),
+        names,
         [FeatureReferenceName {
             feature_id: 41,
-            name: "Datum Plane id 41".to_string(),
             name_bytes: b"Datum Plane id 41".to_vec(),
             own_reference_id: 42,
             reference_type: 5,
             offset: 1,
         }]
     );
+    assert_eq!(names[0].name(), "Datum Plane id 41");
 }

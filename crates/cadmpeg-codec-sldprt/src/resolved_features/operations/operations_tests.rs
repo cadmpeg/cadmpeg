@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-    FeatureInputName,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
 use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
@@ -16,7 +15,6 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source.into()),
-        parent_source_id: None,
         ordinal: source.parse().expect("required invariant"),
         name: id.into(),
         kind: "Split Line".into(),
@@ -53,7 +51,6 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
             ordinal: 0,
             offset: 100,
             name: "moPLineProject_c".into(),
-            role: FeatureInputClassRole::Auxiliary,
         }],
         names: vec![
             FeatureInputName {
@@ -108,7 +105,6 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         ordinal: 1,
         offset: 120,
         name: "moPLineProject_c".into(),
-        role: FeatureInputClassRole::Auxiliary,
     });
     let mut ambiguous = vec![history.clone()];
     enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
@@ -183,7 +179,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         None
     );
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Eight),),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
         Some(1)
     );
     assert_eq!(
@@ -307,7 +303,7 @@ fn extrusion_form_codes_are_scoped_to_their_native_classes() {
 }
 
 #[test]
-fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
+fn ambiguous_form_code_padding_does_not_shift_the_code() {
     let direct_lane = |code: u32, preceding: u32, padding: usize| {
         let class_offset = 32usize;
         let class_name = "moICE_c";
@@ -335,7 +331,6 @@ fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
                     ordinal: 0,
                     offset: class_offset as u64,
                     name: class_name.into(),
-                    role: FeatureInputClassRole::Feature,
                 }],
                 names: Vec::new(),
                 scalars: Vec::new(),
@@ -379,32 +374,78 @@ fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
 
     let (lane, name) = direct_lane(0, 11, 4);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Four)),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(4)),
         Some(0)
     );
 
     let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Eight)),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
+        Some(11)
+    );
+
+    let name_offset = 32usize;
+    let mut payload = vec![0; 64];
+    payload[name_offset - 14..name_offset - 10].copy_from_slice(&11_u32.to_le_bytes());
+    payload[name_offset - 2..name_offset].copy_from_slice(&0x8d9a_u16.to_le_bytes());
+    let compact_lane = FeatureInputLane {
+        id: "compact-lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let compact_name = FeatureInputName {
+        id: "compact-name".into(),
+        parent: "compact-lane".into(),
+        ordinal: 0,
+        offset: name_offset as u64,
+        value: "Feature".into(),
+        object_id: Some(1),
+    };
+
+    assert_eq!(
+        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), None),
+        None
+    );
+    assert_eq!(
+        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), Some(8),),
         Some(11)
     );
 }
 
 #[test]
 fn form_code_padding_follows_the_solidworks_schema_version() {
-    assert_eq!(form_code_padding(None), None);
-    assert_eq!(form_code_padding(Some("")), None);
+    use crate::dialect::SldprtDialect;
+
     assert_eq!(
-        form_code_padding(Some("11000")),
-        Some(FormCodePadding::Four)
+        SldprtDialect::from_declaration(None).form_code_padding(),
+        None
     );
     assert_eq!(
-        form_code_padding(Some("12000")),
-        Some(FormCodePadding::Eight)
+        SldprtDialect::from_declaration(Some("")).form_code_padding(),
+        None
     );
     assert_eq!(
-        form_code_padding(Some("34000")),
-        Some(FormCodePadding::Eight)
+        SldprtDialect::from_declaration(Some("11000")).form_code_padding(),
+        Some(4)
+    );
+    assert_eq!(
+        SldprtDialect::from_declaration(Some("12000")).form_code_padding(),
+        Some(8)
+    );
+    assert_eq!(
+        SldprtDialect::from_declaration(Some("34000")).form_code_padding(),
+        Some(8)
     );
 }
 
@@ -430,8 +471,9 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 #[test]
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
     use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition, Length,
-        ProfileRef, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
+        AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+        FeatureDefinition, Length, LinearTermination, ProfileRef, RevolutionAxis,
+        RevolveConstruction, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
@@ -442,15 +484,13 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         start: ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(1.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         op,
-        direction_source: None,
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,
@@ -458,29 +498,28 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         allow_multi_profile_faces: None,
     };
     let revolve = |op| FeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile: Some(ProfileRef::Sketch(SketchId("sketch".into()))),
-            axis: Some(RevolutionAxis {
+        construction: RevolveConstruction::new(
+            Some(ProfileRef::Sketch(SketchId("sketch".into()))),
+            Some(RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
+                reference: None,
             }),
-            extent: Some(RevolveExtent::OneSided {
-                termination: Termination::ThroughAll,
+            Some(RevolveExtent::OneSided {
+                termination: AngularTermination::ThroughAll,
             }),
-            axis_reference: None,
-            solid: Some(true),
-            face_maker_class: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+            Some(true),
+            None,
+            None,
+            None,
+        ),
         op,
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: id.into(),
+        id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -496,7 +535,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some("1".into()),
-        parent_source_id: None,
         ordinal: 0,
         name: id.into(),
         kind: "operation".into(),
@@ -565,7 +603,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ordinal: 0,
             offset: 33,
             name: "moExtrusion_c".into(),
-            role: FeatureInputClassRole::Feature,
         }],
         names: vec![FeatureInputName {
             id: "name".into(),
@@ -596,7 +633,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &base,
         &histories,
         &[operation_lane.clone()],
-        Some(FormCodePadding::Four),
+        Some(4),
     );
     assert!(matches!(
         inherited[0].definition,
@@ -617,7 +654,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &base,
         &histories,
         &[operation_lane],
-        Some(FormCodePadding::Four),
+        Some(4),
     );
     assert!(matches!(
         unresolved[0].definition,

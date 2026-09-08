@@ -347,7 +347,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                     .iter()
                     .copied()
                     .filter(|entity| entity.local_id == Some(u32::from(address)))
-                    .flat_map(|entity| &entity.links)
+                    .flat_map(crate::records::SketchInputEntity::links)
                     .filter_map(|link| {
                         entities
                             .iter()
@@ -450,7 +450,7 @@ fn linked_point_markers<'a>(
             compatible.push(entity);
             continue;
         }
-        pending.extend(entity.links.iter().map(|link| link.entity_ref.as_str()));
+        pending.extend(entity.links().iter().map(|link| link.entity_ref.as_str()));
     }
     compatible
 }
@@ -468,7 +468,7 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let links = marker
-        .links
+        .links()
         .iter()
         .filter(|link| link.entity_ref != marker.id)
         .collect::<Vec<_>>();
@@ -511,7 +511,7 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
         return None;
     }
     let mut endpoints = marker
-        .links
+        .links()
         .iter()
         .filter(|link| link.entity_ref != marker.id)
         .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())

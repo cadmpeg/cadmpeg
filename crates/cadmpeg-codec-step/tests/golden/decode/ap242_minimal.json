@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,20 +42,17 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:example_record#1",
-              "links": [
-                "step:data:opaque_target#2"
-              ]
-            },
-            {
-              "id": "step:data:opaque_target#2"
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "step:data:example_record#1",
+            "links": [
+              "step:data:opaque_target#2"
+            ]
+          },
+          {
+            "id": "step:data:opaque_target#2"
+          }
+        ]
       }
     },
     "source": {
@@ -67,6 +64,19 @@
         "data_sections": "1",
         "entity_instances": "2",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+            "implementation_level": "2;1",
+            "long_form_arcs": " 1 0 10303 442 3 1 4 "
+          },
+          "dialect": "step:ap242-e2",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -80,6 +90,19 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+          "implementation_level": "2;1",
+          "long_form_arcs": " 1 0 10303 442 3 1 4 "
+        },
+        "dialect": "step:ap242-e2",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": false,
     "losses": [
@@ -143,7 +166,6 @@
         "sha256": "75760ab0a42cf9aa82d38698bd9745835655906b302565e2425937f2c2085315",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

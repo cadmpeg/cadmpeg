@@ -16,14 +16,15 @@ use super::super::surfaces::curve_contains_points;
 use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
-    common_plane_conic_parameters, cross, dot, plane_intersection_line, CarrierEquation,
-    PlaneConicEquation, PlaneEquation,
+    common_plane_conic_parameters, plane_intersection_line, CarrierEquation, PlaneConicEquation,
+    PlaneEquation,
 };
 use super::pcurves::{
     directed_pcurve_points, pcurve_edge_endpoint_evidence_with_carriers,
     solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
+use crate::vecmath::{cross, dot};
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
@@ -388,13 +389,34 @@ fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> Option<CarrierF
     }
 }
 
-fn carrier_kind(carrier: CarrierEquation) -> &'static str {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CarrierKind {
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+}
+
+impl std::fmt::Display for CarrierKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Plane => "plane",
+            Self::Cylinder => "cylinder",
+            Self::Cone => "cone",
+            Self::Sphere => "sphere",
+            Self::Torus => "torus",
+        })
+    }
+}
+
+fn carrier_kind(carrier: CarrierEquation) -> CarrierKind {
     match carrier {
-        CarrierEquation::Plane(_) => "plane",
-        CarrierEquation::Cylinder(_) => "cylinder",
-        CarrierEquation::Cone(_) => "cone",
-        CarrierEquation::Sphere(_) => "sphere",
-        CarrierEquation::Torus(_) => "torus",
+        CarrierEquation::Plane(_) => CarrierKind::Plane,
+        CarrierEquation::Cylinder(_) => CarrierKind::Cylinder,
+        CarrierEquation::Cone(_) => CarrierKind::Cone,
+        CarrierEquation::Sphere(_) => CarrierKind::Sphere,
+        CarrierEquation::Torus(_) => CarrierKind::Torus,
     }
 }
 
@@ -402,7 +424,7 @@ fn carrier_kind(carrier: CarrierEquation) -> &'static str {
 pub struct CarrierVertexDiagnostic {
     pub vertex_id: u32,
     pub incident_face_ids: Vec<u32>,
-    pub carrier_kinds: Vec<&'static str>,
+    pub carrier_kinds: Vec<CarrierKind>,
     pub pair_intersections: usize,
     pub triple_intersections: usize,
     pub valid_candidates: usize,
@@ -599,7 +621,8 @@ pub fn solve_topological_vertices(
         let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
@@ -618,7 +641,8 @@ pub fn solve_topological_vertices(
     let analytic_curves = topology_rows
         .into_iter()
         .filter_map(|row| {
-            let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+            let id = CurveId::mint(format!("creo:visibgeom:curve#{}", row.id))
+                .expect("identity grammar");
             let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,
@@ -678,12 +702,11 @@ pub fn solved_topological_vertices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::units::Units;
 
     #[test]
     fn unique_model_curve_rejects_duplicate_ids() {
-        let id = CurveId("creo:visibgeom:curve#7".to_string());
-        let mut ir = CadIr::empty(Units::default());
+        let id = CurveId::mint("creo:visibgeom:curve#7".to_string()).expect("identity grammar");
+        let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {
                 id: id.clone(),

@@ -12,7 +12,7 @@ use crate::wire::records::{
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
     knots_strictly_increasing, NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite, SurfaceGeometry,
+    RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;
@@ -21,60 +21,32 @@ const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 
-/// Native identity form of one decoded freeform surface carrier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FreeformSurfaceIdentity {
-    /// Common-form `a8 <flag> 34` carrier with an inline persistent object id.
-    Object(u32),
-    /// Consolidated `a5 03 34` carrier identified by its framed source offset.
-    FrameOffset(usize),
-}
-
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
 pub struct FreeformSurface {
     /// Source offset of the framed record.
     pub pos: usize,
-    /// Identity form carried by this storage family.
-    pub identity: FreeformSurfaceIdentity,
+    /// Inline persistent object id for an A8 carrier. `None` for an A5
+    /// carrier identified only by [`Self::pos`].
+    pub identity: Option<u32>,
     /// The decoded NURBS carrier.
-    pub geometry: SurfaceGeometry,
+    pub geometry: NurbsSurface,
 }
 
-/// The fixed parameterization program carried by an `a8 <flag> 34` surface.
-///
-/// The two control bytes are retained as encoded because their compact
-/// subprograms are not part of the fixed elided form's scalar map. The eight
-/// f64 lanes have one stable meaning: the active U/V limits followed by the
-/// affine map from the source parameter to each active parameter.
-#[derive(Debug, Clone, PartialEq)]
-pub struct A8SurfaceParameterTail {
-    /// U-side control byte.
-    pub u_control: u8,
-    /// V-side control byte.
-    pub v_control: u8,
-    /// Active U parameter interval.
-    pub u_range: [f64; 2],
-    /// Active V parameter interval.
-    pub v_range: [f64; 2],
-    /// U affine map `(coefficient, shift)`.
-    pub u_affine: [f64; 2],
-    /// V affine map `(coefficient, shift)`.
-    pub v_affine: [f64; 2],
-    /// Extrapolation control flags.
-    pub flags: [u8; 3],
-    /// Eight continuation scalars following the flags.
-    pub continuation: [f64; 8],
+/// Whether an `a8 <flag> 34` surface stores poles inline or in an external grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoleStorage {
+    /// Pole and weight grid occupy the payload after the mode byte.
+    Inline,
+    /// The fixed 141-byte surface tail begins immediately after the mode byte.
+    Elided,
 }
 
 impl FreeformSurface {
     /// Return the inline persistent object id when this is an A8 carrier.
     #[must_use]
     pub fn object_id(&self) -> Option<u32> {
-        match self.identity {
-            FreeformSurfaceIdentity::Object(object_id) => Some(object_id),
-            FreeformSurfaceIdentity::FrameOffset(_) => None,
-        }
+        self.identity
     }
 }
 
@@ -220,12 +192,12 @@ pub(crate) fn a8_nested_b5_run_start(
             object_id: frame.object_id,
         },
     )?;
-    let suffix_start = if parsed.header.poles_elided {
+    let suffix_start = if parsed.header.pole_storage == PoleStorage::Elided {
         parsed.pole_start.checked_add(141)?
     } else {
         let poles = crate::nurbs_surface_control_count(
-            usize::try_from(parsed.header.u_count).ok()?,
-            usize::try_from(parsed.header.v_count).ok()?,
+            usize::try_from(parsed.header.u_count()?).ok()?,
+            usize::try_from(parsed.header.v_count()?).ok()?,
         )?;
         let pole_bytes = poles.checked_mul(24)?;
         let weight_bytes = if parsed.header.rational {
@@ -242,11 +214,7 @@ pub(crate) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_a8_elided_surface_tail(
-    data: &[u8],
-    at: usize,
-    v_knots: &[f64],
-) -> Option<A8SurfaceParameterTail> {
+fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> Option<usize> {
     let end = at.checked_add(141)?;
     let tail = data.get(at..end)?;
     if tail[0] != 0x05
@@ -281,19 +249,10 @@ fn parse_a8_elided_surface_tail(
         && zero_w == 0.0
         && one_v == 1.0
         && zero_x == 0.0)
-        .then_some(A8SurfaceParameterTail {
-            u_control: tail[1],
-            v_control: tail[3],
-            u_range: [zero_u, positive_u],
-            v_range: [zero_v, v_span],
-            u_affine: [one_u, zero_w],
-            v_affine: [one_v, zero_x],
-            flags: [tail[68], tail[69], tail[70]],
-            continuation: [0.0; 8],
-        })
+        .then_some(end)
 }
 
-fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfaceParameterTail> {
+fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     let tail_len = end.checked_sub(at)?;
     let continuation_bytes = match tail_len {
         133 => 56,
@@ -348,39 +307,22 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfacePar
         }
         _ => false,
     };
-    valid_suffix.then_some(())?;
-    let mut continuation_values = [0.0; 8];
-    continuation_values[..continuation.len()].copy_from_slice(&continuation);
-    Some(A8SurfaceParameterTail {
-        u_control: tail[1],
-        v_control: tail[3],
-        u_range: [parameters[0], parameters[1]],
-        v_range: [parameters[2], parameters[3]],
-        u_affine: [parameters[4], parameters[5]],
-        v_affine: [parameters[6], parameters[7]],
-        flags: tail[68..71].try_into().ok()?,
-        continuation: continuation_values,
-    })
+    valid_suffix.then_some(end)
 }
 
 fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
     parse_surface_tail(data, at, end).is_some()
 }
 
-fn a8_inline_surface_tail(
-    data: &[u8],
-    at: usize,
-    end: usize,
-) -> Option<(A8SurfaceParameterTail, usize)> {
+fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     for tail_len in [133, 141, 142] {
         let Some(tail_end) = at.checked_add(tail_len).filter(|tail_end| *tail_end <= end) else {
             continue;
         };
-        let Some(tail) = parse_surface_tail(data, at, tail_end) else {
-            continue;
-        };
-        if closed_a8_child_run(data, tail_end, end) {
-            return Some((tail, tail_end));
+        if parse_surface_tail(data, at, tail_end).is_some()
+            && closed_a8_child_run(data, tail_end, end)
+        {
+            return Some(tail_end);
         }
     }
     None
@@ -390,7 +332,7 @@ fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize) -> Option<usize> 
     if closed_a8_child_run(data, at, end) {
         return Some(at);
     }
-    a8_inline_surface_tail(data, at, end).map(|(_, tail_end)| tail_end)
+    a8_inline_surface_tail(data, at, end)
 }
 
 fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
@@ -463,17 +405,22 @@ pub struct A8SurfaceHeader {
     pub u_multiplicities: Vec<u32>,
     /// V multiplicities corresponding to `v_distinct_knots`.
     pub v_multiplicities: Vec<u32>,
-    /// Derived U pole count.
-    pub u_count: u32,
-    /// Derived V pole count.
-    pub v_count: u32,
     /// Whether the record selects rational weights.
     pub rational: bool,
-    /// Decoded range, affine-map, and continuation program, when present.
-    pub parameter_tail: Option<A8SurfaceParameterTail>,
-    /// The fixed 141-byte surface tail begins immediately after the mode byte,
-    /// so no inline pole or weight grid is present.
-    pub poles_elided: bool,
+    /// Whether poles occupy the payload or an external grid.
+    pub pole_storage: PoleStorage,
+}
+
+impl A8SurfaceHeader {
+    /// U pole count derived from degree and knot multiplicities.
+    pub fn u_count(&self) -> Option<u32> {
+        pole_count(&self.u_multiplicities, self.u_degree)
+    }
+
+    /// V pole count derived from degree and knot multiplicities.
+    pub fn v_count(&self) -> Option<u32> {
+        pole_count(&self.v_multiplicities, self.v_degree)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -486,21 +433,53 @@ pub struct A8Pcurve {
     pub object_id: u32,
     /// Referenced support-surface object identifier.
     pub support_id: u32,
-    /// Parametric curve degree.
-    pub degree: u32,
-    /// Distinct parameter knots.
-    pub knots: Vec<f64>,
     /// Stored UV-jet channel-mode byte.
     #[cfg(test)]
     pub mode: u8,
-    /// UV positions at the knot sites.
-    pub points: Vec<[f64; 2]>,
-    /// UV first derivatives at the knot sites.
-    pub first_derivatives: Vec<[f64; 2]>,
-    /// UV second derivatives at the knot sites.
-    pub second_derivatives: Vec<[f64; 2]>,
+    /// Knot-aligned UV jet sites.
+    pub sites: Vec<A8PcurveSite>,
     /// Native parameter range.
     pub range: [f64; 2],
+}
+
+/// One knot and its complete UV jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8PcurveSite {
+    pub knot: f64,
+    pub point: [f64; 2],
+    pub first_derivative: [f64; 2],
+    pub second_derivative: [f64; 2],
+}
+
+impl A8Pcurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
+
+    #[cfg(test)]
+    pub fn points(&self) -> Vec<[f64; 2]> {
+        self.sites.iter().map(|site| site.point).collect()
+    }
+
+    pub fn bspline(&self) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
+        crate::nurbs::quintic_jet_bspline(
+            Self::DEGREE,
+            &self.knots(),
+            &self.sites.iter().map(|site| site.point).collect::<Vec<_>>(),
+            &self
+                .sites
+                .iter()
+                .map(|site| site.first_derivative)
+                .collect::<Vec<_>>(),
+            &self
+                .sites
+                .iter()
+                .map(|site| site.second_derivative)
+                .collect::<Vec<_>>(),
+        )
+    }
 }
 
 /// Decode framed `a5 03 20` consolidated UV jets.
@@ -536,6 +515,19 @@ pub struct RollingBallSite {
     pub radius: f64,
 }
 
+/// One knot of a degree-5 rolling-ball jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A5FreeformJet {
+    /// Distinct knot.
+    pub knot: f64,
+    /// Position channels at this knot.
+    pub site: RollingBallSite,
+    /// Ten first-derivative channels.
+    pub first_derivatives: [f64; 10],
+    /// Ten second-derivative channels.
+    pub second_derivatives: [f64; 10],
+}
+
 /// Consolidated degree-5 rolling-ball jet.
 #[derive(Debug, Clone)]
 pub struct A5FreeformCurve {
@@ -543,16 +535,16 @@ pub struct A5FreeformCurve {
     pub pos: usize,
     /// Schema token immediately before the payload.
     pub header_token: u32,
-    /// Parametric degree.
-    pub degree: u32,
-    /// Distinct knots.
-    pub knots: Vec<f64>,
-    /// Position channels at each knot.
-    pub sites: Vec<RollingBallSite>,
-    /// Ten first-derivative channels per knot.
-    pub first_derivatives: Vec<[f64; 10]>,
-    /// Ten second-derivative channels per knot.
-    pub second_derivatives: Vec<[f64; 10]>,
+    /// Knot-aligned jet samples.
+    pub sites: Vec<A5FreeformJet>,
+}
+
+impl A5FreeformCurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
 }
 
 /// Lower either limiting locus of a complete rolling-ball jet to its exact
@@ -565,41 +557,60 @@ pub(crate) fn rolling_ball_limit_curve(
     let positions = jet
         .sites
         .iter()
-        .map(|site| {
+        .map(|sample| {
             if second_limit {
-                site.limit2
+                sample.site.limit2
             } else {
-                site.limit1
+                sample.site.limit1
             }
         })
         .collect::<Vec<_>>();
     let first = jet
-        .first_derivatives
+        .sites
         .iter()
-        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .map(|sample| {
+            let values = sample.first_derivatives;
+            [values[offset], values[offset + 1], values[offset + 2]]
+        })
         .collect::<Vec<_>>();
     let second = jet
-        .second_derivatives
+        .sites
         .iter()
-        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .map(|sample| {
+            let values = sample.second_derivatives;
+            [values[offset], values[offset + 1], values[offset + 2]]
+        })
         .collect::<Vec<_>>();
-    let (knots, control_points) =
-        crate::nurbs::quintic_jet_bspline3(jet.degree, &jet.knots, &positions, &first, &second)?;
-    Some(NurbsCurve {
-        degree: jet.degree,
+    let knots = jet.knots();
+    let (knots, control_points) = crate::nurbs::quintic_jet_bspline3(
+        A5FreeformCurve::DEGREE,
+        &knots,
+        &positions,
+        &first,
+        &second,
+    )?;
+    NurbsCurve::new(
+        A5FreeformCurve::DEGREE,
         knots,
-        control_points: control_points
+        control_points
             .into_iter()
             .map(|point| Point3::new(point[0], point[1], point[2]))
             .collect(),
-        weights: None,
-        periodic: false,
-    })
+        None,
+        false,
+    )
+    .ok()
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GuideCurveSite {
+    /// Parameter knot.
+    pub knot: f64,
+    /// Six first-derivative channels.
+    pub first_derivative: [f64; 6],
+    /// Six second-derivative channels.
+    pub second_derivative: [f64; 6],
     /// Guide-curve point.
     pub point: [f64; 3],
     /// Unit direction from the first stored triple to the second.
@@ -615,14 +626,14 @@ pub struct A5GuideCurve {
     pub header_token: u32,
     /// Parametric degree.
     pub degree: u32,
-    /// Distinct parameter knots.
-    pub knots: Vec<f64>,
     /// Position and unit-direction values at the knot sites.
     pub sites: Vec<GuideCurveSite>,
-    /// Six first-derivative channels per site.
-    pub first_derivatives: Vec<[f64; 6]>,
-    /// Six second-derivative channels per site.
-    pub second_derivatives: Vec<[f64; 6]>,
+}
+
+impl A5GuideCurve {
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
 }
 
 /// One non-rational degree-5 NURBS curve stored in an `a5 13 16` frame.
@@ -723,13 +734,7 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
     Some(A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve {
-            degree,
-            knots,
-            control_points,
-            weights: None,
-            periodic: false,
-        },
+        geometry: NurbsCurve::new(degree, knots, control_points, None, false).ok()?,
     })
 }
 
@@ -797,7 +802,10 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     let second_derivatives = block(at + 2 * block_bytes)?;
     let sites: Option<Vec<_>> = positions
         .into_iter()
-        .map(|value| {
+        .zip(knots)
+        .zip(first_derivatives)
+        .zip(second_derivatives)
+        .map(|(((value, knot), first_derivative), second_derivative)| {
             let point = [value[0], value[1], value[2]];
             let direction = [
                 value[3] - value[0],
@@ -806,19 +814,36 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
             ];
             let length =
                 (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
-            ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT)
-                .then_some(GuideCurveSite { point, direction })
+            ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT).then_some(GuideCurveSite {
+                knot,
+                first_derivative,
+                second_derivative,
+                point,
+                direction,
+            })
         })
         .collect();
     Some(A5GuideCurve {
         pos: frame.pos,
         header_token: frame.header_token,
         degree,
-        knots,
         sites: sites?,
-        first_derivatives,
-        second_derivatives,
     })
+}
+
+/// One knot of a common-form degree-5 rolling-ball jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8FreeformJet {
+    /// Distinct knot.
+    pub knot: f64,
+    /// Multiplicity of this distinct knot.
+    pub multiplicity: u32,
+    /// Position channels at this knot.
+    pub site: RollingBallSite,
+    /// Ten first-derivative channels.
+    pub first_derivatives: [f64; 10],
+    /// Ten second-derivative channels.
+    pub second_derivatives: [f64; 10],
 }
 
 /// Common-form degree-5 rolling-ball jet stored in an `a8 <flag> 32` object record.
@@ -828,20 +853,16 @@ pub struct A8FreeformCurve {
     pub pos: usize,
     /// Inline persistent object identifier.
     pub object_id: u32,
-    /// Parametric degree.
-    pub degree: u32,
-    /// Distinct parameter knots.
-    pub knots: Vec<f64>,
-    /// Multiplicity for each distinct knot.
-    pub multiplicities: Vec<u32>,
-    /// Position channels at each knot.
-    pub sites: Vec<RollingBallSite>,
-    /// Ten first-derivative channels per knot.
-    pub first_derivatives: Vec<[f64; 10]>,
-    /// Ten second-derivative channels per knot.
-    pub second_derivatives: Vec<[f64; 10]>,
-    /// Bytes following the three jet blocks inside the payload.
-    pub tail_len: usize,
+    /// Knot-aligned jet samples.
+    pub sites: Vec<A8FreeformJet>,
+}
+
+impl A8FreeformCurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn multiplicities(&self) -> Vec<u32> {
+        self.sites.iter().map(|site| site.multiplicity).collect()
+    }
 }
 
 /// Convert a complete common-form rolling-ball jet to its exact neutral
@@ -849,12 +870,7 @@ pub struct A8FreeformCurve {
 pub(crate) fn rolling_ball_jet_definition(
     jet: &A8FreeformCurve,
 ) -> Option<ProceduralSurfaceDefinition> {
-    if jet.degree != 5
-        || jet.sites.len() != jet.knots.len()
-        || jet.first_derivatives.len() != jet.knots.len()
-        || jet.second_derivatives.len() != jet.knots.len()
-        || jet.multiplicities.len() != jet.knots.len()
-    {
+    if jet.sites.is_empty() {
         return None;
     }
     let derivative = |values: [f64; 10]| RollingBallJetDerivative {
@@ -863,25 +879,37 @@ pub(crate) fn rolling_ball_jet_definition(
         center: Vector3::new(values[6], values[7], values[8]),
         angle: values[9],
     };
-    let sites = jet
+    let stations = jet
         .sites
         .iter()
-        .zip(&jet.first_derivatives)
-        .zip(&jet.second_derivatives)
-        .map(|((site, first), second)| RollingBallJetSite {
-            first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
-            second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
-            center: Point3::new(site.center[0], site.center[1], site.center[2]),
-            angle: site.theta,
-            first_derivative: derivative(*first),
-            second_derivative: derivative(*second),
+        .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
+            knot: sample.knot,
+            multiplicity: sample.multiplicity,
+            site: RollingBallJetSite {
+                first_limit: Point3::new(
+                    sample.site.limit1[0],
+                    sample.site.limit1[1],
+                    sample.site.limit1[2],
+                ),
+                second_limit: Point3::new(
+                    sample.site.limit2[0],
+                    sample.site.limit2[1],
+                    sample.site.limit2[2],
+                ),
+                center: Point3::new(
+                    sample.site.center[0],
+                    sample.site.center[1],
+                    sample.site.center[2],
+                ),
+                angle: sample.site.theta,
+                first_derivative: derivative(sample.first_derivatives),
+                second_derivative: derivative(sample.second_derivatives),
+            },
         })
         .collect();
     Some(ProceduralSurfaceDefinition::RollingBallJet {
-        degree: jet.degree,
-        multiplicities: jet.multiplicities.clone(),
-        knots: jet.knots.clone(),
-        sites,
+        degree: A8FreeformCurve::DEGREE,
+        stations,
     })
 }
 
@@ -959,13 +987,24 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     Some(A8FreeformCurve {
         pos,
         object_id,
-        degree,
-        knots,
-        multiplicities,
-        sites,
-        first_derivatives,
-        second_derivatives,
-        tail_len: end - blocks_end,
+        sites: knots
+            .into_iter()
+            .zip(multiplicities)
+            .zip(sites)
+            .zip(first_derivatives)
+            .zip(second_derivatives)
+            .map(
+                |((((knot, multiplicity), site), first_derivatives), second_derivatives)| {
+                    A8FreeformJet {
+                        knot,
+                        multiplicity,
+                        site,
+                        first_derivatives,
+                        second_derivatives,
+                    }
+                },
+            )
+            .collect(),
     })
 }
 
@@ -1041,11 +1080,20 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     Some(A5FreeformCurve {
         pos,
         header_token,
-        degree,
-        knots,
-        sites,
-        first_derivatives,
-        second_derivatives,
+        sites: knots
+            .into_iter()
+            .zip(sites)
+            .zip(first_derivatives)
+            .zip(second_derivatives)
+            .map(
+                |(((knot, site), first_derivatives), second_derivatives)| A5FreeformJet {
+                    knot,
+                    site,
+                    first_derivatives,
+                    second_derivatives,
+                },
+            )
+            .collect(),
     })
 }
 
@@ -1122,7 +1170,7 @@ fn parse_object_stream_pcurve(
     data.get(..at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
-    if count < 2 || degree != 5 {
+    if count < 2 || degree != A8Pcurve::DEGREE {
         return None;
     }
     let knot_bytes = count.checked_mul(8)?;
@@ -1195,13 +1243,20 @@ fn parse_object_stream_pcurve(
         pos,
         object_id,
         support_id,
-        degree,
-        knots,
         #[cfg(test)]
         mode,
-        points: u.into_iter().zip(v).map(|p| [p.0, p.1]).collect(),
-        first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),
-        second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),
+        sites: knots
+            .into_iter()
+            .zip(u.into_iter().zip(v))
+            .zip(du.into_iter().zip(dv))
+            .zip(ddu.into_iter().zip(ddv))
+            .map(|(((knot, (u, v)), (du, dv)), (ddu, ddv))| A8PcurveSite {
+                knot,
+                point: [u, v],
+                first_derivative: [du, dv],
+                second_derivative: [ddu, ddv],
+            })
+            .collect(),
         range,
     })
 }
@@ -1259,7 +1314,7 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
     object_id: u32,
 ) -> Option<FreeformSurface> {
     let parsed = parse_selected_a8_surface_header(data, start, end, object_id)?;
-    if parsed.header.poles_elided {
+    if parsed.header.pole_storage == PoleStorage::Elided {
         a8_surface_from_external_grid(data, &parsed.header)
     } else {
         a8_surface_from_parsed(data, parsed)
@@ -1286,20 +1341,21 @@ pub fn a8_surface_from_external_grid(
     };
     Some(FreeformSurface {
         pos: header.pos,
-        identity: FreeformSurfaceIdentity::Object(header.object_id),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: header.u_degree,
-            v_degree: header.v_degree,
-            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
-            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
-            u_count: header.u_count,
-            v_count: header.v_count,
-            control_points: control_points.clone(),
-            weights: weights.clone(),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+        identity: Some(header.object_id),
+        geometry: NurbsSurface::new(
+            header.u_degree,
+            header.v_degree,
+            expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
+            expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+            header.u_count()?,
+            header.v_count()?,
+            control_points.clone(),
+            weights.clone(),
+            false,
+            false,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -1328,12 +1384,16 @@ fn a8_external_grid_candidates(
     data: &[u8],
     header: &A8SurfaceHeader,
 ) -> Vec<ExternalGridCandidate> {
-    if !header.poles_elided {
+    if header.pole_storage != PoleStorage::Elided {
         return Vec::new();
     }
-    let (Ok(u_count), Ok(v_count)) = (
-        usize::try_from(header.u_count),
-        usize::try_from(header.v_count),
+    let (Some(u_count), Some(v_count)) = (
+        header
+            .u_count()
+            .and_then(|count| usize::try_from(count).ok()),
+        header
+            .v_count()
+            .and_then(|count| usize::try_from(count).ok()),
     ) else {
         return Vec::new();
     };
@@ -1487,8 +1547,8 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     }
     Some(FreeformSurface {
         pos,
-        identity: FreeformSurfaceIdentity::FrameOffset(pos),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+        identity: None,
+        geometry: NurbsSurface::new(
             u_degree,
             v_degree,
             u_knots,
@@ -1497,10 +1557,11 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
             v_count,
             control_points,
             weights,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+            false,
+            false,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -1574,25 +1635,9 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
         return None;
     }
     let tail_end = at.checked_add(141)?;
-    let elided_tail = (tail_end <= end && closed_a8_child_run(data, tail_end, end))
-        .then(|| parse_a8_elided_surface_tail(data, at, &v_distinct))
-        .flatten();
-    let poles_elided = elided_tail.is_some();
-    let inline_tail = || {
-        let poles = crate::nurbs_surface_control_count(
-            usize::try_from(u_count).ok()?,
-            usize::try_from(v_count).ok()?,
-        )?;
-        let pole_bytes = poles.checked_mul(24)?;
-        let weight_bytes = if mode == 0x05 {
-            poles.checked_mul(8)?
-        } else {
-            0
-        };
-        let tail_start = at.checked_add(pole_bytes)?.checked_add(weight_bytes)?;
-        a8_inline_surface_tail(data, tail_start, end).map(|(tail, _)| tail)
-    };
-    let parameter_tail = elided_tail.or_else(inline_tail);
+    let elided = tail_end <= end
+        && closed_a8_child_run(data, tail_end, end)
+        && parse_a8_elided_surface_tail(data, at, &v_distinct).is_some();
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -1603,11 +1648,12 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
             v_distinct_knots: v_distinct,
             u_multiplicities: u_mults,
             v_multiplicities: v_mults,
-            u_count,
-            v_count,
             rational: mode == 0x05,
-            parameter_tail,
-            poles_elided,
+            pole_storage: if elided {
+                PoleStorage::Elided
+            } else {
+                PoleStorage::Inline
+            },
         },
         pole_start: at,
         end,
@@ -1620,6 +1666,8 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         mut pole_start,
         end,
     } = parsed;
+    let u_count = header.u_count()?;
+    let v_count = header.v_count()?;
     let A8SurfaceHeader {
         pos,
         object_id,
@@ -1629,13 +1677,11 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         v_distinct_knots,
         u_multiplicities,
         v_multiplicities,
-        u_count,
-        v_count,
         rational,
-        poles_elided,
+        pole_storage,
         ..
     } = header;
-    if poles_elided {
+    if pole_storage == PoleStorage::Elided {
         return None;
     }
     let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
@@ -1667,20 +1713,21 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     a8_surface_suffix_start(data, pole_start, end)?;
     Some(FreeformSurface {
         pos,
-        identity: FreeformSurfaceIdentity::Object(object_id),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+        identity: Some(object_id),
+        geometry: NurbsSurface::new(
             u_degree,
             v_degree,
-            u_knots: expand_knots(&u_distinct_knots, &u_multiplicities)?,
-            v_knots: expand_knots(&v_distinct_knots, &v_multiplicities)?,
+            expand_knots(&u_distinct_knots, &u_multiplicities)?,
+            expand_knots(&v_distinct_knots, &v_multiplicities)?,
             u_count,
             v_count,
             control_points,
-            weights: rational.then_some(weights),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+            rational.then_some(weights),
+            false,
+            false,
+            false,
+        )
+        .ok()?,
     })
 }
 

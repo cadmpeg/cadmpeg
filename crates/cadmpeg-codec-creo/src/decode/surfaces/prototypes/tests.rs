@@ -48,7 +48,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0.ends_with("#7"))
+        .find(|surface| surface.id.as_str().ends_with("#7"))
         .expect("first cone instance");
     assert!(matches!(
         surface.geometry,
@@ -177,8 +177,7 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
 #[test]
 fn prototype_local_frame_rejects_nonfinite_origin() {
     let record = crate::surface::SurfacePrototypeRecord {
-        declared_family: "torus".to_string(),
-        family: crate::surface::SurfacePrototypeFamily::Torus,
+        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: crate::surface::SurfaceNamedValue::ScalarArray {
@@ -201,7 +200,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
                 .into_iter()
                 .map(Some)
                 .collect(),
-                tokens: Vec::new(),
+                tokens: None,
             },
             body: Vec::new(),
             offset: 0,
@@ -216,8 +215,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
 #[test]
 fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
     let record = crate::surface::SurfacePrototypeRecord {
-        declared_family: "torus".to_string(),
-        family: crate::surface::SurfacePrototypeFamily::Torus,
+        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: crate::surface::SurfaceNamedValue::ScalarArray {
@@ -240,7 +238,7 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
                 .into_iter()
                 .map(Some)
                 .collect(),
-                tokens: Vec::new(),
+                tokens: None,
             },
             body: Vec::new(),
             offset: 0,
@@ -319,11 +317,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 50.8);
     assert_eq!(
-        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["untransferred_visible_surface_row_count"],
+        result.report().coverage()["untransferred_visible_surface_row_count"],
         0
     );
 
@@ -421,7 +419,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     assert_eq!(ratio, 1.0);
     assert_eq!(half_angle, std::f64::consts::FRAC_PI_4);
     assert_eq!(
-        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
 }
@@ -486,7 +484,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     assert_eq!(normal, [0.0, 0.0, 1.0].into());
     assert_eq!(u_axis, [1.0, 0.0, 0.0].into());
     assert_eq!(
-        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
 }
@@ -574,15 +572,15 @@ ${}
     let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
         panic!("legacy spline geometry: {:?}", surface.geometry);
     };
-    assert_eq!(surface.control_points.len(), 16);
-    assert_eq!(surface.u_count, 4);
-    assert_eq!(surface.v_count, 4);
+    assert_eq!(surface.control_points().len(), 16);
+    assert_eq!(surface.u_count(), 4);
+    assert_eq!(surface.v_count(), 4);
     assert_eq!(
-        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
     assert_eq!(
-        result.report().coverage["transferred_visible_spline_surface_row_count"],
+        result.report().coverage()["transferred_visible_spline_surface_row_count"],
         1
     );
 }

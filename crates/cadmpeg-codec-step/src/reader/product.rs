@@ -13,7 +13,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -212,7 +212,7 @@ pub(super) fn decode(
                         .iter()
                         .any(|candidate| candidate.id == **body)
                 })
-                .map(|body| body.0.clone())
+                .map(|body| body.as_str().to_owned())
                 .collect::<Vec<_>>();
             bodies.retain(|body| {
                 ir.model
@@ -311,10 +311,11 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let id = OccurrenceId(StepIdentity::product(
+        let id = OccurrenceId::mint(ids::product(
             "occurrence",
             format!("definition-{definition}"),
-        ));
+        ))
+        .expect("identity grammar");
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
@@ -323,18 +324,11 @@ pub(super) fn decode(
             parent: OccurrenceParent::Root,
             ordinal: root_ordinal,
             transform: Transform::identity(),
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: None,
         });
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
@@ -424,10 +418,8 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId(StepIdentity::product(
-                "occurrence",
-                format!("{usage_id}{suffix}"),
-            ));
+            let id = OccurrenceId::mint(ids::product("occurrence", format!("{usage_id}{suffix}")))
+                .expect("identity grammar");
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
                 warnings.push(format!(
@@ -457,18 +449,11 @@ pub(super) fn decode(
                 },
                 ordinal: *ordinal,
                 transform,
-                prototype_transform: Transform::identity(),
+                linked_prototype: None,
                 scale: [1.0; 3],
                 name: usage.name.clone(),
-                linked_subelements: Vec::new(),
                 visible: None,
-                element_component: None,
-                claim_child: None,
-                copy_on_change: None,
-                copy_on_change_source: None,
-                copy_on_change_group: None,
-                copy_on_change_touched: None,
-                link_transform: None,
+                link: None,
                 native_ref: Some(format!("#{usage_id}")),
             });
             admit_occurrence(ctx, ir, admitted_ir_entities)?;
@@ -1146,7 +1131,7 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId(StepIdentity::product("product", id))
+    ProductDefinitionId::mint(ids::product("product", id)).expect("identity grammar")
 }
 
 fn product_definition_ir_id(
@@ -1157,10 +1142,11 @@ fn product_definition_ir_id(
     if definition_count == 1 {
         product_ir_id(product)
     } else {
-        ProductDefinitionId(StepIdentity::product(
+        ProductDefinitionId::mint(ids::product(
             "product",
             format!("{product}-definition-{definition}"),
         ))
+        .expect("identity grammar")
     }
 }
 
@@ -1169,10 +1155,9 @@ fn product_definition_formation_parameters(record: &RawRecord) -> Option<&[Value
         return Some(partial.parameters.as_slice());
     }
     match record.simple_name() {
-        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => record
-            .partials
-            .first()
-            .map(|partial| partial.parameters.as_slice()),
+        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => {
+            Some(record.partials.first().parameters.as_slice())
+        }
         _ => None,
     }
 }
@@ -1182,10 +1167,9 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
         return Some(partial.parameters.as_slice());
     }
     match record.simple_name() {
-        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => record
-            .partials
-            .first()
-            .map(|partial| partial.parameters.as_slice()),
+        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => {
+            Some(record.partials.first().parameters.as_slice())
+        }
         _ => None,
     }
 }

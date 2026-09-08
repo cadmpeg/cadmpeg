@@ -3,10 +3,15 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
+use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
+
+/// Decoded property carriers and their serialized representation.
+pub mod property;
+use property::{DecodedProperty, PropertyContent, PropertyValue};
 
 /// Byte-offset constants generated from `docs/layouts/protein.toml`.
 pub(crate) mod layout;
@@ -75,7 +80,7 @@ fn read_entry_bounded(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Carrier {
+enum ValueCarrier {
     Boolean,
     Integer,
     Choice,
@@ -86,64 +91,30 @@ enum Carrier {
     Uuid,
     Url,
     Color,
-    Reference,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ValueLayout {
+    Single(ValueCarrier),
+    Multiple(ValueCarrier),
     TextureUri,
 }
 
 #[derive(Clone, Debug)]
-struct Property {
-    carrier: Carrier,
-    connectable: bool,
-    multiple: bool,
+enum Property {
+    Reference {
+        multiple: bool,
+    },
+    Value {
+        layout: ValueLayout,
+        connectable: bool,
+    },
 }
 
 #[derive(Debug, Default)]
 struct Schema {
     base: Option<String>,
     properties: BTreeMap<String, Property>,
-}
-
-/// One typed property decoded according to its packaged schema.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DecodedProperty {
-    /// Byte offset of the scalar or color payload relative to its record.
-    /// A unit-tagged scalar points after its four-byte unit tag.
-    /// A multiple-value property points to its count prefix.
-    pub value_offset: usize,
-    /// Decoded property value.
-    pub value: PropertyValue,
-    /// Connected asset identifiers in serialized order.
-    pub connections: Vec<String>,
-}
-
-/// A schema-defined Protein property value.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum PropertyValue {
-    /// Boolean scalar.
-    Boolean(bool),
-    /// Unsigned integer scalar.
-    Integer(u32),
-    /// Unitless floating-point scalar.
-    Float(f64),
-    /// Floating-point distance with its serialized unit code.
-    Distance {
-        /// Serialized Protein unit code.
-        unit: u32,
-        /// Distance value in the serialized unit.
-        value: f64,
-    },
-    /// UTF-8 string.
-    String(String),
-    /// Four-channel floating-point color.
-    Color([f64; 4]),
-    /// Reference carrier whose target is held by its connection list.
-    Reference,
-    /// Ordered texture URI values.
-    TextureUri(Vec<String>),
-    /// A member declared `allowmultiplevalues="true"` on a carrier other than
-    /// `TextureURI`: a `u32` count followed by that many carrier values.
-    Multiple(Vec<PropertyValue>),
 }
 
 /// One paged Protein instance record.
@@ -359,23 +330,13 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
             {
                 continue;
             }
-            let Some(mut carrier) = carrier(node.tag_name().name()) else {
+            let Some(property) = schema_property(node) else {
                 continue;
             };
-            if carrier == Carrier::Float && node.attribute("unit").is_some() {
-                carrier = Carrier::UnitFloat;
-            }
             let Some(id) = node.attribute("id") else {
                 continue;
             };
-            schema.properties.insert(
-                id.to_owned(),
-                Property {
-                    carrier,
-                    connectable: node.attribute("allowconnectedassets").is_some(),
-                    multiple: node.attribute("allowmultiplevalues") == Some("true"),
-                },
-            );
+            schema.properties.insert(id.to_owned(), property);
         }
         if schemas.insert(uid.to_owned(), schema).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -386,20 +347,36 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
     Ok(schemas)
 }
 
-fn carrier(name: &str) -> Option<Carrier> {
-    Some(match name {
-        "Boolean" => Carrier::Boolean,
-        "Integer" => Carrier::Integer,
-        "Choice" => Carrier::Choice,
-        "Float" => Carrier::Float,
-        "Distance" => Carrier::Distance,
-        "String" => Carrier::String,
-        "Uuid" => Carrier::Uuid,
-        "URL" => Carrier::Url,
-        "Color" => Carrier::Color,
-        "Reference" => Carrier::Reference,
-        "TextureURI" => Carrier::TextureUri,
+fn schema_property(node: roxmltree::Node<'_, '_>) -> Option<Property> {
+    let multiple = node.attribute("allowmultiplevalues") == Some("true");
+    let connectable = node.attribute("allowconnectedassets").is_some();
+    let carrier = match node.tag_name().name() {
+        "Reference" => return Some(Property::Reference { multiple }),
+        "TextureURI" => {
+            return Some(Property::Value {
+                layout: ValueLayout::TextureUri,
+                connectable,
+            });
+        }
+        "Boolean" => ValueCarrier::Boolean,
+        "Integer" => ValueCarrier::Integer,
+        "Choice" => ValueCarrier::Choice,
+        "Float" if node.attribute("unit").is_some() => ValueCarrier::UnitFloat,
+        "Float" => ValueCarrier::Float,
+        "Distance" => ValueCarrier::Distance,
+        "String" => ValueCarrier::String,
+        "Uuid" => ValueCarrier::Uuid,
+        "URL" => ValueCarrier::Url,
+        "Color" => ValueCarrier::Color,
         _ => return None,
+    };
+    Some(Property::Value {
+        layout: if multiple {
+            ValueLayout::Multiple(carrier)
+        } else {
+            ValueLayout::Single(carrier)
+        },
+        connectable,
     })
 }
 
@@ -460,9 +437,13 @@ fn decode_record(
             continue;
         }
         let property_at = at;
-        let value_offset = if !property.multiple
-            && matches!(property.carrier, Carrier::UnitFloat | Carrier::Distance)
-        {
+        let value_offset = if matches!(
+            property,
+            Property::Value {
+                layout: ValueLayout::Single(ValueCarrier::UnitFloat | ValueCarrier::Distance),
+                ..
+            }
+        ) {
             property_at.checked_add(4).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Protein {schema} instance {guid} property {id} offset overflows usize"
@@ -471,28 +452,56 @@ fn decode_record(
         } else {
             property_at
         };
-        let value = read_property(record, &mut at, &property, &id).map_err(|error| {
+        let value_error = |error: CodecError, at: usize| {
             CodecError::malformed(format_args!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
                 record.len()
             ))
-        })?;
-        let connections = if property.connectable || property.carrier == Carrier::Reference {
-            read_connections(record, &mut at).map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "Protein {schema} instance {guid} property {id} connection at {at}/{}: {error}",
-                    record.len()
-                ))
-            })?
-        } else {
-            Vec::new()
+        };
+        let connection_error = |error: CodecError, at: usize| {
+            CodecError::malformed(format_args!(
+                "Protein {schema} instance {guid} property {id} connection at {at}/{}: {error}",
+                record.len()
+            ))
+        };
+        let content = match property {
+            Property::Reference { multiple } => {
+                let count = multiple
+                    .then(|| read_count(record, &mut at, &id))
+                    .transpose()
+                    .map_err(|error| value_error(error, at))?;
+                let targets = read_connections(record, &mut at)
+                    .map_err(|error| connection_error(error, at))?;
+                match count {
+                    Some(count) => match NonZeroUsize::new(count) {
+                        Some(count) => PropertyContent::MultipleReferences { count, targets },
+                        None => PropertyContent::Value {
+                            value: PropertyValue::Multiple(Vec::new()),
+                            connections: targets,
+                        },
+                    },
+                    None => PropertyContent::Reference(targets),
+                }
+            }
+            Property::Value {
+                layout,
+                connectable,
+            } => {
+                let value = read_property(record, &mut at, layout, &id)
+                    .map_err(|error| value_error(error, at))?;
+                let connections = connectable
+                    .then(|| read_connections(record, &mut at))
+                    .transpose()
+                    .map_err(|error| connection_error(error, at))?
+                    .unwrap_or_default();
+                PropertyContent::Value { value, connections }
+            }
         };
         values.insert(
             id,
             DecodedProperty {
                 value_offset,
-                value,
-                connections,
+                content,
             },
         );
     }
@@ -532,20 +541,23 @@ fn instance_property_serializes(id: &str) -> bool {
 fn read_property(
     bytes: &[u8],
     at: &mut usize,
-    property: &Property,
+    layout: ValueLayout,
     id: &str,
 ) -> Result<PropertyValue, CodecError> {
-    // A `TextureURI` carries its own kind byte in place of a count, so its
-    // `allowmultiplevalues="true"` declaration adds no count prefix.
-    if !property.multiple || property.carrier == Carrier::TextureUri {
-        return read_value(bytes, at, property.carrier, id);
+    match layout {
+        ValueLayout::Single(carrier) => read_value(bytes, at, carrier, id),
+        // TextureURI owns its kind byte and optional count; the schema's
+        // multiple-value declaration does not add another count prefix.
+        ValueLayout::TextureUri => read_texture_uri(bytes, at, id),
+        ValueLayout::Multiple(carrier) => {
+            let count = read_count(bytes, at, id)?;
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                values.push(read_value(bytes, at, carrier, id)?);
+            }
+            Ok(PropertyValue::Multiple(values))
+        }
     }
-    let count = read_count(bytes, at, id)?;
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        values.push(read_value(bytes, at, property.carrier, id)?);
-    }
-    Ok(PropertyValue::Multiple(values))
 }
 
 /// A `TextureURI` value: a kind byte, then either a counted list of paths
@@ -600,44 +612,42 @@ fn read_f64_le(bytes: &[u8], at: &mut usize) -> Option<f64> {
 fn read_value(
     bytes: &[u8],
     at: &mut usize,
-    carrier: Carrier,
+    carrier: ValueCarrier,
     id: &str,
 ) -> Result<PropertyValue, CodecError> {
     let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
     Ok(match carrier {
-        Carrier::Boolean => {
+        ValueCarrier::Boolean => {
             PropertyValue::Boolean(take::<1>(bytes, at).ok_or_else(malformed)?[0] != 0)
         }
-        Carrier::Integer | Carrier::Choice => {
+        ValueCarrier::Integer | ValueCarrier::Choice => {
             PropertyValue::Integer(read_u32_le(bytes, at).ok_or_else(malformed)?)
         }
-        Carrier::Float => PropertyValue::Float(finite_value(
+        ValueCarrier::Float => PropertyValue::Float(finite_value(
             read_f64_le(bytes, at).ok_or_else(malformed)?,
             id,
         )?),
-        Carrier::UnitFloat => {
+        ValueCarrier::UnitFloat => {
             take::<4>(bytes, at).ok_or_else(malformed)?;
             PropertyValue::Float(finite_value(
                 read_f64_le(bytes, at).ok_or_else(malformed)?,
                 id,
             )?)
         }
-        Carrier::Distance => PropertyValue::Distance {
+        ValueCarrier::Distance => PropertyValue::Distance {
             unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
             value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
-        Carrier::String | Carrier::Uuid | Carrier::Url => {
+        ValueCarrier::String | ValueCarrier::Uuid | ValueCarrier::Url => {
             PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
         }
-        Carrier::Color => {
+        ValueCarrier::Color => {
             let mut rgba = [0.0; 4];
             for value in &mut rgba {
                 *value = finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
             }
             PropertyValue::Color(rgba)
         }
-        Carrier::Reference => PropertyValue::Reference,
-        Carrier::TextureUri => return read_texture_uri(bytes, at, id),
     })
 }
 
@@ -727,7 +737,7 @@ mod tests {
         for id in ["metal_f0", "common_Tint_color"] {
             let mut at = 0;
             assert_eq!(
-                read_value(&bare, &mut at, Carrier::Color, id).unwrap(),
+                read_value(&bare, &mut at, ValueCarrier::Color, id).unwrap(),
                 PropertyValue::Color(rgba)
             );
             assert_eq!(at, bare.len());
@@ -769,6 +779,40 @@ mod tests {
             PropertyValue::TextureUri(vec!["local_bitmap.png".into()])
         );
         assert_eq!(at, single.len());
+    }
+
+    #[test]
+    fn multiple_references_keep_one_connection_block_including_zero_values() {
+        let protein = schema_archive(&[(
+            "Schemas/ReferencesSchema.xml",
+            r#"<Schema><UID val="References"/><Reference id="targets" allowmultiplevalues="true"/></Schema>"#,
+        )]);
+        for count in [0_u32, 2] {
+            let mut record = Vec::new();
+            for value in ["References", "asset-guid", "Reference", ""] {
+                push_lp(&mut record, value);
+            }
+            record.extend_from_slice(&count.to_le_bytes());
+            push_connections(&mut record, &["target"]);
+            let outcome = decode_detailed(&protein, &paged_stream(&[&record])).unwrap();
+            assert!(outcome.rejected.is_empty(), "{:?}", outcome.rejected);
+            let records = outcome.records;
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                records[0].properties["targets"].content,
+                if count == 0 {
+                    PropertyContent::Value {
+                        value: PropertyValue::Multiple(Vec::new()),
+                        connections: vec!["target".into()],
+                    }
+                } else {
+                    PropertyContent::MultipleReferences {
+                        count: NonZeroUsize::new(2).expect("positive reference count"),
+                        targets: vec!["target".into()],
+                    }
+                }
+            );
+        }
     }
 
     #[test]
@@ -834,49 +878,58 @@ mod tests {
         assert_eq!(records.len(), 1);
         let properties = &records[0].properties;
         assert_eq!(
-            properties["a_color"].value,
+            properties["a_color"].value().unwrap().clone(),
             PropertyValue::Color([0.1, 0.2, 0.3, 1.0])
         );
         assert_eq!(
-            properties["a_color"].connections,
+            properties["a_color"].connections(),
             ["first-guid", "second-guid"]
         );
         assert!(properties["a_color"].value_offset > RECORD_MARKER.len());
         assert_eq!(
-            properties["b_distance"].value,
+            properties["b_distance"].value().unwrap().clone(),
             PropertyValue::Distance {
                 unit: 0x2016,
                 value: 2.5,
             }
         );
         assert_eq!(
-            properties["c_uri"].value,
+            properties["c_uri"].value().unwrap().clone(),
             PropertyValue::TextureUri(vec![
                 "cloud/resource/one".into(),
                 "cloud/resource/two".into(),
             ])
         );
-        assert_eq!(properties["d_unit_float"].value, PropertyValue::Float(4.5));
         assert_eq!(
-            properties["e_reference"].connections,
+            properties["d_unit_float"].value().unwrap().clone(),
+            PropertyValue::Float(4.5)
+        );
+        assert_eq!(
+            properties["e_reference"].connections(),
             vec!["reference-guid"]
         );
         assert_eq!(
-            properties["f_profile"].value,
+            properties["f_profile"].value().unwrap().clone(),
             PropertyValue::Multiple(vec![PropertyValue::Float(0.25), PropertyValue::Float(0.75)])
         );
         assert_eq!(
-            properties["metadata_still_serializes"].value,
+            properties["metadata_still_serializes"]
+                .value()
+                .unwrap()
+                .clone(),
             PropertyValue::String("Comments".into())
         );
         // `public="false"` does not suppress serialization.
-        assert_eq!(properties["revision"].value, PropertyValue::Integer(1));
         assert_eq!(
-            properties["swatch"].value,
+            properties["revision"].value().unwrap().clone(),
+            PropertyValue::Integer(1)
+        );
+        assert_eq!(
+            properties["swatch"].value().unwrap().clone(),
             PropertyValue::String("Swatch-Torus".into())
         );
         assert_eq!(
-            properties["ExchangeGUID"].value,
+            properties["ExchangeGUID"].value().unwrap().clone(),
             PropertyValue::String(String::new())
         );
         // Consumed as the fourth record header string.
@@ -957,15 +1010,18 @@ mod tests {
         let properties = &records[0].properties;
         assert!(!properties.contains_key("texture_MapChannel_ID_Advanced"));
         assert_eq!(
-            properties["texture_MapChannel"].value,
+            properties["texture_MapChannel"].value().unwrap().clone(),
             PropertyValue::Integer(1)
         );
         assert_eq!(
-            properties["texture_MapChannel_UVWSource_Advanced"].value,
+            properties["texture_MapChannel_UVWSource_Advanced"]
+                .value()
+                .unwrap()
+                .clone(),
             PropertyValue::Integer(0)
         );
         assert_eq!(
-            properties["swatch"].value,
+            properties["swatch"].value().unwrap().clone(),
             PropertyValue::String(String::new())
         );
     }
@@ -1036,10 +1092,13 @@ mod tests {
         for record in records {
             // A marker or continuation page always contributes its whole body,
             // so only the terminal page can hold a partial tail.
-            assert!(
-                record.len() >= BODY,
-                "a record fills at least one page body"
-            );
+            if record.len() < BODY {
+                let mut header = [0_u8; 8];
+                header[..4].copy_from_slice(TERMINAL_MARKER);
+                header[4..6].copy_from_slice(&(record.len() as u16).to_le_bytes());
+                page(header, record);
+                continue;
+            }
             let (head, rest) = record.split_at(BODY);
             page(opening(RECORD_MARKER), head);
             let mut chunks = rest.chunks(BODY).peekable();

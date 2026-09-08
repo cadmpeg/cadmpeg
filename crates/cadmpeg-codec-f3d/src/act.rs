@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fusion ACT entity table and change-version channel groups.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
-use crate::records::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference};
+use crate::records::{
+    ActChannelGroup, ActClassTail, ActEntity, ActEntityMembership, ActGuid, ActRegistryChannel,
+    ActRootComponent, ActTableReference, ActTableRow, Located,
+};
 
 pub struct DecodedAct {
     pub entities: Vec<ActEntity>,
@@ -105,11 +110,12 @@ fn decode_record_frames(
                         "F3D ACT class tag is outside the dynamic registry: {stream}@{start}"
                     ))
                 })?;
-            if !meta
-                .types
-                .get(class_index)
-                .is_some_and(|record_type| record_type.entity_ids.contains(&record.entity_id))
-            {
+            if !meta.types.get(class_index).is_some_and(|record_type| {
+                record_type
+                    .entities
+                    .values()
+                    .any(|registered| *registered == record.entity_id)
+            }) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D ACT class tag conflicts with its MetaStream type: {stream}@{start}"
                 )));
@@ -155,7 +161,9 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
         let meta_entry = scan
             .entries
             .iter()
-            .find(|candidate| candidate.role == role::METASTREAM && candidate.name == meta_name)
+            .find(|candidate| {
+                candidate.role == ContainerRole::Metastream && candidate.name == meta_name
+            })
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D ACT BulkStream has no sibling MetaStream: {}",
@@ -206,7 +214,7 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
             .collect::<Vec<_>>();
         let stream_roots = links
             .iter()
-            .filter(|link| link.tracked_entity_record == 3)
+            .filter(|link| matches!(link, ComponentLink::Root(_)))
             .count();
         if !links.is_empty() && stream_roots != 1 {
             return Err(CodecError::malformed(format_args!(
@@ -219,11 +227,10 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
             .ok_or_else(|| {
                 CodecError::Malformed("F3D ACT component-link count overflows".into())
             })?;
-        root_components.extend(
-            links
-                .into_iter()
-                .filter(|link| link.tracked_entity_record == 3),
-        );
+        root_components.extend(links.into_iter().filter_map(|link| match link {
+            ComponentLink::Root(root) => Some(root),
+            ComponentLink::NonRoot => None,
+        }));
 
         entities.extend(merge_entities(&entry.name, table, groups)?);
         guids.extend(stream_guids);
@@ -251,9 +258,8 @@ fn table_payload_offset(bytes: &[u8], frame: &RecordFrame) -> Option<usize> {
 
 struct TableEntry {
     record_index: u32,
-    record_index_offset: usize,
+    row: ActTableRow,
     entity_id: String,
-    entity_id_offset: usize,
 }
 
 struct DecodedTable {
@@ -299,18 +305,14 @@ fn decode_table(
         }
         let record_index =
             View::u32_le_at(bytes, index_offset).ok_or_else(|| malformed("entry index"))?;
-        let entity_id_offset = entity_length_offset
-            .checked_add(4)
-            .ok_or_else(|| malformed("entity key"))?;
         let (entity_id, end) = lp_utf16_bounded(bytes, entity_length_offset, 1..=1024)
             .filter(|(_, end)| *end <= frame.end)
             .filter(|(entity_id, _)| is_entity_key(entity_id))
             .ok_or_else(|| malformed("entity key"))?;
         entries.push(TableEntry {
             record_index,
-            record_index_offset: index_offset,
+            row: ActTableRow::new(index_offset as u64).map_err(CodecError::malformed)?,
             entity_id,
-            entity_id_offset,
         });
         cursor = end;
     }
@@ -321,15 +323,15 @@ fn decode_table(
     {
         let byte_offset = cursor;
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
-        guids.push(ActGuid {
-            id: crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
-            byte_offset: byte_offset as u64,
-            guid_offset: byte_offset
-                .checked_add(4)
-                .ok_or_else(|| malformed("GUID offset"))? as u64,
-            ordinal,
-            guid,
-        });
+        guids.push(
+            ActGuid::new(
+                crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
+                byte_offset as u64,
+                ordinal,
+                guid,
+            )
+            .map_err(|_| malformed("GUID offset"))?,
+        );
         cursor = end;
     }
 
@@ -346,18 +348,17 @@ fn decode_table(
     let mut table_references = Vec::with_capacity(reference_count);
     for ordinal in 0..reference_count {
         let byte_offset = cursor;
-        let target_record_offset = cursor
-            .checked_add(1)
-            .ok_or_else(|| malformed("table reference"))?;
         let (target_record, end) =
             marker_ref(bytes, cursor, 6, frame.end).ok_or_else(|| malformed("table reference"))?;
-        table_references.push(ActTableReference {
-            id: crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
-            ordinal: u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
-            byte_offset: byte_offset as u64,
-            target_record,
-            target_record_offset: target_record_offset as u64,
-        });
+        table_references.push(
+            ActTableReference::new(
+                crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
+                u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
+                byte_offset as u64,
+                target_record,
+            )
+            .map_err(CodecError::malformed)?,
+        );
         cursor = end;
     }
 
@@ -384,21 +385,16 @@ fn decode_table(
         let (guid, end) = lp_utf16_bounded(bytes, after_name, 36..=36)
             .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
             .ok_or_else(|| malformed("channel-registry GUID"))?;
-        registry_channels.push(ActRegistryChannel {
-            id: crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
-            ordinal: u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
-            byte_offset: byte_offset as u64,
-            name,
-            name_offset: byte_offset
-                .checked_add(4)
-                .ok_or_else(|| malformed("channel-registry name offset"))?
-                as u64,
-            guid,
-            guid_offset: after_name
-                .checked_add(4)
-                .ok_or_else(|| malformed("channel-registry GUID offset"))?
-                as u64,
-        });
+        registry_channels.push(
+            ActRegistryChannel::new(
+                crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
+                u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
+                byte_offset as u64,
+                name,
+                guid,
+            )
+            .map_err(|_| malformed("channel-registry entry"))?,
+        );
         cursor = end;
     }
     if cursor != frame.end {
@@ -415,13 +411,10 @@ fn decode_table(
 struct ChannelGroup {
     record_index: u32,
     record_index_offset: usize,
-    entity_id: Option<String>,
-    entity_id_offset: Option<usize>,
+    entity_id: Option<Located<String, usize>>,
     class_tag: String,
-    channels: BTreeMap<String, String>,
-    guid_offsets: BTreeMap<String, u64>,
-    class_tail: Vec<u8>,
-    class_tail_offset: Option<u64>,
+    channels: BTreeMap<String, Located<crate::records::DesignGuidText>>,
+    class_tail: Option<ActClassTail>,
 }
 
 fn merge_entities(
@@ -435,17 +428,8 @@ fn merge_entities(
         let entity = ActEntity {
             id: crate::ids::native_scoped_id(stream, "act-entity", record_index),
             record_index,
-            table_record_index_offset: Some(item.record_index_offset as u64),
-            channel_record_index_offset: None,
             entity_id: item.entity_id,
-            table_entity_id_offset: Some(item.entity_id_offset as u64),
-            channel_entity_id_offset: None,
-            in_table: true,
-            channel_class_tag: None,
-            channels: BTreeMap::new(),
-            channel_guid_offsets: BTreeMap::new(),
-            channel_class_tail: Vec::new(),
-            channel_class_tail_offset: None,
+            membership: ActEntityMembership::TableOnly(item.row),
         };
         if by_index.insert(record_index, entity).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -458,50 +442,47 @@ fn merge_entities(
             if group
                 .entity_id
                 .as_ref()
-                .is_some_and(|group_id| entity.entity_id != *group_id)
+                .is_some_and(|group_id| entity.entity_id != group_id.value)
             {
                 return Err(CodecError::malformed(format_args!(
                     "F3D ACTTable entity key conflicts with its change group: {stream}:{}",
                     group.record_index
                 )));
             }
-            if entity.channel_class_tag.is_some() {
+            let attached = ActChannelGroup {
+                record_index_offset: group.record_index_offset as u64,
+                entity_id_offset: group.entity_id.as_ref().map(|id| id.offset as u64),
+                class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
+                channels: group.channels,
+                class_tail: group.class_tail,
+            };
+            if !entity.attach_channel_group(attached) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate F3D ACT change group {stream}:{}",
                     group.record_index
                 )));
             }
-            entity.channel_class_tag = Some(group.class_tag);
-            entity.channels = group.channels;
-            entity.channel_record_index_offset = Some(group.record_index_offset as u64);
-            entity.channel_entity_id_offset = group.entity_id_offset.map(|offset| offset as u64);
-            entity.channel_guid_offsets = group.guid_offsets;
-            entity.channel_class_tail = group.class_tail;
-            entity.channel_class_tail_offset = group.class_tail_offset;
         } else if let Some(entity_id) = group.entity_id {
             by_index.insert(
                 group.record_index,
                 ActEntity {
                     id: crate::ids::native_scoped_id(stream, "act-entity", group.record_index),
                     record_index: group.record_index,
-                    table_record_index_offset: None,
-                    channel_record_index_offset: Some(group.record_index_offset as u64),
-                    entity_id,
-                    table_entity_id_offset: None,
-                    channel_entity_id_offset: group.entity_id_offset.map(|offset| offset as u64),
-                    in_table: false,
-                    channel_class_tag: Some(group.class_tag),
-                    channels: group.channels,
-                    channel_guid_offsets: group.guid_offsets,
-                    channel_class_tail: group.class_tail,
-                    channel_class_tail_offset: group.class_tail_offset,
+                    entity_id: entity_id.value,
+                    membership: ActEntityMembership::GroupOnly(ActChannelGroup {
+                        record_index_offset: group.record_index_offset as u64,
+                        entity_id_offset: Some(entity_id.offset as u64),
+                        class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
+                        channels: group.channels,
+                        class_tail: group.class_tail,
+                    }),
                 },
             );
         }
     }
     if let Some(entity) = by_index
         .values()
-        .find(|entity| entity.channel_class_tag.is_none())
+        .find(|entity| entity.channel_group().is_none())
     {
         return Err(CodecError::malformed(format_args!(
             "F3D ACTTable reference has no change group: {stream}:{}",
@@ -534,7 +515,6 @@ fn decode_channel_group(
     };
     let mut cursor = count_offset + 4;
     let mut channels = BTreeMap::new();
-    let mut guid_offsets = BTreeMap::new();
     for _ in 0..count {
         let Some((name, after_name)) = lp_ascii_strict(bytes, cursor, 1..=128)
             .filter(|(name, after)| *after <= frame.end && name.is_ascii())
@@ -546,67 +526,73 @@ fn decode_channel_group(
         else {
             return Ok(None);
         };
-        if channels.insert(name.clone(), guid).is_some() {
+        if channels
+            .insert(
+                name.clone(),
+                Located {
+                    value: guid.try_into().map_err(CodecError::malformed)?,
+                    offset: (after_name + 4) as u64,
+                },
+            )
+            .is_some()
+        {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D ACT channel {name:?}: {stream}@{}",
                 frame.start
             )));
         }
-        guid_offsets.insert(name, (after_name + 4) as u64);
         cursor = after_guid;
     }
-    let (entity_id, entity_id_offset, end) = if let Some((entity_id, end)) =
-        lp_utf16_bounded(bytes, cursor, 1..=1024)
-            .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
+    let (entity_id, end) = if let Some((entity_id, end)) = lp_utf16_bounded(bytes, cursor, 1..=1024)
+        .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
     {
-        (Some(entity_id), Some(cursor + 4), end)
+        (
+            Some(Located {
+                value: entity_id,
+                offset: cursor + 4,
+            }),
+            end,
+        )
     } else {
-        (None, None, cursor)
+        (None, cursor)
     };
     let remainder = &bytes[end..frame.end];
-    let (class_tail, class_tail_offset) = if remainder.iter().all(|byte| *byte == 0) {
-        (Vec::new(), None)
+    let class_tail = if remainder.iter().all(|byte| *byte == 0) {
+        None
     } else {
-        (remainder.to_vec(), Some(end as u64))
+        Some(ActClassTail::new(remainder.to_vec(), end as u64).map_err(CodecError::malformed)?)
     };
     Ok(Some(ChannelGroup {
         record_index: frame.record_index,
         record_index_offset: frame.record_index_offset,
         entity_id,
-        entity_id_offset,
         class_tag: frame.class_tag.clone(),
         channels,
-        guid_offsets,
         class_tail,
-        class_tail_offset,
     }))
 }
 
-fn decode_component_link(
-    bytes: &[u8],
-    frame: &RecordFrame,
-    stream: &str,
-) -> Option<ActRootComponent> {
+enum ComponentLink {
+    Root(ActRootComponent),
+    NonRoot,
+}
+
+fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Option<ComponentLink> {
     let mut cursor = frame.payload_offset.checked_add(10)?;
     if cursor > frame.end || bytes.get(frame.payload_offset..cursor)? != [0; 10] {
         return None;
     }
-    let instance_root_record_offset = cursor.checked_add(1)?;
     let (instance_root_record, next) = marker_ref(bytes, cursor, 6, frame.end)?;
     cursor = next;
-    let entity_id_offset = cursor.checked_add(4)?;
     let (entity_id, next) = lp_utf16_bounded(bytes, cursor, 1..=1024)?;
     if next > frame.end || !is_entity_key(&entity_id) {
         return None;
     }
     cursor = next;
-    let tracked_entity_record_offset = cursor.checked_add(1)?;
     let (tracked_entity_record, next) = marker_ref(bytes, cursor, 5, frame.end)?;
     cursor = next;
-    let registry_flag_offset = cursor.checked_add(1)?;
     let (registry_flag, next) = marker_ref(bytes, cursor, 0, frame.end)?;
     cursor = next;
-    let display_name_offset = cursor.checked_add(4)?;
     let (display_name, next) = lp_utf16_bounded(bytes, cursor, 0..=1024)?;
     if next > frame.end {
         return None;
@@ -626,25 +612,26 @@ fn decode_component_link(
     if !bytes.get(end..frame.end)?.iter().all(|byte| *byte == 0) {
         return None;
     }
-    Some(ActRootComponent {
-        id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
-        byte_offset: frame.start as u64,
-        record_index: frame.record_index,
-        record_index_offset: frame.record_index_offset as u64,
-        class_tag: frame.class_tag.clone(),
-        instance_root_record,
-        instance_root_record_offset: instance_root_record_offset as u64,
-        tracked_entity_record,
-        tracked_entity_record_offset: tracked_entity_record_offset as u64,
-        components_root_record,
-        components_root_record_offset: (components_marker + 1) as u64,
-        registry_flag,
-        registry_flag_offset: registry_flag_offset as u64,
+    let registry_flag = crate::records::ActRegistryFlag::from_code(registry_flag)?;
+    if tracked_entity_record != 3 {
+        return Some(ComponentLink::NonRoot);
+    }
+    let layout = crate::records::ActRootLayout::new(
+        frame.start as u64,
         entity_id,
-        entity_id_offset: entity_id_offset as u64,
         display_name,
-        display_name_offset: display_name_offset as u64,
-    })
+        (components_marker - cursor) as u64,
+    )
+    .ok()?;
+    Some(ComponentLink::Root(ActRootComponent {
+        id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
+        record_index: frame.record_index,
+        class_tag: frame.class_tag.clone().try_into().ok()?,
+        instance_root_record,
+        components_root_record,
+        registry_flag,
+        layout,
+    }))
 }
 
 /// Whether `key` has the ACT entity-key form `<segment id>_<entity id>`.
@@ -704,9 +691,8 @@ mod tests {
     fn table_entry(entity_id: &str) -> TableEntry {
         TableEntry {
             record_index: 7,
-            record_index_offset: 20,
+            row: ActTableRow::new(20).unwrap(),
             entity_id: entity_id.into(),
-            entity_id_offset: 40,
         }
     }
 
@@ -714,16 +700,21 @@ mod tests {
         ChannelGroup {
             record_index: 7,
             record_index_offset: 100,
-            entity_id: Some(entity_id.into()),
-            entity_id_offset: Some(200),
+            entity_id: Some(Located {
+                value: entity_id.into(),
+                offset: 200,
+            }),
             class_tag: "261".into(),
             channels: BTreeMap::from([(
                 "Appearance".into(),
-                "11111111-2222-3333-4444-555555555555".into(),
+                Located {
+                    value: String::from("11111111-2222-3333-4444-555555555555")
+                        .try_into()
+                        .unwrap(),
+                    offset: 120,
+                },
             )]),
-            guid_offsets: BTreeMap::from([("Appearance".into(), 120)]),
-            class_tail: Vec::new(),
-            class_tail_offset: None,
+            class_tail: None,
         }
     }
 
@@ -737,7 +728,7 @@ mod tests {
         )
         .expect("matching table and change group");
         assert_eq!(entities.len(), 1);
-        assert!(entities[0].in_table);
+        assert!(entities[0].in_table());
         assert_eq!(entities[0].record_index, 7);
 
         let mismatch = merge_entities(
@@ -764,16 +755,15 @@ mod tests {
 
         let group_only = merge_entities(stream, Vec::new(), vec![channel_group("0_985")])
             .expect("a change group need not have an inline ACTTable row");
-        assert!(!group_only[0].in_table);
-        assert!(group_only[0].table_record_index_offset.is_none());
+        assert!(!group_only[0].in_table());
+        assert!(group_only[0].table_record_index_offset().is_none());
 
         let mut table_keyed_group = channel_group("0_985");
         table_keyed_group.entity_id = None;
-        table_keyed_group.entity_id_offset = None;
         let entities = merge_entities(stream, vec![table_entry("0_985")], vec![table_keyed_group])
             .expect("the table can supply an omitted group key");
         assert_eq!(entities[0].entity_id, "0_985");
-        assert!(entities[0].channel_entity_id_offset.is_none());
+        assert!(entities[0].channel_entity_id_offset().is_none());
     }
 
     #[test]
@@ -800,9 +790,11 @@ mod tests {
             .expect("well-framed group")
             .expect("zero padding belongs to the group frame");
         assert_eq!(group.record_index, 7);
-        assert_eq!(group.entity_id.as_deref(), Some("0_985"));
-        assert!(group.class_tail.is_empty());
-        assert!(group.class_tail_offset.is_none());
+        assert_eq!(
+            group.entity_id.as_ref().map(|id| id.value.as_str()),
+            Some("0_985")
+        );
+        assert!(group.class_tail.is_none());
 
         let keyless_frame = RecordFrame {
             start: frame.start,
@@ -824,7 +816,8 @@ mod tests {
         let group = decode_channel_group(&bytes, &frame, "synthetic")
             .expect("well-framed group with a class tail")
             .expect("class tail follows the complete channel grammar");
-        assert_eq!(group.class_tail, class_tail);
-        assert_eq!(group.class_tail_offset, Some(tail_at as u64));
+        let tail = group.class_tail.as_ref().unwrap();
+        assert_eq!(tail.bytes(), class_tail);
+        assert_eq!(tail.offset(), tail_at as u64);
     }
 }

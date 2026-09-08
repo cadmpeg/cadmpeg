@@ -73,33 +73,43 @@ fn text_frame_curve_records(
     relations
         .iter()
         .filter_map(|relation| {
-            let crate::records::SketchPatternDefinition::TextFrame { text_reference } =
-                relation.pattern.as_ref()?
+            let pattern = relation.definition.pattern();
+            let Some(crate::records::SketchPatternDefinition::TextFrame { text_reference }) =
+                pattern
             else {
                 return None;
             };
             let scope = native_stream(&relation.id)?.to_owned();
-            if relation.unknown_constraint_bits != 0
-                || relation.constraint_kinds != [SketchConstraintKind::TextFrame]
-                || relation.members.first() != Some(text_reference)
-                || relation.auxiliary_references != [*text_reference]
+            if relation.unknown_constraint_bits() != 0
+                || relation.constraint_kinds().len() != 1
+                || relation
+                    .members
+                    .first()
+                    .map(|member| member.reference.record_index())
+                    != Some(*text_reference)
+                || !relation
+                    .auxiliary_references
+                    .values()
+                    .copied()
+                    .eq([*text_reference])
                 || relation.members.len() < 2
-                || relation.return_members != relation.members[1..]
+                || relation.return_member_indices() != relation.member_indices()[1..]
                 || text_owners.get(&(scope.clone(), *text_reference))
                     != Some(&relation.owner_reference)
             {
                 return None;
             }
-            if !relation.return_members.iter().all(|record_index| {
-                curve_owners.get(&(scope.clone(), *record_index)) == Some(&relation.owner_reference)
+            if !relation.return_members.iter().all(|member| {
+                curve_owners.get(&(scope.clone(), member.reference.record_index()))
+                    == Some(&relation.owner_reference)
             }) {
                 return None;
             }
             Some(
                 relation
-                    .return_members
-                    .iter()
-                    .map(move |record_index| (scope.clone(), *record_index)),
+                    .return_member_indices()
+                    .into_iter()
+                    .map(move |record_index| (scope.clone(), record_index)),
             )
         })
         .flatten()
@@ -128,7 +138,7 @@ pub fn project_sketch_design(
             Some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 placement,
             ))
@@ -146,14 +156,14 @@ pub fn project_sketch_design(
     let mut sketches = placements
         .iter()
         .filter(|placement| {
-            !u32::try_from(placement.entity_suffix).is_ok_and(|owner| {
+            !u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
                 native_stream(&placement.id)
                     .is_some_and(|scope| spatial_owners.contains(&(scope.to_owned(), owner)))
             })
         })
         .map(|placement| Sketch {
             id: neutral_sketch_id(placement),
-            name: Some(placement.entity_id.clone()),
+            name: Some(placement.entity_id.as_str().to_owned()),
             configuration: None,
             visible: placement
                 .visibility
@@ -161,19 +171,19 @@ pub fn project_sketch_design(
                 .map(|visibility| visibility.visible),
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(
-                    placement.transform[0][3] * placement_origin_scale(placement),
-                    placement.transform[1][3] * placement_origin_scale(placement),
-                    placement.transform[2][3] * placement_origin_scale(placement),
+                    placement.transform()[0][3] * placement_origin_scale(placement),
+                    placement.transform()[1][3] * placement_origin_scale(placement),
+                    placement.transform()[2][3] * placement_origin_scale(placement),
                 ),
                 normal: Vector3::new(
-                    placement.transform[0][2],
-                    placement.transform[1][2],
-                    placement.transform[2][2],
+                    placement.transform()[0][2],
+                    placement.transform()[1][2],
+                    placement.transform()[2][2],
                 ),
                 u_axis: Vector3::new(
-                    placement.transform[0][0],
-                    placement.transform[1][0],
-                    placement.transform[2][0],
+                    placement.transform()[0][0],
+                    placement.transform()[1][0],
+                    placement.transform()[2][0],
                 ),
             },
             profiles: Vec::new(),
@@ -192,20 +202,19 @@ pub fn project_sketch_design(
             }
             let placement = placements_by_suffix.get(&(scope, owner))?;
             let sketch = neutral_sketch_id(placement);
-            Some(SketchEntity {
-                id: point.persistent_id.map_or_else(
-                    || neutral_sketch_record_id(&sketch, point.record_index),
-                    |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
-                ),
-                sketch,
-                construction: false,
-                native_ref: Some(point.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
-                    position: point.coordinates,
-                },
-            })
+            Some(
+                SketchEntity::new(
+                    point.persistent_id().map_or_else(
+                        || neutral_sketch_record_id(&sketch, point.record_index),
+                        |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
+                    ),
+                    sketch,
+                    SketchGeometry::Point {
+                        position: point.coordinates,
+                    },
+                )
+                .with_native_ref(Some(point.id.clone())),
+            )
         })
         .collect::<Vec<_>>();
     entities.extend(curves.iter().filter_map(|curve| {
@@ -262,68 +271,76 @@ pub fn project_sketch_design(
             SketchCurveGeometry::Nurbs {
                 degree,
                 knots,
-                weights,
-                control_points,
+                poles,
                 ..
             } if *degree != 0
-                && usize::try_from(*degree).is_ok_and(|degree| control_points.len() > degree)
-                && control_points.iter().all(planar_point) =>
+                && usize::try_from(*degree).is_ok_and(|degree| poles.point_count() > degree)
+                && poles.points().all(planar_point) =>
             {
                 SketchGeometry::Nurbs {
-                    degree: *degree,
-                    knots: knots.clone(),
-                    control_points: control_points
-                        .iter()
-                        .map(|point| Point2::new(point.x, point.y))
-                        .collect(),
-                    weights: (!weights.is_empty()).then(|| weights.clone()),
-                    periodic: false,
+                    curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                        *degree,
+                        knots.clone(),
+                        poles
+                            .points()
+                            .map(|point| Point2::new(point.x, point.y))
+                            .collect(),
+                        poles
+                            .weights()
+                            .next()
+                            .is_some()
+                            .then(|| poles.weights().copied().collect()),
+                        false,
+                    )
+                    .ok()?,
                 }
             }
             _ => return None,
         };
         let sketch = neutral_sketch_id(placement);
-        Some(SketchEntity {
-            id: neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
-            sketch,
-            construction: text_frame_curves.contains(&(scope.to_owned(), curve.record_index)),
-            native_ref: Some(curve.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry,
-        })
+        Some(
+            SketchEntity::new(
+                neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                sketch,
+                geometry,
+            )
+            .with_construction(text_frame_curves.contains(&(scope.to_owned(), curve.record_index)))
+            .with_native_ref(Some(curve.id.clone())),
+        )
     }));
     entities.extend(texts.iter().filter_map(|text| {
         let scope = native_stream(&text.id)?;
         let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
         let sketch = neutral_sketch_id(placement);
-        Some(SketchEntity {
-            id: text.persistent_id.map_or_else(
-                || neutral_sketch_record_id(&sketch, text.record_index),
-                |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
-            ),
-            sketch,
-            construction: false,
-            native_ref: Some(text.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Text {
-                text: text.text.clone(),
-                font_family: text.font_family.clone(),
-                font_weight: text.font_weight,
-                height: Length(text.height),
-                // The record's `0` does not scale glyph advance to zero, so it
-                // is not a neutral horizontal scale of zero; only a positive
-                // factor carries one.
-                width_factor: text.width_factor.filter(|factor| *factor > 0.0),
-                anchor: text.anchor,
-                rotation: text.rotation.map(cadmpeg_ir::features::Angle),
-                horizontal_alignment: sketch_text_horizontal_alignment(text.horizontal_alignment),
-                vertical_alignment: sketch_text_vertical_alignment(text.vertical_alignment),
-            },
-        })
+        Some(
+            SketchEntity::new(
+                text.persistent_id.map_or_else(
+                    || neutral_sketch_record_id(&sketch, text.record_index),
+                    |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
+                ),
+                sketch,
+                SketchGeometry::Text {
+                    text: text.text.clone(),
+                    font_family: text.font_family.clone(),
+                    font_weight: text.font_weight,
+                    height: Length(text.height),
+                    // The record's `0` does not scale glyph advance to zero, so it
+                    // is not a neutral horizontal scale of zero; only a positive
+                    // factor carries one.
+                    width_factor: text.width_factor().filter(|factor| *factor > 0.0),
+                    placement: text.placement(),
+                    horizontal_alignment: sketch_text_horizontal_alignment(
+                        text.alignment().map(|alignment| alignment.horizontal),
+                    ),
+                    vertical_alignment: sketch_text_vertical_alignment(
+                        text.alignment().map(|alignment| alignment.vertical),
+                    ),
+                },
+            )
+            .with_native_ref(Some(text.id.clone())),
+        )
     }));
-    entities.sort_by(|a, b| a.id.cmp(&b.id));
+    entities.sort_by(|a, b| a.id().cmp(b.id()));
     for sketch in &mut sketches {
         sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
     }
@@ -351,7 +368,7 @@ pub fn project_spatial_sketch_design(
             Some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 placement,
             ))
@@ -381,9 +398,9 @@ pub fn project_spatial_sketch_design(
         // Only the second reference run of a relation record is in semantic
         // order: the control polygon ends with the spline there, and the
         // interleaved first run orders its members by nothing a reader can use.
-        let members = &relation.return_members;
-        if relation.unknown_constraint_bits != 0
-            || relation.constraint_kinds != [SketchConstraintKind::SplineGroup]
+        let members = relation.return_member_indices();
+        if relation.unknown_constraint_bits() != 0
+            || relation.constraint_kinds() != [SketchConstraintKind::SplineGroup]
             || members.len() < 2
             || members.iter().collect::<HashSet<_>>().len() != members.len()
         {
@@ -398,29 +415,28 @@ pub fn project_spatial_sketch_design(
         else {
             continue;
         };
-        let Some(SketchCurveGeometry::Nurbs { control_points, .. }) = curve.geometry.as_ref()
-        else {
+        let Some(SketchCurveGeometry::Nurbs { poles, .. }) = curve.geometry.as_ref() else {
             continue;
         };
         if curve.owner_reference != Some(relation.owner_reference)
-            || control_points.len() != members.len()
+            || poles.point_count() != members.len()
         {
             continue;
         }
         let segments = members[..members.len() - 1]
             .iter()
-            .zip(control_points.windows(2))
-            .map(|(record, points)| {
+            .zip(poles.points().zip(poles.points().skip(1)))
+            .map(|(record, (first, second))| {
                 let member = curves_by_record.get(&(scope, *record))?;
                 if member.owner_reference != Some(relation.owner_reference) {
                     return None;
                 }
                 match member.geometry.as_ref() {
-                    None => Some((*record, [points[0], points[1]])),
+                    None => Some((*record, [*first, *second])),
                     Some(SketchCurveGeometry::Line { start, end, .. })
-                        if start == &points[0] && end == &points[1] =>
+                        if start == first && end == second =>
                     {
-                        Some((*record, [points[0], points[1]]))
+                        Some((*record, [*first, *second]))
                     }
                     _ => None,
                 }
@@ -441,31 +457,31 @@ pub fn project_spatial_sketch_design(
     let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
         let origin_scale = placement_origin_scale(placement);
         Point3::new(
-            placement.transform[0][0] * point.x
-                + placement.transform[0][1] * point.y
-                + placement.transform[0][2] * point.z
-                + placement.transform[0][3] * origin_scale,
-            placement.transform[1][0] * point.x
-                + placement.transform[1][1] * point.y
-                + placement.transform[1][2] * point.z
-                + placement.transform[1][3] * origin_scale,
-            placement.transform[2][0] * point.x
-                + placement.transform[2][1] * point.y
-                + placement.transform[2][2] * point.z
-                + placement.transform[2][3] * origin_scale,
+            placement.transform()[0][0] * point.x
+                + placement.transform()[0][1] * point.y
+                + placement.transform()[0][2] * point.z
+                + placement.transform()[0][3] * origin_scale,
+            placement.transform()[1][0] * point.x
+                + placement.transform()[1][1] * point.y
+                + placement.transform()[1][2] * point.z
+                + placement.transform()[1][3] * origin_scale,
+            placement.transform()[2][0] * point.x
+                + placement.transform()[2][1] * point.y
+                + placement.transform()[2][2] * point.z
+                + placement.transform()[2][3] * origin_scale,
         )
     };
     let transform_vector = |placement: &DesignSketchPlacement, vector: &Vector3| {
         Vector3::new(
-            placement.transform[0][0] * vector.x
-                + placement.transform[0][1] * vector.y
-                + placement.transform[0][2] * vector.z,
-            placement.transform[1][0] * vector.x
-                + placement.transform[1][1] * vector.y
-                + placement.transform[1][2] * vector.z,
-            placement.transform[2][0] * vector.x
-                + placement.transform[2][1] * vector.y
-                + placement.transform[2][2] * vector.z,
+            placement.transform()[0][0] * vector.x
+                + placement.transform()[0][1] * vector.y
+                + placement.transform()[0][2] * vector.z,
+            placement.transform()[1][0] * vector.x
+                + placement.transform()[1][1] * vector.y
+                + placement.transform()[1][2] * vector.z,
+            placement.transform()[2][0] * vector.x
+                + placement.transform()[2][1] * vector.y
+                + placement.transform()[2][2] * vector.z,
         )
     };
 
@@ -528,37 +544,42 @@ pub fn project_spatial_sketch_design(
                     SketchCurveGeometry::Nurbs {
                         degree,
                         knots,
-                        weights,
-                        control_points,
+                        poles,
                         ..
                     } if *degree != 0
                         && usize::try_from(*degree)
-                            .is_ok_and(|degree| control_points.len() > degree) =>
+                            .is_ok_and(|degree| poles.point_count() > degree) =>
                     {
                         SpatialSketchGeometry::Nurbs {
-                            degree: *degree,
-                            knots: knots.clone(),
-                            control_points: control_points
-                                .iter()
-                                .map(|point| transform_point(placement, point))
-                                .collect(),
-                            weights: (!weights.is_empty()).then(|| weights.clone()),
-                            periodic: false,
+                            curve: cadmpeg_ir::geometry::NurbsCurve::new(
+                                *degree,
+                                knots.clone(),
+                                poles
+                                    .points()
+                                    .map(|point| transform_point(placement, point))
+                                    .collect(),
+                                poles
+                                    .weights()
+                                    .next()
+                                    .is_some()
+                                    .then(|| poles.weights().copied().collect()),
+                                false,
+                            )
+                            .ok()?,
                         }
                     }
                     _ => return None,
                 }
             };
             let sketch = neutral_spatial_sketch_id(placement);
-            Some(SpatialSketchEntity {
-                id: neutral_spatial_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
-                sketch,
-                construction: false,
-                native_ref: Some(curve.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry,
-            })
+            Some(
+                SpatialSketchEntity::new(
+                    neutral_spatial_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                    sketch,
+                    geometry,
+                )
+                .with_native_ref(Some(curve.id.clone())),
+            )
         })
         .collect::<Vec<_>>();
     entities.extend(points.iter().filter_map(|point| {
@@ -570,54 +591,55 @@ pub fn project_spatial_sketch_design(
         let placement = placements_by_suffix.get(&(scope, owner))?;
         let sketch = neutral_spatial_sketch_id(placement);
         let depth = sketch_point_depth(point)?;
-        Some(SpatialSketchEntity {
-            id: point.persistent_id.map_or_else(
-                || neutral_spatial_sketch_record_id(&sketch, point.record_index),
-                |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
-            ),
-            sketch,
-            construction: false,
-            native_ref: Some(point.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::Point {
-                position: transform_point(
-                    placement,
-                    &Point3::new(point.coordinates.u, point.coordinates.v, depth),
+        Some(
+            SpatialSketchEntity::new(
+                point.persistent_id().map_or_else(
+                    || neutral_spatial_sketch_record_id(&sketch, point.record_index),
+                    |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
                 ),
-            },
-        })
+                sketch,
+                SpatialSketchGeometry::Point {
+                    position: transform_point(
+                        placement,
+                        &Point3::new(point.coordinates.u, point.coordinates.v, depth),
+                    ),
+                },
+            )
+            .with_native_ref(Some(point.id.clone())),
+        )
     }));
     entities.extend(surfaces.iter().filter_map(|surface| {
         let scope = native_stream(&surface.id)?;
         let owner = surface.owner_reference?;
         let placement = placements_by_suffix.get(&(scope, owner))?;
         let sketch = neutral_spatial_sketch_id(placement);
-        Some(SpatialSketchEntity {
-            id: neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
-            sketch,
-            construction: false,
-            native_ref: Some(surface.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::NurbsSurface {
-                u_degree: surface.u_degree,
-                v_degree: surface.v_degree,
-                u_knots: surface.u_knots.clone(),
-                v_knots: surface.v_knots.clone(),
-                control_points: surface
-                    .control_points
-                    .iter()
-                    .map(|row| {
-                        row.iter()
-                            .map(|point| transform_point(placement, point))
-                            .collect()
-                    })
-                    .collect(),
-            },
-        })
+        Some(
+            SpatialSketchEntity::new(
+                neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
+                sketch,
+                SpatialSketchGeometry::NurbsSurface {
+                    surface: cadmpeg_ir::geometry::BsplineSurface::new(
+                        surface.u_degree,
+                        surface.v_degree,
+                        surface.u_knots.clone(),
+                        surface.v_knots.clone(),
+                        surface
+                            .control_points
+                            .iter()
+                            .map(|row| {
+                                row.iter()
+                                    .map(|point| transform_point(placement, point))
+                                    .collect()
+                            })
+                            .collect(),
+                    )
+                    .ok()?,
+                },
+            )
+            .with_native_ref(Some(surface.id.clone())),
+        )
     }));
-    entities.sort_by(|a, b| a.id.cmp(&b.id));
+    entities.sort_by(|a, b| a.id().cmp(b.id()));
     let spatial_ids = entities
         .iter()
         .map(|entity| entity.sketch.clone())
@@ -630,7 +652,7 @@ pub fn project_spatial_sketch_design(
             SpatialSketch {
                 profiles: closed_spatial_sketch_profiles(&id, &entities, linear_tolerance),
                 id,
-                name: Some(placement.entity_id.clone()),
+                name: Some(placement.entity_id.as_str().to_owned()),
                 configuration: None,
                 visible: placement
                     .visibility
@@ -669,7 +691,7 @@ pub fn project_spatial_sketch_constraints(
             spatial_sketches.contains(&id).then_some((
                 (
                     native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_suffix).ok()?,
+                    u32::try_from(placement.entity_id.suffix()).ok()?,
                 ),
                 (id, placement),
             ))
@@ -702,7 +724,7 @@ pub fn project_spatial_sketch_constraints(
     let mut constraints = relations
         .iter()
         .filter_map(|relation| {
-            if relation.unknown_constraint_bits != 0 || relation.constraint_kinds.len() != 1 {
+            if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
                 return None;
             }
             let scope = native_stream(&relation.id)?;
@@ -713,17 +735,21 @@ pub fn project_spatial_sketch_constraints(
             let semantic_entities = relation
                 .return_members
                 .iter()
-                .map(|record_index| projected.get(&(scope, *record_index)).copied())
+                .map(|member| {
+                    projected
+                        .get(&(scope, member.reference.record_index()))
+                        .copied()
+                })
                 .collect::<Option<Vec<_>>>()?;
             let members = semantic_entities
                 .iter()
-                .map(|entity| entity.id.clone())
+                .map(|entity| entity.id().clone())
                 .collect::<Vec<_>>();
             let distinct = members.iter().collect::<HashSet<_>>();
             if distinct.len() != members.len() {
                 return None;
             }
-            let definition = match relation.constraint_kinds[0] {
+            let definition = match relation.constraint_kinds()[0] {
                 SketchConstraintKind::Coincident => {
                     let [first, second] = semantic_entities.as_slice() else {
                         return None;
@@ -741,8 +767,8 @@ pub fn project_spatial_sketch_constraints(
                     };
                     if let Some((point, surface)) = point_on_surface {
                         Definition::PointOnSurface {
-                            point: point.id.clone(),
-                            surface: surface.id.clone(),
+                            point: point.id().clone(),
+                            surface: surface.id().clone(),
                         }
                     } else {
                         let (
@@ -775,8 +801,8 @@ pub fn project_spatial_sketch_constraints(
                             return None;
                         }
                         Definition::Coincident {
-                            first: first.id.clone(),
-                            second: second.id.clone(),
+                            first: first.id().clone(),
+                            second: second.id().clone(),
                         }
                     }
                 }
@@ -800,8 +826,8 @@ pub fn project_spatial_sketch_constraints(
                         return None;
                     }
                     Definition::Tangent {
-                        first: first.id.clone(),
-                        second: second.id.clone(),
+                        first: first.id().clone(),
+                        second: second.id().clone(),
                     }
                 }
                 SketchConstraintKind::Midpoint => {
@@ -836,8 +862,8 @@ pub fn project_spatial_sketch_constraints(
                         return None;
                     }
                     Definition::Midpoint {
-                        point: point.id.clone(),
-                        entity: line.id.clone(),
+                        point: point.id().clone(),
+                        entity: line.id().clone(),
                     }
                 }
                 SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical => {
@@ -847,16 +873,16 @@ pub fn project_spatial_sketch_constraints(
                     let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
                         return None;
                     };
-                    let direction = match relation.constraint_kinds[0] {
+                    let direction = match relation.constraint_kinds()[0] {
                         SketchConstraintKind::Horizontal => Vector3::new(
-                            placement.transform[0][0],
-                            placement.transform[1][0],
-                            placement.transform[2][0],
+                            placement.transform()[0][0],
+                            placement.transform()[1][0],
+                            placement.transform()[2][0],
                         ),
                         SketchConstraintKind::Vertical => Vector3::new(
-                            placement.transform[0][1],
-                            placement.transform[1][1],
-                            placement.transform[2][1],
+                            placement.transform()[0][1],
+                            placement.transform()[1][1],
+                            placement.transform()[2][1],
                         ),
                         _ => unreachable!(),
                     };
@@ -869,7 +895,7 @@ pub fn project_spatial_sketch_constraints(
                         return None;
                     }
                     Definition::ParallelToDirection {
-                        entity: entity.id.clone(),
+                        entity: entity.id().clone(),
                         direction,
                     }
                 }

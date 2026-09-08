@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section geometry conversion from live and saved section entities.
 
+use super::axis::SectionAxis;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
@@ -9,12 +11,13 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
 
 use super::super::sketch_ids::sketch_entity_id;
-use super::super::sketch_transfer::{
-    saved_section_ordinary_geometry_allowed, section_saved_entity, semantic_saved_section_entities,
-    unique_saved_section_internal_ids,
-};
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
+use crate::decode::sketch_transfer::identity::{
+    saved_section_ordinary_geometry_allowed, semantic_saved_section_entities,
+    unique_saved_section_internal_ids,
+};
+use crate::decode::sketch_transfer::loci::section_saved_entity;
 
 const EPS_POINT_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
@@ -28,9 +31,11 @@ pub(crate) fn section_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-    let start = points.get(&segment.point_ids[0])?;
-    let end = points.get(&segment.point_ids[1])?;
+    let crate::feature::FeatureSegmentKind::Line([start, end]) = segment.kind else {
+        return None;
+    };
+    let start = points.get(&start)?;
+    let end = points.get(&end)?;
     let scale = start
         .iter()
         .chain(end)
@@ -48,8 +53,10 @@ pub(crate) fn section_point_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Point).then_some(())?;
-    let position = points.get(&segment.point_ids[0])?;
+    let crate::feature::FeatureSegmentKind::Point(point) = segment.kind else {
+        return None;
+    };
+    let position = points.get(&point)?;
     Some(SketchGeometry::Point {
         position: cadmpeg_ir::math::Point2::new(position[0], position[1]),
     })
@@ -59,11 +66,12 @@ pub(crate) fn section_arc_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Arc && segment.arc_orientation == Some(0))
-        .then_some(())?;
+    (matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+        && segment.arc_orientation == Some(0))
+    .then_some(())?;
     let center = points.get(&segment.center_id?)?;
-    let first = points.get(&segment.point_ids[0])?;
-    let second = points.get(&segment.point_ids[1])?;
+    let first = points.get(&segment.point_ids()[0])?;
+    let second = points.get(&segment.point_ids()[1])?;
     let offset = |point: &[f64; 2]| [point[0] - center[0], point[1] - center[1]];
     let first_offset = offset(first);
     let second_offset = offset(second);
@@ -170,13 +178,13 @@ pub(crate) fn resolved_section_reference_line_geometry(
     };
     let fixed_coordinate = section_line_entity_fixed_coordinate(definition, segment.external_id)?;
     let [Some(first), Some(second)] =
-        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate])
+        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate.index()])
     else {
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
     ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale).then(|| {
-        if fixed_coordinate == 0 {
+        if fixed_coordinate == SectionAxis::U {
             SketchGeometry::ReferenceLine {
                 origin: Point2::new(first, 0.0),
                 direction: Point2::new(0.0, 1.0),
@@ -203,7 +211,7 @@ pub(crate) fn saved_section_line_geometry(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)).then_some(())?;
     saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
     let order_table = definition.order_table.as_ref()?;
     let internal_id = order_table
@@ -211,7 +219,7 @@ pub(crate) fn saved_section_line_geometry(
         .or_else(|| {
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
-            let segments = &segment_table.rows;
+            let segments = segment_table.rows.ordinary().collect::<Vec<_>>();
             let position = segments
                 .iter()
                 .position(|candidate| candidate.external_id == segment.external_id)?;
@@ -251,11 +259,9 @@ pub(crate) fn saved_section_line_geometry(
                 .iter()
                 .map(|row| row.internal_id)
                 .collect::<BTreeSet<_>>();
-            let segment_ids = segment_table
-                .rows
-                .iter()
+            let segment_ids = segment_table.rows.ordinary()
                 .filter(|candidate| {
-                    candidate.kind == crate::feature::FeatureSegmentKind::Line
+                    matches!(candidate.kind, crate::feature::FeatureSegmentKind::Line(_))
                         && trimmed_external_ids.contains(&candidate.external_id)
                         && !ordered_external_ids.contains(&candidate.external_id)
                 })
@@ -301,8 +307,9 @@ pub(crate) fn saved_section_arc_record<'a>(
     definition: &'a crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<&'a crate::feature::FeatureSavedArc> {
-    (segment.kind == crate::feature::FeatureSegmentKind::Arc && segment.arc_orientation == Some(0))
-        .then_some(())?;
+    (matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+        && segment.arc_orientation == Some(0))
+    .then_some(())?;
     saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
     let internal_id = definition
         .order_table
@@ -416,15 +423,15 @@ pub(crate) fn saved_section_segment_point_coordinates(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<Vec<(u32, [f64; 2])>> {
     match segment.kind {
-        crate::feature::FeatureSegmentKind::Line => {
+        crate::feature::FeatureSegmentKind::Line(_) => {
             let geometry = saved_section_line_geometry(definition, segment)?;
             let [start, end] = saved_geometry_endpoints(&geometry)?;
             Some(vec![
-                (segment.point_ids[0], start),
-                (segment.point_ids[1], end),
+                (segment.point_ids()[0], start),
+                (segment.point_ids()[1], end),
             ])
         }
-        crate::feature::FeatureSegmentKind::Arc => {
+        crate::feature::FeatureSegmentKind::Arc(_) => {
             let SketchGeometry::Arc { center, .. } =
                 saved_section_arc_geometry(definition, segment)?
             else {
@@ -437,12 +444,12 @@ pub(crate) fn saved_section_segment_point_coordinates(
                 return None;
             };
             Some(vec![
-                (segment.point_ids[0], [first_u, first_v]),
-                (segment.point_ids[1], [second_u, second_v]),
+                (segment.point_ids()[0], [first_u, first_v]),
+                (segment.point_ids()[1], [second_u, second_v]),
                 (segment.center_id?, [center.u, center.v]),
             ])
         }
-        crate::feature::FeatureSegmentKind::Point => None,
+        crate::feature::FeatureSegmentKind::Point(_) => None,
     }
 }
 
@@ -451,7 +458,7 @@ pub(crate) fn saved_section_circle_values(
     segment: &crate::feature::FeatureCircleSegment,
 ) -> Option<([f64; 2], f64)> {
     let segments = definition.segments.as_ref()?;
-    (segments.external_id_count(segment.external_id) == 1).then_some(())?;
+    segments.rows.get(segment.external_id)?;
     let entity = section_saved_entity(definition, segment.external_id)?;
     let (_, geometry, _) = saved_section_entity_geometry(entity)?;
     let SketchGeometry::Circle { center, radius } = geometry else {
@@ -584,25 +591,24 @@ pub(crate) fn saved_section_entity_geometry(
                         let scale = first.abs().max(second.abs()).max(1.0);
                         (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
                     });
-            let (start_angle, end_angle) = match conic.parameters {
+            let bounds = match conic.parameters {
                 [Some(start), Some(end)]
                     if start.is_finite()
                         && end.is_finite()
                         && (end - start - std::f64::consts::TAU).abs()
                             <= EPS_PARAMETER_FULL_TURN =>
                 {
-                    (None, None)
+                    None
                 }
-                [Some(start), Some(end)] if start.is_finite() && end > start => (
-                    Some(Angle(start + parameter_shift)),
-                    Some(Angle(end + parameter_shift)),
-                ),
+                [Some(start), Some(end)] if start.is_finite() && end > start => {
+                    Some([Angle(start + parameter_shift), Angle(end + parameter_shift)])
+                }
                 [Some(start), None]
                     if start.is_finite()
                         && start.abs() <= EPS_PARAMETER_FULL_TURN
                         && coincident_endpoints =>
                 {
-                    (None, None)
+                    None
                 }
                 _ => return None,
             };
@@ -613,8 +619,7 @@ pub(crate) fn saved_section_entity_geometry(
                     major_angle: Angle(major_axis[1].atan2(major_axis[0])),
                     major_radius: Length(major_radius),
                     minor_radius: Length(minor_radius),
-                    start_angle,
-                    end_angle,
+                    bounds,
                 },
                 conic.offset,
             ))
@@ -655,9 +660,10 @@ pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f6
                 center.v + radius.0 * end_angle.0.sin(),
             ],
         ]),
-        SketchGeometry::Nurbs { control_points, .. } => {
-            let first = control_points.first()?;
-            let last = control_points.last()?;
+        SketchGeometry::Nurbs { curve } => {
+            let control_points = curve.control_points();
+            let first = control_points[0];
+            let last = control_points[control_points.len() - 1];
             Some([[first.u, first.v], [last.u, last.v]])
         }
         _ => None,
@@ -680,9 +686,9 @@ pub(crate) fn saved_section_missing_line_geometry(
         .collect::<BTreeSet<_>>();
     let missing = segments
         .rows
-        .iter()
+        .ordinary()
         .filter(|candidate| {
-            candidate.kind == crate::feature::FeatureSegmentKind::Line
+            matches!(candidate.kind, crate::feature::FeatureSegmentKind::Line(_))
                 && order.internal_id(candidate.external_id).is_none()
                 && trimmed_external_ids.contains(&candidate.external_id)
         })
@@ -690,11 +696,7 @@ pub(crate) fn saved_section_missing_line_geometry(
     let [missing] = missing.as_slice() else {
         return None;
     };
-    let fixed_coordinate = match missing.vertical_horizontal {
-        Some(0) => 0,
-        Some(1) => 1,
-        _ => return None,
-    };
+    let fixed_coordinate = SectionAxis::from_selector(missing.vertical_horizontal?)?;
 
     let geometries = semantic_saved_section_entities(definition)
         .filter_map(saved_section_entity_geometry)
@@ -749,7 +751,8 @@ pub(crate) fn saved_section_missing_line_geometry(
         .chain(end)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    ((start[fixed_coordinate] - end[fixed_coordinate]).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+    ((start[fixed_coordinate.index()] - end[fixed_coordinate.index()]).abs()
+        <= EPS_PARAMETER_AGREEMENT * scale)
         .then_some(())?;
     Some((
         missing.offset,

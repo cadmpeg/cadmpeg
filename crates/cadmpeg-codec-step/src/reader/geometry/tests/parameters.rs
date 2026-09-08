@@ -30,10 +30,10 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
 
 #[test]
 fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
-    let nurbs = NurbsCurve {
-        degree: 3,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let nurbs = NurbsCurve::new(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
@@ -42,15 +42,27 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
             Point3::new(5.0, 0.0, 0.0),
             Point3::new(3.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     let geometry = CurveGeometry::Nurbs(nurbs.clone());
-    let start_point =
-        nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 0.0)
-            .expect("start point");
-    let end_point = nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 1.0)
-        .expect("end point");
+    let start_point = nurbs_curve_point(
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        None,
+        0.0,
+    )
+    .expect("start point");
+    let end_point = nurbs_curve_point(
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        None,
+        1.0,
+    )
+    .expect("end point");
     let start_seed = curve_endpoint_seed(&geometry, false, 0.0);
     let start = nurbs_curve_parameter_near_point(&nurbs, start_point, 1.0e-6, start_seed)
         .expect("start witness");
@@ -67,7 +79,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
 
 #[test]
 fn surface_parameter_units_follow_the_surface_chart() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = CadIr::empty();
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -92,7 +104,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("plane".into()),
+            &SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
             &plane,
             10.0,
             0.25,
@@ -103,7 +115,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("cylinder".into()),
+            &SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
             &cylinder,
             10.0,
             0.25,
@@ -114,7 +126,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("sphere".into()),
+            &SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
             &sphere,
             10.0,
             0.25,
@@ -125,7 +137,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("transformed".into()),
+            &SurfaceId::mint("test:model:surface#transformed").expect("identity grammar"),
             &transformed,
             10.0,
             0.25,
@@ -136,7 +148,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("unknown".into()),
+            &SurfaceId::mint("test:model:surface#unknown").expect("identity grammar"),
             &SurfaceGeometry::Unknown { record: None },
             10.0,
             0.25,
@@ -148,8 +160,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
 
 #[test]
 fn procedural_surface_units_follow_the_evaluated_parameter_order() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let directrix = CurveId("line".into());
+    let mut ir = CadIr::empty();
+    let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Line {
@@ -158,8 +170,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
         source_object: None,
     });
-    let sweep = SurfaceId("sweep".into());
-    let revolution = SurfaceId("revolution".into());
+    let sweep = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
+    let revolution = SurfaceId::mint("test:model:surface#revolution").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: sweep.clone(),
@@ -172,29 +184,31 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.extend([
-        ProceduralSurface {
-            id: ProceduralSurfaceId("sweep-construction".into()),
-            surface: sweep.clone(),
-            definition: ProceduralSurfaceDefinition::LinearSweep {
+    let _attached = ir.model.add_procedural_surface(
+        sweep.clone(),
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::LinearSweep {
                 directrix: directrix.clone(),
                 direction: Vector3::new(0.0, 1.0, 0.0),
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        },
-        ProceduralSurface {
-            id: ProceduralSurfaceId("revolution-construction".into()),
-            surface: revolution.clone(),
-            definition: ProceduralSurfaceDefinition::AxisRevolution {
+            None,
+        ),
+    );
+    let _attached = ir.model.add_procedural_surface(
+        revolution.clone(),
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
                 axis_direction: Vector3::new(0.0, 0.0, 1.0),
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        },
-    ]);
+            None,
+        ),
+    );
     let length_scale = 0.001;
     let angle_scale = std::f64::consts::PI / 180.0;
 
@@ -202,7 +216,10 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &sweep,
-            &ir.model.surfaces[0].geometry,
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -213,7 +230,10 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &revolution,
-            &ir.model.surfaces[1].geometry,
+            ir.model.surfaces[1]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[1].geometry),
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -224,7 +244,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
 
 #[test]
 fn directrix_parameter_units_follow_step_curve_equations() {
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = CadIr::empty();
     let angle_scale = std::f64::consts::PI / 180.0;
     let parabola = CurveGeometry::Parabola {
         vertex: Point3::new(0.0, 0.0, 0.0),
@@ -239,11 +259,14 @@ fn directrix_parameter_units_follow_step_curve_equations() {
         major_radius: 2.0,
         minor_radius: 1.0,
     };
-    let polyline = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        parameters: None,
-        chordal_deflection: 0.0,
-    };
+    let polyline = CurveGeometry::Polyline(
+        cadmpeg_ir::geometry::PolylineCurve::new(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            0.0,
+        )
+        .unwrap(),
+    );
     let mut active = BTreeSet::new();
 
     assert_eq!(
@@ -262,8 +285,8 @@ fn directrix_parameter_units_follow_step_curve_equations() {
 
 #[test]
 fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let directrix = CurveId("composite".into());
+    let mut ir = CadIr::empty();
+    let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Composite {
@@ -272,28 +295,33 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         },
         source_object: None,
     });
-    let surface = SurfaceId("sweep".into());
+    let surface = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("sweep-construction".into()),
-        surface: surface.clone(),
-        definition: ProceduralSurfaceDefinition::LinearSweep {
-            directrix,
-            direction: Vector3::new(0.0, 1.0, 0.0),
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    let _attached = ir.model.add_procedural_surface(
+        surface.clone(),
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::LinearSweep {
+                directrix,
+                direction: Vector3::new(0.0, 1.0, 0.0),
+            },
+            None,
+        ),
+    );
 
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
             &surface,
-            &ir.model.surfaces[0].geometry,
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
             0.001,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
@@ -304,9 +332,9 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
 
 #[test]
 fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
-    let surface_id = SurfaceId("surface".into());
-    let directrix = CurveId("directrix".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
+    let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Line {
@@ -320,23 +348,28 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("construction".into()),
-        surface: surface_id.clone(),
-        definition: ProceduralSurfaceDefinition::AxisRevolution {
-            directrix,
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+    let _attached = ir.model.add_procedural_surface(
+        surface_id.clone(),
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::AxisRevolution {
+                directrix,
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            None,
+        ),
+    );
 
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
             &surface_id,
-            &ir.model.surfaces[0].geometry,
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
             10.0,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
@@ -371,9 +404,8 @@ fn anisotropic_replica_scaling_conjugates_the_parent_map() {
             origin: Point2::new(1.0, 2.0),
             direction: Point2::new(3.0, 4.0),
         }),
-        transform: Transform2 {
-            rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
-        },
+        transform: Transform2::from_rows([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]])
+            .expect("affine transform"),
     };
     let mut scaled = original.clone();
     assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));

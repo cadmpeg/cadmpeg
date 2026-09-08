@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -85,236 +85,233 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "class_definitions": [
-              {
-                "id": "nx:om-entry-0:class#51",
-                "layout_prefix": [
-                  129,
-                  33
-                ],
-                "layout_terminal": 6,
-                "name": "UGS::FEATURE_RECORD",
-                "ordinal": 0,
-                "registry_suffix": [
-                  129,
-                  33,
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239,
-                  6
-                ],
-                "schema_fingerprint": [
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239
-                ],
-                "section_offset": 108,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 127,
-                "trailing_code": 160
-              },
-              {
-                "id": "nx:om-entry-0:class#83",
-                "name": "UGS::ModlUtils::BooleanComponent",
-                "ordinal": 1,
-                "section_offset": 108,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 159,
-                "trailing_code": 101
-              }
-            ],
-            "feature_body_reference_occurrences": [
-              {
-                "body_object_index": 6466,
-                "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
-                "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-                "ordinal": 0,
-                "raw_body_object_index": [
+          "class_definitions": [
+            {
+              "id": "nx:om-entry-0:class#51",
+              "layout_prefix": [
+                129,
+                33
+              ],
+              "layout_terminal": 6,
+              "name": "UGS::FEATURE_RECORD",
+              "ordinal": 0,
+              "registry_suffix": [
+                129,
+                33,
+                1,
+                35,
+                69,
+                103,
+                137,
+                171,
+                205,
+                239,
+                6
+              ],
+              "schema_fingerprint": [
+                1,
+                35,
+                69,
+                103,
+                137,
+                171,
+                205,
+                239
+              ],
+              "section_offset": 108,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 127,
+              "trailing_code": 160
+            },
+            {
+              "id": "nx:om-entry-0:class#83",
+              "name": "UGS::ModlUtils::BooleanComponent",
+              "ordinal": 1,
+              "section_offset": 108,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 159,
+              "trailing_code": 101
+            }
+          ],
+          "feature_body_reference_occurrences": [
+            {
+              "body_object_index": 6466,
+              "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
+              "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
+              "ordinal": 0,
+              "raw_body_object_index": [
+                144,
+                25,
+                66
+              ],
+              "source_offset": 374
+            }
+          ],
+          "feature_body_references": [
+            {
+              "body_object_index": 6466,
+              "id": "nx:feature-history:body-reference#0000000000-0000000000",
+              "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
+              "raw_body_object_index": [
+                144,
+                25,
+                66
+              ],
+              "source_offset": 374
+            }
+          ],
+          "feature_boolean_operations": [
+            {
+              "id": "nx:feature-history:boolean#0000000000-0000000000",
+              "kind": "unite",
+              "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
+              "raw_target_object_index": [
+                144,
+                25,
+                66
+              ],
+              "raw_tool_object_indices": [
+                [
                   144,
                   25,
-                  66
+                  76
                 ],
-                "source_offset": 374
-              }
-            ],
-            "feature_body_references": [
-              {
-                "body_object_index": 6466,
-                "id": "nx:feature-history:body-reference#0000000000-0000000000",
-                "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-                "raw_body_object_index": [
-                  144,
-                  25,
-                  66
-                ],
-                "source_offset": 374
-              }
-            ],
-            "feature_boolean_operations": [
-              {
-                "id": "nx:feature-history:boolean#0000000000-0000000000",
-                "kind": "unite",
-                "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-                "raw_target_object_index": [
-                  144,
-                  25,
-                  66
-                ],
-                "raw_tool_object_indices": [
-                  [
-                    144,
-                    25,
-                    76
-                  ],
-                  [
-                    127
-                  ]
-                ],
-                "source_offset": 326,
-                "target_object_index": 6466,
-                "target_source_offset": 360,
-                "tool_object_indices": [
-                  6476,
+                [
                   127
-                ],
-                "tool_source_offsets": [
-                  366,
-                  369
                 ]
-              }
-            ],
-            "feature_operation_labels": [
-              {
-                "id": "nx:feature-history:operation-label#0000000000-0000000000",
-                "object_indices": [
-                  1,
-                  576,
-                  6099,
-                  null
+              ],
+              "source_offset": 326,
+              "target_object_index": 6466,
+              "target_source_offset": 360,
+              "tool_object_indices": [
+                6476,
+                127
+              ],
+              "tool_source_offsets": [
+                366,
+                369
+              ]
+            }
+          ],
+          "feature_operation_labels": [
+            {
+              "id": "nx:feature-history:operation-label#0000000000-0000000000",
+              "object_indices": [
+                1,
+                576,
+                6099,
+                null
+              ],
+              "ordinal": 0,
+              "raw_object_indices": [
+                [
+                  1
                 ],
-                "ordinal": 0,
-                "raw_object_indices": [
-                  [
-                    1
-                  ],
-                  [
-                    130,
-                    64
-                  ],
-                  [
-                    144,
-                    23,
-                    211
-                  ],
-                  [
-                    255
-                  ]
+                [
+                  130,
+                  64
                 ],
-                "section_link": "nx:segment-om-links:link#0",
-                "source_offset": 326,
-                "value": "UNITE"
-              }
-            ],
-            "feature_operation_records": [
-              {
-                "byte_len": 74,
-                "id": "nx:feature-history:operation-record#0000000000-0000000000",
-                "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-                "ordinal": 0,
-                "payload_byte_len": 44,
-                "payload_sha256": "8dcac36cfa89e13867f6a565d4a239e5060db8e233dbcb7e4e9a729b3c074e48",
-                "payload_source_offset": 334,
-                "sha256": "26a7a1d0e2f7a5acc210e257a6154daa72a5107465f06075c7b610c43755b0ba",
-                "source_offset": 304
-              }
-            ],
-            "field_definitions": [
-              {
-                "id": "nx:om-entry-0:field#117",
-                "name": "m_target",
-                "ordinal": 0,
-                "registry_owner_class": 2,
-                "registry_storage_code": 2,
-                "registry_suffix": [
-                  1,
-                  2
+                [
+                  144,
+                  23,
+                  211
                 ],
-                "section_offset": 108,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 193,
-                "trailing_code": 128
-              },
-              {
-                "id": "nx:om-entry-0:field#129",
-                "name": "m_tools",
-                "ordinal": 1,
-                "section_offset": 108,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 205,
-                "trailing_code": 129
-              }
-            ],
-            "om_record_areas": [
-              {
-                "byte_len": 117,
-                "control_words": [
-                  13,
-                  14,
-                  44
-                ],
-                "id": "nx:om-record-areas:area#0-185",
-                "product_version": "NX 2027.3102",
-                "schema_role": "feature_history",
-                "section_link": "nx:segment-om-links:link#0",
-                "sha256": "7bfbc5c60a757e824b28669d1f388f469c85361e858bdd741e182c3a35cca7b7",
-                "source_offset": 261
-              }
-            ],
-            "segment_index_rows": [
-              {
-                "id": "nx:segment-index:row#0",
-                "ordinal": 0,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 76,
-                "subtype_code": 9,
-                "type_code": 32,
-                "value": 11
-              },
-              {
-                "id": "nx:segment-index:row#1",
-                "ordinal": 1,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 88,
-                "subtype_code": 1,
-                "type_code": 1,
-                "value": 24
-              }
-            ],
-            "segment_om_links": [
-              {
-                "id": "nx:segment-om-links:link#0",
-                "row": "nx:segment-index:row#0",
-                "schema_role": "feature_history",
-                "section_offset": 108,
-                "separator_byte_len": 0,
-                "slot": "type_code",
-                "source_offset": 108
-              }
-            ],
-            "unknowns": []
-          },
-          "version": 189
+                [
+                  255
+                ]
+              ],
+              "section_link": "nx:segment-om-links:link#0",
+              "source_offset": 326,
+              "value": "UNITE"
+            }
+          ],
+          "feature_operation_records": [
+            {
+              "byte_len": 74,
+              "id": "nx:feature-history:operation-record#0000000000-0000000000",
+              "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
+              "ordinal": 0,
+              "payload_byte_len": 44,
+              "payload_sha256": "8dcac36cfa89e13867f6a565d4a239e5060db8e233dbcb7e4e9a729b3c074e48",
+              "payload_source_offset": 334,
+              "sha256": "26a7a1d0e2f7a5acc210e257a6154daa72a5107465f06075c7b610c43755b0ba",
+              "source_offset": 304
+            }
+          ],
+          "field_definitions": [
+            {
+              "id": "nx:om-entry-0:field#117",
+              "name": "m_target",
+              "ordinal": 0,
+              "registry_owner_class": 2,
+              "registry_storage_code": 2,
+              "registry_suffix": [
+                1,
+                2
+              ],
+              "section_offset": 108,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 193,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:field#129",
+              "name": "m_tools",
+              "ordinal": 1,
+              "section_offset": 108,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 205,
+              "trailing_code": 129
+            }
+          ],
+          "om_record_areas": [
+            {
+              "byte_len": 117,
+              "control_words": [
+                13,
+                14,
+                44
+              ],
+              "id": "nx:om-record-areas:area#0-185",
+              "product_version": "NX 2027.3102",
+              "schema_role": "feature_history",
+              "section_link": "nx:segment-om-links:link#0",
+              "sha256": "7bfbc5c60a757e824b28669d1f388f469c85361e858bdd741e182c3a35cca7b7",
+              "source_offset": 261
+            }
+          ],
+          "segment_index_rows": [
+            {
+              "id": "nx:segment-index:row#0",
+              "ordinal": 0,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 76,
+              "subtype_code": 9,
+              "type_code": 32,
+              "value": 11
+            },
+            {
+              "id": "nx:segment-index:row#1",
+              "ordinal": 1,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 88,
+              "subtype_code": 1,
+              "type_code": 1,
+              "value": 24
+            }
+          ],
+          "segment_om_links": [
+            {
+              "id": "nx:segment-om-links:link#0",
+              "row": "nx:segment-index:row#0",
+              "schema_role": "feature_history",
+              "section_offset": 108,
+              "separator_byte_len": 0,
+              "slot": "type_code",
+              "source_offset": 108
+            }
+          ],
+          "unknowns": []
         }
       },
       "source": {
@@ -330,6 +327,17 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
+        },
         "format": "nx"
       },
       "tolerances": {
@@ -342,6 +350,17 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -356,7 +375,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
       ]
@@ -423,12 +442,22 @@
         "streams": [
           "nx:container"
         ]
-      },
-      "version": "3"
+      }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -444,7 +473,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 378, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)"
     ]

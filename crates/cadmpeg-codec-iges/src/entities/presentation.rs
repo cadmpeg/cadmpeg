@@ -2,8 +2,8 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
-use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -60,26 +60,28 @@ fn text_font_definition_pointer_valid(
         })
 }
 
-pub(super) fn general_note_font_valid_for_dialect(
+pub(super) fn general_note_font_valid_for_global_table(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
-    let standard = match dialect {
-        Dialect::V4_0 => {
+    let standard = match global_table {
+        GlobalTable::V4_0 => {
             matches!(
                 value,
                 0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003
             )
         }
-        Dialect::V5_0 => matches!(
+        GlobalTable::V5_0 => matches!(
             value,
             0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001
         ),
-        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => matches!(
-            value,
-            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
-        ),
+        GlobalTable::Legacy | GlobalTable::V5Later => {
+            matches!(
+                value,
+                0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
+            )
+        }
     };
     standard || text_font_definition_pointer_valid(value, entries)
 }
@@ -105,36 +107,38 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 }
 
 fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
-    entry.status.subordinate == 0
-        && entry.status.use_flag == 2
+    entry.status.subordinate() == Some(Subordinate::Independent)
+        && entry.status.use_flag() == Some(UseFlag::Definition)
         && (1..=5).contains(&entry.line_font)
 }
 
-fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::V4_0 | Dialect::V5_0 => {
-            entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
+fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    match global_table {
+        GlobalTable::V4_0 | GlobalTable::V5_0 => {
+            entry.status.subordinate() != Some(Subordinate::Independent)
+                && entry.status.use_flag() == Some(UseFlag::Annotation)
+                && entry.line_font != 0
         }
-        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
-            entry.status.subordinate == 0
-                && entry.status.use_flag == 2
+        GlobalTable::Legacy | GlobalTable::V5Later => {
+            entry.status.subordinate() == Some(Subordinate::Independent)
+                && entry.status.use_flag() == Some(UseFlag::Definition)
                 && entry.structure == 0
                 && entry.line_font == 0
                 && entry.view == 0
                 && entry.transform == 0
                 && entry.label_display == 0
                 && entry.line_weight == 0
-                && entry.status.hierarchy == 0
+                && entry.status.hierarchy() == Some(Hierarchy::GlobalTopDown)
         }
     }
 }
 
-fn directory_color_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 406))
+fn directory_color_is_semantic(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 406))
 }
 
-fn directory_line_weight_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
+fn directory_line_weight_is_semantic(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
+    !(matches!(global_table, GlobalTable::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
 fn source_sequence(id: &str) -> Option<u32> {
@@ -167,7 +171,8 @@ fn text_font_definition(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
     let parameter_end = record.parameter_end();
-    let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
+    let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
+        && entry.status.use_flag() == Some(UseFlag::Definition);
     if !directory_valid
         || record.integer(1).is_none_or(|value| value < 0)
         || record.string(2).is_none_or(<[u8]>::is_empty)
@@ -283,9 +288,9 @@ pub(super) fn project(
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
-            general_note_font_valid_for_dialect(font, &entries, global.dialect())
+            general_note_font_valid_for_global_table(font, &entries, global.global_table())
         });
-        let directory_valid = text_template_directory_valid(entry, global.dialect());
+        let directory_valid = text_template_directory_valid(entry, global.global_table());
         let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
                 record
@@ -422,7 +427,7 @@ pub(super) fn project(
                 .string(4)
                 .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
             Some(crate::parameter::TokenValue::Integer(0))
-                if matches!(global.dialect(), Dialect::V4_0) =>
+                if matches!(global.global_table(), GlobalTable::V4_0) =>
             {
                 None
             }
@@ -433,8 +438,8 @@ pub(super) fn project(
                 continue;
             }
         };
-        let directory_valid = entry.status.subordinate == 0
-            && entry.status.use_flag == 2
+        let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
+            && entry.status.use_flag() == Some(UseFlag::Definition)
             && matches!(entry.color, 0..=8);
         if !directory_valid {
             losses.push(loss(entry, "color definition Directory fields are invalid"));
@@ -450,7 +455,8 @@ pub(super) fn project(
         names.insert(entry.sequence, name.clone());
         appearance(
             ir,
-            AppearanceId(format!("iges:appearance:color#D{}", entry.sequence)),
+            AppearanceId::mint(format!("iges:appearance:color#D{}", entry.sequence))
+                .expect("identity grammar"),
             name,
             color,
         );
@@ -460,7 +466,8 @@ pub(super) fn project(
     let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
         match value.cmp(&0) {
             std::cmp::Ordering::Greater => Some((
-                AppearanceId(format!("iges:appearance:standard#{value}")),
+                AppearanceId::mint(format!("iges:appearance:standard#{value}"))
+                    .expect("identity grammar"),
                 standard_color(value)?,
             )),
             std::cmp::Ordering::Less => {
@@ -470,7 +477,8 @@ pub(super) fn project(
                     return None;
                 }
                 Some((
-                    AppearanceId(format!("iges:appearance:color#D{sequence}")),
+                    AppearanceId::mint(format!("iges:appearance:color#D{sequence}"))
+                        .expect("identity grammar"),
                     *defined.get(&sequence)?,
                 ))
             }
@@ -478,10 +486,9 @@ pub(super) fn project(
         }
     };
 
-    for entry in directory
-        .iter()
-        .filter(|entry| entry.color != 0 && directory_color_is_semantic(entry, global.dialect()))
-    {
+    for entry in directory.iter().filter(|entry| {
+        entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
+    }) {
         if resolve(entry.color).is_none() {
             losses.push(loss(
                 entry,
@@ -504,7 +511,7 @@ pub(super) fn project(
         }
     }
     for entry in directory.iter().filter(|entry| {
-        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.dialect())
+        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
     }) {
         if !global.line_weight_number_is_valid(entry.line_weight) {
             losses.push(loss(
@@ -536,21 +543,29 @@ pub(super) fn project(
         .bodies
         .iter()
         .filter_map(|body| {
-            let sequence = source_sequence(&body.id.0)?;
+            let sequence = source_sequence(body.id.as_str())?;
             let entry = entries.get(&sequence)?;
-            resolve(entry.color)
-                .map(|appearance| (body.id.clone(), sequence, appearance, entry.status.blank))
+            resolve(entry.color).map(|appearance| {
+                (
+                    body.id.clone(),
+                    sequence,
+                    appearance,
+                    entry.status.is_visible(),
+                )
+            })
         })
         .collect::<Vec<_>>();
-    for (body_id, sequence, (appearance_id, color), blank) in body_assignments {
+    for (body_id, sequence, (appearance_id, color), visible) in body_assignments {
         appearance(ir, appearance_id.clone(), None, color);
         let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
             continue;
         };
         body.color = Some(color);
-        body.visible = Some(blank == 0);
+        body.visible = Some(visible);
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("iges:model:appearance-binding#body-D{sequence}"),
+            id: format!("iges:model:appearance-binding#body-D{sequence}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
@@ -561,9 +576,9 @@ pub(super) fn project(
     }
     for body in &mut ir.model.bodies {
         if body.visible.is_none() {
-            body.visible = source_sequence(&body.id.0)
+            body.visible = source_sequence(body.id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
-                .map(|entry| entry.status.blank == 0);
+                .map(|entry| entry.status.is_visible());
         }
     }
 
@@ -572,7 +587,7 @@ pub(super) fn project(
         .faces
         .iter()
         .filter_map(|face| {
-            let sequence = source_sequence(&face.id.0)?;
+            let sequence = source_sequence(face.id.as_str())?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color).map(|appearance| (face.id.clone(), sequence, appearance))
         })
@@ -584,7 +599,9 @@ pub(super) fn project(
         };
         face.color = Some(color);
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("iges:model:appearance-binding#face-D{sequence}"),
+            id: format!("iges:model:appearance-binding#face-D{sequence}")
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,

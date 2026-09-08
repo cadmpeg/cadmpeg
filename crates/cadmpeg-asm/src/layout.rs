@@ -51,6 +51,8 @@ pub(crate) mod token {
 ///
 /// Spec §1. Record length 47 B.
 ///
+/// Dialects: `acis:asm-binaryfile-8`.
+///
 /// ```text
 /// Fixed prefix only. The string region and the six trailing tagged metadata fields begin at byte 47 and are a sequence, not a fixed-offset structure.
 /// ```
@@ -72,6 +74,8 @@ pub(crate) mod asmheader_binaryfile8 {
 /// Byte offsets for the `asmheader_binaryfile4` record.
 ///
 /// Spec §1. Record length 31 B.
+///
+/// Dialects: `acis:asm-binaryfile-4`.
 ///
 /// ```text
 /// Fixed prefix only; the string region begins at byte 31.
@@ -95,6 +99,8 @@ pub(crate) mod asmheader_binaryfile4 {
 ///
 /// Spec §1. Record length 31 B.
 ///
+/// Dialects: `acis:save-format-217`, `acis:save-format-218`, `acis:save-format-binary-other`.
+///
 /// ```text
 /// Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
 /// ```
@@ -116,6 +122,8 @@ pub(crate) mod acisheader_binaryfile4 {
 /// Byte offsets for the `body` record.
 ///
 /// Spec §5.2. Record length 61 B.
+///
+/// Dialects: `acis:asm-binaryfile-8`.
 ///
 /// ```text
 /// Offsets are record-relative from the leading `0x11`. On `BinaryFile4` streams ref/int chunks are 5 bytes and the offsets scale accordingly.
@@ -208,6 +216,8 @@ pub(crate) mod vertex {
 /// Byte offsets for the `point` record.
 ///
 /// Spec §5.3. Record length 60 B.
+///
+/// Dialects: `acis:asm-binaryfile-8`.
 ///
 /// ```text
 /// The record terminates immediately after the position and carries no trailing reference-count integer.

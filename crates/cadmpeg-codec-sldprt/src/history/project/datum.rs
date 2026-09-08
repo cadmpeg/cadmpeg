@@ -37,30 +37,17 @@ pub(crate) fn project_offset_plane(
         .and_then(|source| by_source.get(source.as_str()).cloned())
         .map(DatumPlaneReference::Feature)
         .or_else(|| {
-            Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            Some(DatumPlaneReference::ResolvedPlane {
                 origin: parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
                 normal: parse_vector3(feature.properties.get("ReferenceFaceNormal")?)?,
                 u_axis: parse_vector3(feature.properties.get("ReferenceFaceUAxis")?)?,
             })
         })
         .or_else(|| {
-            let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
-            let normal = parse_vector3(feature.properties.get("Normal")?)?;
             let native = feature.properties.get("ReferenceFaceNative")?;
-            let origin = crate::history::offset_plane_support_origin(
-                &feature.properties,
-                Some(native),
-                origin,
-                normal,
-                distance,
-            );
-            Some(DatumPlaneReference::Face {
-                face: FaceSelection::Native(native.clone()),
-                origin,
-                normal,
-                u_axis: parse_vector3(feature.properties.get("UAxis")?)?,
-            })
+            Some(DatumPlaneReference::Face(FaceSelection::Native(
+                native.clone(),
+            )))
         });
     Some(FeatureDefinition::DatumOffsetPlane {
         reference,
@@ -206,12 +193,12 @@ pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         axis_origin,
         axis_direction,
         radius: Length(radius),
-        pitch: Length(pitch),
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+            pitch: cadmpeg_ir::features::HelixPitch::new(Length(pitch))?,
+        },
         revolutions,
         start_angle: Angle(start_angle),
         clockwise,
-        radial_growth: None,
-        cone_angle: None,
         segment_turns: None,
         construction_style: None,
     })
@@ -258,21 +245,18 @@ pub(crate) fn project_wrap(
         .to_ascii_lowercase()
         .as_str()
     {
-        "emboss" => WrapMode::Emboss,
-        "deboss" => WrapMode::Deboss,
+        "emboss" => WrapMode::Emboss {
+            depth: Length(parse_positive_length_mm(feature.parameters.get("Depth")?)?),
+        },
+        "deboss" => WrapMode::Deboss {
+            depth: Length(parse_positive_length_mm(feature.parameters.get("Depth")?)?),
+        },
         "scribe" => WrapMode::Scribe,
         _ => return None,
-    };
-    let depth = match mode {
-        WrapMode::Emboss | WrapMode::Deboss => Some(Length(parse_positive_length_mm(
-            feature.parameters.get("Depth")?,
-        )?)),
-        WrapMode::Scribe => None,
     };
     Some(FeatureDefinition::Wrap {
         profile: ProfileRef::Native(profile),
         face,
         mode,
-        depth,
     })
 }

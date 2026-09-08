@@ -7,10 +7,6 @@ use super::super::sketch::{
     saved_section_entity_geometry, trim_segment_id,
 };
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sketch_transfer::{
-    feature_recipe, feature_revolution_extent, semantic_saved_section_entities,
-    unique_feature_revolution_extent_kind,
-};
 use super::super::sweep::{
     connected_sketch_profile_vertices, extruded_section_line, revolved_nurbs_surface,
     revolved_section_circle, revolved_section_surface,
@@ -23,6 +19,10 @@ use super::{
     ordered_family_surface_bindings_for_feature, profile_segment_ids, revolution_axis_for_transfer,
 };
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::decode::sketch_transfer::recipe::{
+    feature_recipe, feature_revolution_extent, unique_feature_revolution_extent,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -54,8 +54,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
             continue;
         }
-        if unique_feature_revolution_extent_kind(&scan.features.revolution_extents, feature_id)
-            .is_none()
+        if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_none()
         {
             continue;
         }
@@ -82,16 +81,16 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.identity.id()));
         if let Some(sketch) = exactly_one(
             ir.model
                 .sketches
                 .iter()
                 .filter(|sketch| sketch.id == sketch_id),
         ) {
-            let segments = complete_section_segment_rows(definition).to_vec();
+            let segments = complete_section_segment_rows(definition);
             generating_ids.extend(profile_segment_ids(
-                definition.id,
+                definition.identity.id(),
                 &segments,
                 &sketch.profiles,
             ));
@@ -109,7 +108,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         .iter()
                         .filter(|segment| {
                             generating_ids.contains(&segment.external_id)
-                                && segment.kind == crate::feature::FeatureSegmentKind::Arc
+                                && matches!(
+                                    segment.kind,
+                                    crate::feature::FeatureSegmentKind::Arc(_)
+                                )
                         })
                         .map(|segment| segment.external_id),
                     crate::surface::SurfaceKind::TorusOrSphere,
@@ -141,11 +143,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             else {
                 continue;
             };
-            let Some(surface) = revolved_section_surface(transform, &geometry, axis) else {
+            let Some(surface) = revolved_section_surface(transform, &geometry, &axis) else {
                 continue;
             };
             let native_surface = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => {
+                crate::feature::FeatureSegmentKind::Line(_) => {
                     definition.order_table.as_ref().and_then(|order| {
                         ordered_analytic_surface_id_for_feature(
                             &scan.surfaces.rows,
@@ -157,19 +159,23 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         )
                     })
                 }
-                crate::feature::FeatureSegmentKind::Arc => {
+                crate::feature::FeatureSegmentKind::Arc(_) => {
                     arc_bindings.get(&segment.external_id).copied()
                 }
-                crate::feature::FeatureSegmentKind::Point => None,
+                crate::feature::FeatureSegmentKind::Point(_) => None,
             };
             let surface_id = native_surface.map_or_else(
                 || {
-                    SurfaceId(format!(
+                    SurfaceId::mint(format!(
                         "creo:feature:revolution_surface#{feature_id}:segment{}",
                         segment.external_id
                     ))
+                    .expect("identity grammar")
                 },
-                |id| SurfaceId(format!("creo:visibgeom:surface#{id}")),
+                |id| {
+                    SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                        .expect("identity grammar")
+                },
             );
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
@@ -186,7 +192,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 id: surface_id,
                 geometry: surface,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: native_surface.map_or_else(
                         || {
                             format!(
@@ -213,7 +219,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 let Some(external_id) = order.external_id(internal_id) else {
                     continue;
                 };
-                let Some(surface) = revolved_section_surface(transform, &section_geometry, axis)
+                let Some(surface) = revolved_section_surface(transform, &section_geometry, &axis)
                 else {
                     continue;
                 };
@@ -227,7 +233,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ) else {
                     continue;
                 };
-                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface}"));
+                let surface_id =
+                    SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface}"))
+                        .expect("identity grammar");
                 if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                     continue;
                 }
@@ -243,7 +251,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     id: surface_id,
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
-                        format: "creo".to_string(),
+                        format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: format!("VisibGeom:{native_surface}"),
                         name: None,
                         color: None,
@@ -265,17 +273,18 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 || format!("offset{}", spline.offset),
                 |entity_id| entity_id.to_string(),
             );
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.id
-            ));
+                definition.identity.id()
+            ))
+            .expect("identity grammar");
             let Some(CurveGeometry::Nurbs(directrix)) =
                 exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
                     .map(|curve| &curve.geometry)
             else {
                 continue;
             };
-            let Some(surface) = revolved_nurbs_surface(directrix, axis) else {
+            let Some(surface) = revolved_nurbs_surface(directrix, &axis) else {
                 continue;
             };
             let native_surface = definition
@@ -286,10 +295,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             let Some(native_surface) = native_surface else {
                 continue;
             };
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface}"));
-            let procedural_id = ProceduralSurfaceId(format!(
+            let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface}"))
+                .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!(
                 "creo:feature:revolution_construction#{feature_id}:{suffix}"
-            ));
+            ))
+            .expect("identity grammar");
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
@@ -313,7 +324,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{native_surface}"),
                     name: None,
                     color: None,
@@ -322,26 +333,27 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Revolution {
-                    directrix: curve_id,
-                    axis_origin: axis.origin,
-                    axis_direction: axis.direction,
-                    angular_interval: [0.0, std::f64::consts::TAU],
-                    angular_parameter_interval: None,
-                    parameter_interval: [
-                        *directrix.knots.first().expect("validated spline knots"),
-                        *directrix.knots.last().expect("validated spline knots"),
-                    ]
-                    .into(),
-                    transposed: false,
-                    revision_form: None,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+            let _attached = ir.model.add_procedural_surface(
+                surface_id,
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: curve_id,
+                        axis_origin: axis.origin,
+                        axis_direction: axis.direction,
+                        angular_interval: [0.0, std::f64::consts::TAU],
+                        angular_parameter_interval: None,
+                        parameter_interval: [
+                            *directrix.knots().first().expect("validated spline knots"),
+                            *directrix.knots().last().expect("validated spline knots"),
+                        ]
+                        .into(),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            );
             transferred += 1;
         }
     }
@@ -389,16 +401,16 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         ) else {
             continue;
         };
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.identity.id()));
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
-                let Some(geometry) = revolved_section_circle(transform, *point, axis) else {
+                let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
                     continue;
                 };
                 pending.push((
-                    CurveId(format!(
+                    CurveId::mint(format!(
                         "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    )),
+                    )).expect("identity grammar"),
                     geometry,
                     transform.offset,
                     format!(
@@ -425,7 +437,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id,
                 name: None,
                 color: None,
@@ -473,9 +485,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     continue;
                 };
                 pending.push((
-                    CurveId(format!(
+                    CurveId::mint(format!(
                         "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    )),
+                    )).expect("identity grammar"),
                     geometry,
                     transform.offset,
                     format!(
@@ -502,7 +514,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id,
                 name: None,
                 color: None,

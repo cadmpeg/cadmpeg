@@ -15,7 +15,6 @@ use crate::math::Point3;
 use crate::provenance::SourceObjectAssociation;
 use crate::report::{Check, Severity, ValidationReport};
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use crate::units::Units;
 use crate::validate::{entity_census, validate_neutral};
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
@@ -36,7 +35,7 @@ fn id_strategy() -> impl Strategy<Value = String> {
 
 fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "prop".into(),
+        format: crate::CodecFormat::Step,
         object_id: object_id.into(),
         name: None,
         color: None,
@@ -48,7 +47,7 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
 
 fn point(id: &str) -> Point {
     Point {
-        id: PointId(id.to_owned()),
+        id: PointId::mint(id.to_owned()).expect("valid identity"),
         position: Point3 {
             x: 0.0,
             y: 0.0,
@@ -61,7 +60,7 @@ fn point(id: &str) -> Point {
 
 fn ir_strategy() -> impl Strategy<Value = CadIr> {
     proptest::collection::btree_set(id_strategy(), 1..=8).prop_map(|ids| {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         for id in ids {
             ir.model.points.push(point(&id));
         }
@@ -97,16 +96,16 @@ fn insert_free_vertex_shell(
     draft.insert(point(point_id)).unwrap();
     draft
         .insert(Vertex {
-            id: VertexId(vertex_id.into()),
-            point: PointId(point_id.into()),
+            id: VertexId::mint(vertex_id).expect("valid identity"),
+            point: PointId::mint(point_id).expect("valid identity"),
             tolerance: None,
         })
         .unwrap();
     draft
         .insert(Body {
-            id: BodyId(body_id.into()),
+            id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
-            regions: vec![RegionId(region_id.into())],
+            regions: vec![RegionId::mint(region_id).expect("valid identity")],
             transform: None,
             name: None,
             color: None,
@@ -115,18 +114,18 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Region {
-            id: RegionId(region_id.into()),
-            body: BodyId(body_id.into()),
-            shells: vec![ShellId(shell_id.into())],
+            id: RegionId::mint(region_id).expect("valid identity"),
+            body: BodyId::mint(body_id).expect("valid identity"),
+            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
         })
         .unwrap();
     draft
         .insert(Shell {
-            id: ShellId(shell_id.into()),
-            region: RegionId(region_id.into()),
+            id: ShellId::mint(shell_id).expect("valid identity"),
+            region: RegionId::mint(region_id).expect("valid identity"),
             faces: Vec::new(),
             wire_edges: Vec::new(),
-            free_vertices: vec![VertexId(vertex_id.into())],
+            free_vertices: vec![VertexId::mint(vertex_id).expect("valid identity")],
         })
         .unwrap();
 }
@@ -156,15 +155,10 @@ proptest! {
     #[test]
     fn single_invariant_breaks_are_caught(ir in ir_strategy()) {
         {
-            let mut broken = ir.clone();
-            broken.model.points[0].id.0 =
-                strip_one_namespace_component(&broken.model.points[0].id.0);
-            let report = validate_neutral(&broken, Vec::new());
-            prop_assert!(
-                has_error(&report, Check::Identity),
-                "findings: {:?}",
-                report.findings
-            );
+            let malformed = strip_one_namespace_component(ir.model.points[0].id.as_str());
+            prop_assert!(PointId::mint(malformed.clone()).is_err());
+            let wire = serde_json::to_string(&malformed).unwrap();
+            prop_assert!(serde_json::from_str::<PointId>(&wire).is_err());
         }
 
         {
@@ -192,8 +186,8 @@ proptest! {
         {
             let mut broken = ir.clone();
             broken.model.vertices.push(Vertex {
-                id: "prop:test:vertex#dangling".into(),
-                point: PointId("x:y:z#missing".into()),
+                id: "prop:test:vertex#dangling".try_into().expect("valid identity"),
+                point: PointId::mint("x:y:z#missing").expect("valid identity"),
                 tolerance: None,
             });
             broken.finalize();
@@ -231,12 +225,12 @@ proptest! {
         let mut dangling = ModelDraft::new();
         dangling
             .insert(Vertex {
-                id: vertex_id.clone().into(),
-                point: missing.into(),
+                id: vertex_id.clone().try_into().expect("valid identity"),
+                point: missing.try_into().expect("valid identity"),
                 tolerance: None,
             })
             .unwrap();
-        let mut base = CadIr::empty(Units::default());
+        let mut base = CadIr::empty();
         let dangling_result = dangling.commit_model(&mut base);
         let is_unresolved = matches!(
             dangling_result,
@@ -257,7 +251,7 @@ proptest! {
             &region_id,
             &shell_id,
         );
-        let mut base = CadIr::empty(Units::default());
+        let mut base = CadIr::empty();
         draft.commit_model(&mut base).unwrap();
         base.finalize();
         let report = validate_neutral(&base, Vec::new());

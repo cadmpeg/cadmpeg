@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lazy, budgeted Microsoft Compound File Binary (CFB) snapshots.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, Read};
+use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
+
+use crate::archive::{PhysicalSpan, SpanRole};
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -17,39 +23,35 @@ const NO_STREAM: u32 = 0xffff_ffff;
 const V3_MAX_FILE_SIZE: u64 = 0x8000_0000;
 const RANGE_LOCK_START: u64 = 0x7fff_ff00;
 const RANGE_LOCK_END: u64 = 0x8000_0000;
+const MINI_SECTOR_SIZE: usize = 64;
+const MINI_STREAM_CUTOFF: u64 = 4096;
 
 static NEXT_COMPOUND_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Stable directory identity for a CFB entry.
+/// Stable identity for a CFB storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CompoundEntryId(u32);
+pub struct CompoundStorageId(u32);
 
-impl CompoundEntryId {
+impl CompoundStorageId {
     /// Returns the CFB directory-entry index.
     pub const fn directory_id(self) -> u32 {
         self.0
     }
 }
 
-/// Stable identity for a CFB storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CompoundStorageId(CompoundEntryId);
-
-impl CompoundStorageId {
-    /// Returns the CFB directory-entry index.
-    pub const fn directory_id(self) -> u32 {
-        self.0.directory_id()
-    }
-}
-
 /// Stable identity for a CFB stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CompoundStreamId(CompoundEntryId);
+pub struct CompoundStreamId(u32);
 
 impl CompoundStreamId {
     /// Returns the CFB directory-entry index.
     pub const fn directory_id(self) -> u32 {
-        self.0.directory_id()
+        self.0
+    }
+
+    /// Reconstruct a stream identity from a CFB directory-entry index.
+    pub const fn from_directory_id(id: u32) -> Self {
+        Self(id)
     }
 }
 
@@ -97,10 +99,28 @@ pub struct CompoundStreamEntry {
     id: CompoundStreamId,
     snapshot_id: u64,
     path: String,
-    logical_size: u64,
-    start_sector: u32,
-    allocation: CompoundAllocation,
-    chain: Vec<u32>,
+    data: StreamData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EmptyStreamStart {
+    EndOfChain,
+    FreeSector,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SectorChain {
+    first: u32,
+    rest: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StreamData {
+    Empty(EmptyStreamStart),
+    Allocated {
+        logical_size: NonZeroU64,
+        chain: SectorChain,
+    },
 }
 
 impl CompoundStreamEntry {
@@ -116,17 +136,36 @@ impl CompoundStreamEntry {
 
     /// Returns the logical stream size without allocation padding.
     pub const fn logical_size(&self) -> u64 {
-        self.logical_size
+        match &self.data {
+            StreamData::Empty(_) => 0,
+            StreamData::Allocated { logical_size, .. } => logical_size.get(),
+        }
     }
 
-    /// Returns the first regular or mini sector identifier.
+    /// Returns the first sector or the source marker for an empty stream.
     pub const fn start_sector(&self) -> u32 {
-        self.start_sector
+        match &self.data {
+            StreamData::Empty(EmptyStreamStart::EndOfChain) => END_OF_CHAIN,
+            StreamData::Empty(EmptyStreamStart::FreeSector) => FREE_SECTOR,
+            StreamData::Allocated { chain, .. } => chain.first,
+        }
     }
 
     /// Returns the stream allocation mechanism.
     pub const fn allocation(&self) -> CompoundAllocation {
-        self.allocation
+        if self.logical_size() < MINI_STREAM_CUTOFF {
+            CompoundAllocation::Mini
+        } else {
+            CompoundAllocation::Regular
+        }
+    }
+
+    fn sectors(&self) -> impl Iterator<Item = &u32> {
+        let (first, rest): (Option<&u32>, &[u32]) = match &self.data {
+            StreamData::Empty(_) => (None, &[]),
+            StreamData::Allocated { chain, .. } => (Some(&chain.first), &chain.rest),
+        };
+        first.into_iter().chain(rest)
     }
 }
 
@@ -157,19 +196,6 @@ impl CompoundEntry {
     }
 }
 
-/// One exact physical range in a CFB file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompoundPhysicalSpan {
-    /// Inclusive byte offset.
-    pub start: u64,
-    /// Exclusive byte offset.
-    pub end: u64,
-    /// CFB structural role.
-    pub role: String,
-    /// Owning entry path, when the range stores stream data.
-    pub entry: Option<String>,
-}
-
 #[derive(Debug, Clone)]
 struct DirectoryEntry {
     name: String,
@@ -182,12 +208,39 @@ struct DirectoryEntry {
     size: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompoundVersion {
+    V3,
+    V4,
+}
+
+impl CompoundVersion {
+    fn from_header(major: u16, sector_shift: u16) -> Option<Self> {
+        match (major, sector_shift) {
+            (3, 9) => Some(Self::V3),
+            (4, 12) => Some(Self::V4),
+            _ => None,
+        }
+    }
+
+    const fn major(self) -> u16 {
+        match self {
+            Self::V3 => 3,
+            Self::V4 => 4,
+        }
+    }
+
+    const fn sector_size(self) -> usize {
+        match self {
+            Self::V3 => 512,
+            Self::V4 => 4096,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct CompoundState {
-    major_version: u16,
-    sector_size: usize,
-    mini_sector_size: usize,
-    mini_stream_cutoff: u64,
+    version: CompoundVersion,
     sector_count: usize,
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
@@ -217,12 +270,7 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let parsed = CompoundState::parse(ctx, root.window())?;
         let snapshot_id = NEXT_COMPOUND_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
-        let mut entries = parsed.build_entries(ctx)?;
-        for entry in &mut entries {
-            if let CompoundEntry::Stream(stream) = entry {
-                stream.snapshot_id = snapshot_id;
-            }
-        }
+        let entries = parsed.build_entries(ctx, snapshot_id)?;
         parsed.validate_sector_ownership(&entries)?;
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
@@ -270,12 +318,12 @@ impl<'a> CompoundSnapshot<'a> {
 
     /// Returns the CFB major version.
     pub const fn major_version(&self) -> u16 {
-        self.parsed.major_version
+        self.parsed.version.major()
     }
 
     /// Returns the regular-sector size.
     pub const fn sector_size(&self) -> usize {
-        self.parsed.sector_size
+        self.parsed.version.sector_size()
     }
 
     /// Returns entries in stable directory traversal order.
@@ -314,32 +362,35 @@ impl<'a> CompoundSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &CompoundStreamEntry,
     ) -> Result<View<'a>, CodecError> {
-        if entry.snapshot_id != self.snapshot_id || self.stream_by_id(entry.id()).is_none() {
+        if entry.snapshot_id != self.snapshot_id {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
-        if entry.logical_size == 0 {
+        let StreamData::Allocated {
+            logical_size,
+            chain,
+        } = &entry.data
+        else {
             return ctx.register_slice(self.root, ByteRange { start: 0, end: 0 });
-        }
-        let logical_size = usize::try_from(entry.logical_size)
-            .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
-        let views = match entry.allocation {
-            CompoundAllocation::Regular => entry
-                .chain
-                .iter()
-                .map(|&sector| self.regular_sector_view(sector))
-                .collect::<Result<Vec<_>, _>>()?,
-            CompoundAllocation::Mini => entry
-                .chain
-                .iter()
-                .map(|&sector| self.mini_sector_view(sector))
-                .collect::<Result<Vec<_>, _>>()?,
         };
-        let mut opened = if physically_contiguous(&views) {
-            let first = views.first().ok_or_else(|| {
-                CodecError::malformed(format_args!("empty allocation chain for {}", entry.path))
-            })?;
-            let last = views.last().expect("non-empty chain");
-            self.root.child(first.start(), last.end()).ok_or_else(|| {
+        let logical_size = usize::try_from(logical_size.get())
+            .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
+        let sector_view = |sector| match entry.allocation() {
+            CompoundAllocation::Regular => self.regular_sector_view(sector),
+            CompoundAllocation::Mini => self.mini_sector_view(sector),
+        };
+        let first = sector_view(chain.first)?;
+        let mut views = Vec::with_capacity(chain.rest.len() + 1);
+        views.push(first);
+        let mut end = first.end();
+        let mut contiguous = true;
+        for &sector in &chain.rest {
+            let view = sector_view(sector)?;
+            contiguous &= view.start() == end;
+            end = view.end();
+            views.push(view);
+        }
+        let mut opened = if contiguous {
+            self.root.child(first.start(), end).ok_or_else(|| {
                 CodecError::Malformed("CFB contiguous stream range escapes input".into())
             })?
         } else {
@@ -359,7 +410,7 @@ impl<'a> CompoundSnapshot<'a> {
     /// Builds generic hierarchy summaries using a codec-owned classifier.
     pub fn container_entries(
         &self,
-        classify: impl Fn(&CompoundEntry) -> &'static str,
+        classify: impl Fn(&CompoundEntry) -> ContainerRole,
     ) -> Vec<ContainerEntry> {
         self.entries
             .iter()
@@ -369,21 +420,21 @@ impl<'a> CompoundSnapshot<'a> {
                 match entry {
                     CompoundEntry::Storage(_) => ContainerEntry {
                         name: entry.path().into(),
-                        role: classify(entry).into(),
-                        compression: "storage".into(),
+                        role: classify(entry),
+                        compression: EntryCompression::Storage,
                         compressed_size: 0,
                         uncompressed_size: 0,
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
-                        attributes.insert("allocation".into(), stream.allocation.label().into());
-                        attributes.insert("start_sector".into(), stream.start_sector.to_string());
+                        attributes.insert("allocation".into(), stream.allocation().label().into());
+                        attributes.insert("start_sector".into(), stream.start_sector().to_string());
                         ContainerEntry {
                             name: stream.path.clone(),
-                            role: classify(entry).into(),
-                            compression: "stored".into(),
-                            compressed_size: stream.logical_size,
-                            uncompressed_size: stream.logical_size,
+                            role: classify(entry),
+                            compression: EntryCompression::Stored,
+                            compressed_size: stream.logical_size(),
+                            uncompressed_size: stream.logical_size(),
                             attributes,
                         }
                     }
@@ -393,19 +444,19 @@ impl<'a> CompoundSnapshot<'a> {
     }
 
     /// Partitions every physical input byte by CFB structural role.
-    pub fn physical_ledger(&self) -> Result<Vec<CompoundPhysicalSpan>, CodecError> {
+    pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         let mut structural = BTreeMap::new();
         for &sector in &self.parsed.fat_sectors {
-            structural.insert(sector, "FAT");
+            structural.insert(sector, SpanRole::CfbFat);
         }
         for &sector in &self.parsed.difat_sectors {
-            structural.insert(sector, "DIFAT");
+            structural.insert(sector, SpanRole::CfbDifat);
         }
         for &sector in &self.parsed.directory_chain {
-            structural.insert(sector, "directory");
+            structural.insert(sector, SpanRole::CfbDirectory);
         }
         for &sector in &self.parsed.mini_fat_chain {
-            structural.insert(sector, "mini FAT");
+            structural.insert(sector, SpanRole::CfbMiniFat);
         }
         let mut regular = BTreeMap::new();
         let mut mini = BTreeMap::new();
@@ -413,15 +464,15 @@ impl<'a> CompoundSnapshot<'a> {
             let CompoundEntry::Stream(stream) = entry else {
                 continue;
             };
-            let width = match stream.allocation {
-                CompoundAllocation::Regular => self.parsed.sector_size,
-                CompoundAllocation::Mini => self.parsed.mini_sector_size,
+            let width = match stream.allocation() {
+                CompoundAllocation::Regular => self.parsed.version.sector_size(),
+                CompoundAllocation::Mini => MINI_SECTOR_SIZE,
             };
-            let mut remaining = stream.logical_size;
-            for &sector in &stream.chain {
+            let mut remaining = stream.logical_size();
+            for &sector in stream.sectors() {
                 let payload = remaining.min(width as u64) as usize;
                 remaining = remaining.saturating_sub(payload as u64);
-                match stream.allocation {
+                match stream.allocation() {
                     CompoundAllocation::Regular => {
                         regular.insert(sector, (stream.path.clone(), payload));
                     }
@@ -431,11 +482,10 @@ impl<'a> CompoundSnapshot<'a> {
                 }
             }
         }
-        let mut spans = vec![CompoundPhysicalSpan {
+        let mut spans = vec![PhysicalSpan {
             start: 0,
-            end: self.parsed.sector_size as u64,
-            role: "header".into(),
-            entry: None,
+            end: self.parsed.version.sector_size() as u64,
+            role: SpanRole::CfbHeader,
         }];
         let root_size = self.parsed.directory[0].size;
         let root_sectors = self
@@ -446,16 +496,21 @@ impl<'a> CompoundSnapshot<'a> {
             .map(|(ordinal, sector)| (*sector, ordinal))
             .collect::<BTreeMap<_, _>>();
         for index in 0..self.parsed.sector_count {
-            let start =
-                self.parsed
-                    .sector_size
-                    .checked_add(index.checked_mul(self.parsed.sector_size).ok_or_else(|| {
-                        CodecError::Malformed("CFB ledger offset overflow".into())
-                    })?)
-                    .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
-                    as u64;
+            let start = self
+                .parsed
+                .version
+                .sector_size()
+                .checked_add(
+                    index
+                        .checked_mul(self.parsed.version.sector_size())
+                        .ok_or_else(|| {
+                            CodecError::Malformed("CFB ledger offset overflow".into())
+                        })?,
+                )
+                .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
+                as u64;
             let sector_end = start
-                .checked_add(self.parsed.sector_size as u64)
+                .checked_add(self.parsed.version.sector_size() as u64)
                 .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
                 .min(self.root.window().len() as u64);
             let sector_length = usize::try_from(sector_end.saturating_sub(start))
@@ -463,9 +518,14 @@ impl<'a> CompoundSnapshot<'a> {
             let sector = u32::try_from(index)
                 .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
             if self.parsed.range_lock_sector == Some(sector) {
-                push_span(&mut spans, start, sector_length, "range lock sector", None);
+                push_span(
+                    &mut spans,
+                    start,
+                    sector_length,
+                    SpanRole::CfbRangeLockSector,
+                );
             } else if let Some(role) = structural.get(&sector) {
-                push_span(&mut spans, start, sector_length, role, None);
+                push_span(&mut spans, start, sector_length, role.clone());
             } else if let Some((entry, payload)) = regular.get(&sector) {
                 if *payload > sector_length {
                     return malformed(format!("CFB stream {entry} is shorter than declared"));
@@ -474,29 +534,28 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     *payload,
-                    "regular stream payload",
-                    Some(entry.clone()),
+                    SpanRole::CfbRegularStreamPayload(entry.clone()),
                 );
                 push_span(
                     &mut spans,
                     start + *payload as u64,
                     sector_length - *payload,
-                    "padding",
-                    Some(entry.clone()),
+                    SpanRole::CfbPadding {
+                        entry: Some(entry.clone()),
+                    },
                 );
             } else if let Some(root_ordinal) = root_sectors.get(&sector) {
-                for mini_ordinal in 0..sector_length.div_ceil(self.parsed.mini_sector_size) {
+                for mini_ordinal in 0..sector_length.div_ceil(MINI_SECTOR_SIZE) {
                     let logical_mini = root_ordinal
-                        .checked_mul(self.parsed.sector_size / self.parsed.mini_sector_size)
+                        .checked_mul(self.parsed.version.sector_size() / MINI_SECTOR_SIZE)
                         .and_then(|base| base.checked_add(mini_ordinal))
                         .ok_or_else(|| {
                             CodecError::Malformed("CFB mini-sector id overflow".into())
                         })?;
-                    let mini_offset = mini_ordinal * self.parsed.mini_sector_size;
-                    let mini_length =
-                        (sector_length - mini_offset).min(self.parsed.mini_sector_size);
+                    let mini_offset = mini_ordinal * MINI_SECTOR_SIZE;
+                    let mini_length = (sector_length - mini_offset).min(MINI_SECTOR_SIZE);
                     let mini_start = start + mini_offset as u64;
-                    let root_offset = (logical_mini * self.parsed.mini_sector_size) as u64;
+                    let root_offset = (logical_mini * MINI_SECTOR_SIZE) as u64;
                     let mapped = root_size
                         .saturating_sub(root_offset)
                         .min(mini_length as u64) as usize;
@@ -513,29 +572,38 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start,
                             *payload,
-                            "mini stream payload",
-                            Some(entry.clone()),
+                            SpanRole::CfbMiniStreamPayload(entry.clone()),
                         );
                         push_span(
                             &mut spans,
                             mini_start + *payload as u64,
                             mini_length - *payload,
-                            "padding",
-                            Some(entry.clone()),
+                            SpanRole::CfbPadding {
+                                entry: Some(entry.clone()),
+                            },
                         );
                     } else {
-                        push_span(&mut spans, mini_start, mapped, "mini-stream padding", None);
+                        push_span(
+                            &mut spans,
+                            mini_start,
+                            mapped,
+                            SpanRole::CfbMiniStreamPadding,
+                        );
                         push_span(
                             &mut spans,
                             mini_start + mapped as u64,
                             mini_length - mapped,
-                            "padding",
-                            None,
+                            SpanRole::CfbPadding { entry: None },
                         );
                     }
                 }
             } else {
-                push_span(&mut spans, start, sector_length, "unallocated sector", None);
+                push_span(
+                    &mut spans,
+                    start,
+                    sector_length,
+                    SpanRole::CfbUnallocatedSector,
+                );
             }
         }
         if spans.first().is_none_or(|span| span.start != 0)
@@ -551,7 +619,7 @@ impl<'a> CompoundSnapshot<'a> {
 
     fn regular_sector_view(&self, sector: u32) -> Result<View<'a>, CodecError> {
         let (start, end) = sector_range(
-            self.parsed.sector_size,
+            self.parsed.version.sector_size(),
             self.parsed.sector_count,
             self.root.window().len(),
             sector,
@@ -564,10 +632,10 @@ impl<'a> CompoundSnapshot<'a> {
     fn mini_sector_view(&self, mini_sector: u32) -> Result<View<'a>, CodecError> {
         let offset = usize::try_from(mini_sector)
             .ok()
-            .and_then(|id| id.checked_mul(self.parsed.mini_sector_size))
+            .and_then(|id| id.checked_mul(MINI_SECTOR_SIZE))
             .ok_or_else(|| CodecError::Malformed("CFB mini-sector offset overflow".into()))?;
-        let regular_ordinal = offset / self.parsed.sector_size;
-        let within = offset % self.parsed.sector_size;
+        let regular_ordinal = offset / self.parsed.version.sector_size();
+        let within = offset % self.parsed.version.sector_size();
         let &regular_sector = self
             .parsed
             .root_mini_chain
@@ -579,7 +647,7 @@ impl<'a> CompoundSnapshot<'a> {
         sector
             .child(
                 sector.start() + within,
-                sector.start() + within + self.parsed.mini_sector_size,
+                sector.start() + within + MINI_SECTOR_SIZE,
             )
             .ok_or_else(|| {
                 CodecError::Malformed("CFB mini sector crosses a regular-sector boundary".into())
@@ -606,15 +674,14 @@ impl CompoundState {
             .ok_or_else(|| CodecError::Malformed("truncated CFB version".into()))?;
         let sector_shift = le_u16(bytes, 30)
             .ok_or_else(|| CodecError::Malformed("truncated CFB sector shift".into()))?;
-        if !matches!((major_version, sector_shift), (3, 9) | (4, 12))
-            || le_u16(bytes, 32) != Some(6)
-            || bytes.get(34..40) != Some(&[0; 6])
-        {
+        let version =
+            CompoundVersion::from_header(major_version, sector_shift).ok_or_else(|| {
+                CodecError::Malformed("unsupported or invalid CFB sector layout".into())
+            })?;
+        if le_u16(bytes, 32) != Some(6) || bytes.get(34..40) != Some(&[0; 6]) {
             return malformed("unsupported or invalid CFB sector layout");
         }
-        let sector_size = 1usize
-            .checked_shl(u32::from(sector_shift))
-            .ok_or_else(|| CodecError::Malformed("CFB sector size overflow".into()))?;
+        let sector_size = version.sector_size();
         if bytes.len() < sector_size {
             return malformed("CFB input does not contain a complete header sector");
         }
@@ -622,10 +689,10 @@ impl CompoundState {
         if sector_count < 2 {
             return malformed("CFB file has fewer than the minimum three sectors");
         }
-        if major_version == 3 && bytes.len() as u64 > V3_MAX_FILE_SIZE {
+        if version == CompoundVersion::V3 && bytes.len() as u64 > V3_MAX_FILE_SIZE {
             return malformed("CFB v3 file exceeds the 2 GiB size ceiling");
         }
-        if major_version == 4 && bytes[512..sector_size].iter().any(|byte| *byte != 0) {
+        if version == CompoundVersion::V4 && bytes[512..sector_size].iter().any(|byte| *byte != 0) {
             return malformed("CFB v4 header padding is not zero");
         }
         let directory_sector_count = usize::try_from(field(40, "directory sector count")?)
@@ -643,9 +710,9 @@ impl CompoundState {
         let difat_start = field(68, "DIFAT start")?;
         let difat_count = usize::try_from(field(72, "DIFAT count")?)
             .map_err(|_| CodecError::Malformed("CFB DIFAT count does not fit memory".into()))?;
-        if (major_version == 3 && directory_sector_count != 0)
-            || (major_version == 4 && directory_sector_count == 0)
-            || mini_stream_cutoff != 4096
+        if (version == CompoundVersion::V3 && directory_sector_count != 0)
+            || (version == CompoundVersion::V4 && directory_sector_count == 0)
+            || mini_stream_cutoff != MINI_STREAM_CUTOFF
             || fat_count == 0
             || fat_count > sector_count
             || difat_count > sector_count
@@ -767,11 +834,11 @@ impl CompoundState {
         {
             return malformed("CFB allocation table sector has the wrong role marker");
         }
-        let range_lock_sector = range_lock_sector(major_version, sector_size, bytes.len() as u64)?;
+        let range_lock_sector = range_lock_sector(version, bytes.len() as u64);
         if range_lock_sector.is_some_and(|id| fat.get(id as usize) != Some(&END_OF_CHAIN)) {
             return malformed("CFB range lock sector is not allocated as an end-of-chain sector");
         }
-        let directory_expected = (major_version == 4).then_some(directory_sector_count);
+        let directory_expected = (version == CompoundVersion::V4).then_some(directory_sector_count);
         let directory_chain = chain(
             Some(ctx),
             &fat,
@@ -790,7 +857,7 @@ impl CompoundState {
             None,
         )?;
         let directory_bytes = join_sectors(bytes, sector_size, sector_count, &directory_chain)?;
-        let directory = parse_directory(Some(ctx), &directory_bytes, major_version)?;
+        let directory = parse_directory(Some(ctx), &directory_bytes, version)?;
         drop(directory_scratch);
         validate_root(&directory)?;
         let mini_fat_chain = if mini_fat_count == 0 {
@@ -847,10 +914,7 @@ impl CompoundState {
             )?
         };
         Ok(Self {
-            major_version,
-            sector_size,
-            mini_sector_size: 64,
-            mini_stream_cutoff,
+            version,
             sector_count,
             fat,
             mini_fat,
@@ -864,7 +928,11 @@ impl CompoundState {
         })
     }
 
-    fn build_entries(&self, ctx: &DecodeContext<'_>) -> Result<Vec<CompoundEntry>, CodecError> {
+    fn build_entries(
+        &self,
+        ctx: &DecodeContext<'_>,
+        snapshot_id: u64,
+    ) -> Result<Vec<CompoundEntry>, CodecError> {
         let scratch_bytes = self
             .directory
             .len()
@@ -875,7 +943,14 @@ impl CompoundState {
         let _scratch = ctx.reserve_scoped(scratch_bytes as u64, "traverse CFB directory", None)?;
         let mut output = Vec::new();
         let mut reached = BTreeSet::new();
-        self.walk_tree(ctx, self.directory[0].child, "", &mut reached, &mut output)?;
+        self.walk_tree(
+            ctx,
+            snapshot_id,
+            self.directory[0].child,
+            "",
+            &mut reached,
+            &mut output,
+        )?;
         if self
             .directory
             .iter()
@@ -891,6 +966,7 @@ impl CompoundState {
     fn walk_tree(
         &self,
         ctx: &DecodeContext<'_>,
+        snapshot_id: u64,
         root: u32,
         parent: &str,
         reached: &mut BTreeSet<u32>,
@@ -943,35 +1019,28 @@ impl CompoundState {
             match entry.object_type {
                 1 => {
                     output.push(CompoundEntry::Storage(CompoundStorageEntry {
-                        id: CompoundStorageId(CompoundEntryId(id)),
+                        id: CompoundStorageId(id),
                         path: path.clone(),
                     }));
-                    self.walk_tree(ctx, entry.child, &path, reached, output)?;
+                    self.walk_tree(ctx, snapshot_id, entry.child, &path, reached, output)?;
                 }
                 2 => {
-                    let allocation = if entry.size < self.mini_stream_cutoff {
-                        CompoundAllocation::Mini
-                    } else {
-                        CompoundAllocation::Regular
-                    };
-                    let sector_size = match allocation {
-                        CompoundAllocation::Regular => self.sector_size,
-                        CompoundAllocation::Mini => self.mini_sector_size,
-                    };
-                    let expected = usize::try_from(entry.size)
-                        .map_err(|_| {
-                            CodecError::Malformed("CFB stream size does not fit memory".into())
-                        })?
-                        .div_ceil(sector_size);
-                    let chain = if entry.size == 0 {
-                        if !matches!(entry.start_sector, END_OF_CHAIN | FREE_SECTOR) {
-                            return malformed(format!(
-                                "empty CFB stream {path} has an invalid start sector"
-                            ));
-                        }
-                        Vec::new()
-                    } else {
-                        match allocation {
+                    let data = if let Some(logical_size) = NonZeroU64::new(entry.size) {
+                        let allocation = if entry.size < MINI_STREAM_CUTOFF {
+                            CompoundAllocation::Mini
+                        } else {
+                            CompoundAllocation::Regular
+                        };
+                        let sector_size = match allocation {
+                            CompoundAllocation::Regular => self.version.sector_size(),
+                            CompoundAllocation::Mini => MINI_SECTOR_SIZE,
+                        };
+                        let expected = usize::try_from(entry.size)
+                            .map_err(|_| {
+                                CodecError::Malformed("CFB stream size does not fit memory".into())
+                            })?
+                            .div_ceil(sector_size);
+                        let mut sectors = match allocation {
                             CompoundAllocation::Regular => chain(
                                 Some(ctx),
                                 &self.fat,
@@ -988,16 +1057,32 @@ impl CompoundState {
                                 Some(expected),
                                 "mini stream",
                             )?,
+                        };
+                        let first = sectors.remove(0);
+                        StreamData::Allocated {
+                            logical_size,
+                            chain: SectorChain {
+                                first,
+                                rest: sectors,
+                            },
                         }
+                    } else {
+                        let start = match entry.start_sector {
+                            END_OF_CHAIN => EmptyStreamStart::EndOfChain,
+                            FREE_SECTOR => EmptyStreamStart::FreeSector,
+                            _ => {
+                                return malformed(format!(
+                                    "empty CFB stream {path} has an invalid start sector"
+                                ));
+                            }
+                        };
+                        StreamData::Empty(start)
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
-                        id: CompoundStreamId(CompoundEntryId(id)),
-                        snapshot_id: 0,
+                        id: CompoundStreamId(id),
+                        snapshot_id,
                         path,
-                        logical_size: entry.size,
-                        start_sector: entry.start_sector,
-                        allocation,
-                        chain,
+                        data,
                     }));
                 }
                 _ => return malformed("root or empty object appears in a storage child tree"),
@@ -1031,22 +1116,22 @@ impl CompoundState {
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
-            .div_ceil(self.mini_sector_size);
+            .div_ceil(MINI_SECTOR_SIZE);
         for entry in entries {
             if let CompoundEntry::Stream(stream) = entry {
-                let target = if stream.allocation == CompoundAllocation::Regular {
+                let target = if stream.allocation() == CompoundAllocation::Regular {
                     &mut used
                 } else {
                     &mut mini_used
                 };
-                let mut remaining = stream.logical_size;
-                for &sector in &stream.chain {
-                    let payload = remaining.min(self.mini_sector_size as u64);
+                let mut remaining = stream.logical_size();
+                for &sector in stream.sectors() {
+                    let payload = remaining.min(MINI_SECTOR_SIZE as u64);
                     remaining = remaining.saturating_sub(payload);
-                    if stream.allocation == CompoundAllocation::Mini
+                    if stream.allocation() == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
                             || u64::from(sector)
-                                .saturating_mul(self.mini_sector_size as u64)
+                                .saturating_mul(MINI_SECTOR_SIZE as u64)
                                 .saturating_add(payload)
                                 > self.directory[0].size)
                     {
@@ -1101,11 +1186,10 @@ impl CompoundPrefixProbe {
         let Some(shift) = le_u16(prefix, 30) else {
             return Self::Incomplete;
         };
-        let sector_size = match (major, shift) {
-            (3, 9) => 512,
-            (4, 12) => 4096,
-            _ => return Self::Malformed("invalid CFB sector layout".into()),
+        let Some(version) = CompoundVersion::from_header(major, shift) else {
+            return Self::Malformed("invalid CFB sector layout".into());
         };
+        let sector_size = version.sector_size();
         if prefix.len() < sector_size {
             return Self::Incomplete;
         }
@@ -1118,7 +1202,8 @@ impl CompoundPrefixProbe {
         {
             return Self::Malformed("invalid CFB header".into());
         }
-        if major == 4 && prefix[512..sector_size].iter().any(|byte| *byte != 0) {
+        if version == CompoundVersion::V4 && prefix[512..sector_size].iter().any(|byte| *byte != 0)
+        {
             return Self::Malformed("CFB v4 header padding is not zero".into());
         }
         let Some(fat_count) = le_u32(prefix, 44).and_then(|v| usize::try_from(v).ok()) else {
@@ -1137,8 +1222,8 @@ impl CompoundPrefixProbe {
             return Self::Incomplete;
         };
         if fat_count == 0
-            || (major == 3 && directory_sector_count != 0)
-            || (major == 4 && directory_sector_count == 0)
+            || (version == CompoundVersion::V3 && directory_sector_count != 0)
+            || (version == CompoundVersion::V4 && directory_sector_count == 0)
         {
             return Self::Malformed("invalid CFB header counts".into());
         }
@@ -1228,7 +1313,7 @@ impl CompoundPrefixProbe {
         {
             return Self::Malformed("CFB allocation sector has the wrong role marker".into());
         }
-        let expected_directory_count = if major == 4 {
+        let expected_directory_count = if version == CompoundVersion::V4 {
             Some(directory_sector_count as usize)
         } else if directory_sector_count == 0 {
             None
@@ -1268,7 +1353,7 @@ impl CompoundPrefixProbe {
         else {
             return Self::Incomplete;
         };
-        let directory = match parse_directory(None, &directory_bytes, major) {
+        let directory = match parse_directory(None, &directory_bytes, version) {
             Ok(value) => value,
             Err(error) => return Self::Malformed(error.to_string()),
         };
@@ -1326,10 +1411,67 @@ impl CompoundPrefixProbe {
     }
 }
 
+/// Reads the prefix used for native-format detection.
+///
+/// The first read stops at the smaller of `prefix_len` and `max_bytes`.
+/// CFB inputs continue until the directory probe settles or `max_bytes` is
+/// reached. `FileTooLarge` reports a CFB input that needs bytes beyond that
+/// limit to settle the directory probe.
+pub fn read_detection_prefix(
+    source: &mut dyn Read,
+    prefix_len: usize,
+    max_bytes: u64,
+) -> io::Result<Vec<u8>> {
+    let phase_one_len = prefix_len.min(usize::try_from(max_bytes).unwrap_or(usize::MAX));
+    let mut bytes = Vec::with_capacity(phase_one_len);
+    let mut chunk =
+        cadmpeg_core::decode::alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
+            .map_err(io::Error::other)?
+            .into_boxed_slice();
+    while bytes.len() < phase_one_len {
+        let chunk_len = (phase_one_len - bytes.len()).min(chunk.len());
+        let read = source.read(&mut chunk[..chunk_len])?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    if matches!(
+        CompoundPrefixProbe::inspect(&bytes),
+        CompoundPrefixProbe::NotCompound
+    ) {
+        return Ok(bytes);
+    }
+    loop {
+        if !matches!(
+            CompoundPrefixProbe::inspect(&bytes),
+            CompoundPrefixProbe::Incomplete
+        ) {
+            return Ok(bytes);
+        }
+        if bytes.len() as u64 >= max_bytes {
+            if source.read(&mut [0_u8; 1])? != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::FileTooLarge,
+                    "compound detection input exceeds its byte limit",
+                ));
+            }
+            return Ok(bytes);
+        }
+        let remaining = max_bytes - bytes.len() as u64;
+        let chunk_len = remaining.min(chunk.len() as u64) as usize;
+        let read = source.read(&mut chunk[..chunk_len])?;
+        if read == 0 {
+            return Ok(bytes);
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+}
+
 fn parse_directory(
     ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
-    major_version: u16,
+    version: CompoundVersion,
 ) -> Result<Vec<DirectoryEntry>, CodecError> {
     if !bytes.len().is_multiple_of(128) {
         return malformed("CFB directory stream has a partial entry");
@@ -1388,7 +1530,7 @@ fn parse_directory(
             return malformed("invalid CFB directory node color");
         }
         let mut size = le_u64(raw, 120).expect("directory stream size");
-        if major_version == 3 {
+        if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
         entries.push(DirectoryEntry {
@@ -1494,23 +1636,12 @@ fn cfb_upper_unit(unit: u16) -> u16 {
     }
 }
 
-fn range_lock_sector(
-    major_version: u16,
-    sector_size: usize,
-    file_size: u64,
-) -> Result<Option<u32>, CodecError> {
-    if major_version != 4 || file_size <= RANGE_LOCK_END {
-        return Ok(None);
+fn range_lock_sector(version: CompoundVersion, file_size: u64) -> Option<u32> {
+    if version != CompoundVersion::V4 || file_size <= RANGE_LOCK_END {
+        return None;
     }
-    let sector_size = u64::try_from(sector_size)
-        .map_err(|_| CodecError::Malformed("CFB sector size does not fit u64".into()))?;
-    let physical_sector = RANGE_LOCK_START / sector_size;
-    let sector = physical_sector
-        .checked_sub(1)
-        .ok_or_else(|| CodecError::Malformed("CFB range lock sector underflow".into()))?;
-    u32::try_from(sector)
-        .map(Some)
-        .map_err(|_| CodecError::Malformed("CFB range lock sector exceeds u32".into()))
+    // V4 fixes the sector size at 4096 bytes; this address fits a u32 sector id.
+    Some((RANGE_LOCK_START / version.sector_size() as u64 - 1) as u32)
 }
 
 fn chain(
@@ -1603,27 +1734,14 @@ fn join_sectors(
     Ok(output)
 }
 
-fn physically_contiguous(views: &[View<'_>]) -> bool {
-    views
-        .windows(2)
-        .all(|pair| pair[0].end() == pair[1].start())
-}
-
-fn push_span(
-    spans: &mut Vec<CompoundPhysicalSpan>,
-    start: u64,
-    length: usize,
-    role: &str,
-    entry: Option<String>,
-) {
+fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: SpanRole) {
     if length == 0 {
         return;
     }
-    spans.push(CompoundPhysicalSpan {
+    spans.push(PhysicalSpan {
         start,
         end: start + length as u64,
-        role: role.into(),
-        entry,
+        role,
     });
 }
 
@@ -1675,11 +1793,40 @@ fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::*;
 
     const SECTOR_SIZE: usize = 512;
+
+    struct CountingReader {
+        inner: &'static [u8],
+        bytes_read: usize,
+    }
+
+    impl Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let read = self.inner.read(buffer)?;
+            self.bytes_read += read;
+            Ok(read)
+        }
+    }
+
+    #[test]
+    fn detection_prefix_never_reads_past_its_byte_limit() {
+        let mut source = CountingReader {
+            inner: &[b'x'; 1024],
+            bytes_read: 0,
+        };
+
+        let prefix = read_detection_prefix(&mut source, 128 * 1024, 16)
+            .expect("a capped non-CFB prefix is not a size refusal");
+
+        assert_eq!(prefix, vec![b'x'; 16]);
+        assert_eq!(source.bytes_read, 16);
+    }
 
     #[test]
     fn snapshot_opens_regular_and_mini_streams_lazily() {
@@ -1722,6 +1869,44 @@ mod tests {
                 .end,
             file.len() as u64
         );
+    }
+
+    #[test]
+    fn empty_streams_preserve_both_admitted_start_markers() {
+        for marker in [END_OF_CHAIN, FREE_SECTOR] {
+            let mut file = fixture();
+            directory_entry(
+                sector_mut(&mut file, 0),
+                1,
+                "Small",
+                2,
+                NO_STREAM,
+                2,
+                NO_STREAM,
+                marker,
+                0,
+            );
+            put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::default();
+            let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+                .expect("empty stream fixture fits policy");
+            let snapshot = CompoundSnapshot::new(&ctx, root).expect("empty stream parses");
+            let stream = snapshot.stream("Small").expect("empty stream exists");
+            assert_eq!(stream.start_sector(), marker);
+            assert_eq!(stream.logical_size(), 0);
+            assert!(snapshot
+                .open(&ctx, stream)
+                .expect("empty stream opens")
+                .window()
+                .is_empty());
+            let summary = snapshot.container_entries(|_| ContainerRole::Stream);
+            let entry = summary
+                .iter()
+                .find(|entry| entry.name == "Small")
+                .expect("stream summary");
+            assert_eq!(entry.attributes["start_sector"], marker.to_string());
+        }
     }
 
     #[test]
@@ -1903,11 +2088,13 @@ mod tests {
             0x1_0000_0001,
         );
         assert_eq!(
-            parse_directory(None, &directory, 4).expect("v4 directory parses")[0].size,
+            parse_directory(None, &directory, CompoundVersion::V4).expect("v4 directory parses")[0]
+                .size,
             0x1_0000_0001
         );
         assert_eq!(
-            parse_directory(None, &directory, 3).expect("v3 directory parses")[0].size,
+            parse_directory(None, &directory, CompoundVersion::V3).expect("v3 directory parses")[0]
+                .size,
             1
         );
     }
@@ -1976,15 +2163,12 @@ mod tests {
     #[test]
     fn locates_the_v4_range_lock_sector_only_above_two_gibibytes() {
         assert_eq!(
-            range_lock_sector(4, 4096, RANGE_LOCK_END + 4096).expect("range lock computes"),
+            range_lock_sector(CompoundVersion::V4, RANGE_LOCK_END + 4096),
             Some(0x0007_fffe)
         );
+        assert_eq!(range_lock_sector(CompoundVersion::V4, RANGE_LOCK_END), None);
         assert_eq!(
-            range_lock_sector(4, 4096, RANGE_LOCK_END).expect("range lock computes"),
-            None
-        );
-        assert_eq!(
-            range_lock_sector(3, 512, RANGE_LOCK_END + 512).expect("v3 has no range lock"),
+            range_lock_sector(CompoundVersion::V3, RANGE_LOCK_END + 512),
             None
         );
     }
@@ -2002,7 +2186,8 @@ mod tests {
         let mut directory = vec![0_u8; 128];
         directory[68..80].fill(0xff);
         directory[8] = 1;
-        let entries = parse_directory(None, &directory, 3).expect("unallocated slot is skipped");
+        let entries = parse_directory(None, &directory, CompoundVersion::V3)
+            .expect("unallocated slot is skipped");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].object_type, 0);
         assert_eq!(entries[0].left, NO_STREAM);

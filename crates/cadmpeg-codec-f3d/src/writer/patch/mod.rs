@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
@@ -71,7 +71,14 @@ pub fn write_semantic(
     } else {
         validate_assembly_projection(target, None)?;
     }
-    let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
+    let baseline = F3dCodec
+        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
+        .map_err(|failure| match failure {
+            DecodeFailure::Codec(error) => error,
+            _ => {
+                unreachable!("the fixed salvage decode cannot produce a strict refusal")
+            }
+        })?;
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
@@ -107,27 +114,32 @@ pub fn write_semantic(
         .model
         .curves
         .iter()
-        .filter_map(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
-                let before = baseline
-                    .ir()
-                    .model
-                    .curves
-                    .iter()
-                    .find(|before| before.id == curve.id)?;
-                let CurveGeometry::Nurbs(before) = &before.geometry else {
-                    return None;
-                };
-                Some((
-                    curve.id.0.clone(),
-                    NurbsCurveEdit {
-                        curve: nurbs.clone(),
-                        periodic: (before.periodic != nurbs.periodic).then_some(nurbs.periodic),
-                    },
-                ))
-            }
-            _ => None,
-        })
+        .filter_map(
+            |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
+                    let before = baseline
+                        .ir()
+                        .model
+                        .curves
+                        .iter()
+                        .find(|before| before.id == curve.id)?;
+                    let CurveGeometry::Nurbs(before) =
+                        before.geometry.solved_cache().unwrap_or(&before.geometry)
+                    else {
+                        return None;
+                    };
+                    Some((
+                        curve.id.as_str().to_owned(),
+                        NurbsCurveEdit {
+                            curve: nurbs.clone(),
+                            periodic: (before.periodic() != nurbs.periodic())
+                                .then_some(nurbs.periodic()),
+                        },
+                    ))
+                }
+                _ => None,
+            },
+        )
         .collect::<BTreeMap<_, _>>();
     let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
     let edited_surfaces =
@@ -136,29 +148,33 @@ pub fn write_semantic(
         .model
         .surfaces
         .iter()
-        .filter_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
-                let before = baseline
-                    .ir()
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|before| before.id == surface.id)?;
-                let SurfaceGeometry::Nurbs(before) = &before.geometry else {
-                    return None;
-                };
-                Some((
-                    surface.id.0.clone(),
-                    NurbsSurfaceEdit {
-                        surface: nurbs.clone(),
-                        periodic: (before.u_periodic != nurbs.u_periodic
-                            || before.v_periodic != nurbs.v_periodic)
-                            .then_some([nurbs.u_periodic, nurbs.v_periodic]),
-                    },
-                ))
-            }
-            _ => None,
-        })
+        .filter_map(
+            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
+                SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
+                    let before = baseline
+                        .ir()
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|before| before.id == surface.id)?;
+                    let SurfaceGeometry::Nurbs(before) =
+                        before.geometry.solved_cache().unwrap_or(&before.geometry)
+                    else {
+                        return None;
+                    };
+                    Some((
+                        surface.id.as_str().to_owned(),
+                        NurbsSurfaceEdit {
+                            surface: nurbs.clone(),
+                            periodic: (before.u_periodic() != nurbs.u_periodic()
+                                || before.v_periodic() != nurbs.v_periodic())
+                            .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
+                        },
+                    ))
+                }
+                _ => None,
+            },
+        )
         .collect::<BTreeMap<_, _>>();
     let extrusion_direction_edits = validate_procedural_surface_edits(baseline.ir(), target)?;
     let procedural_surface_fit_edits =
@@ -405,7 +421,7 @@ pub fn write_semantic(
         .model
         .points
         .iter()
-        .map(|point| (point.id.0.clone(), point.position))
+        .map(|point| (point.id.as_str().to_owned(), point.position))
         .collect::<BTreeMap<_, _>>();
     let lines = target
         .model
@@ -414,7 +430,7 @@ pub fn write_semantic(
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Line { origin, direction } => edited_curves
                 .contains(curve.id.as_str())
-                .then(|| (curve.id.0.clone(), (origin, direction))),
+                .then(|| (curve.id.as_str().to_owned(), (origin, direction))),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -430,7 +446,7 @@ pub fn write_semantic(
                 radius,
             } => edited_curves.contains(curve.id.as_str()).then(|| {
                 (
-                    curve.id.0.clone(),
+                    curve.id.as_str().to_owned(),
                     (center, axis, ref_direction, radius, radius),
                 )
             }),
@@ -442,7 +458,7 @@ pub fn write_semantic(
                 minor_radius,
             } => edited_curves.contains(curve.id.as_str()).then(|| {
                 (
-                    curve.id.0.clone(),
+                    curve.id.as_str().to_owned(),
                     (center, axis, major_direction, major_radius, minor_radius),
                 )
             }),
@@ -456,7 +472,7 @@ pub fn write_semantic(
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Degenerate { point } => edited_curves
                 .contains(curve.id.as_str())
-                .then(|| (curve.id.0.clone(), point)),
+                .then(|| (curve.id.as_str().to_owned(), point)),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -471,7 +487,7 @@ pub fn write_semantic(
                 u_axis,
             } => edited_surfaces
                 .contains(surface.id.as_str())
-                .then(|| (surface.id.0.clone(), (origin, normal, u_axis))),
+                .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis))),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -485,9 +501,12 @@ pub fn write_semantic(
                 axis,
                 ref_direction,
                 radius,
-            } => edited_surfaces
-                .contains(surface.id.as_str())
-                .then(|| (surface.id.0.clone(), (center, axis, ref_direction, radius))),
+            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
+                (
+                    surface.id.as_str().to_owned(),
+                    (center, axis, ref_direction, radius),
+                )
+            }),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -504,7 +523,7 @@ pub fn write_semantic(
                 minor_radius,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
-                    surface.id.0.clone(),
+                    surface.id.as_str().to_owned(),
                     (center, axis, ref_direction, major_radius, minor_radius),
                 )
             }),
@@ -523,7 +542,7 @@ pub fn write_semantic(
                 radius,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
-                    surface.id.0.clone(),
+                    surface.id.as_str().to_owned(),
                     (origin, axis, ref_direction, radius, 1.0, 0.0),
                 )
             }),
@@ -536,7 +555,7 @@ pub fn write_semantic(
                 half_angle,
             } => edited_surfaces.contains(surface.id.as_str()).then(|| {
                 (
-                    surface.id.0.clone(),
+                    surface.id.as_str().to_owned(),
                     (origin, axis, ref_direction, radius, ratio, half_angle),
                 )
             }),

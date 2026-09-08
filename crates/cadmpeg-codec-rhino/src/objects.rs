@@ -42,50 +42,71 @@ const IDEF_OBJECT_MODE: u8 = 3;
 
 /// A class-userdata descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UserdataDescriptor {
-    /// Complete wrapper range.
+pub(crate) enum UserdataDescriptor {
+    Known(ClassUserdata),
+    UnknownVersion {
+        range: Range<usize>,
+        version: (u8, u8),
+        payload_range: Range<usize>,
+    },
+}
+
+/// Fields supplied by recognized class-userdata framing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClassUserdata {
     pub(crate) range: Range<usize>,
-    /// Packed wrapper version.
     pub(crate) version: (u8, u8),
-    /// Userdata class UUID.
     pub(crate) class_uuid: Uuid,
-    /// Userdata item UUID.
     pub(crate) item_uuid: Uuid,
-    /// Copy count.
     pub(crate) copy_count: i32,
-    /// Transform byte range.
     pub(crate) transform_range: Range<usize>,
-    /// Optional application UUID.
     pub(crate) application_uuid: Option<Uuid>,
-    /// Optional last-saved-as-goo flag.
-    pub(crate) last_saved_as_goo: Option<bool>,
-    /// Optional userdata archive version.
-    pub(crate) archive_version: Option<i32>,
-    /// Optional userdata writer version.
-    pub(crate) writer_version: Option<i32>,
-    /// Anonymous payload range, excluding its framing.
+    pub(crate) save_context: Option<UserdataSaveContext>,
     pub(crate) payload_range: Range<usize>,
-    /// Unknown future-version payload range.
-    pub(crate) unknown_version: bool,
+}
+
+/// Save metadata stored together by class-userdata version 2.2 and later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UserdataSaveContext {
+    pub(crate) last_saved_as_goo: bool,
+    pub(crate) archive_version: i32,
+    pub(crate) writer_version: i32,
+}
+
+impl UserdataDescriptor {
+    pub(crate) fn known(&self) -> Option<&ClassUserdata> {
+        match self {
+            Self::Known(value) => Some(value),
+            Self::UnknownVersion { .. } => None,
+        }
+    }
 }
 
 /// An attribute-userdata record, retained independently of object attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AttributeUserdataDescriptor {
-    /// Complete userdata chunk range.
+pub(crate) enum AttributeUserdataDescriptor {
+    Unknown { range: Range<usize> },
+    Known(AttributeUserdata),
+}
+
+/// Fields supplied by recognized attribute-userdata framing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AttributeUserdata {
     pub(crate) range: Range<usize>,
-    /// Whether the class-userdata framing was recognized.
-    pub(crate) known: bool,
-    /// Userdata class UUID when the framing supplied one.
-    pub(crate) class_uuid: Option<Uuid>,
-    /// Userdata item UUID when the framing supplied one.
-    pub(crate) item_uuid: Option<Uuid>,
-    /// Userdata application UUID from a major-2 minor-1 header.
+    pub(crate) class_uuid: Uuid,
+    pub(crate) item_uuid: Uuid,
     pub(crate) application_uuid: Option<Uuid>,
-    /// Userdata writer version from a major-2 header.
     pub(crate) writer_version: Option<i64>,
-    /// Bounded anonymous payload range.
-    pub(crate) payload_range: Option<Range<usize>>,
+    pub(crate) payload_range: Range<usize>,
+}
+
+impl AttributeUserdataDescriptor {
+    pub(crate) fn known(&self) -> Option<&AttributeUserdata> {
+        match self {
+            Self::Known(value) => Some(value),
+            Self::Unknown { .. } => None,
+        }
+    }
 }
 
 /// Raw object attributes decoded from an object-attributes chunk.
@@ -213,22 +234,27 @@ pub(crate) struct SourceIdentity {
     pub(crate) name: String,
     /// Raw layer archive index.
     pub(crate) layer_index: i32,
-    /// Resolved layer UUID.
-    pub(crate) layer_id: Option<Uuid>,
-    /// Resolved layer name.
-    pub(crate) layer_name: Option<String>,
+    /// Resolved layer from the document layer table.
+    pub(crate) layer: Option<LayerRef>,
     /// Effective display color.
     pub(crate) effective_color: Option<[u8; 4]>,
     /// Effective visibility after layer combination.
     pub(crate) effective_visible: bool,
     /// Raw object mode.
     pub(crate) object_mode: u8,
-    /// Whether the object-mode marks a definition member.
-    pub(crate) definition_member: bool,
     /// Object frame transform.
     pub(crate) object_frame: Option<Xform>,
     /// Complete source range.
     pub(crate) source: SourceRange,
+}
+
+/// Resolved layer identity from one document lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LayerRef {
+    /// Layer UUID, when the layer record carries one.
+    pub(crate) id: Option<Uuid>,
+    /// Layer name.
+    pub(crate) name: String,
 }
 
 /// Builds a stable source ID without minting a `CadIr` entity ID.
@@ -249,9 +275,26 @@ pub(crate) struct HistoryDescriptor {
     pub(crate) data_range: Option<Range<usize>>,
 }
 
+/// Attribute payload admission state for a framed object.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum AttributeState {
+    Missing,
+    Degraded,
+    Parsed(Box<ObjectAttributes>),
+}
+
+impl AttributeState {
+    pub(crate) fn parsed(&self) -> Option<&ObjectAttributes> {
+        match self {
+            Self::Parsed(value) => Some(value),
+            Self::Missing | Self::Degraded => None,
+        }
+    }
+}
+
 /// A fully framed Rhino object record.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ObjectDescriptor {
+pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
     /// Complete object-record range.
     pub(crate) range: Range<usize>,
     /// Object type filter bits.
@@ -260,26 +303,14 @@ pub(crate) struct ObjectDescriptor {
     pub(crate) class_uuid: Uuid,
     /// Class-data payload range.
     pub(crate) class_data_range: Range<usize>,
-    /// Whether bounded inner framing was malformed and only the outer record survived.
-    pub(crate) framing_degraded: bool,
-    /// Parsed object attributes, if valid.
-    pub(crate) attributes: Option<ObjectAttributes>,
-    /// Whether the framed attributes payload degraded during parsing.
-    pub(crate) attributes_degraded: bool,
+    /// Attribute payload admission state.
+    pub(crate) attributes: AttributeState,
     /// Attribute-userdata descriptors.
     pub(crate) attributes_userdata: Vec<AttributeUserdataDescriptor>,
     /// Resolved source identity.
-    pub(crate) identity: Option<SourceIdentity>,
+    pub(crate) identity: I,
     /// Class userdata descriptors.
     pub(crate) userdata: Vec<UserdataDescriptor>,
-    /// Optional attributes range.
-    pub(crate) attributes_range: Option<Range<usize>>,
-    /// Optional attributes body range, excluding framing and checksum.
-    pub(crate) attributes_body_range: Option<Range<usize>>,
-    /// Optional attribute-userdata range.
-    pub(crate) attributes_userdata_range: Option<Range<usize>>,
-    /// Optional attribute-userdata body range, excluding framing.
-    pub(crate) attributes_userdata_body_range: Option<Range<usize>>,
     /// Optional history descriptor.
     pub(crate) history: Option<HistoryDescriptor>,
     /// Unknown bounded trailer child ranges.
@@ -288,6 +319,52 @@ pub(crate) struct ObjectDescriptor {
     pub(crate) checksum_warnings: Vec<String>,
     /// Object-local attribute and identity warnings.
     pub(crate) warnings: Vec<String>,
+}
+
+/// A scanned object record: framed contents, or a degraded outer range.
+#[derive(Debug, Clone, PartialEq)]
+// Framed records are the common case; retain their descriptors inline during table traversal.
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum ObjectRecord<I = SourceIdentity> {
+    /// Bounded inner framing was malformed; only the outer range survived.
+    Degraded {
+        /// Complete object-record range.
+        range: Range<usize>,
+        /// Framing failure note.
+        warning: String,
+    },
+    /// Fully framed object record.
+    Framed(ObjectDescriptor<I>),
+}
+
+impl<I> ObjectRecord<I> {
+    pub(crate) fn range(&self) -> Range<usize> {
+        match self {
+            Self::Degraded { range, .. } => range.clone(),
+            Self::Framed(object) => object.range.clone(),
+        }
+    }
+
+    pub(crate) fn framed(&self) -> Option<&ObjectDescriptor<I>> {
+        match self {
+            Self::Framed(object) => Some(object),
+            Self::Degraded { .. } => None,
+        }
+    }
+
+    pub(crate) fn is_degraded(&self) -> bool {
+        matches!(self, Self::Degraded { .. })
+    }
+
+    pub(crate) fn class_uuid(&self) -> Option<Uuid> {
+        self.framed().map(|object| object.class_uuid)
+    }
+}
+
+impl ObjectRecord {
+    pub(crate) fn identity(&self) -> Option<&SourceIdentity> {
+        self.framed().map(|object| &object.identity)
+    }
 }
 
 /// A fully framed Rhino class wrapper used by table records.
@@ -303,18 +380,8 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
 
-fn child(
-    bytes: &[u8],
-    offset: usize,
-    end: usize,
-    archive: ArchiveVersion,
-    class_uuid: bool,
-) -> Result<crate::chunks::Chunk, FramingError> {
-    chunk_at(bytes, offset, end, archive, class_uuid)
-}
-
 fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
-    if chunk.typecode != typecode || chunk.short {
+    if chunk.typecode != typecode || chunk.short() {
         return Err(FramingError::structural(
             chunk.header_start,
             format!(
@@ -327,7 +394,7 @@ fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), Frami
 }
 
 fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
-    if chunk.typecode != typecode || !chunk.short || chunk.value != 0 {
+    if chunk.typecode != typecode || !chunk.short() || chunk.value() != 0 {
         return Err(FramingError::structural(
             chunk.header_start,
             format!(
@@ -337,10 +404,6 @@ fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(),
         ));
     }
     Ok(())
-}
-
-fn chunk_range(chunk: &crate::chunks::Chunk) -> Range<usize> {
-    chunk.range()
 }
 
 fn checksum_warning(
@@ -361,7 +424,7 @@ fn checksum_warning_excluding(
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body, children)?;
+    let direct = direct_checksum_ranges(&chunk.body(), children)?;
     match verify_checksum_ranges(bytes, chunk, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
@@ -389,11 +452,17 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
-    let wrapper = child(bytes, body.start, body.end, archive, false)?;
+    let wrapper = chunk_at(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
-    let uuid_chunk = child(bytes, wrapper.body.start, wrapper.body.end, archive, true)?;
+    let uuid_chunk = chunk_at(
+        bytes,
+        wrapper.body().start,
+        wrapper.body().end,
+        archive,
+        true,
+    )?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
+    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
         return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -403,29 +472,29 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         warnings.push(note);
     }
     let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body.start..uuid_chunk.body.start + class_uuid_body::CRC32]
+        bytes[uuid_chunk.body().start..uuid_chunk.body().start + class_uuid_body::CRC32]
             .try_into()
             .expect("UUID length checked"),
     );
     if class_uuid == Uuid::nil() {
-        if uuid_chunk.next_offset != wrapper.body.end {
+        if uuid_chunk.next_offset() != wrapper.body().end {
             return Err(FramingError::structural(
-                uuid_chunk.next_offset,
+                uuid_chunk.next_offset(),
                 "null class wrapper has trailing bytes",
             ));
         }
         return Ok((
             ClassDescriptor {
                 class_uuid,
-                class_data_range: uuid_chunk.next_offset..uuid_chunk.next_offset,
+                class_data_range: uuid_chunk.next_offset()..uuid_chunk.next_offset(),
             },
             Vec::new(),
         ));
     }
-    let data_chunk = child(
+    let data_chunk = chunk_at(
         bytes,
-        uuid_chunk.next_offset,
-        wrapper.body.end,
+        uuid_chunk.next_offset(),
+        wrapper.body().end,
         archive,
         false,
     )?;
@@ -433,23 +502,23 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     // CLASS_DATA checksum coverage is defined by the concrete class grammar.
     // The wrapper scanner cannot distinguish direct bytes from embedded chunks,
     // so it must not report a checksum result for this mixed payload.
-    let mut offset = data_chunk.next_offset;
+    let mut offset = data_chunk.next_offset();
     let mut end_seen = false;
     let mut userdata = Vec::new();
-    while offset < wrapper.body.end {
-        let item = child(bytes, offset, wrapper.body.end, archive, false)?;
+    while offset < wrapper.body().end {
+        let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             userdata.push(parse_userdata(bytes, &item, archive, warnings)?);
-            offset = item.next_offset;
+            offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
-            offset = item.next_offset;
+            offset = item.next_offset();
             end_seen = true;
             break;
         }
     }
-    if !end_seen || offset != wrapper.body.end || wrapper.next_offset != body.end {
+    if !end_seen || offset != wrapper.body().end || wrapper.next_offset() != body.end {
         return Err(FramingError::structural(
             offset,
             "class wrapper has trailing bytes",
@@ -458,7 +527,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     Ok((
         ClassDescriptor {
             class_uuid,
-            class_data_range: data_chunk.body,
+            class_data_range: data_chunk.body(),
         },
         userdata,
     ))
@@ -471,7 +540,7 @@ pub(crate) fn parse_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<UserdataDescriptor, FramingError> {
-    let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
+    let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
     if version.0 == 1 {
@@ -481,48 +550,36 @@ pub(crate) fn parse_userdata(
         let transform_start = reader.position();
         reader.take(16 * 8)?;
         let transform_range = transform_start..reader.position();
-        let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
+        let payload = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
             warnings.push(note);
         }
-        return Ok(UserdataDescriptor {
-            range: chunk_range(wrapper),
+        return Ok(UserdataDescriptor::Known(ClassUserdata {
+            range: wrapper.range(),
             version,
             class_uuid,
             item_uuid,
             copy_count,
             transform_range,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
-            payload_range: payload.body,
-            unknown_version: false,
-        });
+            save_context: None,
+            payload_range: payload.body(),
+        }));
     }
     if version.0 != 2 {
-        return Ok(UserdataDescriptor {
-            range: chunk_range(wrapper),
+        return Ok(UserdataDescriptor::UnknownVersion {
+            range: wrapper.range(),
             version,
-            class_uuid: Uuid::nil(),
-            item_uuid: Uuid::nil(),
-            copy_count: 0,
-            transform_range: 0..0,
-            application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
-            payload_range: wrapper.body.clone(),
-            unknown_version: true,
+            payload_range: wrapper.body().clone(),
         });
     }
-    let header = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
+    let header = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
     if let Some(note) = checksum_warning(bytes, &header)? {
         warnings.push(note);
     }
-    let mut header_reader = BoundedReader::new(bytes, header.body.start, header.body.end)?;
+    let mut header_reader = BoundedReader::new(bytes, header.body().start, header.body().end)?;
     let class_uuid = uuid(&mut header_reader)?;
     let item_uuid = uuid(&mut header_reader)?;
     let copy_count = header_reader.i32()?;
@@ -532,7 +589,7 @@ pub(crate) fn parse_userdata(
     let application_uuid = (version.1 >= 1)
         .then(|| uuid(&mut header_reader))
         .transpose()?;
-    let last_saved_as_goo = if version.1 >= 2 {
+    let save_context = if version.1 >= 2 {
         let value = header_reader.u8()?;
         if value > 1 {
             return Err(FramingError::structural(
@@ -540,36 +597,41 @@ pub(crate) fn parse_userdata(
                 "last-saved-as-goo must be encoded as 0 or 1",
             ));
         }
-        Some(value != 0)
+        Some(UserdataSaveContext {
+            last_saved_as_goo: value != 0,
+            archive_version: header_reader.i32()?,
+            writer_version: header_reader.i32()?,
+        })
     } else {
         None
     };
-    let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
-    let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     header_reader.skip_remaining()?;
-    let payload = child(bytes, header.next_offset, wrapper.body.end, archive, false)?;
+    let payload = chunk_at(
+        bytes,
+        header.next_offset(),
+        wrapper.body().end,
+        archive,
+        false,
+    )?;
     require_long(&payload, ANONYMOUS)?;
-    reader.skip(payload.next_offset - reader.position())?;
+    reader.skip(payload.next_offset() - reader.position())?;
     reader.skip_remaining()?;
     if let Some(note) =
         checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
     {
         warnings.push(note);
     }
-    Ok(UserdataDescriptor {
-        range: chunk_range(wrapper),
+    Ok(UserdataDescriptor::Known(ClassUserdata {
+        range: wrapper.range(),
         version,
         class_uuid,
         item_uuid,
         copy_count,
         transform_range,
         application_uuid,
-        last_saved_as_goo,
-        archive_version,
-        writer_version,
-        payload_range: payload.body,
-        unknown_version: false,
-    })
+        save_context,
+        payload_range: payload.body(),
+    }))
 }
 
 /// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
@@ -578,7 +640,7 @@ pub(crate) fn parse_user_string_list(
     payload_range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<Vec<(String, String)>, FramingError> {
-    let list = child(
+    let list = chunk_at(
         bytes,
         payload_range.start,
         payload_range.end,
@@ -586,12 +648,12 @@ pub(crate) fn parse_user_string_list(
         false,
     )?;
     require_long(&list, ANONYMOUS)?;
-    let mut reader = BoundedReader::new(bytes, list.body.start, list.body.end)?;
+    let mut reader = BoundedReader::new(bytes, list.body().start, list.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(FramingError::structural(
-            list.body.start,
+            list.body().start,
             "user-string list version is unsupported",
         ));
     }
@@ -599,14 +661,14 @@ pub(crate) fn parse_user_string_list(
     let count_bytes = bounded_count(&reader, count, 1)?;
     let mut values = Vec::with_capacity(count_bytes);
     for _ in 0..count_bytes {
-        let entry = child(bytes, reader.position(), list.body.end, archive, false)?;
+        let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
-        let mut entry_reader = BoundedReader::new(bytes, entry.body.start, entry.body.end)?;
+        let mut entry_reader = BoundedReader::new(bytes, entry.body().start, entry.body().end)?;
         let entry_major = entry_reader.i32()?;
         let entry_minor = entry_reader.i32()?;
         if entry_major != 1 || entry_minor < 0 {
             return Err(FramingError::structural(
-                entry.body.start,
+                entry.body().start,
                 "user-string entry version is unsupported",
             ));
         }
@@ -614,7 +676,7 @@ pub(crate) fn parse_user_string_list(
         let value = settings::utf16(&mut entry_reader)?;
         entry_reader.skip_remaining()?;
         values.push((key, value));
-        reader.skip(entry.next_offset - reader.position())?;
+        reader.skip(entry.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
     Ok(values)
@@ -624,35 +686,34 @@ fn parse_history(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
-    _warnings: &mut Vec<String>,
 ) -> Result<HistoryDescriptor, FramingError> {
-    let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
+    let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
     let mut offset = reader.position();
     let mut header_range = None;
     let mut data_range = None;
-    while offset < wrapper.body.end {
-        let item = child(bytes, offset, wrapper.body.end, archive, false)?;
+    while offset < wrapper.body().end {
+        let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         match item.typecode {
             HISTORY_HEADER if header_range.is_none() && data_range.is_none() => {
                 require_long(&item, HISTORY_HEADER)?;
-                header_range = Some(chunk_range(&item));
+                header_range = Some(item.range());
             }
             HISTORY_DATA if data_range.is_none() => {
                 require_long(&item, HISTORY_DATA)?;
-                data_range = Some(chunk_range(&item));
+                data_range = Some(item.range());
             }
             _ => {
                 return Err(FramingError::structural(
                     item.header_start,
                     "history child is duplicate or out of order",
-                ))
+                ));
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     Ok(HistoryDescriptor {
-        range: chunk_range(wrapper),
+        range: wrapper.range(),
         version: (packed >> 4, packed & 0x0f),
         header_range,
         data_range,
@@ -675,6 +736,146 @@ fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, Frami
             offset,
             format!("{label} is not finite"),
         ))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum AttributeItem {
+    Name,
+    Url,
+    LinetypeIndex,
+    MaterialIndex,
+    RenderingAttributes,
+    Color,
+    PlotColor,
+    PlotWeight,
+    Decoration,
+    WireDensity,
+    Visible,
+    ObjectMode,
+    ColorSource,
+    PlotColorSource,
+    PlotWeightSource,
+    MaterialSource,
+    LinetypeSource,
+    Groups,
+    ActiveSpace,
+    ViewportId,
+    DisplayMaterials,
+    DisplayOrder,
+    LineCapSource,
+    LineCapStyle,
+    LineJoinSource,
+    LineJoinStyle,
+    ClipParticipationSource,
+    Clipping,
+    SectionAttributesSource,
+    HatchPatternIndex,
+    SectionHatchScale,
+    SectionHatchRotation,
+    LinetypePatternScale,
+    HatchBackground,
+    HatchBoundaryVisible,
+    ObjectFrame,
+    SectionFillRule,
+    EmbeddedLinetype,
+    EmbeddedSectionStyle,
+    ClippingPlaneLabelStyle,
+    SelectiveClippingList,
+    DetailBackgroundVisible,
+}
+
+impl AttributeItem {
+    fn from_raw(value: u8) -> Option<Self> {
+        Some(match value {
+            1 => Self::Name,
+            2 => Self::Url,
+            3 => Self::LinetypeIndex,
+            4 => Self::MaterialIndex,
+            5 => Self::RenderingAttributes,
+            6 => Self::Color,
+            7 => Self::PlotColor,
+            8 => Self::PlotWeight,
+            9 => Self::Decoration,
+            10 => Self::WireDensity,
+            11 => Self::Visible,
+            12 => Self::ObjectMode,
+            13 => Self::ColorSource,
+            14 => Self::PlotColorSource,
+            15 => Self::PlotWeightSource,
+            16 => Self::MaterialSource,
+            17 => Self::LinetypeSource,
+            18 => Self::Groups,
+            19 => Self::ActiveSpace,
+            20 => Self::ViewportId,
+            21 => Self::DisplayMaterials,
+            22 => Self::DisplayOrder,
+            23 => Self::LineCapSource,
+            24 => Self::LineCapStyle,
+            25 => Self::LineJoinSource,
+            26 => Self::LineJoinStyle,
+            27 => Self::ClipParticipationSource,
+            28 => Self::Clipping,
+            29 => Self::SectionAttributesSource,
+            30 => Self::HatchPatternIndex,
+            31 => Self::SectionHatchScale,
+            32 => Self::SectionHatchRotation,
+            33 => Self::LinetypePatternScale,
+            34 => Self::HatchBackground,
+            35 => Self::HatchBoundaryVisible,
+            36 => Self::ObjectFrame,
+            37 => Self::SectionFillRule,
+            38 => Self::EmbeddedLinetype,
+            39 => Self::EmbeddedSectionStyle,
+            40 => Self::ClippingPlaneLabelStyle,
+            41 => Self::SelectiveClippingList,
+            42 => Self::DetailBackgroundVisible,
+            _ => return None,
+        })
+    }
+
+    fn minimum_minor(self) -> u8 {
+        match self {
+            Self::Name
+            | Self::Url
+            | Self::LinetypeIndex
+            | Self::MaterialIndex
+            | Self::RenderingAttributes
+            | Self::Color
+            | Self::PlotColor
+            | Self::PlotWeight
+            | Self::Decoration
+            | Self::WireDensity
+            | Self::Visible
+            | Self::ObjectMode
+            | Self::ColorSource
+            | Self::PlotColorSource
+            | Self::PlotWeightSource
+            | Self::MaterialSource
+            | Self::LinetypeSource
+            | Self::Groups
+            | Self::ActiveSpace
+            | Self::ViewportId
+            | Self::DisplayMaterials => 0,
+            Self::DisplayOrder => 1,
+            Self::LineCapSource
+            | Self::LineCapStyle
+            | Self::LineJoinSource
+            | Self::LineJoinStyle => 2,
+            Self::ClipParticipationSource | Self::Clipping => 3,
+            Self::SectionAttributesSource
+            | Self::HatchPatternIndex
+            | Self::SectionHatchScale
+            | Self::SectionHatchRotation => 4,
+            Self::LinetypePatternScale => 5,
+            Self::HatchBackground | Self::HatchBoundaryVisible => 6,
+            Self::ObjectFrame => 8,
+            Self::SectionFillRule => 9,
+            Self::EmbeddedLinetype => 10,
+            Self::EmbeddedSectionStyle => 11,
+            Self::ClippingPlaneLabelStyle => 12,
+            Self::SelectiveClippingList | Self::DetailBackgroundVisible => 13,
+        }
     }
 }
 
@@ -782,7 +983,7 @@ pub(crate) fn parse_attributes(
         let obsolete_thickness =
             finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
         let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
-        finish_attributes(&mut reader, "fixed object attributes")?;
+        reader.skip_remaining()?;
         return Ok(ObjectAttributes {
             source: SourceRange {
                 range: source_range.clone(),
@@ -910,49 +1111,36 @@ pub(crate) fn parse_attributes(
         custom_render_mesh: None,
         mesh_modifiers: None,
     };
-    let mut last_item = 0_u8;
+    let mut last_item = None;
     while reader.remaining() > 0 {
         let item = reader.u8()?;
         if item == 0 {
-            finish_attributes(&mut reader, "tagged object attributes")?;
+            reader.skip_remaining()?;
             return Ok(attributes);
         }
-        let gate = match item {
-            1..=21 => 0,
-            22 => 1,
-            23..=26 => 2,
-            27..=28 => 3,
-            29..=32 => 4,
-            33 => 5,
-            34..=35 => 6,
-            36 => 8,
-            37 => 9,
-            38 => 10,
-            39 => 11,
-            40 => 12,
-            41 | 42 => 13,
-            _ => {
-                // Item values have no length prefix. The source reader consumes
-                // only an unknown ID and lets the enclosing chunk boundary
-                // discard the value bytes it cannot type.
-                finish_attributes(&mut reader, "future tagged object attributes")?;
-                return Ok(attributes);
-            }
+        let Some(attribute_item) = AttributeItem::from_raw(item) else {
+            // Item values have no length prefix. The source reader consumes
+            // only an unknown ID and lets the enclosing chunk boundary
+            // discard the value bytes it cannot type.
+            reader.skip_remaining()?;
+            return Ok(attributes);
         };
-        if item <= last_item || version.1 < gate {
+        if last_item.is_some_and(|last| attribute_item <= last)
+            || version.1 < attribute_item.minimum_minor()
+        {
             // This is the source reader's ordered cascade. The ID has been
             // consumed, but its value has no generic width, so the rest stays
             // at the containing attributes boundary.
-            finish_attributes(&mut reader, "bounded tagged object attributes")?;
+            reader.skip_remaining()?;
             return Ok(attributes);
         }
-        last_item = item;
-        match item {
-            1 => attributes.name = settings::utf16(&mut reader)?,
-            2 => attributes.url = settings::utf16(&mut reader)?,
-            3 => attributes.linetype_index = reader.i32()?,
-            4 => attributes.material_index = reader.i32()?,
-            5 => {
+        last_item = Some(attribute_item);
+        match attribute_item {
+            AttributeItem::Name => attributes.name = settings::utf16(&mut reader)?,
+            AttributeItem::Url => attributes.url = settings::utf16(&mut reader)?,
+            AttributeItem::LinetypeIndex => attributes.linetype_index = reader.i32()?,
+            AttributeItem::MaterialIndex => attributes.material_index = reader.i32()?,
+            AttributeItem::RenderingAttributes => {
                 attributes.rendering_range = Some(settings::parse_rendering_attributes(
                     bytes,
                     &mut reader,
@@ -961,22 +1149,28 @@ pub(crate) fn parse_attributes(
                     warnings,
                 )?);
             }
-            6 => attributes.color = reader.take(4)?.try_into().expect("color width checked"),
-            7 => attributes.plot_color = reader.take(4)?.try_into().expect("color width checked"),
-            8 => {
+            AttributeItem::Color => {
+                attributes.color = reader.take(4)?.try_into().expect("color width checked");
+            }
+            AttributeItem::PlotColor => {
+                attributes.plot_color = reader.take(4)?.try_into().expect("color width checked");
+            }
+            AttributeItem::PlotWeight => {
                 attributes.plot_weight =
                     finite_attribute(reader.f64()?, reader.position(), "plot weight")?;
             }
-            9 => attributes.decoration = i32::from(reader.u8()?),
-            10 => attributes.wire_density = reader.i32()?,
-            11 => attributes.visible = reader.bool_with_writer_version(writer_version)?,
-            12 => attributes.object_mode = reader.u8()?,
-            13 => attributes.color_source = reader.u8()?,
-            14 => attributes.plot_color_source = reader.u8()?,
-            15 => attributes.plot_weight_source = reader.u8()?,
-            16 => attributes.material_source = reader.u8()?,
-            17 => attributes.linetype_source = reader.u8()?,
-            18 => {
+            AttributeItem::Decoration => attributes.decoration = i32::from(reader.u8()?),
+            AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
+            AttributeItem::Visible => {
+                attributes.visible = reader.bool_with_writer_version(writer_version)?;
+            }
+            AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
+            AttributeItem::ColorSource => attributes.color_source = reader.u8()?,
+            AttributeItem::PlotColorSource => attributes.plot_color_source = reader.u8()?,
+            AttributeItem::PlotWeightSource => attributes.plot_weight_source = reader.u8()?,
+            AttributeItem::MaterialSource => attributes.material_source = reader.u8()?,
+            AttributeItem::LinetypeSource => attributes.linetype_source = reader.u8()?,
+            AttributeItem::Groups => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 4)?;
                 attributes.groups.clear();
@@ -984,9 +1178,9 @@ pub(crate) fn parse_attributes(
                     attributes.groups.push(reader.i32()?);
                 }
             }
-            19 => attributes.active_space = reader.u8()?,
-            20 => attributes.viewport_id = uuid_reader(&mut reader)?,
-            21 => {
+            AttributeItem::ActiveSpace => attributes.active_space = reader.u8()?,
+            AttributeItem::ViewportId => attributes.viewport_id = uuid_reader(&mut reader)?,
+            AttributeItem::DisplayMaterials => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 32)?;
                 attributes.display_materials.clear();
@@ -996,45 +1190,51 @@ pub(crate) fn parse_attributes(
                         .push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
                 }
             }
-            22 => attributes.display_order = reader.i32()?,
-            23 => attributes.line_cap_source = reader.u8()?,
-            24 => attributes.line_cap_style = reader.u8()?,
-            25 => attributes.line_join_source = reader.u8()?,
-            26 => attributes.line_join_style = reader.u8()?,
-            27 => attributes.clip_participation_source = reader.u8()?,
-            28 => {
+            AttributeItem::DisplayOrder => attributes.display_order = reader.i32()?,
+            AttributeItem::LineCapSource => attributes.line_cap_source = reader.u8()?,
+            AttributeItem::LineCapStyle => attributes.line_cap_style = reader.u8()?,
+            AttributeItem::LineJoinSource => attributes.line_join_source = reader.u8()?,
+            AttributeItem::LineJoinStyle => attributes.line_join_style = reader.u8()?,
+            AttributeItem::ClipParticipationSource => {
+                attributes.clip_participation_source = reader.u8()?;
+            }
+            AttributeItem::Clipping => {
                 attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
                 attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
             }
-            29 => attributes.section_attributes_source = reader.u8()?,
-            30 => attributes.hatch_pattern_index = reader.i32()?,
-            31 => {
+            AttributeItem::SectionAttributesSource => {
+                attributes.section_attributes_source = reader.u8()?;
+            }
+            AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
+            AttributeItem::SectionHatchScale => {
                 attributes.section_hatch_scale =
                     finite_attribute(reader.f64()?, reader.position(), "section hatch scale")?;
             }
-            32 => {
+            AttributeItem::SectionHatchRotation => {
                 attributes.section_hatch_rotation =
                     finite_attribute(reader.f64()?, reader.position(), "section hatch rotation")?;
             }
-            33 => {
+            AttributeItem::LinetypePatternScale => {
                 attributes.linetype_pattern_scale =
                     finite_attribute(reader.f64()?, reader.position(), "linetype scale")?;
             }
-            34 => {
+            AttributeItem::HatchBackground => {
                 attributes.hatch_background =
                     reader.take(4)?.try_into().expect("color width checked");
             }
-            35 => {
+            AttributeItem::HatchBoundaryVisible => {
                 attributes.hatch_boundary_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
-            42 => {
+            AttributeItem::DetailBackgroundVisible => {
                 attributes.detail_background_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
-            36 => attributes.object_frame = Some(settings::xform(&mut reader)?),
-            37 => attributes.section_fill_rule = reader.u8()?,
-            38 => {
+            AttributeItem::ObjectFrame => {
+                attributes.object_frame = Some(settings::xform(&mut reader)?);
+            }
+            AttributeItem::SectionFillRule => attributes.section_fill_rule = reader.u8()?,
+            AttributeItem::EmbeddedLinetype => {
                 attributes.embedded_linetype = Some(settings::parse_direct_linetype(
                     bytes,
                     &mut reader,
@@ -1042,7 +1242,7 @@ pub(crate) fn parse_attributes(
                     warnings,
                 )?);
             }
-            39 => {
+            AttributeItem::EmbeddedSectionStyle => {
                 attributes.embedded_section_style = Some(settings::parse_direct_section_style(
                     bytes,
                     &mut reader,
@@ -1050,12 +1250,13 @@ pub(crate) fn parse_attributes(
                     warnings,
                 )?);
             }
-            40 => attributes.clipping_plane_label_style = reader.u8()?,
-            41 => {
+            AttributeItem::ClippingPlaneLabelStyle => {
+                attributes.clipping_plane_label_style = reader.u8()?;
+            }
+            AttributeItem::SelectiveClippingList => {
                 attributes.selective_clipping_list =
                     reader.bool_with_writer_version(writer_version)?;
             }
-            _ => unreachable!(),
         }
     }
     Err(FramingError::structural(
@@ -1075,13 +1276,14 @@ pub(crate) fn read_uuid_list(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "UUID list wrapper is invalid",
         ));
     }
-    let mut payload = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut payload =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1096,7 +1298,7 @@ pub(crate) fn read_uuid_list(
         values.push(uuid_reader(&mut payload)?);
     }
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(values)
 }
 
@@ -1104,14 +1306,6 @@ fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, Fr
     Ok(Uuid::from_wire(
         reader.take(16)?.try_into().expect("UUID width checked"),
     ))
-}
-
-fn finish_attributes(
-    reader: &mut crate::chunks::BoundedReader<'_>,
-    _label: &str,
-) -> Result<(), FramingError> {
-    reader.skip_remaining()?;
-    Ok(())
 }
 
 pub(crate) fn parse_attribute_userdata(
@@ -1123,7 +1317,7 @@ pub(crate) fn parse_attribute_userdata(
     let mut result = Vec::new();
     let mut offset = range.start;
     while offset < range.end {
-        let item = match child(bytes, offset, range.end, archive, false) {
+        let item = match chunk_at(bytes, offset, range.end, archive, false) {
             Ok(item) => item,
             Err(error) => {
                 warnings.push(format!("attribute userdata degraded at {offset}: {error}"));
@@ -1136,46 +1330,43 @@ pub(crate) fn parse_attribute_userdata(
             }
             break;
         }
-        if item.typecode != CLASS_USERDATA || item.short {
+        if item.typecode != CLASS_USERDATA || item.short() {
             warnings.push(format!(
                 "unknown attribute userdata chunk {:#x} at {}",
                 item.typecode, item.header_start
             ));
-            result.push(AttributeUserdataDescriptor {
+            result.push(AttributeUserdataDescriptor::Unknown {
                 range: item.range(),
-                known: false,
-                class_uuid: None,
-                item_uuid: None,
-                application_uuid: None,
-                writer_version: None,
-                payload_range: None,
             });
         } else {
             match parse_userdata(bytes, &item, archive, warnings) {
-                Ok(value) => result.push(AttributeUserdataDescriptor {
-                    range: value.range,
-                    known: !value.unknown_version,
-                    class_uuid: (!value.unknown_version).then_some(value.class_uuid),
-                    item_uuid: (!value.unknown_version).then_some(value.item_uuid),
-                    application_uuid: (!value.unknown_version)
-                        .then_some(value.application_uuid)
-                        .flatten(),
-                    writer_version: (!value.unknown_version)
-                        .then_some(
-                            value
-                                .writer_version
-                                .map(|version| i64::from(version as u32)),
-                        )
-                        .flatten(),
-                    payload_range: (!value.unknown_version).then_some(value.payload_range),
-                }),
+                Ok(UserdataDescriptor::Known(ClassUserdata {
+                    range,
+                    class_uuid,
+                    item_uuid,
+                    application_uuid,
+                    save_context,
+                    payload_range,
+                    ..
+                })) => result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
+                    range,
+                    class_uuid,
+                    item_uuid,
+                    application_uuid,
+                    writer_version: save_context
+                        .map(|value| i64::from(value.writer_version as u32)),
+                    payload_range,
+                })),
+                Ok(UserdataDescriptor::UnknownVersion { range, .. }) => {
+                    result.push(AttributeUserdataDescriptor::Unknown { range });
+                }
                 Err(error) => warnings.push(format!(
                     "attribute userdata at {} degraded: {error}",
                     item.header_start
                 )),
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     result
 }
@@ -1202,17 +1393,14 @@ fn parse_obsolete_custom_mesh_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Option<settings::MeshParameters> {
-    let descriptor = descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
-            && descriptor.item_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
-    })?;
-    let Some(payload_range) = descriptor.payload_range.clone() else {
-        warnings.push(format!(
-            "obsolete custom mesh userdata at {} has no bounded payload",
-            descriptor.range.start
-        ));
-        return None;
-    };
+    let descriptor = descriptors
+        .iter()
+        .filter_map(AttributeUserdataDescriptor::known)
+        .find(|descriptor| {
+            descriptor.class_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
+                && descriptor.item_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
+        })?;
+    let payload_range = descriptor.payload_range.clone();
     let parsed = (|| {
         let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
         let _legacy_value = reader.i32()?;
@@ -1245,19 +1433,16 @@ fn parse_per_object_mesh_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Option<settings::MeshParameters> {
-    let descriptor = descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
-            && descriptor.item_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
-    })?;
-    let Some(payload_range) = descriptor.payload_range.clone() else {
-        warnings.push(format!(
-            "per-object mesh userdata at {} has no bounded payload",
-            descriptor.range.start
-        ));
-        return None;
-    };
+    let descriptor = descriptors
+        .iter()
+        .filter_map(AttributeUserdataDescriptor::known)
+        .find(|descriptor| {
+            descriptor.class_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
+                && descriptor.item_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
+        })?;
+    let payload_range = descriptor.payload_range.clone();
     let parsed = (|| {
-        let outer = child(
+        let outer = chunk_at(
             bytes,
             payload_range.start,
             payload_range.end,
@@ -1265,30 +1450,30 @@ fn parse_per_object_mesh_userdata(
             false,
         )?;
         require_long(&outer, ANONYMOUS)?;
-        let mut outer_reader = BoundedReader::new(bytes, outer.body.start, outer.body.end)?;
+        let mut outer_reader = BoundedReader::new(bytes, outer.body().start, outer.body().end)?;
         let major = outer_reader.i32()?;
         let _minor = outer_reader.i32()?;
         if major != 1 {
             return Err(FramingError::structural(
-                outer.body.start,
+                outer.body().start,
                 "per-object mesh userdata version is unsupported",
             ));
         }
-        let inner = child(
+        let inner = chunk_at(
             bytes,
             outer_reader.position(),
-            outer.body.end,
+            outer.body().end,
             archive,
             false,
         )?;
         require_long(&inner, ANONYMOUS)?;
-        if inner.value <= 0 || inner.body.is_empty() {
+        if inner.value() <= 0 || inner.body().is_empty() {
             return Err(FramingError::structural(
                 inner.header_start,
                 "per-object mesh userdata mesh child is empty",
             ));
         }
-        let mut mesh_reader = BoundedReader::new(bytes, inner.body.start, inner.body.end)?;
+        let mut mesh_reader = BoundedReader::new(bytes, inner.body().start, inner.body().end)?;
         let mut mesh = settings::parse_mesh_parameters(bytes, &mut mesh_reader, archive, true)?;
         mesh_reader.skip_remaining()?;
         outer_reader.skip_remaining()?;
@@ -1312,13 +1497,13 @@ fn parse_per_object_mesh_userdata(
 }
 
 fn resolve_identity(
-    descriptor: &mut ObjectDescriptor,
+    descriptor: &ObjectDescriptor<()>,
     layers: &HashMap<i32, &crate::settings::LayerRecord>,
     warnings: &mut Vec<String>,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
-) {
-    let attributes = descriptor.attributes.as_ref();
+) -> SourceIdentity {
+    let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
     let layer = layers.get(&layer_index).copied();
@@ -1370,23 +1555,24 @@ fn resolve_identity(
         object_id.to_string()
     };
     let source_id = stable_source_id("object", "record", &source_key);
-    descriptor.identity = Some(SourceIdentity {
+    SourceIdentity {
         source_id,
         object_id,
         class_uuid: descriptor.class_uuid,
         name,
         layer_index,
-        layer_id: layer.and_then(|value| value.id),
-        layer_name: layer.map(|value| value.name.clone()),
+        layer: layer.map(|value| LayerRef {
+            id: value.id,
+            name: value.name.clone(),
+        }),
         effective_color: color,
         effective_visible: visible,
         object_mode,
-        definition_member,
         object_frame: attributes.and_then(|value| value.object_frame),
         source: SourceRange {
             range: descriptor.range.clone(),
         },
-    });
+    }
 }
 
 /// Parses one bounded object record and returns identity plus child ranges.
@@ -1396,31 +1582,31 @@ pub(crate) fn parse_object_record(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     global_warnings: &mut Vec<String>,
-) -> Result<ObjectDescriptor, FramingError> {
+) -> Result<ObjectRecord<()>, FramingError> {
     let mut warnings = Vec::new();
-    if record.typecode != 0x2000_8070 || record.short {
+    if record.typecode != 0x2000_8070 || record.is_short() {
         return Err(FramingError::structural(
             record.range.start,
             "object record must be long-framed",
         ));
     }
-    let mut offset = record.body.start;
-    let type_chunk = child(bytes, offset, record.body.end, archive, false)?;
-    if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short {
+    let mut offset = record.body().start;
+    let type_chunk = chunk_at(bytes, offset, record.body().end, archive, false)?;
+    if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short() {
         return Err(FramingError::structural(
             type_chunk.header_start,
             "object type must be the first short child",
         ));
     }
-    let object_type = u32::try_from(type_chunk.value)
+    let object_type = u32::try_from(type_chunk.value())
         .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
-    offset = type_chunk.next_offset;
-    let class = child(bytes, offset, record.body.end, archive, false)?;
+    offset = type_chunk.next_offset();
+    let class = chunk_at(bytes, offset, record.body().end, archive, false)?;
     require_long(&class, OPENNURBS_CLASS)?;
-    offset = class.body.start;
-    let uuid_chunk = child(bytes, offset, class.body.end, archive, true)?;
+    offset = class.body().start;
+    let uuid_chunk = chunk_at(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
+    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
         return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -1430,58 +1616,55 @@ pub(crate) fn parse_object_record(
         warnings.push(note);
     }
     let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body.clone()]
+        bytes[uuid_chunk.body().clone()]
             .try_into()
             .expect("UUID length checked"),
     );
-    offset = uuid_chunk.next_offset;
-    let data_chunk = child(bytes, offset, class.body.end, archive, false)?;
+    offset = uuid_chunk.next_offset();
+    let data_chunk = chunk_at(bytes, offset, class.body().end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
     // CLASS_DATA is mixed by definition. Its concrete family reader owns
     // checksum validation because only that grammar identifies direct bytes.
-    let class_data_range = data_chunk.body.clone();
-    offset = data_chunk.next_offset;
+    let class_data_range = data_chunk.body().clone();
+    offset = data_chunk.next_offset();
     let mut userdata = Vec::new();
     let mut class_end_seen = false;
-    while offset < class.body.end {
-        let item = child(bytes, offset, class.body.end, archive, false)?;
+    while offset < class.body().end {
+        let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             userdata.push(parse_userdata(bytes, &item, archive, &mut warnings)?);
-            offset = item.next_offset;
+            offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
-            offset = item.next_offset;
+            offset = item.next_offset();
             class_end_seen = true;
             break;
         }
     }
-    if !class_end_seen || offset != class.body.end {
+    if !class_end_seen || offset != class.body().end {
         return Err(FramingError::structural(
-            class.body.end,
+            class.body().end,
             "class wrapper has trailing bytes",
         ));
     }
-    let mut attributes_range = None;
-    let mut attributes_body_range = None;
     let mut attributes_chunk = None;
-    let mut attributes_userdata_range = None;
     let mut attributes_userdata_body_range = None;
     let mut history = None;
     let mut unknown_trailer = Vec::new();
     let mut phase = 0_u8;
     let mut object_end_seen = false;
-    while offset < record.body.end {
-        let item = child(bytes, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let item = chunk_at(bytes, offset, record.body().end, archive, false)?;
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
-            if item.next_offset != record.body.end {
+            if item.next_offset() != record.body().end {
                 return Err(FramingError::structural(
                     item.header_start,
                     "object end is not final",
                 ));
             }
-            offset = item.next_offset;
+            offset = item.next_offset();
             object_end_seen = true;
             break;
         }
@@ -1489,19 +1672,16 @@ pub(crate) fn parse_object_record(
             OBJECT_RECORD_ATTRIBUTES if phase == 0 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
                 attributes_chunk = Some(item.clone());
-                attributes_range = Some(item.range());
-                attributes_body_range = Some(item.body.clone());
                 phase = 1;
             }
             OBJECT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES_USERDATA)?;
-                attributes_userdata_range = Some(item.range());
-                attributes_userdata_body_range = Some(item.body.clone());
+                attributes_userdata_body_range = Some(item.body().clone());
                 phase = 2;
             }
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
-                let descriptor = parse_history(bytes, &item, archive, &mut warnings)?;
+                let descriptor = parse_history(bytes, &item, archive)?;
                 let children = descriptor
                     .header_range
                     .iter()
@@ -1514,52 +1694,49 @@ pub(crate) fn parse_object_record(
                 history = Some(descriptor);
                 phase = 3;
             }
-            _ if !item.short => {
-                unknown_trailer.push(chunk_range(&item));
+            _ if !item.short() => {
+                unknown_trailer.push(item.range());
                 phase = 3;
             }
             _ => {
                 return Err(FramingError::structural(
                     item.header_start,
                     "object trailer child is out of order or malformed",
-                ))
+                ));
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
-    if !object_end_seen || offset != record.body.end {
+    if !object_end_seen || offset != record.body().end {
         return Err(FramingError::structural(
-            record.body.end,
+            record.body().end,
             "object record is missing object end",
         ));
     }
-    let mut attributes_degraded = false;
-    let mut attributes =
-        attributes_body_range.as_ref().and_then(|body_range| {
+    let mut attributes = attributes_chunk
+        .as_ref()
+        .map_or(AttributeState::Missing, |chunk| {
             match parse_attributes(
                 bytes,
-                body_range.clone(),
-                attributes_range
-                    .clone()
-                    .unwrap_or_else(|| body_range.clone()),
+                chunk.body(),
+                chunk.range(),
                 archive,
                 writer_version,
                 &mut warnings,
             ) {
-                Ok(value) => Some(value),
+                Ok(value) => AttributeState::Parsed(Box::new(value)),
                 Err(error) => {
-                    attributes_degraded = true;
                     warnings.push(format!(
                         "object attributes at {} degraded: {error}",
-                        body_range.start
+                        chunk.body().start
                     ));
-                    None
+                    AttributeState::Degraded
                 }
             }
         });
     if let Some(item) = attributes_chunk.as_ref() {
         let children = attributes
-            .as_ref()
+            .parsed()
             .and_then(|value| value.rendering_range.clone())
             .into_iter()
             .collect::<Vec<_>>();
@@ -1571,7 +1748,7 @@ pub(crate) fn parse_object_record(
         .as_ref()
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
-    if let Some(attributes) = attributes.as_mut() {
+    if let AttributeState::Parsed(attributes) = &mut attributes {
         apply_attribute_userdata(
             bytes,
             attributes,
@@ -1580,21 +1757,15 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         );
     }
-    Ok(ObjectDescriptor {
+    Ok(ObjectRecord::Framed(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
         class_uuid,
         class_data_range,
-        framing_degraded: false,
         attributes,
-        attributes_degraded,
         attributes_userdata,
-        identity: None,
+        identity: (),
         userdata,
-        attributes_range,
-        attributes_body_range,
-        attributes_userdata_range,
-        attributes_userdata_body_range,
         history,
         unknown_trailer,
         checksum_warnings: {
@@ -1602,53 +1773,59 @@ pub(crate) fn parse_object_record(
             warnings
         },
         warnings: Vec::new(),
-    })
+    }))
 }
 
 /// Builds a range-preserving descriptor for a malformed bounded object record.
-pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectDescriptor {
-    ObjectDescriptor {
+pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectRecord<()> {
+    ObjectRecord::Degraded {
         range: record.range.clone(),
-        object_type: 0,
-        class_uuid: Uuid::nil(),
-        class_data_range: record.body.start..record.body.start,
-        framing_degraded: true,
-        attributes: None,
-        attributes_degraded: false,
-        attributes_userdata: Vec::new(),
-        identity: None,
-        userdata: Vec::new(),
-        attributes_range: None,
-        attributes_body_range: None,
-        attributes_userdata_range: None,
-        attributes_userdata_body_range: None,
-        history: None,
-        unknown_trailer: Vec::new(),
-        checksum_warnings: Vec::new(),
-        warnings: vec![format!(
+        warning: format!(
             "bounded object record at {} degraded: {error}",
             record.range.start
-        )],
+        ),
     }
 }
 
 /// Resolves per-object source identity after document layer metadata is known.
 pub(crate) fn resolve_identities(
-    objects: &mut [ObjectDescriptor],
+    objects: Vec<ObjectRecord<()>>,
     metadata: &DocumentMetadata,
     warnings: &mut Vec<String>,
-) {
+) -> Vec<ObjectRecord> {
     let mut seen_ids = HashSet::new();
     let mut layers = HashMap::with_capacity(metadata.layers.len());
     for layer in &metadata.layers {
         layers.entry(layer.index).or_insert(layer);
     }
-    for (index, object) in objects.iter_mut().enumerate() {
-        let mut local_warnings = Vec::new();
-        resolve_identity(object, &layers, &mut local_warnings, index, &mut seen_ids);
-        warnings.extend(local_warnings.iter().cloned());
-        object.warnings.extend(local_warnings);
-    }
+    objects
+        .into_iter()
+        .enumerate()
+        .map(|(index, object)| match object {
+            ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
+            ObjectRecord::Framed(mut object) => {
+                let mut local_warnings = Vec::new();
+                let identity =
+                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids);
+                warnings.extend(local_warnings.iter().cloned());
+                object.warnings.extend(local_warnings);
+                ObjectRecord::Framed(ObjectDescriptor {
+                    identity,
+                    range: object.range,
+                    object_type: object.object_type,
+                    class_uuid: object.class_uuid,
+                    class_data_range: object.class_data_range,
+                    attributes: object.attributes,
+                    attributes_userdata: object.attributes_userdata,
+                    userdata: object.userdata,
+                    history: object.history,
+                    unknown_trailer: object.unknown_trailer,
+                    checksum_warnings: object.checksum_warnings,
+                    warnings: object.warnings,
+                })
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

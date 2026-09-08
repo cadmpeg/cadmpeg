@@ -5,29 +5,53 @@
 //! byte prefix, inspection summarizes a seekable container, and decoding
 //! produces a finalized [`CadIr`] plus a [`DecodeReport`].
 //!
-//! A codec implements only the required [`Codec`] methods. The public
+//! A codec implements only the required [`CodecBackend`] methods. The public
 //! [`Codec::inspect`] and [`Codec::decode`] entry points are the
 //! single enforcement point for root-input limits and session finalize checks;
 //! they live on the sealed [`Codec`] trait, blanket-implemented for every
-//! `Codec`, so a codec cannot override an entry point and drop the
+//! [`CodecBackend`], so a codec cannot override an entry point and drop the
 //! enforcement.
 
 use std::fmt;
-use std::io::Write;
-use std::ops::{Deref, DerefMut};
 
 use crate::document::CadIr;
-use crate::report::DecodeReport;
-use crate::report::StrictConsequence;
-use crate::report::{CensusBasis, EntityCensus, ExportReport, FidelityResolution, WritePath};
+use crate::report::{
+    Coverage, DecodeReport, Finding, LossNote as DecodeLoss, StrictConsequence, TransferLedger,
+};
 use crate::source_fidelity::SourceFidelity;
+use crate::ContainerSummary;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
 };
-use cadmpeg_core::{CodecError, ContainerSummary, ReadSeek};
+use cadmpeg_core::dialect::FormatIdentity;
+use cadmpeg_core::{CodecError, ReadSeek};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// The stable registry format namespace of one codec, as a typed value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FormatId(&'static str);
+
+impl FormatId {
+    /// Builds the format id for a registry namespace word.
+    #[must_use]
+    pub const fn new(namespace: &'static str) -> Self {
+        Self(namespace)
+    }
+
+    /// The registry namespace word.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+impl fmt::Display for FormatId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.0)
+    }
+}
 
 /// How confident a codec is that it can handle a given byte prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -68,12 +92,12 @@ pub struct DecodeOptions {
 
 /// A decoded document plus its loss report.
 ///
-/// Construct only through [`DecodeResult::new`], which finalizes the IR and
-/// source fidelity. `#[non_exhaustive]` blocks external struct literals so
-/// callers cannot skip finalization. Read through [`Self::ir`], [`Self::report`],
-/// and [`Self::source_fidelity`]. Consume with [`Self::into_parts`]. The edit
-/// guards returned by [`Self::ir_mut`] and [`Self::source_fidelity_mut`]
-/// restore canonical order before the result can be read again.
+/// The sealed [`Codec`] wrapper constructs this value after it stamps the source
+/// classification onto the report and finalizes the IR and source fidelity.
+/// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
+/// finalization. Read through [`Self::ir`], [`Self::report`], and
+/// [`Self::source_fidelity`]. Consume with [`Self::into_parts`] before editing
+/// either document.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
@@ -82,14 +106,133 @@ pub struct DecodeResult {
     source_fidelity: SourceFidelity,
 }
 
+/// A strict-policy refusal bound to the loss in its completed decode report.
+///
+/// Only the sealed decode wrapper constructs this value. The refusing loss is
+/// therefore always an element of [`Self::report`].
+#[derive(Debug)]
+pub struct StrictDecodeRejection {
+    report: Box<DecodeReport>,
+    loss_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RejectingLossIndex(usize);
+
+impl StrictDecodeRejection {
+    fn new(report: DecodeReport, loss_index: RejectingLossIndex) -> Self {
+        Self {
+            report: Box::new(report),
+            loss_index: loss_index.0,
+        }
+    }
+
+    /// Returns the loss that caused the strict-policy refusal.
+    #[must_use]
+    pub fn loss(&self) -> &DecodeLoss {
+        &self.report.losses[self.loss_index]
+    }
+
+    /// Returns the completed report that contains the refusing loss.
+    #[must_use]
+    pub fn report(&self) -> &DecodeReport {
+        &self.report
+    }
+}
+
+impl fmt::Display for StrictDecodeRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let loss = self.loss();
+        write!(f, "{}: {}", loss.code, loss.message)
+    }
+}
+
+/// Failure from the policy-enforcing decode entry point.
+///
+/// Backend and resource failures remain [`CodecError`] values. A strict-policy
+/// refusal is separate because decoding completed and produced a report; the
+/// caller must be able to serialize that evidence even though no document is
+/// admitted.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum DecodeFailure {
+    /// The codec or decode context failed before a result was produced.
+    #[error(transparent)]
+    Codec(#[from] CodecError),
+    /// Strict mode rejected the first loss whose floor requires refusal.
+    #[error("strict mode rejects {rejection}")]
+    StrictRejected {
+        /// The completed report and its refusing loss.
+        rejection: StrictDecodeRejection,
+    },
+}
+
+/// What a backend returns from [`CodecBackend::decode_impl`].
+///
+/// Source identity is authored once, in `ir.source`. The sealed wrapper stamps
+/// that classification onto the report; a backend cannot describe the document
+/// and its report with two different identities.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decoded {
+    /// The decoded document, with its source metadata authored by the backend.
+    pub ir: CadIr,
+    /// The report without classification.
+    pub body: DecodeBody,
+    /// Decode-time annotations and retained source records.
+    pub source_fidelity: SourceFidelity,
+}
+
+/// A [`DecodeReport`] without its classification.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodeBody {
+    /// Whether B-rep geometry was transferred into the IR.
+    pub geometry_transferred: bool,
+    /// Coverage measures keyed by their declared name.
+    pub coverage: Coverage,
+    /// Losses resolved during decoding.
+    pub losses: Vec<DecodeLoss>,
+    /// Codec-defined informational notes.
+    pub notes: Vec<String>,
+    /// Complete source-to-result accounting.
+    pub transfer_ledger: TransferLedger,
+}
+
+impl DecodeBody {
+    /// An empty body with the given B-rep geometry outcome.
+    #[must_use]
+    pub fn new(geometry_transferred: bool) -> Self {
+        Self {
+            geometry_transferred,
+            coverage: Coverage::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
+        }
+    }
+}
+
 impl DecodeResult {
-    /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
-    pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
+    /// Builds a result by stamping the document's source classification onto
+    /// the report body, then canonicalizing the IR and source fidelity.
+    ///
+    /// A document without source metadata yields an unclassified report for
+    /// `format`, the codec's registry format.
+    #[must_use]
+    pub(crate) fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
+        let Decoded {
+            mut ir,
+            body,
+            mut source_fidelity,
+        } = decoded;
+        let classification = match ir.source.as_ref() {
+            Some(source) => source.classification().clone(),
+            None => FormatIdentity::unclassified(format.as_str()),
+        };
         ir.finalize();
         source_fidelity.finalize();
         Self {
             ir,
-            report,
+            report: DecodeReport::from_body(classification, body, container_only),
             source_fidelity,
         }
     }
@@ -99,29 +242,14 @@ impl DecodeResult {
         &self.ir
     }
 
-    /// Edits the IR and finalizes it when the returned guard is dropped.
-    pub fn ir_mut(&mut self) -> impl DerefMut<Target = CadIr> + '_ {
-        FinalizingEdit::new(&mut self.ir, CadIr::finalize)
-    }
-
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
     }
 
-    /// Borrow the transfer report mutably.
-    pub fn report_mut(&mut self) -> &mut DecodeReport {
-        &mut self.report
-    }
-
     /// Borrow source fidelity.
     pub fn source_fidelity(&self) -> &SourceFidelity {
         &self.source_fidelity
-    }
-
-    /// Edits source fidelity and finalizes it when the returned guard is dropped.
-    pub fn source_fidelity_mut(&mut self) -> impl DerefMut<Target = SourceFidelity> + '_ {
-        FinalizingEdit::new(&mut self.source_fidelity, SourceFidelity::finalize)
     }
 
     /// Consume into IR, report, and source fidelity.
@@ -130,45 +258,28 @@ impl DecodeResult {
     }
 }
 
-#[must_use = "the guard keeps the DecodeResult mutably borrowed until the edit is finalized"]
-struct FinalizingEdit<'a, T> {
-    value: &'a mut T,
-    finalize: fn(&mut T),
-}
-
-impl<'a, T> FinalizingEdit<'a, T> {
-    fn new(value: &'a mut T, finalize: fn(&mut T)) -> Self {
-        Self { value, finalize }
-    }
-}
-
-impl<T> Deref for FinalizingEdit<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-impl<T> DerefMut for FinalizingEdit<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.value
-    }
-}
-
-impl<T> Drop for FinalizingEdit<'_, T> {
-    fn drop(&mut self) {
-        (self.finalize)(self.value);
-    }
-}
-
 /// Decoder and container inspector for one source format.
 pub trait CodecBackend {
-    /// Stable short id for this codec, e.g. `"f3d"`.
-    fn id(&self) -> &'static str;
+    /// Registry format namespace this codec decodes, e.g. `"f3d"`.
+    ///
+    /// The sealed wrapper reports it as [`Codec::id`] and refuses any result
+    /// whose primary format names another namespace.
+    const FORMAT: FormatId;
+
+    /// Findings this codec's own validator reports over its native
+    /// namespace on a decoded document.
+    ///
+    /// The default reports nothing, for a codec that writes no native
+    /// namespace or has no validator for it. The sealed wrapper exposes it as
+    /// [`Codec::validate_native`], which the application runs after
+    /// `validate_neutral`.
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        let _ = ir;
+        Vec::new()
+    }
 
     /// Judge, from a leading byte prefix, whether this codec applies.
-    fn detect(&self, prefix: &[u8]) -> Confidence;
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence;
 
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
@@ -188,11 +299,7 @@ pub trait CodecBackend {
     /// Implemented by each codec; never called by the CLI or registry. The
     /// [`Codec::decode`] wrapper acquires the root and finalizes the
     /// context around this call.
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError>;
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError>;
 }
 
 mod sealed {
@@ -205,29 +312,47 @@ mod sealed {
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
-///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult,
+///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Decoded, FormatId,
 /// };
-/// use cadmpeg_core::{CodecError, ContainerSummary, ReadSeek};
+/// use cadmpeg_core::{CodecError, ReadSeek};
 /// use cadmpeg_core::decode::{DecodeContext, View};
 /// use cadmpeg_core::decode::InspectOptions;
+/// use cadmpeg_ir::ContainerSummary;
 ///
 /// struct Rogue;
 /// impl CodecBackend for Rogue {
-///     fn id(&self) -> &'static str { "rogue" }
-///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     const FORMAT: FormatId = FormatId::new("rogue");
+///     fn detect_impl(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
-///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
+///         -> Result<Decoded, CodecError> { panic!("never runs") }
 /// }
 /// impl Codec for Rogue {
+///     fn id(&self) -> FormatId { FormatId::new("rogue") }
+///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn validate_native(&self, _: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::Finding> {
+///         Vec::new()
+///     }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
-///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
+///         -> Result<DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+///         panic!("never runs")
+///     }
 /// }
 /// ```
-pub trait Codec: CodecBackend + sealed::Sealed {
+pub trait Codec: sealed::Sealed {
+    /// Registry format namespace, [`CodecBackend::FORMAT`].
+    fn id(&self) -> FormatId;
+
+    /// Judge, from a leading byte prefix, whether this codec applies.
+    fn detect(&self, prefix: &[u8]) -> Confidence;
+
+    /// Findings this codec reports over its own native namespace,
+    /// [`CodecBackend::validate_native`].
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding>;
+
     /// Inspects the source under its input and resource limits.
     fn inspect(
         &self,
@@ -238,7 +363,7 @@ pub trait Codec: CodecBackend + sealed::Sealed {
     /// Decodes the source under its input and resource limits.
     ///
     /// [`DecodeMode::Strict`] refuses the decode with
-    /// [`CodecError::StrictRefusal`] for the first reported loss whose
+    /// [`DecodeFailure::StrictRejected`] for the first reported loss whose
     /// [`StrictConsequence`] is [`StrictConsequence::Reject`]. The gate
     /// evaluates full-decode reports only: a container-only decode keeps its
     /// losses and is never refused. This gate owns the refusal predicate and
@@ -250,10 +375,22 @@ pub trait Codec: CodecBackend + sealed::Sealed {
         &self,
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
-    ) -> Result<DecodeResult, CodecError>;
+    ) -> Result<DecodeResult, DecodeFailure>;
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
+    fn id(&self) -> FormatId {
+        C::FORMAT
+    }
+
+    fn detect(&self, prefix: &[u8]) -> Confidence {
+        self.detect_impl(prefix)
+    }
+
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
+        C::validate_native(ir)
+    }
+
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -264,156 +401,61 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             mode: DecodeMode::Salvage,
             limits: options.limits,
         };
-        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
-        result
+        let result = result?;
+        if result.format() != C::FORMAT.as_str() {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} inspected a {:?} container",
+                C::FORMAT.as_str(),
+                result.format()
+            )));
+        }
+        Ok(result)
     }
 
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
-    ) -> Result<DecodeResult, CodecError> {
+    ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
-        let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
-        ctx.set_container_only(options.container_only);
-        let result = self.decode_impl(&ctx, root);
+        let (ctx, root) =
+            DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
+        let decoded = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
-        let mut result = result?;
-        result.report_mut().container_only = options.container_only;
-        if options.policy.mode == DecodeMode::Strict && !options.container_only {
-            if let Some(loss) = result
-                .report()
-                .losses
-                .iter()
-                .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-            {
-                return Err(CodecError::StrictRefusal {
-                    loss_code: loss.code.to_string(),
-                    message: loss.message.clone(),
-                });
-            }
+        let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
+        if result.report().format() != C::FORMAT.as_str() {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} decoded a {:?} document",
+                C::FORMAT.as_str(),
+                result.report().format()
+            ))
+            .into());
+        }
+        let strict_loss_index =
+            if options.policy.mode == DecodeMode::Strict && !options.container_only {
+                result
+                    .report()
+                    .losses
+                    .iter()
+                    .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+                    .map(RejectingLossIndex)
+            } else {
+                None
+            };
+        if let Some(loss_index) = strict_loss_index {
+            let (_, report, _) = result.into_parts();
+            return Err(DecodeFailure::StrictRejected {
+                rejection: StrictDecodeRejection::new(report, loss_index),
+            });
         }
         Ok(result)
     }
 }
 
-/// A native-format writer.
-pub trait Encoder {
-    /// Stable output format id.
-    fn id(&self) -> &'static str;
-
-    /// Plans one export without writing to the destination.
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError>;
-}
-
-/// Borrowed inputs used to plan an export.
-#[derive(Debug, Clone, Copy)]
-pub struct EncodeInput<'a> {
-    /// Neutral document to export.
-    pub ir: &'a CadIr,
-    /// Decode-time fidelity state, when available.
-    pub fidelity: Option<&'a SourceFidelity>,
-}
-
-type DeferredExport<'a> = Box<dyn FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a>;
-
-enum ExportPayload<'a> {
-    Buffered(Vec<u8>),
-    Deferred(DeferredExport<'a>),
-}
-
-/// A fully reported export awaiting its atomic destination write.
-pub struct ExportPlan<'a> {
-    report: ExportReport,
-    payload: ExportPayload<'a>,
-}
-
-impl<'a> ExportPlan<'a> {
-    /// Creates a plan whose bytes have already been materialized.
-    ///
-    /// The plan reports exactly the report it is given, including fidelity.
-    pub fn buffered(report: ExportReport, bytes: Vec<u8>) -> Self {
-        Self {
-            report,
-            payload: ExportPayload::Buffered(bytes),
-        }
-    }
-
-    /// Creates a plan that writes through a deferred, report-invariant operation.
-    ///
-    /// The report is reported verbatim.
-    pub fn deferred(
-        report: ExportReport,
-        write: impl FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a,
-    ) -> Self {
-        Self {
-            report,
-            payload: ExportPayload::Deferred(Box::new(write)),
-        }
-    }
-
-    /// Returns the complete plan-time export report.
-    pub fn report(&self) -> &ExportReport {
-        &self.report
-    }
-
-    /// Returns how source fidelity was resolved while planning.
-    pub fn fidelity_resolution(&self) -> &FidelityResolution {
-        &self.report.fidelity
-    }
-
-    /// Returns the write path the encoder took to produce this plan's payload.
-    pub fn write_path(&self) -> WritePath {
-        self.report.write_path
-    }
-
-    /// Writes the planned payload and returns the unchanged plan-time report.
-    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        match self.payload {
-            ExportPayload::Buffered(bytes) => writer.write_all(&bytes)?,
-            ExportPayload::Deferred(write) => write(writer)?,
-        }
-        Ok(self.report)
-    }
-}
-
-/// Encoder for canonical versioned CADIR JSON.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CadirEncoder;
-
-impl Encoder for CadirEncoder {
-    fn id(&self) -> &'static str {
-        "cadir"
-    }
-
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        let report = ExportReport {
-            format: "cadir".into(),
-            census: EntityCensus {
-                basis: CensusBasis::IrArenas,
-                counts: input.ir.census(),
-            },
-            fidelity: if input.fidelity.is_some() {
-                FidelityResolution::NotConsumed
-            } else {
-                FidelityResolution::NotProvided
-            },
-            // CADIR is the neutral document itself: there is no container to
-            // replay or patch, so this encoder has one path and states it.
-            write_path: WritePath::Synthesized,
-            losses: Vec::new(),
-            notes: Vec::new(),
-        };
-        Ok(ExportPlan::deferred(report, move |writer| {
-            serde_json::to_writer_pretty(&mut *writer, input.ir)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            writer.write_all(b"\n")?;
-            Ok(())
-        }))
-    }
-}
+pub mod write;
 
 #[cfg(test)]
 mod tests;

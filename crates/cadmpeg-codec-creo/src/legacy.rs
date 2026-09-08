@@ -2,9 +2,14 @@
 //! Structural grammar for legacy ASCII persistence records.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
+
+pub(crate) mod type_code;
+use type_code::LegacyTypeCode;
 
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
 const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
@@ -162,8 +167,7 @@ pub type UnsignedPayload = NumericPayload<u32>;
 pub type UnsignedRecord = NumericRecord<u32>;
 
 /// Structural payload of one legacy type-0 object node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectPayload {
     /// The `->` object token.
     Arrow,
@@ -177,14 +181,68 @@ pub enum ObjectPayload {
         dimensions: Vec<u32>,
         /// Direct child object identities in source order.
         elements: Vec<String>,
-        /// Whether element cardinality equals the extent product.
-        complete: bool,
     },
     /// A type-0 payload outside the defined object forms.
     Opaque {
         /// Uninterpreted payload bytes after the attribute identifier.
         bytes: Vec<u8>,
     },
+}
+
+impl ObjectPayload {
+    /// Whether an array has exactly its declared extent product of elements.
+    pub fn is_complete(&self) -> bool {
+        let Self::Array {
+            dimensions,
+            elements,
+        } = self
+        else {
+            return false;
+        };
+        dimensions
+            .iter()
+            .try_fold(1u64, |count, dimension| {
+                count.checked_mul(u64::from(*dimension))
+            })
+            .and_then(|count| usize::try_from(count).ok())
+            .is_some_and(|count| count == elements.len())
+    }
+}
+
+impl Serialize for ObjectPayload {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct(
+            "ObjectPayload",
+            match self {
+                Self::Array { .. } => 4,
+                Self::Opaque { .. } => 2,
+                _ => 1,
+            },
+        )?;
+        wire.serialize_field(
+            "form",
+            match self {
+                Self::Arrow => "arrow",
+                Self::Inline => "inline",
+                Self::Null => "null",
+                Self::Array { .. } => "array",
+                Self::Opaque { .. } => "opaque",
+            },
+        )?;
+        match self {
+            Self::Array {
+                dimensions,
+                elements,
+            } => {
+                wire.serialize_field("dimensions", dimensions)?;
+                wire.serialize_field("elements", elements)?;
+                wire.serialize_field("complete", &self.is_complete())?;
+            }
+            Self::Opaque { bytes } => wire.serialize_field("bytes", bytes)?,
+            _ => {}
+        }
+        wire.end()
+    }
 }
 
 /// One legacy type-0 object node in the depth-defined ownership tree.
@@ -234,8 +292,7 @@ impl StringValue {
 }
 
 /// Semantic payload of one legacy byte-string value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringPayload {
     /// One string or null value.
     Scalar {
@@ -246,19 +303,70 @@ pub enum StringPayload {
     Array {
         /// Declared array dimensions.
         dimensions: Vec<u32>,
-        /// Direct string elements in source order.
-        values: Vec<StringValue>,
-        /// Whether the element count equals the first extent.
-        complete: bool,
+        /// Direct source rows, retaining unsupported continuation evidence.
+        values: Vec<Result<StringValue, Continuation>>,
+        /// Continuation rows attached to the array header.
+        continuation: Option<Continuation>,
     },
 }
 
+impl Serialize for StringPayload {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct(
+            "StringPayload",
+            match self {
+                Self::Scalar { .. } => 2,
+                Self::Array { .. } => 4,
+            },
+        )?;
+        match self {
+            Self::Scalar { value } => {
+                wire.serialize_field("form", "scalar")?;
+                wire.serialize_field("value", value)?;
+            }
+            Self::Array {
+                dimensions, values, ..
+            } => {
+                wire.serialize_field("form", "array")?;
+                wire.serialize_field("dimensions", dimensions)?;
+                wire.serialize_field(
+                    "values",
+                    &values
+                        .iter()
+                        .filter_map(|value| value.as_ref().ok())
+                        .collect::<Vec<_>>(),
+                )?;
+                wire.serialize_field("complete", &self.is_complete())?;
+            }
+        }
+        wire.end()
+    }
+}
+
 impl StringPayload {
+    /// Whether every declared string row has a supported, complete value.
+    pub fn is_complete(&self) -> bool {
+        let Self::Array {
+            dimensions,
+            values,
+            continuation,
+        } = self
+        else {
+            return false;
+        };
+        continuation.is_none()
+            && dimensions
+                .first()
+                .and_then(|dimension| usize::try_from(*dimension).ok())
+                .is_some_and(|count| count == values.len())
+            && values.iter().all(Result::is_ok)
+    }
+
     /// Number of logical string elements represented by this payload.
     pub fn element_count(&self) -> usize {
         match self {
             Self::Scalar { .. } => 1,
-            Self::Array { values, .. } => values.len(),
+            Self::Array { values, .. } => values.iter().filter(|value| value.is_ok()).count(),
         }
     }
 
@@ -268,6 +376,7 @@ impl StringPayload {
             Self::Scalar { value } => value.undecoded_encoding_count(),
             Self::Array { values, .. } => values
                 .iter()
+                .filter_map(|value| value.as_ref().ok())
                 .map(StringValue::undecoded_encoding_count)
                 .sum(),
         }
@@ -287,7 +396,7 @@ pub struct AttributeDeclaration {
     /// Attribute name without the leading `@`.
     pub name: String,
     /// Stored numeric type code.
-    pub type_code: u8,
+    pub type_code: LegacyTypeCode,
     /// Byte offset of the declaration line.
     pub offset: usize,
 }
@@ -303,10 +412,17 @@ pub struct AttributeValue {
     pub offset: usize,
     /// Byte range of the payload after the second field separator.
     pub payload: Range<usize>,
-    /// Contiguous source range containing immediately following `$` rows.
-    pub continuation_rows: Option<Range<usize>>,
-    /// Number of immediately following `$` rows.
-    pub continuation_count: usize,
+    /// Immediately following `$` rows, when present.
+    pub continuation: Option<Continuation>,
+}
+
+/// A nonempty sequence of continuation rows following one value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Continuation {
+    /// Contiguous source range containing the rows.
+    pub rows: Range<usize>,
+    /// Number of rows in the source range.
+    pub count: NonZeroUsize,
 }
 
 /// Declarations and values owned by one outer object or named ASCII section.
@@ -469,7 +585,12 @@ impl Persistence {
         self.scopes
             .iter()
             .flat_map(|scope| &scope.values)
-            .map(|value| value.continuation_count)
+            .map(|value| {
+                value
+                    .continuation
+                    .as_ref()
+                    .map_or(0, |continuation| continuation.count.get())
+            })
             .sum()
     }
 
@@ -524,15 +645,15 @@ impl Persistence {
     }
 
     fn legacy_unit_array_system(&self) -> Option<PrincipalUnitSystem> {
-        let mut arrays = self.objects.iter().filter(|object| {
-            object.name == "unit_arr"
-                && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+        let mut arrays = self.objects.iter().filter_map(|object| {
+            let ObjectPayload::Array { elements, .. } = &object.payload else {
+                return None;
+            };
+            (object.name == "unit_arr" && object.payload.is_complete())
+                .then_some((object, elements))
         });
-        let array = arrays.next()?;
+        let (array, elements) = arrays.next()?;
         arrays.next().is_none().then_some(())?;
-        let ObjectPayload::Array { elements, .. } = &array.payload else {
-            unreachable!("the unit array was filtered above");
-        };
         if elements.is_empty() {
             return None;
         }
@@ -631,7 +752,7 @@ pub(crate) fn parse_declaration(line: &[u8], offset: usize) -> Option<AttributeD
         return None;
     }
     let id = fields.next()?.parse().ok()?;
-    let type_code = fields.next()?.parse().ok()?;
+    let type_code = LegacyTypeCode::from(fields.next()?.parse::<u8>().ok()?);
     fields.next().is_none().then(|| AttributeDeclaration {
         id,
         name: name.to_string(),
@@ -779,7 +900,7 @@ fn parent_object_offsets(scopes: &[Scope]) -> BTreeMap<usize, usize> {
             }
             if declarations
                 .get(&value.attribute_id)
-                .is_some_and(|declaration| declaration.type_code == 0)
+                .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             {
                 active_objects.insert(value.depth, value.offset);
             }
@@ -815,7 +936,9 @@ fn object_records(
             if value_attributes.get(&parent_offset) == Some(&child.attribute_id)
                 && declarations
                     .get(&child.attribute_id)
-                    .is_some_and(|declaration| declaration.type_code == 0)
+                    .is_some_and(|declaration| {
+                        matches!(declaration.type_code, LegacyTypeCode::Object)
+                    })
             {
                 direct_array_elements
                     .entry(parent_offset)
@@ -826,7 +949,7 @@ fn object_records(
         for value in &scope.values {
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == 0)
+                .filter(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             else {
                 continue;
             };
@@ -844,18 +967,12 @@ fn object_records(
                     .flatten()
                     .map(|offset| object_node_id(*offset))
                     .collect::<Vec<_>>();
-                let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
-                    count.checked_mul(u64::from(*dimension))
-                });
-                let complete = expected
-                    .and_then(|count| usize::try_from(count).ok())
-                    .is_some_and(|count| count == elements.len());
-                incomplete_arrays += usize::from(!complete);
-                ObjectPayload::Array {
+                let payload = ObjectPayload::Array {
                     dimensions,
                     elements,
-                    complete,
-                }
+                };
+                incomplete_arrays += usize::from(!payload.is_complete());
+                payload
             } else {
                 unresolved += 1;
                 ObjectPayload::Opaque {
@@ -906,7 +1023,7 @@ fn string_value(bytes: &[u8]) -> StringValue {
 fn scalar_string_records(
     data: &[u8],
     scopes: &[Scope],
-    type_code: u8,
+    type_code: LegacyTypeCode,
     identity_kind: &str,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
@@ -926,7 +1043,9 @@ fn scalar_string_records(
             else {
                 continue;
             };
-            let Some(bytes) = (value.continuation_count == 0)
+            let Some(bytes) = value
+                .continuation
+                .is_none()
                 .then(|| data.get(value.payload.clone()))
                 .flatten()
             else {
@@ -964,13 +1083,8 @@ fn string_records(
             .iter()
             .map(|declaration| (declaration.id, declaration))
             .collect::<BTreeMap<_, _>>();
-        let values_by_offset = scope
-            .values
-            .iter()
-            .map(|value| (value.offset, value))
-            .collect::<BTreeMap<_, _>>();
         let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
-        let mut array_children = BTreeMap::<usize, Vec<usize>>::new();
+        let mut array_children = BTreeMap::<usize, Vec<&AttributeValue>>::new();
         let mut array_element_offsets = BTreeSet::new();
         for value in &scope.values {
             drop(active_arrays.split_off(&value.depth));
@@ -981,16 +1095,13 @@ fn string_records(
                     .map(|(offset, _)| *offset)
             });
             if let Some(parent_offset) = array_parent {
-                array_children
-                    .entry(parent_offset)
-                    .or_default()
-                    .push(value.offset);
+                array_children.entry(parent_offset).or_default().push(value);
                 array_element_offsets.insert(value.offset);
                 continue;
             }
             if declarations
                 .get(&value.attribute_id)
-                .is_some_and(|declaration| declaration.type_code == 10)
+                .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
                 && array_dimensions(&data[value.payload.clone()]).is_some()
             {
                 active_arrays.insert(value.depth, (value.offset, value.attribute_id));
@@ -1003,7 +1114,7 @@ fn string_records(
             }
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == 10)
+                .filter(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
             else {
                 continue;
             };
@@ -1012,32 +1123,27 @@ fn string_records(
                 let children = array_children
                     .get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
-                let mut values = Vec::new();
-                for child in children
+                let values = children
                     .iter()
-                    .filter_map(|offset| values_by_offset.get(offset).copied())
-                {
-                    if child.continuation_count == 0 {
-                        values.push(string_value(&data[child.payload.clone()]));
-                    } else {
-                        unresolved += 1;
-                    }
-                }
-                let expected = dimensions
-                    .first()
-                    .and_then(|dimension| usize::try_from(*dimension).ok());
-                let complete = value.continuation_count == 0
-                    && expected.is_some_and(|count| count == children.len())
-                    && values.len() == children.len();
-                unresolved += usize::from(value.continuation_count != 0);
-                incomplete_arrays += usize::from(!complete);
-                StringPayload::Array {
+                    .map(|child| {
+                        if let Some(continuation) = &child.continuation {
+                            unresolved += 1;
+                            Err(continuation.clone())
+                        } else {
+                            Ok(string_value(&data[child.payload.clone()]))
+                        }
+                    })
+                    .collect();
+                unresolved += usize::from(value.continuation.is_some());
+                let payload = StringPayload::Array {
                     dimensions,
                     values,
-                    complete,
-                }
+                    continuation: value.continuation.clone(),
+                };
+                incomplete_arrays += usize::from(!payload.is_complete());
+                payload
             } else {
-                if value.continuation_count != 0 {
+                if value.continuation.is_some() {
                     unresolved += 1;
                     continue;
                 }
@@ -1065,7 +1171,7 @@ fn string_records(
 fn numeric_records<T>(
     data: &[u8],
     scopes: &[Scope],
-    type_code: u8,
+    type_code: LegacyTypeCode,
     identity_kind: &str,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
@@ -1094,8 +1200,8 @@ fn numeric_records<T>(
             };
             let (payload, next_index) = if let Some(dimensions) = array_dimensions(payload_bytes) {
                 let mut next_index = index + 1;
-                let runs = if let Some(range) = &value.continuation_rows {
-                    let Some(bytes) = data.get(range.clone()) else {
+                let runs = if let Some(continuation) = &value.continuation {
+                    let Some(bytes) = data.get(continuation.rows.clone()) else {
                         unresolved += 1;
                         index += 1;
                         continue;
@@ -1115,7 +1221,9 @@ fn numeric_records<T>(
                         let Some(bytes) = data.get(child.payload.clone()) else {
                             break;
                         };
-                        let Some(run) = (child.continuation_count == 0)
+                        let Some(run) = child
+                            .continuation
+                            .is_none()
                             .then(|| numeric_run(bytes, scalar))
                             .flatten()
                         else {
@@ -1141,7 +1249,9 @@ fn numeric_records<T>(
                 }
                 (NumericPayload::Array { dimensions, runs }, next_index)
             } else {
-                let Some(scalar_value) = (value.continuation_count == 0)
+                let Some(scalar_value) = value
+                    .continuation
+                    .is_none()
                     .then(|| scalar(payload_bytes))
                     .flatten()
                 else {
@@ -1193,8 +1303,7 @@ fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
         attribute_id,
         offset: line_offset,
         payload: line_offset + payload_start..line_offset + line.len(),
-        continuation_rows: None,
-        continuation_count: 0,
+        continuation: None,
     })
 }
 
@@ -1220,11 +1329,18 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Scope {
         if current.starts_with(b"$") {
             if let Some(owner) = continuation_owner {
                 let value = &mut candidates[owner];
-                value
-                    .continuation_rows
-                    .get_or_insert(line_offset..line_offset + current.len())
-                    .end = line_offset + current.len();
-                value.continuation_count += 1;
+                match &mut value.continuation {
+                    Some(continuation) => {
+                        continuation.rows.end = line_offset + current.len();
+                        continuation.count = continuation.count.saturating_add(1);
+                    }
+                    None => {
+                        value.continuation = Some(Continuation {
+                            rows: line_offset..line_offset + current.len(),
+                            count: NonZeroUsize::MIN,
+                        });
+                    }
+                }
             }
             continue;
         }
@@ -1278,7 +1394,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     let (type_3_values, unresolved_type_3_value_count) = scalar_string_records(
         data,
         &scopes,
-        3,
+        LegacyTypeCode::NullableString,
         "type_3",
         NullToken::RepresentsNull,
         &parents,
@@ -1286,25 +1402,67 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     let (type_4_values, unresolved_type_4_value_count) = scalar_string_records(
         data,
         &scopes,
-        4,
+        LegacyTypeCode::ByteString,
         "type_4",
         NullToken::RepresentsBytes,
         &parents,
     );
-    let (real_values, unresolved_real_value_count) =
-        numeric_records(data, &scopes, 2, "real", compact_real, &parents);
-    let (integer_values, unresolved_integer_value_count) =
-        numeric_records(data, &scopes, 1, "integer", signed_integer, &parents);
-    let (type_5_values, unresolved_type_5_value_count) =
-        numeric_records(data, &scopes, 5, "type_5", unsigned_integer, &parents);
-    let (type_6_values, unresolved_type_6_value_count) =
-        numeric_records(data, &scopes, 6, "type_6", compact_real, &parents);
-    let (type_7_values, unresolved_type_7_value_count) =
-        numeric_records(data, &scopes, 7, "type_7", unsigned_integer, &parents);
-    let (type_9_values, unresolved_type_9_value_count) =
-        numeric_records(data, &scopes, 9, "type_9", unsigned_integer, &parents);
-    let (type_11_values, unresolved_type_11_value_count) =
-        numeric_records(data, &scopes, 11, "type_11", unsigned_integer, &parents);
+    let (real_values, unresolved_real_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Real,
+        "real",
+        compact_real,
+        &parents,
+    );
+    let (integer_values, unresolved_integer_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Integer,
+        "integer",
+        signed_integer,
+        &parents,
+    );
+    let (type_5_values, unresolved_type_5_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned5,
+        "type_5",
+        unsigned_integer,
+        &parents,
+    );
+    let (type_6_values, unresolved_type_6_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Real6,
+        "type_6",
+        compact_real,
+        &parents,
+    );
+    let (type_7_values, unresolved_type_7_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned7,
+        "type_7",
+        unsigned_integer,
+        &parents,
+    );
+    let (type_9_values, unresolved_type_9_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned9,
+        "type_9",
+        unsigned_integer,
+        &parents,
+    );
+    let (type_11_values, unresolved_type_11_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned11,
+        "type_11",
+        unsigned_integer,
+        &parents,
+    );
     Persistence {
         scopes,
         real_values,

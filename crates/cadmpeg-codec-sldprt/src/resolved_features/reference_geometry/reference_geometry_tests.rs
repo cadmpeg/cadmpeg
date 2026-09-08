@@ -6,8 +6,7 @@ use super::*;
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-    FeatureInputName,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -71,7 +70,6 @@ fn reference_point_history() -> FeatureHistory {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("2080".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Point1".into(),
             kind: "3DPoint".into(),
@@ -192,7 +190,6 @@ fn coordinate_system_history() -> FeatureHistory {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("500".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "CS1".into(),
             kind: "Coordinate System".into(),
@@ -731,7 +728,6 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source.to_string()),
-        parent_source_id: None,
         ordinal,
         name: String::new(),
         kind: String::new(),
@@ -882,7 +878,6 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("2080".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Axis1".into(),
             kind: String::new(),
@@ -905,7 +900,6 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             ordinal: 0,
             offset: class_offset as u64,
             name: String::from_utf8(class_name.to_vec()).unwrap(),
-            role: FeatureInputClassRole::default(),
         }],
         names: vec![FeatureInputName {
             id: "name".into(),
@@ -1471,7 +1465,6 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("2080".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "MidPlane".into(),
             kind: "Plane".into(),

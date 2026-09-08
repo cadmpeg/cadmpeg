@@ -19,9 +19,8 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum F3dLossCode {
+pub(crate) enum F3dLossCode {
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -156,20 +155,28 @@ pub enum F3dLossCode {
     XrefMemberMissing,
     /// An `XREF` member failed to decode.
     XrefMemberUndecoded,
-    /// An `XREF` component's units differ from the containing document.
-    XrefUnitsMismatch,
     /// T-spline records were retained without typed semantics.
     TsplineRecordUntyped,
     /// A T-spline control cage was not decoded.
     TsplineCageUndecoded,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
+    /// The document was read with a grammar its own declarations do not select.
+    SourceDialectUnverified,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
+    /// An embedded kernel carrier was read with an unverified ACIS grammar.
+    KernelDialectUnverified,
+    /// An embedded kernel carrier could not be framed for dialect inspection.
+    KernelCarrierUnparseable,
+    /// Two F3Z member layers resolved to the same core dialect identity.
+    DialectLayerCollision,
 }
 
 impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub const ALL: &'static [F3dLossCode] = &[
+    pub(crate) const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -237,15 +244,19 @@ impl F3dLossCode {
         Self::XrefCycle,
         Self::XrefMemberMissing,
         Self::XrefMemberUndecoded,
-        Self::XrefUnitsMismatch,
         Self::TsplineRecordUntyped,
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
+        Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
+        Self::KernelDialectUnverified,
+        Self::KernelCarrierUnparseable,
+        Self::DialectLayerCollision,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
@@ -320,16 +331,20 @@ impl F3dLossCode {
             Self::XrefCycle => "xref.cycle",
             Self::XrefMemberMissing => "xref.member-missing",
             Self::XrefMemberUndecoded => "xref.member-undecoded",
-            Self::XrefUnitsMismatch => "xref.units-mismatch",
             Self::TsplineRecordUntyped => "tspline.record-untyped",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
+            Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
+            Self::DialectLayerCollision => "source.dialect-layer-collision",
         }
     }
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    pub(crate) const fn severity(self) -> Severity {
         match self {
             Self::BodylessDesignCarrier
             | Self::AssemblyComponentsExternal
@@ -343,12 +358,69 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefUnitsMismatch
             | Self::TsplineCageUndecoded => Severity::Error,
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            _ => Severity::Warning,
+            Self::DimensionCompanionUntyped
+            | Self::ConfigurationMemberUnassigned
+            | Self::ConfigurationRuleUnbound
+            | Self::ConfigurationParameterOverrideUnbound
+            | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ActComponentLinkUnresolved
+            | Self::DrawingDocumentOmitted
+            | Self::DesignBodyBindingUnresolved
+            | Self::ReferenceImageNativeRetained
+            | Self::DecalNativeRetained
+            | Self::EdgeReferenceLostUnrepaired
+            | Self::FeatureDefinitionIncomplete
+            | Self::FeatureScopeUnprojected
+            | Self::ParameterUnprojected
+            | Self::ParameterOwnerUnrecognized
+            | Self::ParameterUnitUntyped
+            | Self::MaterialDistanceUnitUntyped
+            | Self::ParameterExpressionUnbound
+            | Self::HistoryDependencyUnprojected
+            | Self::HistoryDependencyAmbiguous
+            | Self::SketchRelationNativeRetained
+            | Self::SketchDimensionNativeRetained
+            | Self::SketchPlacementUnprojected
+            | Self::SketchPointUnprojected
+            | Self::SketchCurveUnprojected
+            | Self::SketchSurfaceUnprojected
+            | Self::SketchTextUnprojected
+            | Self::SketchRelationUnprojected
+            | Self::DimensionUnprojected
+            | Self::FeatureProfileSelectionNative
+            | Self::FeaturePathSelectionNative
+            | Self::FeatureFaceSelectionNative
+            | Self::FeatureFaceSelectionActiveSubstituted
+            | Self::FeatureBodySelectionNative
+            | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureEdgeSelectionNative
+            | Self::FeatureEdgeOperandUnresolved
+            | Self::FeatureEdgeSelectionLost
+            | Self::BrepBlobUndecoded
+            | Self::MeshContainerUnjoined
+            | Self::MeshContainerMissing
+            | Self::MeshAttributeNotTransferred
+            | Self::XrefTableUndecoded
+            | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementSuperseded
+            | Self::MeshVertexPrecisionReduced
+            | Self::FaceSurfaceReferenceDangling
+            | Self::SurfaceShapeNotDecoded
+            | Self::ProceduralCurveUndecoded
+            | Self::PcurveUndecoded
+            | Self::BlendSupportPartial
+            | Self::SolvedRecordUntyped
+            | Self::MaterialNotTransferred
+            | Self::TsplineRecordUntyped
+            | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
+            | Self::KernelDialectUnverified
+            | Self::KernelCarrierUnparseable
+            | Self::DialectLayerCollision => Severity::Warning,
         }
     }
 
@@ -358,6 +430,7 @@ impl F3dLossCode {
             Self::DimensionCompanionUntyped
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
+            | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
@@ -370,7 +443,6 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefUnitsMismatch
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
@@ -415,7 +487,9 @@ impl F3dLossCode {
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
-            Self::MeshContainerUndecoded => LossTaxonomy::DecodeDiagnostic,
+            Self::MeshContainerUndecoded | Self::DialectLayerCollision => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
             | Self::NurbsSurfaceCarrier
@@ -428,12 +502,16 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
+            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced("f3d", self.code(), self.shared_taxonomy())
     }
 
@@ -442,7 +520,7 @@ impl F3dLossCode {
     /// The structured code is `f3d/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
@@ -526,10 +604,14 @@ mod tests {
                 "xref.cycle",
                 "xref.member-missing",
                 "xref.member-undecoded",
-                "xref.units-mismatch",
                 "tspline.record-untyped",
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
+                "source.dialect-unverified",
+                "target.source-dialect-displaced",
+                "source.kernel-dialect-unverified",
+                "source.kernel-carrier-unparseable",
+                "source.dialect-layer-collision",
             ]
         );
     }

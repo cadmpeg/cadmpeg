@@ -3,18 +3,12 @@
 
 mod arenas;
 mod coverage;
-mod ir;
+pub(super) mod ir;
 mod ir_features;
 mod ir_geometry;
 mod meta;
 mod passthrough;
-mod report;
+pub(super) mod report;
 mod report_coverage;
 mod report_losses;
 mod units;
-
-pub(super) use ir::{build_container_ir, build_ir, BuiltIr};
-pub(super) use report::build_report;
-// Unused in the lib unit; sibling test modules reach it through this barrel.
-#[allow(unused_imports)]
-pub(super) use report::has_transferred_geometry;

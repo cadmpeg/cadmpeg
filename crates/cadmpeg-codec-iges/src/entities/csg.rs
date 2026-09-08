@@ -5,7 +5,7 @@ use super::geometry::{
     declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
     ProjectionOutcome,
 };
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
@@ -30,7 +30,7 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
-    let curve = CurveId(format!("iges:model:curve#D{sequence}"));
+    let curve = CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -286,10 +286,11 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1).filter(|sequence| {
-            ir.model
-                .curves
-                .iter()
-                .any(|curve| curve.id == CurveId(format!("iges:model:curve#D{sequence}")))
+            ir.model.curves.iter().any(|curve| {
+                curve.id
+                    == CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                        .expect("identity grammar")
+            })
         }) else {
             losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
             continue;
@@ -478,7 +479,7 @@ pub(super) fn project(
         let point = (2..=4)
             .map(|index| record.number(index).filter(|value| value.is_finite()))
             .collect::<Option<Vec<_>>>();
-        if point.is_none() || entry.status.use_flag != 3 {
+        if point.is_none() || entry.status.use_flag() != Some(UseFlag::Other) {
             losses.push(entity_loss(
                 entry,
                 "selected-component point or entity-use flag is invalid",

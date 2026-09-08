@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -255,177 +255,174 @@
     },
     "native": {
       "sldprt": {
-        "arenas": {
-          "configurations": [],
-          "feature_histories": [],
-          "feature_input_body_selections": [],
-          "feature_input_classes": [
-            {
-              "id": "sldprt:feature-input:class#247:0",
-              "name": "sgPointHandle",
-              "offset": 0,
-              "ordinal": 0,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "role": "sketch_entity"
-            },
-            {
-              "id": "sldprt:feature-input:class#247:106",
-              "name": "sgPntPntDist",
-              "offset": 106,
-              "ordinal": 3,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "role": "sketch_constraint"
-            },
-            {
-              "id": "sldprt:feature-input:class#247:19",
-              "name": "sgLineHandle",
-              "offset": 19,
-              "ordinal": 1,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "role": "sketch_entity"
-            },
-            {
-              "id": "sldprt:feature-input:class#247:37",
-              "name": "sgArcHandle",
-              "offset": 37,
-              "ordinal": 2,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "role": "sketch_entity"
-            }
-          ],
-          "feature_input_edge_selections": [],
-          "feature_input_generated_surface_identities": [],
-          "feature_input_lanes": [
-            {
-              "body_selections": [],
-              "classes": [],
-              "configuration": "0",
-              "edge_selections": [],
-              "generated_surface_identities": [],
-              "id": "sldprt:feature-input:resolved-features#247",
-              "names": [],
-              "native_payload": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AgAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAAUFMAAAAdZmVhdHVyZSBpbnB1dCBjaXJjdWxhciBza2V0Y2gAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB8ARgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHgAyAAAAKAAAAAArABAAKAAAAAAAAMK8ko+ZbgAAAAAAAAAAAEYAAAAAABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAAAHQA8AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-              "references": [],
-              "relation_bindings": [],
-              "relation_instances": [],
-              "scalars": [],
-              "sketch_entities": [],
-              "surface_selections": []
-            }
-          ],
-          "feature_input_names": [
-            {
-              "id": "sldprt:feature-input:name#247:124",
-              "object_id": 4294967295,
-              "offset": 124,
-              "ordinal": 2,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "value": "D1"
-            },
-            {
-              "id": "sldprt:feature-input:name#247:54",
-              "object_id": 7536751,
-              "offset": 54,
-              "ordinal": 0,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "value": "Sketch1"
-            },
-            {
-              "id": "sldprt:feature-input:name#247:74",
-              "object_id": 1349807696,
-              "offset": 74,
-              "ordinal": 1,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "value": "Boss-Extrude1"
-            }
-          ],
-          "feature_input_references": [
-            {
-              "id": "sldprt:feature-input:reference#247:199",
-              "kind": "d6",
-              "object_index": 0,
-              "offset": 199,
-              "ordinal": 0,
-              "parent": "sldprt:feature-input:resolved-features#247"
-            },
-            {
-              "id": "sldprt:feature-input:reference#247:211",
-              "kind": "d6",
-              "object_index": 2,
-              "offset": 211,
-              "ordinal": 1,
-              "parent": "sldprt:feature-input:resolved-features#247"
-            }
-          ],
-          "feature_input_relation_bindings": [
-            {
-              "class_ref": "sldprt:feature-input:class#247:106",
-              "family": "point_point_distance",
-              "id": "sldprt:feature-input:relation-binding#247:106",
-              "offset": 106,
-              "ordinal": 0,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "scalar_ref": "sldprt:feature-input:scalar#247:156"
-            }
-          ],
-          "feature_input_relation_instances": [],
-          "feature_input_scalars": [
-            {
-              "entity_indices": [
-                0,
-                2
-              ],
-              "id": "sldprt:feature-input:scalar#247:156",
-              "name": "sldprt:feature-input:name#247:124",
-              "object_id": 1,
-              "offset": 156,
-              "operands": [
-                {
-                  "entity_index": 0,
-                  "kind": "d6",
-                  "offset": 199,
-                  "reference_ref": "sldprt:feature-input:reference#247:199"
-                },
-                {
-                  "entity_index": 2,
-                  "kind": "d6",
-                  "offset": 211,
-                  "reference_ref": "sldprt:feature-input:reference#247:211"
-                }
-              ],
-              "ordinal": 0,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "role": "driving",
-              "value": 0.025
-            }
-          ],
-          "feature_input_surface_selections": [],
-          "features": [],
-          "pmi_dimensions": [],
-          "sketch_input_entities": [
-            {
-              "id": "sldprt:feature-input:sketch-entity#247:223",
-              "kind": {
-                "relation": "angle"
+        "configurations": [],
+        "feature_histories": [],
+        "feature_input_body_selections": [],
+        "feature_input_classes": [
+          {
+            "id": "sldprt:feature-input:class#247:0",
+            "name": "sgPointHandle",
+            "offset": 0,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "role": "sketch_entity"
+          },
+          {
+            "id": "sldprt:feature-input:class#247:106",
+            "name": "sgPntPntDist",
+            "offset": 106,
+            "ordinal": 3,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "role": "sketch_constraint"
+          },
+          {
+            "id": "sldprt:feature-input:class#247:19",
+            "name": "sgLineHandle",
+            "offset": 19,
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "role": "sketch_entity"
+          },
+          {
+            "id": "sldprt:feature-input:class#247:37",
+            "name": "sgArcHandle",
+            "offset": 37,
+            "ordinal": 2,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "role": "sketch_entity"
+          }
+        ],
+        "feature_input_edge_selections": [],
+        "feature_input_generated_surface_identities": [],
+        "feature_input_lanes": [
+          {
+            "body_selections": [],
+            "classes": [],
+            "configuration": "0",
+            "edge_selections": [],
+            "generated_surface_identities": [],
+            "id": "sldprt:feature-input:resolved-features#247",
+            "names": [],
+            "native_payload": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AgAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAAUFMAAAAdZmVhdHVyZSBpbnB1dCBjaXJjdWxhciBza2V0Y2gAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB8ARgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHgAyAAAAKAAAAAArABAAKAAAAAAAAMK8ko+ZbgAAAAAAAAAAAEYAAAAAABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAAAHQA8AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "references": [],
+            "relation_bindings": [],
+            "relation_instances": [],
+            "scalars": [],
+            "sketch_entities": [],
+            "surface_selections": []
+          }
+        ],
+        "feature_input_names": [
+          {
+            "id": "sldprt:feature-input:name#247:124",
+            "object_id": 4294967295,
+            "offset": 124,
+            "ordinal": 2,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "value": "D1"
+          },
+          {
+            "id": "sldprt:feature-input:name#247:54",
+            "object_id": 7536751,
+            "offset": 54,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "value": "Sketch1"
+          },
+          {
+            "id": "sldprt:feature-input:name#247:74",
+            "object_id": 1349807696,
+            "offset": 74,
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "value": "Boss-Extrude1"
+          }
+        ],
+        "feature_input_references": [
+          {
+            "id": "sldprt:feature-input:reference#247:199",
+            "kind": "d6",
+            "object_index": 0,
+            "offset": 199,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#247"
+          },
+          {
+            "id": "sldprt:feature-input:reference#247:211",
+            "kind": "d6",
+            "object_index": 2,
+            "offset": 211,
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#247"
+          }
+        ],
+        "feature_input_relation_bindings": [
+          {
+            "class_ref": "sldprt:feature-input:class#247:106",
+            "family": "point_point_distance",
+            "id": "sldprt:feature-input:relation-binding#247:106",
+            "offset": 106,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "scalar_ref": "sldprt:feature-input:scalar#247:156"
+          }
+        ],
+        "feature_input_relation_instances": [],
+        "feature_input_scalars": [
+          {
+            "entity_indices": [
+              0,
+              2
+            ],
+            "id": "sldprt:feature-input:scalar#247:156",
+            "name": "sldprt:feature-input:name#247:124",
+            "object_id": 1,
+            "offset": 156,
+            "operands": [
+              {
+                "entity_index": 0,
+                "kind": "d6",
+                "offset": 199,
+                "reference_ref": "sldprt:feature-input:reference#247:199"
               },
-              "local_id": 1,
-              "object_index": 0,
-              "offset": 223,
-              "ordinal": 0,
-              "parent": "sldprt:feature-input:resolved-features#247",
-              "state_value": 1.0
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "sldprt:file:block#247"
+              {
+                "entity_index": 2,
+                "kind": "d6",
+                "offset": 211,
+                "reference_ref": "sldprt:feature-input:reference#247:211"
+              }
+            ],
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "role": "driving",
+            "value": 0.025
+          }
+        ],
+        "feature_input_surface_selections": [],
+        "features": [],
+        "pmi_dimensions": [],
+        "sketch_input_entities": [
+          {
+            "id": "sldprt:feature-input:sketch-entity#247:223",
+            "kind": {
+              "relation": "angle"
             },
-            {
-              "id": "sldprt:file:block#8"
-            }
-          ]
-        },
-        "version": 13
+            "local_id": 1,
+            "object_index": 0,
+            "offset": 223,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "state_value": 1.0
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "sldprt:file:block#247"
+          },
+          {
+            "id": "sldprt:file:block#8"
+          }
+        ]
       }
     },
     "source": {
@@ -453,6 +450,35 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "format": "parasolid",
+            "instance": "block@8:Contents/Config-0-Partition+0"
+          },
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@247:Contents/Config-0-ResolvedFeatures+315",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "format": "parasolid",
+            "instance": "block@247:Contents/Config-0-ResolvedFeatures+315"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown",
+          "format": "sldprt"
+        }
+      },
       "format": "sldprt"
     },
     "tolerances": {
@@ -465,6 +491,35 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@8:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "format": "parasolid",
+          "instance": "block@8:Contents/Config-0-Partition+0"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@247:Contents/Config-0-ResolvedFeatures+315",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "format": "parasolid",
+          "instance": "block@247:Contents/Config-0-ResolvedFeatures+315"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown",
+        "format": "sldprt"
+      }
+    },
     "format": "sldprt",
     "geometry_transferred": true,
     "losses": [
@@ -475,6 +530,15 @@
           "namespace": "sldprt"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt"
+        },
+        "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
       },
       {
@@ -676,7 +740,6 @@
         "sha256": "812077adf1eee51400faa710397c42694ba6b472c45d1bd5ca4bbc9684815297",
         "stream": "sldprt"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

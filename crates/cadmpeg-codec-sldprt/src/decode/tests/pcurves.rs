@@ -36,7 +36,7 @@ fn closed_cylinder_gets_derived_seam() {
         .unwrap();
 
     assert_eq!(result.ir().model.faces[0].loops.len(), 1);
-    assert_eq!(result.ir().model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(result
         .ir()
@@ -78,7 +78,7 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.id.0.contains("#seam:"))
+        .find(|edge| edge.id.as_str().contains("#seam:"))
         .expect("derived seam");
     let positions = [&seam.start, &seam.end].map(|vertex_id| {
         let vertex = decoded
@@ -130,7 +130,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         .unwrap();
 
     assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.loops[0].coedges.len(), 1);
+    assert_eq!(decoded.ir().model.loops[0].coedges().len(), 1);
     let edge = &decoded.ir().model.edges[0];
     assert_eq!(edge.start, edge.end);
     let vertex = decoded
@@ -290,14 +290,14 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
     let pole = result
         .ir()
         .model
         .pcurves
         .iter()
-        .find(|pcurve| pcurve.id.0.contains("sphere-seam"))
+        .find(|pcurve| pcurve.id.as_str().contains("sphere-seam"))
         .expect("sphere pole pcurve");
     assert!(matches!(
         pole.geometry,
@@ -305,7 +305,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
             if origin == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
                 && direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
     ));
-    assert_eq!(pole.parameter_range, Some([0.0, std::f64::consts::TAU]));
+    assert_eq!(pole.parameter_range(), Some([0.0, std::f64::consts::TAU]));
     let seam = result
         .ir()
         .model
@@ -316,7 +316,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&edge.id.0)
+                .get(edge.id.as_str())
                 .and_then(|note| note.tag.as_deref())
                 == Some("derived_sphere_seam")
         })
@@ -372,7 +372,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&curve.id.0)
+                .get(curve.id.as_str())
                 .and_then(|note| note.tag.as_deref())
                 == Some("derived_sphere_seam")
         })
@@ -423,7 +423,7 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
             .source_fidelity()
             .annotations
             .provenance
-            .get(&pcurve.id.0)
+            .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
     }));
@@ -457,7 +457,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .source_fidelity()
             .annotations
             .provenance
-            .get(&pcurve.id.0)
+            .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
             && matches!(
@@ -472,7 +472,10 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
+            .find(|edge| edge
+                .curve
+                .as_ref()
+                .is_some_and(|id| id.as_str().ends_with("#192")))
             .and_then(|edge| edge.param_range),
         Some([0.0, 1000.0])
     );
@@ -509,7 +512,10 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
+            .find(|edge| edge
+                .curve
+                .as_ref()
+                .is_some_and(|id| id.as_str().ends_with("#192")))
             .and_then(|edge| edge.param_range),
         Some([-500.0, 500.0])
     );
@@ -545,7 +551,7 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
             .source_fidelity()
             .annotations
             .provenance
-            .get(&pcurve.id.0)
+            .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
     }));

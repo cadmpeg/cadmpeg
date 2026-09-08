@@ -316,7 +316,12 @@ note = "Parameter payload. §5.8 states the BE f32 slot order per kind but no pe
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
-contains = "0x32 => Some(0x02), // plane"
+contains = "0x32 => Some(Self::Plane),"
+note = "The parser maps the plane marker to its analytic surface kind."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
+contains = "Self::Plane => 0x02,"
 note = "The parser's kind-to-prebyte map matches the spec table row for the plane."
 
 [[record]]
@@ -376,7 +381,12 @@ note = "Parameter payload `cylinder `00 1a 00 33 33 [px py pz ax ay radius]` as 
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
-contains = "0x33 => Some(0x1a), // cylinder"
+contains = "0x33 => Some(Self::Cylinder),"
+note = "The parser maps the cylinder marker to its analytic surface kind."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
+contains = "Self::Cylinder => 0x1a,"
 note = "The parser's kind-to-prebyte map matches the shared cylinder/cone row."
 
 [[record]]

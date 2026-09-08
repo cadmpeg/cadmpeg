@@ -43,7 +43,7 @@ pub struct SubdPlaneFrame {
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SubdSymmetryKind {
@@ -55,6 +55,9 @@ pub enum SubdSymmetryKind {
         segments: u32,
         /// Native radial sweep value.
         sweep: f64,
+        /// Selector-preserving native radial-symmetry maps.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        radial_maps: Vec<SubdRadialSymmetryMap>,
     },
 }
 
@@ -88,25 +91,114 @@ pub struct SubdRadialSymmetryMap {
 }
 
 /// Typed editor symmetry state for one subdivision cage.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SubdSymmetry {
     /// Symmetry mode and its radial controls, when present.
     pub kind: SubdSymmetryKind,
     /// Geometric symmetry-plane frame.
     pub plane: SubdPlaneFrame,
     /// Forward face correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub face_pairs: Vec<[u32; 2]>,
     /// Forward edge correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edge_pairs: Vec<[u32; 2]>,
     /// Forward vertex correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vertex_pairs: Vec<[u32; 2]>,
-    /// Selector-preserving native maps for radial symmetry blocks.
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SubdSymmetryKindWire {
+    Correspondence,
+    Radial { segments: u32, sweep: f64 },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdSymmetryWire {
+    kind: SubdSymmetryKindWire,
+    plane: SubdPlaneFrame,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub radial_maps: Vec<SubdRadialSymmetryMap>,
+    face_pairs: Vec<[u32; 2]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    edge_pairs: Vec<[u32; 2]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    vertex_pairs: Vec<[u32; 2]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    radial_maps: Vec<SubdRadialSymmetryMap>,
+}
+
+impl Serialize for SubdSymmetry {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (kind, radial_maps) = match &self.kind {
+            SubdSymmetryKind::Correspondence => (SubdSymmetryKindWire::Correspondence, Vec::new()),
+            SubdSymmetryKind::Radial {
+                segments,
+                sweep,
+                radial_maps,
+            } => (
+                SubdSymmetryKindWire::Radial {
+                    segments: *segments,
+                    sweep: *sweep,
+                },
+                radial_maps.clone(),
+            ),
+        };
+        SubdSymmetryWire {
+            kind,
+            plane: self.plane,
+            face_pairs: self.face_pairs.clone(),
+            edge_pairs: self.edge_pairs.clone(),
+            vertex_pairs: self.vertex_pairs.clone(),
+            radial_maps,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SubdSymmetry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SubdSymmetryWire::deserialize(deserializer)?;
+        let kind = match wire.kind {
+            SubdSymmetryKindWire::Correspondence if wire.radial_maps.is_empty() => {
+                SubdSymmetryKind::Correspondence
+            }
+            SubdSymmetryKindWire::Correspondence => {
+                return Err(serde::de::Error::custom(
+                    "correspondence SubD symmetry cannot carry radial_maps",
+                ));
+            }
+            SubdSymmetryKindWire::Radial { segments, sweep } => SubdSymmetryKind::Radial {
+                segments,
+                sweep,
+                radial_maps: wire.radial_maps,
+            },
+        };
+        Ok(Self {
+            kind,
+            plane: wire.plane,
+            face_pairs: wire.face_pairs,
+            edge_pairs: wire.edge_pairs,
+            vertex_pairs: wire.vertex_pairs,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SubdSymmetry {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SubdSymmetry".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SubdSymmetryWire::json_schema(generator)
+    }
 }
 
 /// Subdivision scheme used by a control cage.
@@ -157,20 +249,100 @@ pub struct SubdVertexGripLayout {
 }
 
 /// One wedge in a secondary-grip layout.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum SubdGripWedge {
+    /// Boundary padding with no topology or grip data.
+    Phantom,
+    /// One topology and grip slot in the vertex fan.
+    Slot {
+        /// IR edge for this fan slot.
+        edge: Option<u32>,
+        /// Face in the sector following this slot, or `None` for a boundary gap.
+        sector_face: Option<u32>,
+        /// Spoke grips ordered nearest-first from the owning vertex.
+        spokes: Vec<Option<SubdSecondaryGrip>>,
+        /// Sector-grid grips ordered by the spoke-k position, then the
+        /// next-spoke position, with `S[k] * S[k + 1]` slots.
+        sectors: Vec<Option<SubdSecondaryGrip>>,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SubdGripWedge {
-    /// IR edge for this fan slot, or `None` for a phantom boundary slot.
-    pub edge: Option<u32>,
-    /// Face in the sector following this slot, or `None` for a boundary gap.
-    pub sector_face: Option<u32>,
-    /// Whether this slot was inserted to complete a boundary gap.
-    pub phantom: bool,
-    /// Spoke grips ordered nearest-first from the owning vertex.
-    pub spokes: Vec<Option<SubdSecondaryGrip>>,
-    /// Sector-grid grips ordered by the spoke-k position, then the next-spoke
-    /// position, with `S[k] * S[k + 1]` slots.
-    pub sectors: Vec<Option<SubdSecondaryGrip>>,
+struct SubdGripWedgeWire {
+    edge: Option<u32>,
+    sector_face: Option<u32>,
+    phantom: bool,
+    spokes: Vec<Option<SubdSecondaryGrip>>,
+    sectors: Vec<Option<SubdSecondaryGrip>>,
+}
+
+impl Serialize for SubdGripWedge {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let wire = match self {
+            Self::Phantom => SubdGripWedgeWire {
+                edge: None,
+                sector_face: None,
+                phantom: true,
+                spokes: Vec::new(),
+                sectors: Vec::new(),
+            },
+            Self::Slot {
+                edge,
+                sector_face,
+                spokes,
+                sectors,
+            } => SubdGripWedgeWire {
+                edge: *edge,
+                sector_face: *sector_face,
+                phantom: false,
+                spokes: spokes.clone(),
+                sectors: sectors.clone(),
+            },
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SubdGripWedge {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SubdGripWedgeWire::deserialize(deserializer)?;
+        if !wire.phantom {
+            return Ok(Self::Slot {
+                edge: wire.edge,
+                sector_face: wire.sector_face,
+                spokes: wire.spokes,
+                sectors: wire.sectors,
+            });
+        }
+        if wire.edge.is_some()
+            || wire.sector_face.is_some()
+            || !wire.spokes.is_empty()
+            || !wire.sectors.is_empty()
+        {
+            return Err(serde::de::Error::custom(
+                "phantom SubD grip wedge cannot carry topology or grip data",
+            ));
+        }
+        Ok(Self::Phantom)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SubdGripWedge {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SubdGripWedge".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SubdGripWedgeWire::json_schema(generator)
+    }
 }
 
 /// A secondary grip point and its source grip-array identity.

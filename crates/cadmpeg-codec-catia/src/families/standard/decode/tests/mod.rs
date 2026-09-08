@@ -31,7 +31,7 @@ pub(super) use crate::families::standard::decode::{
 };
 
 pub(super) use crate::families::b2::records::{B2OwnerNumericTail, B2OwnerReferenceEncoding};
-pub(super) use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
+pub(super) use crate::families::b5::graph::{B5Graph, B5LogicalVertex, B5Profile, B5Surface};
 pub(super) use crate::test_support::{
     append_b5_record, append_e5_record, b5_closed_triangle_stream, e5_d8_rolling_ball_stream,
     e5_torus_stream, le_f64,
@@ -45,14 +45,13 @@ pub(super) use crate::families::standard::records::{
 pub(super) use cadmpeg_ir::document::CadIr;
 pub(super) use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 pub(super) use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
+    SurfaceGeometry,
 };
 pub(super) use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
 pub(super) use cadmpeg_ir::math::{Point2, Point3, Vector3};
 pub(super) use cadmpeg_ir::topology::{Face, Point, Sense, Vertex};
-pub(super) use cadmpeg_ir::units::Units;
 
 pub(super) use cadmpeg_ir::AnnotationBuilder;
 pub(super) use std::cell::Cell;

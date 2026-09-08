@@ -23,7 +23,7 @@ fn scan_discovers_labeled_curve_prototypes() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["curve_prototypes"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_prototypes"];
     assert_eq!(records[0].fields()["curve_id"], 7);
     assert_eq!(records[0].fields()["type_byte"], 8);
     assert_eq!(records[0].fields()["generating_feature_id"], 4);
@@ -38,13 +38,16 @@ fn scan_discovers_curve_halfedge_topology() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.curves.topology_rows.len(), 1);
-    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.topology_rows[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
     assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.topology.half_edges.len(), 2);
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let row = &result.ir().native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
+    let row = &result.ir().native.namespace("creo").unwrap().arenas()["curve_topology_rows"][0];
     assert_eq!(row.fields()["curve_id"], 7);
     assert_eq!(row.fields()["type_byte"], 8);
     assert_eq!(row.fields()["feature_id"], 4);
@@ -107,7 +110,7 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
         .native
         .namespace("creo")
         .expect("native namespace")
-        .arenas["curve_topology_rows"];
+        .arenas()["curve_topology_rows"];
     assert_eq!(rows.len(), 2);
     for (native, source) in rows.iter().zip(&scan.curves.topology_rows) {
         assert_eq!(
@@ -132,9 +135,15 @@ fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
 
     assert_eq!(scan.curves.topology_rows.len(), 2);
     assert_eq!(scan.curves.topology_rows[0].id, 7);
-    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.topology_rows[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
     assert_eq!(scan.curves.topology_rows[1].id, 8);
-    assert_eq!(scan.curves.topology_rows[1].faces, [12, 13]);
+    assert_eq!(
+        scan.curves.topology_rows[1].faces,
+        [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)]
+    );
 }
 
 #[test]
@@ -151,23 +160,22 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     let parameters = &scan.curves.parameters[0];
     assert_eq!(parameters.curve_id, 7);
     assert_eq!(parameters.type_byte, 8);
-    assert_eq!(parameters.scalar_values, vec![0.0, 1.0, 3.0]);
+    assert_eq!(parameters.scalar_values(), vec![0.0, 1.0, 3.0]);
     assert_eq!(parameters.scalar_tokens[2].offset, 5);
     assert_eq!(parameters.scalar_tokens[2].length, 8);
     assert_eq!(parameters.scalar_tokens[2].raw[0], 0x46);
-    assert_eq!(parameters.skipped_references, vec![256]);
+    assert_eq!(parameters.skipped_references(), vec![256]);
     assert_eq!(parameters.references[0].entity_id, 256);
     assert_eq!(parameters.references[0].offset, 2);
     assert_eq!(parameters.references[0].length, 3);
     assert_eq!(parameters.opaque_spans.len(), 1);
     assert_eq!(parameters.opaque_spans[0].offset, 13);
     assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
-    assert_eq!(parameters.suffix, crate::curve::CurveSuffixStatus::Unique);
     assert_eq!(parameters.body.last(), Some(&0xff));
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let record = &result.ir().native.namespace("creo").unwrap().arenas["curve_parameters"][0];
+    let record = &result.ir().native.namespace("creo").unwrap().arenas()["curve_parameters"][0];
     assert_eq!(record.fields()["curve_id"], 7);
     assert_eq!(record.fields()["type_byte"], 8);
     assert_eq!(
@@ -202,7 +210,46 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
-    assert_eq!(scan.curves.parameters[0].scalar_values, vec![3.0]);
+    assert_eq!(scan.curves.parameters[0].scalar_values(), vec![3.0]);
+}
+
+#[test]
+fn absent_pcurve_faces_remain_zero_in_native_records() {
+    for prototype in [false, true] {
+        let mut payload = visibgeom_payload(0, u8::from(!prototype));
+        if prototype {
+            payload.extend_from_slice(b"crv_id\0\x07 type\0\x00");
+            payload.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x00 crv_hdr_geom_ptr[1]\0\x0b");
+            payload.extend_from_slice(b"next_crv_hdr_ptr[0]\0\x07 next_crv_hdr_ptr[1]\0\x07");
+            payload.extend_from_slice(b"crv_pnt_arr\0\xf9\x02\x04");
+        } else {
+            payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
+        }
+        payload.extend_from_slice(&[0x0f; 8]);
+        if prototype {
+            payload.extend_from_slice(b"topol_ref_data\0");
+        } else {
+            payload.extend_from_slice(b"\x00\x0b\x07\x07\0\0\xe3\xe1\xe3");
+        }
+        let data = build_prt("c", &[("VisibGeom", payload)]);
+        let scan = container::scan_bytes(data.clone());
+        let faces = if prototype {
+            scan.curves.bound_prototype_pcurves[0].faces
+        } else {
+            scan.curves.pcurves[0].faces
+        };
+        assert_eq!(faces, [None, std::num::NonZeroU32::new(11)]);
+
+        let decoded = CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode an absent pcurve face");
+        let records = &decoded.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            serde_json::to_string(&records[0].fields()["faces"]).unwrap(),
+            "[0,11]"
+        );
+    }
 }
 
 #[test]
@@ -221,14 +268,14 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     assert_eq!(scan.curves.pcurves.len(), 1);
     let pcurve = &scan.curves.pcurves[0];
     assert_eq!(pcurve.curve_id, 7);
-    assert_eq!(pcurve.faces, [10, 11]);
+    assert_eq!(pcurve.stored_face_ids(), [10, 11]);
     assert_eq!(pcurve.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(pcurve.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["pcurve_endpoints"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id(), "creo:visibgeom:pcurve_endpoints#7");
     assert_eq!(records[0].fields()["faces"][0], 10);
@@ -258,7 +305,7 @@ fn scan_decodes_positive_dict_pcurve_slots() {
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(
-        scan.curves.parameters[0].scalar_values,
+        scan.curves.parameters[0].scalar_values(),
         vec![0.0, 1.0, expected, 0.0, 1.0, 38.0, expected, 38.0]
     );
     assert_eq!(scan.curves.parameters[0].opaque_spans, Vec::new());
@@ -377,7 +424,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(coordinates.body, scan.curves.parameters[0].body);
     assert_eq!(coordinates.values_mm, vec![3.0, -3.0, 2.0, -2.0]);
     assert_eq!(coordinates.tokens[0].offset, 2);
-    assert_eq!(coordinates.tokens[0].length, 8);
+    assert_eq!(coordinates.tokens[0].raw.len(), 8);
     assert_eq!(coordinates.tokens[0].raw, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     assert_eq!(coordinates.tokens[1].offset, 10);
     assert_eq!(coordinates.opaque_spans[0].offset, 0);
@@ -386,7 +433,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["fc_curve_coordinates"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc_curve_coordinates"];
     assert_eq!(records[0].fields()["curve_id"], 7);
     assert_eq!(records[0].fields()["values_mm"][1], -3.0);
     assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
@@ -432,11 +479,14 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert_eq!(circle.cap_ordinate_row_frame, Some(2.0));
     assert_eq!(circle.point_count, 4);
     assert_eq!(circle.max_residual, 0.0);
-    assert!(circle.angle_parameter_consistent);
-    assert_eq!(circle.parameter_sign, Some(1));
-    let direction = circle
-        .reference_direction_row_frame
-        .expect("unique parameter-zero direction");
+    let crate::curve::Fc05AngleParameterRelation::Consistent {
+        sense,
+        reference_direction_row_frame: direction,
+    } = circle.angle_parameter
+    else {
+        panic!("unique parameter-zero direction");
+    };
+    assert_eq!(sense, crate::curve::ParameterSense::Increasing);
     assert!((direction[0] - (-2.0_f64).cos()).abs() < 1.0e-12);
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
@@ -447,9 +497,10 @@ fn scan_validates_fc05_circle_from_record_points() {
     };
     assert_eq!(carrier.center_row_frame, [3.0, 3.0]);
     assert_eq!(carrier.radius_mm, 1.0);
-    assert!(!carrier.angle_parameter_consistent);
-    assert_eq!(carrier.parameter_sign, None);
-    assert_eq!(carrier.reference_direction_row_frame, None);
+    assert_eq!(
+        carrier.angle_parameter,
+        crate::curve::Fc05AngleParameterRelation::Inconsistent
+    );
     assert_eq!(carrier.sample_direction_row_frame, [1.0, 0.0]);
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
@@ -457,7 +508,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["fc05_circles"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc05_circles"];
     assert_eq!(records[0].fields()["curve_id"], 7);
     assert_eq!(records[0].fields()["radius_mm"], 1.0);
     assert_eq!(records[0].fields()["sample_direction_row_frame"][0], 1.0);
@@ -550,10 +601,16 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
 
     assert_eq!(scan.curves.prototype_topology.len(), 1);
     assert_eq!(scan.curves.prototype_topology[0].curve_id, 44);
-    assert_eq!(scan.curves.prototype_topology[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.prototype_topology[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
     assert_eq!(scan.curves.prototype_topology[0].next_edges, [44, 44]);
     assert_eq!(scan.curves.bound_prototype_pcurves.len(), 1);
-    assert_eq!(scan.curves.bound_prototype_pcurves[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.bound_prototype_pcurves[0].stored_face_ids(),
+        [10, 11]
+    );
     assert_eq!(
         scan.curves.bound_prototype_pcurves[0].face_0_endpoints,
         [[0.0, 1.0], [1.0, 0.0]]
@@ -563,11 +620,11 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas["prototype_pcurves"][0].fields()["curve_id"],
+        namespace.arenas()["prototype_pcurves"][0].fields()["curve_id"],
         44
     );
     assert_eq!(
-        namespace.arenas["curve_prototype_topology"][0].fields()["faces"][1],
+        namespace.arenas()["curve_prototype_topology"][0].fields()["faces"][1],
         11
     );
 }
@@ -596,7 +653,7 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
     };
     let topology = crate::curve::CurvePrototypeTopology {
         curve_id: 44,
-        faces: [10, 11],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
         next_edges: [44, 44],
         offset: 20,
     };

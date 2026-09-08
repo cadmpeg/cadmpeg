@@ -110,6 +110,12 @@ pub(crate) fn sync_configuration_design_state(
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
 ) -> Result<(), CodecError> {
+    let form_padding = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.dialect())
+        .and_then(crate::dialect::SldprtDialect::from_match)
+        .and_then(crate::dialect::SldprtDialect::form_code_padding);
     let feature_names = ir
         .model
         .features
@@ -144,6 +150,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
+        form_padding,
     );
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
@@ -202,7 +209,7 @@ pub(crate) fn sync_configuration_design_state(
             if current != Some(desired) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT display-only relation parameter {} has no writable configuration scalar",
-                    parameter.id.0
+                    parameter.id.as_str()
                 )));
             }
         }
@@ -215,6 +222,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
+        form_padding,
     );
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
@@ -336,14 +344,14 @@ pub(crate) fn patch_configuration_parameter_scalars(
                 ParameterValue::Integer(value) => exact_integer_f64(*value).ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT configuration parameter {} cannot be represented by a native scalar",
-                        parameter.id.0
+                        parameter.id.as_str()
                     ))
                 })?,
                 ParameterValue::Boolean(value) => f64::from(*value),
                 ParameterValue::String(_) => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT configuration parameter {} is textual and cannot be represented by a native scalar",
-                        parameter.id.0
+                        parameter.id.as_str()
                     )));
                 }
             };
@@ -397,10 +405,12 @@ pub(crate) fn sync_neutral_configurations(
     let desired_ids = configurations
         .iter()
         .map(|configuration| {
-            configuration
-                .native_ref
-                .clone()
-                .unwrap_or_else(|| format!("sldprt:generated:configuration#{}", configuration.id.0))
+            configuration.native_ref.clone().unwrap_or_else(|| {
+                format!(
+                    "sldprt:generated:configuration#{}",
+                    configuration.id.as_str()
+                )
+            })
         })
         .collect::<std::collections::HashSet<_>>();
     let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
@@ -464,7 +474,10 @@ pub(crate) fn sync_neutral_configurations(
                 .configurations
                 .push(Configuration {
                     id: configuration.native_ref.clone().unwrap_or_else(|| {
-                        format!("sldprt:generated:configuration#{}", configuration.id.0)
+                        format!(
+                            "sldprt:generated:configuration#{}",
+                            configuration.id.as_str()
+                        )
                     }),
                     parent,
                     ordinal: configuration.ordinal,

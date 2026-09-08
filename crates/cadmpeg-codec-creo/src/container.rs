@@ -14,11 +14,14 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_from as find;
-use cadmpeg_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_core::ContainerEntry;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
@@ -26,15 +29,16 @@ use crate::curve::{
     ExternalRelationSymbols, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates, PcurveEndpoints,
     PrototypePcurveEndpoints, TwoChartPcurveSamples,
 };
-use crate::datum::{self, DatumCylinder, DatumPlane};
+use crate::datum::{self, DatumCylinder, DatumPlaneRecord};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
-    FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
-    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
+    FeatureLoopRestoreDirection, FeatureOperation, FeatureOperationState, FeatureRecipe,
+    FeatureReferenceName, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
+use crate::legacy::type_code::LegacyTypeCode;
 use crate::loop_array::{self, LoopArrayFrame, LoopArrayRecord, LoopArrayScan};
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -42,8 +46,7 @@ use crate::psb;
 use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceEllipse, ReferenceLine};
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceContourRecord,
-    SurfaceParameterRecord, SurfacePrototype, SurfacePrototypeRecord, SurfaceRow,
-    TabulatedCylinderCurveReplay,
+    SurfaceParameterRecord, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
 };
 use crate::topology::{
     self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
@@ -80,21 +83,6 @@ const FRAMING_NAMES: &[&str] = &[
     "NEXT_TOC_ENTRY",
 ];
 
-/// Codec-defined role labels for [`ContainerEntry::role`], grouping sections by
-/// what they carry ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
-pub mod role {
-    /// Primary/invisible PSB geometry (`VisibGeom`, `NovisGeom`).
-    pub const GEOMETRY: &str = "psb-geometry";
-    /// Feature rows, definitions, history, datums, body counts.
-    pub const MODEL_DATA: &str = "model-data";
-    /// Materials, display, persistence, and other auxiliary metadata.
-    pub const METADATA: &str = "metadata";
-    /// The JPEG thumbnail preview (`THMB_IMG_MAIN`), excluded from geometry.
-    pub const THUMBNAIL: &str = "thumbnail";
-    /// A section name this codec does not classify.
-    pub const OPAQUE: &str = "opaque";
-}
-
 /// The visible-geometry section name whose `srf_array`/`crv_array` counts drive
 /// the inspect census.
 const VISIBGEOM: &str = "VisibGeom";
@@ -104,16 +92,25 @@ const VISIBGEOM: &str = "VisibGeom";
 const PRINCIPAL_UNIT_ID: &[u8] = b"_principal_sys_units_id\0";
 
 /// The persistence layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Layout {
     /// Dense PSB rows in `VisibGeom` (~40+ sections; `ND:` name decoration).
     Nd,
     /// Sparse PSB views plus a persistence database (`DEPDB_DATA`, ~12 sections).
     Depdb,
     /// ASCII `P_OBJECT` persistence used before the ND and DEPDB byte grammars.
-    LegacyAscii,
-    /// Neither signature was conclusive.
-    Unknown,
+    LegacyAscii(Box<LegacyAsciiFraming>),
+    /// No verified layout matched, with the failed discriminant retained.
+    Unknown(UnknownLayout),
+}
+
+/// Why no verified Creo persistence layout matched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownLayout {
+    /// `DEPDB_DATA` was present but did not start with its required root record.
+    DepdbRootMissing,
+    /// No DEPDB root, ND decoration, or complete legacy object was present.
+    NoDiscriminant,
 }
 
 /// Header metadata from a complete legacy ASCII `P_OBJECT` frame.
@@ -132,13 +129,20 @@ pub struct LegacyAsciiFraming {
 }
 
 impl Layout {
-    /// A short, stable token for reports and source attributes.
-    pub fn token(self) -> &'static str {
+    pub fn legacy_ascii(&self) -> Option<&LegacyAsciiFraming> {
+        match self {
+            Self::LegacyAscii(framing) => Some(framing),
+            Self::Nd | Self::Depdb | Self::Unknown(_) => None,
+        }
+    }
+
+    /// A short, stable token for human reports.
+    pub fn token(&self) -> &'static str {
         match self {
             Layout::Nd => "ND",
             Layout::Depdb => "DEPDB",
-            Layout::LegacyAscii => "LEGACY_ASCII",
-            Layout::Unknown => "unknown",
+            Layout::LegacyAscii(_) => "LEGACY_ASCII",
+            Layout::Unknown(_) => "unknown",
         }
     }
 }
@@ -157,7 +161,29 @@ pub struct Section {
     /// Expanded payload length from the TOC, excluding the section header.
     pub expanded_length: Option<usize>,
     /// Role classification.
-    pub role: &'static str,
+    pub role: SectionRole,
+}
+
+/// The five payload roles admitted by a Creo section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SectionRole {
+    PsbGeometry,
+    ModelData,
+    Thumbnail,
+    Metadata,
+    Opaque,
+}
+
+impl From<SectionRole> for ContainerRole {
+    fn from(role: SectionRole) -> Self {
+        match role {
+            SectionRole::PsbGeometry => Self::PsbGeometry,
+            SectionRole::ModelData => Self::ModelData,
+            SectionRole::Thumbnail => Self::Thumbnail,
+            SectionRole::Metadata => Self::Metadata,
+            SectionRole::Opaque => Self::Opaque,
+        }
+    }
 }
 
 /// A section payload decoded from Unix `compress` framing.
@@ -182,8 +208,6 @@ pub struct ModelDoubleXarTable {
     pub section_source_offset: usize,
     /// Offset of the table label in the expanded section.
     pub expanded_offset: usize,
-    /// Stored array extent.
-    pub count: u32,
     /// Entries in stored order.
     pub entries: Vec<crate::scalar::DoubleXarEntry>,
 }
@@ -242,6 +266,12 @@ pub struct ContainerScan<'a> {
     pub features: FeatureScan,
 }
 
+/// Native model name and its source position.
+pub struct ModelName {
+    pub name: String,
+    pub offset: usize,
+}
+
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
 pub struct FramingScan<'a> {
     /// Complete source bytes.
@@ -250,17 +280,13 @@ pub struct FramingScan<'a> {
     pub version_line: String,
     /// Native root model filename or name from `CMNM` or a binary
     /// `model_name` field.
-    pub model_name: Option<String>,
-    /// Byte offset of the native model name in the source.
-    pub model_name_offset: Option<usize>,
+    pub model_name: Option<ModelName>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
     pub expanded_sections: Vec<ExpandedSection>,
     /// Identified layout family.
     pub layout: Layout,
-    /// Legacy ASCII header metadata, present only for that layout family.
-    pub legacy_ascii: Option<LegacyAsciiFraming>,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
     pub census: GeomCensus,
     /// Active Creo principal coordinate unit system, when its selector is
@@ -328,8 +354,8 @@ pub struct SurfaceScan {
     /// Complete positional contour-chain entries from DEPDB cross-section
     /// geometry.
     pub cross_section_contours: Vec<SurfaceContourRecord>,
-    /// Labeled surface prototypes with fully decoded scalar fields.
-    pub prototypes: Vec<SurfacePrototype>,
+    /// Count of labeled known-family prototypes plus unlabeled `geom_type` records.
+    pub prototype_count: usize,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
     pub prototype_records: Vec<SurfacePrototypeRecord>,
     /// Bounded named surface-prototype records from the separate invisible
@@ -356,7 +382,7 @@ pub struct PlaneScan {
     /// Placed planes derived inside the DEPDB cross-section namespace.
     pub cross_section_outlines: Vec<OutlinePlane>,
     /// Model-space standard datum planes decoded from `ActDatums` outlines.
-    pub datums: Vec<DatumPlane>,
+    pub datums: Vec<DatumPlaneRecord>,
     /// Complete model-space cylinder carriers decoded from active-datum
     /// surface rows.
     pub datum_cylinders: Vec<DatumCylinder>,
@@ -456,7 +482,7 @@ pub struct FeatureScan {
     /// Section-to-model frames resolved from perpendicular active datums.
     pub section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
-    pub operation_states: Vec<FeatureOperation>,
+    pub operation_states: Vec<FeatureOperationState>,
     /// Unambiguous or consensus feature-operation projection for each identifier.
     pub operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
@@ -501,19 +527,19 @@ fn normalize_name(raw: &str) -> String {
 }
 
 /// Classify a normalized section name by what it carries ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
-fn classify(name: &str) -> &'static str {
+fn classify(name: &str) -> SectionRole {
     match name {
-        "VisibGeom" | "NovisGeom" | "ActDatums" => role::GEOMETRY,
+        "VisibGeom" | "NovisGeom" | "ActDatums" => SectionRole::PsbGeometry,
         "AllFeatur" | "FeatDefs" | "FeatDefsIndex" | "FeatDefsDtm" | "Geomlists" | "GeomDepen"
         | "Model_L05_PX" | "Model_L05P" | "BasicData" | "BasBasData" | "BasFullData"
-        | "FullMData" => role::MODEL_DATA,
-        "THMB_IMG_MAIN" => role::THUMBNAIL,
+        | "FullMData" => SectionRole::ModelData,
+        "THMB_IMG_MAIN" => SectionRole::Thumbnail,
         "NeuPrtSld" | "NeuAsmSld" | "SolidPersistTable" | "SolidPrimdata" | "DEPDB_DATA"
         | "UnitSystemDef_L03" | "PDMTrail_L03" | "ActEntity" | "MdlStatus" | "MdlRefInfo"
         | "DispCntrl" | "ColorSchemeInfo" | "LargeText" | "BasicText" | "IdsGenInfoDb" => {
-            role::METADATA
+            SectionRole::Metadata
         }
-        _ => role::OPAQUE,
+        _ => SectionRole::Opaque,
     }
 }
 
@@ -681,8 +707,10 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
     let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
         return Vec::new();
     };
-    let Some(toc_declaration) = legacy::parse_declaration(toc_declaration, toc_offset)
-        .filter(|declaration| declaration.name == "Toc" && declaration.type_code == 0)
+    let Some(toc_declaration) =
+        legacy::parse_declaration(toc_declaration, toc_offset).filter(|declaration| {
+            declaration.name == "Toc" && matches!(declaration.type_code, LegacyTypeCode::Object)
+        })
     else {
         return Vec::new();
     };
@@ -707,7 +735,9 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         return Vec::new();
     };
     let Some(entry_declaration) = legacy::parse_declaration(entry_declaration, after_toc_value)
-        .filter(|declaration| declaration.name == "entry" && declaration.type_code == 10)
+        .filter(|declaration| {
+            declaration.name == "entry" && matches!(declaration.type_code, LegacyTypeCode::String)
+        })
     else {
         return Vec::new();
     };
@@ -919,7 +949,11 @@ fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
 /// contain embedded names with the `ND:` decoration. An undecorated file with
 /// neither a valid root record, an outer `ND:` name, nor a complete legacy
 /// ASCII object remains unknown.
-fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: bool) -> Layout {
+fn identify_layout(
+    data: &[u8],
+    sections: &[Section],
+    legacy_ascii: Option<LegacyAsciiFraming>,
+) -> Layout {
     let has_depdb_root = sections.iter().any(|section| {
         if section.name != "DEPDB_DATA" {
             return false;
@@ -939,14 +973,14 @@ fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: b
         if has_depdb_root {
             Layout::Depdb
         } else {
-            Layout::Unknown
+            Layout::Unknown(UnknownLayout::DepdbRootMissing)
         }
     } else if has_nd_decoration {
         Layout::Nd
-    } else if has_legacy_ascii_object {
-        Layout::LegacyAscii
+    } else if let Some(framing) = legacy_ascii {
+        Layout::LegacyAscii(Box::new(framing))
     } else {
-        Layout::Unknown
+        Layout::Unknown(UnknownLayout::NoDiscriminant)
     }
 }
 
@@ -1034,7 +1068,7 @@ fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
-        if section.role == role::THUMBNAIL {
+        if section.role == SectionRole::Thumbnail {
             continue;
         }
         let end = section
@@ -1174,21 +1208,14 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
     rows
 }
 
-fn surface_prototypes(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototype> {
-    let mut prototypes = Vec::new();
-    for section in sections {
-        let end = (section.offset + section.length).min(data.len());
-        prototypes.extend(
-            surface::prototypes(&data[section.offset..end])
-                .into_iter()
-                .map(|mut prototype| {
-                    prototype.offset += section.offset;
-                    prototype
-                }),
-        );
-    }
-    prototypes.sort_by_key(|prototype| prototype.offset);
-    prototypes
+fn surface_prototype_count(data: &[u8], sections: &[Section]) -> usize {
+    sections
+        .iter()
+        .map(|section| {
+            let end = (section.offset + section.length).min(data.len());
+            surface::prototype_count(&data[section.offset..end])
+        })
+        .sum()
 }
 
 fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototypeRecord> {
@@ -1638,7 +1665,7 @@ fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<Curv
     records
 }
 
-fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
+fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlaneRecord> {
     let mut planes = Vec::new();
     for section in sections
         .iter()
@@ -1698,7 +1725,7 @@ fn structural_feature_ids(
     );
     for section in sections
         .iter()
-        .filter(|section| section.role == role::GEOMETRY)
+        .filter(|section| section.role == SectionRole::PsbGeometry)
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -1726,30 +1753,46 @@ fn structural_feature_ids(
     ids
 }
 
-fn stored_operation_schema_class(operation: &FeatureOperation) -> Option<u32> {
+fn stored_operation_schema_class(
+    operation: &FeatureOperation,
+) -> Option<crate::feature::schema::SchemaClass> {
+    use crate::feature::schema::SchemaClass;
     operation
-        .root_schema_class
+        .root_schema_class()
         .or_else(|| match operation.kind.as_str() {
-            "Hole" => Some(911),
-            "Round" | "Rundung" => Some(913),
-            "Chamfer" => Some(914),
-            "Cut" => Some(916),
-            "Protrusion" => Some(917),
-            "Datum Plane" | "Bezugsebene" => Some(923),
-            "Section" => Some(926),
-            "Draft" | "Schräge" => Some(927),
-            "Surface Merge" => Some(946),
-            _ => operation.recipe.map(|recipe| match recipe.effect() {
-                feature::FeatureRecipeEffect::Cut => 916,
-                feature::FeatureRecipeEffect::Protrude => 917,
-            }),
+            "Hole" => Some(SchemaClass::Hole),
+            "Round" | "Rundung" => Some(SchemaClass::Round),
+            "Chamfer" => Some(SchemaClass::Chamfer),
+            "Cut" => Some(SchemaClass::Cut),
+            "Protrusion" => Some(SchemaClass::Protrusion),
+            "Datum Plane" | "Bezugsebene" => Some(SchemaClass::DatumPlane),
+            "Section" => Some(SchemaClass::Section),
+            "Draft" | "Schräge" => Some(SchemaClass::Draft),
+            "Surface Merge" => Some(SchemaClass::SurfaceMerge),
+            _ => operation
+                .recipe
+                .resolved()
+                .map(|recipe| match recipe.effect() {
+                    feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
+                    feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
+                }),
         })
 }
 
-fn registered_feature_schema_class(schema_class: u32) -> bool {
+fn registered_feature_schema_class(schema_class: crate::feature::schema::SchemaClass) -> bool {
+    use crate::feature::schema::SchemaClass;
     matches!(
         schema_class,
-        911 | 913 | 914 | 916 | 917 | 923 | 926 | 927 | 946 | 979
+        SchemaClass::Hole
+            | SchemaClass::Round
+            | SchemaClass::Chamfer
+            | SchemaClass::Cut
+            | SchemaClass::Protrusion
+            | SchemaClass::DatumPlane
+            | SchemaClass::Section
+            | SchemaClass::Draft
+            | SchemaClass::SurfaceMerge
+            | SchemaClass::CoordinateSystem
     )
 }
 
@@ -1759,6 +1802,7 @@ fn feature_row_has_model_identity(
     operations: &[FeatureOperation],
     reference_names: &[FeatureReferenceName],
 ) -> bool {
+    use crate::feature::schema::SchemaClass;
     structural_ids.contains(&row.feature_id)
         || operations.iter().any(|operation| {
             operation.feature_id == row.feature_id
@@ -1769,26 +1813,26 @@ fn feature_row_has_model_identity(
                         })))
         })
         || reference_names.iter().any(|reference| {
+            let name = reference.name();
             let numbered_family = |family: &str| {
                 [" id ", " ID "].into_iter().any(|separator| {
-                    reference
-                        .name
-                        .strip_prefix(family)
+                    name.strip_prefix(family)
                         .and_then(|suffix| suffix.strip_prefix(separator))
                         .and_then(|ordinal| ordinal.parse::<u32>().ok())
                         == Some(reference.feature_id)
                 })
             };
-            let named_datum = matches!(reference.name.as_str(), "Datum Plane" | "Bezugsebene")
+            let named_datum = matches!(name.as_ref(), "Datum Plane" | "Bezugsebene")
                 || numbered_family("Datum Plane")
                 || numbered_family("Bezugsebene")
-                || reference.name.strip_prefix("DTM").is_some_and(|ordinal| {
+                || name.strip_prefix("DTM").is_some_and(|ordinal| {
                     !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
                 });
             reference.feature_id == row.feature_id
-                && (row.root_schema_class == Some(926)
-                    || (row.root_schema_class == Some(923) && named_datum)
-                    || (row.root_schema_class == Some(979) && reference.name == "PRT_CSYS_DEF"))
+                && (row.root_schema_class == Some(SchemaClass::Section)
+                    || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
+                    || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
+                        && name == "PRT_CSYS_DEF"))
         })
 }
 
@@ -1831,16 +1875,11 @@ fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<F
         .filter(|section| section.name == "AllFeatur")
     {
         let end = (section.offset + section.length).min(data.len());
-        rows.extend(
-            feature::rows(&data[section.offset..end], &feature_ids)
-                .into_iter()
-                .map(|mut row| {
-                    row.stream_offset = section.offset;
-                    row.offset += section.offset;
-                    row.body_offset += section.offset;
-                    row
-                }),
-        );
+        rows.extend(feature::rows(
+            &data[section.offset..end],
+            &feature_ids,
+            section.offset,
+        ));
     }
     rows.sort_by_key(|row| row.offset);
     rows
@@ -1883,30 +1922,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
     if let Some(segments) = &mut definition.segments {
         segments.offset += section_offset;
-        for row in &mut segments.rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.circle_rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.point_rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.centered_line_rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.reference_line_rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.bounded_curve_rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.conic_rows {
-            row.offset += section_offset;
-        }
-        for row in &mut segments.opaque_rows {
-            row.offset += section_offset;
-        }
+        segments.rows.add_offset(section_offset);
     }
     if let Some(entities) = &mut definition.trim_entities {
         entities.offset += section_offset;
@@ -1946,17 +1962,21 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut relations.rows {
             row.offset += section_offset;
         }
-        if let Some(header) = &mut relations.skamp_header {
-            header.offset += section_offset;
+        if let Some(table) = &mut relations.skamps {
+            if let Some(header) = table.header_mut() {
+                header.offset += section_offset;
+            }
+            for row in table.rows_mut() {
+                row.offset += section_offset;
+            }
         }
-        for row in &mut relations.skamps {
-            row.offset += section_offset;
-        }
-        if let Some(header) = &mut relations.triples_header {
-            header.offset += section_offset;
-        }
-        for row in &mut relations.triples {
-            row.offset += section_offset;
+        if let Some(table) = &mut relations.triples {
+            if let Some(header) = table.header_mut() {
+                header.offset += section_offset;
+            }
+            for row in table.rows_mut() {
+                row.offset += section_offset;
+            }
         }
     }
     if let Some(saved) = &mut definition.saved_section {
@@ -1997,11 +2017,11 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
         if section.name == "DEPDB_DATA" {
             let recipe_operations = feature::operations(payload)
                 .into_iter()
-                .filter(|operation| operation.recipe.is_some())
+                .filter(|operation| operation.recipe.resolved().is_some())
                 .collect::<Vec<_>>();
             if let [operation] = recipe_operations.as_slice() {
                 if let Some(mut definition) =
-                    feature::depdb_section_definition(payload, operation.feature_id)
+                    feature::depdb_section_definition(payload, Some(operation.feature_id))
                 {
                     offset_feature_definition(&mut definition, section.offset);
                     if let Some(existing) = definitions
@@ -2024,8 +2044,7 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
     let mut definitions = rows
         .iter()
         .filter_map(|row| {
-            let mut definition = feature::depdb_section_definition(&row.body, row.feature_id)?;
-            definition.owner_feature_id = None;
+            let mut definition = feature::depdb_section_definition(&row.body, None)?;
             offset_feature_definition(&mut definition, row.body_offset);
             Some(definition)
         })
@@ -2118,7 +2137,7 @@ fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureRefe
         .collect()
 }
 
-fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperationState> {
     let mut records = Vec::new();
     for section in sections
         .iter()
@@ -2159,16 +2178,17 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         let payload = &data[section.offset..end];
         let mut recipe_operations = feature::operation_states(payload)
             .into_iter()
-            .filter(|operation| operation.recipe.is_some())
+            .filter_map(|operation| {
+                operation
+                    .recipe
+                    .candidate()
+                    .map(|recipe| (operation, recipe))
+            })
             .collect::<Vec<_>>();
-        recipe_operations.sort_by_key(|operation| operation.offset);
+        recipe_operations.sort_by_key(|(operation, _)| operation.offset);
         let mut body_start = 0;
-        for operation in &recipe_operations {
-            let Some(body_end) = recipe_end(
-                payload,
-                operation.offset,
-                operation.recipe.expect("filtered recipe operation"),
-            ) else {
+        for (operation, recipe) in &recipe_operations {
+            let Some(body_end) = recipe_end(payload, operation.offset, *recipe) else {
                 continue;
             };
             if body_start >= body_end {
@@ -2176,8 +2196,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
             }
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
-                header: [0; 2],
-                root_schema_class: operation.root_schema_class,
+                root_schema_class: operation.root_schema_class(),
                 stream_offset: section.offset,
                 body: payload[body_start..body_end].to_vec(),
                 body_offset: section.offset + body_start,
@@ -2231,8 +2250,7 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);
-    let (mut model_name, mut model_name_offset) =
-        cmnm_model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
+    let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2280,8 +2298,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             .as_ref()
             .and_then(|framing| framing.persistence.model_name())
         {
-            model_name = Some(name);
-            model_name_offset = Some(offset);
+            model_name = Some(ModelName { name, offset });
         }
     }
     if model_name.is_none() {
@@ -2289,8 +2306,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             .as_ref()
             .and_then(|framing| framing.persistence.first_source_model_name())
         {
-            model_name = Some(name);
-            model_name_offset = Some(offset);
+            model_name = Some(ModelName { name, offset });
         }
     }
     let expanded_sections = expanded_sections(&data, &sections);
@@ -2303,7 +2319,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
                     section_name: section.name.clone(),
                     section_source_offset: section.source_offset,
                     expanded_offset: table.offset,
-                    count: table.count,
                     entries: table.entries,
                 })
         })
@@ -2376,36 +2391,28 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
-    if model_name.is_none() && layout != Layout::LegacyAscii {
+    let layout = identify_layout(&data, &sections, legacy_ascii);
+    if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
         if let Some((name, offset)) = native_model_name(&data, &sections) {
-            model_name = Some(name);
-            model_name_offset = Some(offset);
+            model_name = Some(ModelName { name, offset });
         }
     }
-    let legacy_ascii = if layout == Layout::LegacyAscii {
-        legacy_ascii
-    } else {
-        None
-    };
+    let legacy_ascii = layout.legacy_ascii();
     let legacy_geometry = legacy_ascii
-        .as_ref()
         .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
         .unwrap_or_default();
     let legacy_rounds = legacy_ascii
-        .as_ref()
         .map(|framing| {
             crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
         })
         .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
-    let principal_unit = binary_principal_unit(&data)
-        .or_else(|| legacy_ascii.as_ref()?.persistence.principal_unit_system());
+    let principal_unit =
+        binary_principal_unit(&data).or_else(|| legacy_ascii?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
-    let legacy_family_table = legacy_ascii
-        .as_ref()
-        .and_then(|framing| crate::legacy_family::parse(&framing.persistence));
+    let legacy_family_table =
+        legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = sections
         .iter()
         .filter(|section| section.name == "NovisGeom")
@@ -2465,7 +2472,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
     );
-    let surface_prototypes = surface_prototypes(&data, &model_geometry_sections);
+    let surface_prototype_count = surface_prototype_count(&data, &model_geometry_sections);
     let nonvisible_surface_prototype_records =
         surface_prototype_records(&data, &nonvisible_geometry_sections);
     let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
@@ -2475,7 +2482,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let mut curve_expressions = curve_expressions(
         &data,
         &sections,
-        model_name.as_deref().and_then(relation_model_name),
+        model_name
+            .as_ref()
+            .and_then(|model| relation_model_name(&model.name)),
     );
     let topology_face_ids = nonvisible_surface_rows
         .iter()
@@ -2502,7 +2511,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let two_chart_pcurves = two_chart_pcurves(&data, &model_geometry_sections, &topology_face_ids);
-    if layout == Layout::LegacyAscii {
+    if matches!(layout, Layout::LegacyAscii(_)) {
         curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
         pcurves.extend(legacy_geometry.pcurves.iter().cloned());
         curve_topology_rows.sort_by_key(|row| row.offset);
@@ -2572,26 +2581,27 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
-    let mut feature_definitions = feature_definitions(&data, &sections);
-    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
-    feature::bind_trimmed_definition_owners(&mut feature_definitions, &feature_entity_tables);
+    let feature_definitions = feature_definitions(&data, &sections);
+    let feature_definitions =
+        feature::bind_definition_owners(feature_definitions, &feature_geometry_tables);
+    let mut feature_definitions =
+        feature::bind_trimmed_definition_owners(feature_definitions, &feature_entity_tables);
     feature_definitions.extend(feature_row_definitions(&feature_rows));
     feature_definitions.sort_by_key(|definition| definition.offset);
     let claimed_definition_owners = feature_definitions
         .iter()
-        .filter_map(|definition| definition.owner_feature_id)
+        .filter_map(|definition| definition.identity.owner_feature_id())
         .collect();
-    let mut replay_definitions = positional_replay_definitions(&data, &sections);
-    feature::bind_replay_definition_owners(
-        &mut replay_definitions,
+    let replay_definitions = feature::bind_replay_definition_owners(
+        positional_replay_definitions(&data, &sections),
         &feature_entity_tables,
         &claimed_definition_owners,
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
     let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
-    feature::bind_section_owners(
-        &mut feature_definitions,
+    let feature_definitions = feature::bind_section_owners(
+        feature_definitions,
         &feature_operations,
         &section_owner_ranges,
     );
@@ -2601,16 +2611,21 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .filter_map(|definition| definition.dimensions.as_ref())
         .flat_map(|table| table.rows.iter())
     {
-        let value = dimension.value.map(|value| match dimension.value_unit {
-            feature::DimensionUnit::Radians => CurveExpressionValue::Angle(value.to_degrees()),
-            feature::DimensionUnit::Millimeters => CurveExpressionValue::Length(value),
-            feature::DimensionUnit::SchemaDefined => CurveExpressionValue::Number(value),
-        });
+        let value = dimension
+            .value
+            .resolved()
+            .map(|value| match dimension.unit() {
+                feature::DimensionUnit::Radians => CurveExpressionValue::Angle(value.to_degrees()),
+                feature::DimensionUnit::Millimeters => CurveExpressionValue::Length(value),
+                feature::DimensionUnit::SchemaDefined => CurveExpressionValue::Number(value),
+            });
         relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
     }
     curve::reevaluate_expression_records(
         &mut curve_expressions,
-        model_name.as_deref().and_then(relation_model_name),
+        model_name
+            .as_ref()
+            .and_then(|model| relation_model_name(&model.name)),
         &relation_dimension_symbols,
     );
     let mut feature_revolution_extents = feature::revolution_extents(&feature_rows);
@@ -2637,7 +2652,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
     let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0").or_else(|| {
         legacy_ascii
-            .as_ref()
             .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
     });
 
@@ -2646,11 +2660,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             data,
             version_line,
             model_name,
-            model_name_offset,
             sections,
             expanded_sections,
             layout,
-            legacy_ascii,
             census,
             principal_unit,
             family_table,
@@ -2680,7 +2692,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             contours: surface_contours,
             nonvisible_contours: nonvisible_surface_contours,
             cross_section_contours: cross_section_surface_contours,
-            prototypes: surface_prototypes,
+            prototype_count: surface_prototype_count,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
             legacy_carriers: legacy_geometry.carriers,
@@ -2756,7 +2768,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
     scan.framing
         .sections
         .iter()
-        .filter(|s| s.role == role::THUMBNAIL)
+        .filter(|s| s.role == SectionRole::Thumbnail)
         .any(|section| {
             let end = section
                 .offset
@@ -2781,7 +2793,10 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub fn summarize(
+    scan: &ContainerScan,
+    classification: &crate::dialect::DialectClassification,
+) -> ContainerSummary {
     let entries = scan
         .framing
         .sections
@@ -2801,8 +2816,9 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             }
             ContainerEntry {
                 name: s.name.clone(),
-                role: s.role.to_string(),
-                compression: expanded.map_or("none", |_| "unix-compress").to_string(),
+                role: s.role.into(),
+                compression: expanded
+                    .map_or(EntryCompression::None, |_| EntryCompression::UnixCompress),
                 compressed_size: s.length as u64,
                 uncompressed_size: expanded.map_or(s.length as u64, |expanded| {
                     (expanded.data.len() + s.raw_name.len() + 2) as u64
@@ -2812,6 +2828,19 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         })
         .collect();
 
+    let notes = notes(scan);
+
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
+        cadmpeg_ir::ContainerKind::Psb,
+        entries,
+        classification.loss().into_iter().collect(),
+        notes,
+    )
+}
+
+/// Build the diagnostic notes shared by inspection and decode reports.
+pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
     let mut notes = vec![
         format!("PSB container: {}", scan.framing.version_line),
         format!(
@@ -2821,9 +2850,9 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         ),
     ];
     if let Some(name) = &scan.framing.model_name {
-        notes.push(format!("native model name: {name}"));
+        notes.push(format!("native model name: {}", name.name));
     }
-    if let Some(legacy) = &scan.framing.legacy_ascii {
+    if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");
         let continuation_count = legacy.persistence.continuation_count();
         notes.push(format!(
@@ -2878,12 +2907,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             .to_string(),
     );
 
-    ContainerSummary {
-        format: "creo".to_string(),
-        container_kind: "psb".to_string(),
-        entries,
-        notes,
-    }
+    notes
 }
 
 #[cfg(test)]
@@ -2894,11 +2918,10 @@ mod feature_row_definition_tests {
     fn surface_and_curve_generators_are_structural_feature_identities() {
         let surface = SurfaceRow {
             id: 12,
-            type_byte: 0x22,
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 40,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         };
@@ -2907,7 +2930,7 @@ mod feature_row_definition_tests {
             type_byte: 8,
             feature_id: 41,
             directions: [1, 0xf6],
-            faces: [12, 13],
+            faces: [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)],
             next_edges: [45, 45],
             offset: 0,
         };
@@ -2929,23 +2952,20 @@ mod feature_row_definition_tests {
     fn stored_feature_identities_require_compatible_allfeatur_rows() {
         let operation = FeatureOperation {
             feature_id: 42,
-            kind: "Round".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Round id 42".to_string()),
-            stored_name_bytes: Some(b"Round id 42".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
-            recipe: None,
-            recipe_conflict: false,
+            kind: crate::feature::OperationKind::Stored("Round".to_string()),
+            name: crate::feature::operations::OperationName::Stored {
+                bytes: b"Round id 42".to_vec(),
+                keyword: crate::feature::operations::IdKeyword::Id,
+                prefix: None,
+            },
+            recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: false,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset: 0,
             state_offset: 0,
         };
         let reference = FeatureReferenceName {
             feature_id: 73,
-            name: "SKETCH_1".to_string(),
             name_bytes: b"SKETCH_1".to_vec(),
             own_reference_id: 9,
             reference_type: 1,
@@ -2953,7 +2973,6 @@ mod feature_row_definition_tests {
         };
         let datum_reference = FeatureReferenceName {
             feature_id: 87,
-            name: "Datum Plane id 87".to_string(),
             name_bytes: b"Datum Plane id 87".to_vec(),
             own_reference_id: 10,
             reference_type: 1,
@@ -2962,8 +2981,7 @@ mod feature_row_definition_tests {
 
         let row = |feature_id, root_schema_class| FeatureRow {
             feature_id,
-            header: [0xe3, 0xf6],
-            root_schema_class: Some(root_schema_class),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::from(root_schema_class)),
             stream_offset: 0,
             body: Vec::new(),
             body_offset: 0,
@@ -3007,8 +3025,7 @@ mod feature_row_definition_tests {
     fn embedded_section_definition_retains_separate_history_feature_owner() {
         let row = FeatureRow {
             feature_id: 42,
-            header: [0xe3, 0xf6],
-            root_schema_class: Some(917),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 100,
             body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0".to_vec(),
             body_offset: 120,
@@ -3018,8 +3035,8 @@ mod feature_row_definition_tests {
         let definitions = feature_row_definitions(&[row]);
 
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].id, 2);
-        assert_eq!(definitions[0].owner_feature_id, None);
+        assert_eq!(definitions[0].identity.id(), 2);
+        assert_eq!(definitions[0].identity.owner_feature_id(), None);
         assert_eq!(definitions[0].offset, 127);
     }
 
@@ -3027,8 +3044,7 @@ mod feature_row_definition_tests {
     fn embedded_section_definition_uses_the_bounded_feature_row_for_chain_binding() {
         let row = FeatureRow {
             feature_id: 247,
-            header: [0xe3, 0xf6],
-            root_schema_class: Some(917),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 100,
             body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
                     \xe0\x00gsec3d_ptr\0\xf1\xe3\
@@ -3038,26 +3054,20 @@ mod feature_row_definition_tests {
             body_offset: 120,
             offset: 118,
         };
-        let mut definitions = feature_row_definitions(std::slice::from_ref(&row));
+        let definitions = feature_row_definitions(std::slice::from_ref(&row));
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
-            kind: String::new(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
-            recipe,
-            recipe_conflict: false,
+            kind: crate::feature::OperationKind::Stored(String::new()),
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::RecipeResolution::from(recipe),
             display_state_conflict: false,
-            root_schema_class: None,
-            parent_feature_id: None,
+            depdb: None,
             offset,
             state_offset: offset,
         };
 
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].owner_feature_id, None);
+        assert_eq!(definitions[0].identity.owner_feature_id(), None);
         assert_eq!(
             definitions[0]
                 .section_3d
@@ -3066,8 +3076,8 @@ mod feature_row_definition_tests {
             Some(249)
         );
 
-        feature::bind_section_owners(
-            &mut definitions,
+        let definitions = feature::bind_section_owners(
+            definitions,
             &[
                 operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
                 operation(248, None, 20),
@@ -3075,8 +3085,8 @@ mod feature_row_definition_tests {
             &section_owner_ranges(&[], &[row]),
         );
 
-        assert_eq!(definitions[0].id, 2);
-        assert_eq!(definitions[0].owner_feature_id, Some(247));
+        assert_eq!(definitions[0].identity.id(), 2);
+        assert_eq!(definitions[0].identity.owner_feature_id(), Some(247));
     }
 }
 

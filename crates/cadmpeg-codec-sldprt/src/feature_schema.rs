@@ -28,11 +28,11 @@ const SURFACE_EXTENSION_TOKENS: &[(&str, SurfaceExtension)] = &[
 
 /// Parse a native token case-insensitively against a token table, returning the
 /// typed variant or `None` for an unrecognized spelling.
-fn parse_token<T: Copy>(table: &[(&'static str, T)], raw: &str) -> Option<T> {
+fn parse_token<T: Clone>(table: &[(&'static str, T)], raw: &str) -> Option<T> {
     table
         .iter()
         .find(|(token, _)| raw.eq_ignore_ascii_case(token))
-        .map(|(_, value)| *value)
+        .map(|(_, value)| value.clone())
 }
 
 /// Canonical native spelling for a closed token table. Callers use this helper
@@ -60,9 +60,12 @@ pub(crate) fn parse_trim_region(raw: &str) -> Option<TrimRegion> {
     parse_token(TRIM_REGION_TOKENS, raw)
 }
 
-/// Canonical native token for a trim-surface keep region.
-pub(crate) fn trim_region_token(value: TrimRegion) -> &'static str {
-    format_token(TRIM_REGION_TOKENS, &value)
+/// Canonical native token for a trim-surface keep region when representable.
+pub(crate) fn trim_region_token(value: &TrimRegion) -> Option<&'static str> {
+    TRIM_REGION_TOKENS
+        .iter()
+        .find(|(_, candidate)| candidate == value)
+        .map(|(token, _)| *token)
 }
 
 /// Parse a surface-extension method from its native token.

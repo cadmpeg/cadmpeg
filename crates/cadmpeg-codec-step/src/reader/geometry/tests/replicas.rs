@@ -14,14 +14,13 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::export::is_rigid_transform;
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rigid_transform_rejects_reflections() {
@@ -73,7 +72,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .procedural_curves
         .iter()
         .any(|curve| matches!(
-            curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range: [start, end],
                 ..
@@ -244,41 +243,54 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     );
 
     for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
-        let construction_id =
-            StepIdentity::construction("trimmed_curve", curve_id.trim_start_matches('#'));
+        let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id
                 && matches!(
-                    curve.definition,
+                    curve.definition(),
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                         parameter_range,
                         ..
-                    } if parameter_range == expected
+                    } if *parameter_range == expected
                 )
         }));
     }
 
     assert!(result.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if curve.curve.as_str() == "step:data:curve#8"
+                if result.ir().model.procedural_curve_owner(&curve.id).map(CurveId::as_str)
+                    == Some("step:data:curve#8")
                     && source.as_str() == "step:data:curve#6"
         )
     }));
     let index = ModelIndex::new(result.ir());
     assert_eq!(
-        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 0.0,),
+        model_curve_point_by_id(
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            0.0,
+        ),
         Some(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 2.0,),
+        model_curve_point_by_id(
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            2.0,
+        ),
         Some(Point3::new(12.0, 0.0, 0.0))
     );
 
     let mut output = Vec::new();
-    write_step(result.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write trimmed replica");
+    write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write trimmed replica");
     let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
     assert!(text.contains("CURVE_REPLICA"));
     assert!(text.contains("TRIMMED_CURVE"));
@@ -287,7 +299,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         .expect("decode trimmed replica");
     assert!(round_trip.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
                 if source.as_str().starts_with("step:data:curve#")
         )
@@ -296,14 +308,13 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 
 #[test]
 fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
-    let transform = Transform {
-        rows: [
-            [0.0, -2.0, 0.0, 10.0],
-            [2.0, 0.0, 0.0, 20.0],
-            [0.0, 0.0, 2.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [0.0, -2.0, 0.0, 10.0],
+        [2.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let curve_geometry = CurveGeometry::Transformed {
         basis: Box::new(CurveGeometry::Line {
             origin: Point3::new(1.0, 2.0, 3.0),
@@ -319,20 +330,26 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         }),
         transform,
     };
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.curves.push(Curve {
-        id: CurveId("transformed-curve".into()),
+        id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
         geometry: curve_geometry.clone(),
         source_object: None,
     });
     source.model.surfaces.push(Surface {
-        id: SurfaceId("transformed-surface".into()),
+        id: SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
         geometry: surface_geometry.clone(),
         source_object: None,
     });
 
     let mut output = Vec::new();
-    write_step(&source, &mut output, &StepWriteOptions::default()).expect("write replicas");
+    write_step(
+        &source,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write replicas");
     let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
     assert!(text.contains("CURVE_REPLICA"));
     assert!(text.contains("SURFACE_REPLICA"));
@@ -340,18 +357,16 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode replicas");
-    assert!(decoded
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| curve.geometry == curve_geometry));
-    assert!(decoded
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.geometry == surface_geometry));
+    assert!(decoded.ir().model.curves.iter().any(|curve| curve
+        .geometry
+        .solved_cache()
+        .unwrap_or(&curve.geometry)
+        == &curve_geometry));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| surface
+        .geometry
+        .solved_cache()
+        .unwrap_or(&surface.geometry)
+        == &surface_geometry));
 }
 
 #[test]
@@ -374,7 +389,10 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
 
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#10"
-            && matches!(surface.geometry, SurfaceGeometry::Transformed { .. })
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Transformed { .. }
+            )
     }));
     assert!(decoded
         .ir()
@@ -382,9 +400,14 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .procedural_surfaces
         .iter()
         .any(|surface| {
-            surface.surface.as_str() == "step:data:surface#10"
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#10")
                 && matches!(
-                    &surface.definition,
+                    surface.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
                         support,
                         parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
@@ -406,25 +429,41 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .iter()
         .any(|surface| {
             matches!(
-                &surface.definition,
+                surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
-                    if surface.surface.as_str() == "step:data:surface#8"
+                    if decoded.ir().model.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
+                        == Some("step:data:surface#8")
                         && source.as_str() == "step:data:surface#9"
             )
         }));
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#10".into()), 0.0, 0.0,),
+        model_surface_point_by_id(
+            &index,
+            &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
+            0.0,
+            0.0,
+        ),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#10".into()), 1.0, 1.0,),
+        model_surface_point_by_id(
+            &index,
+            &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
+            1.0,
+            1.0,
+        ),
         Some(Point3::new(4.0, 4.0, 0.0))
     );
 
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write trimmed surface replica");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write trimmed surface replica");
     let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
     assert!(text.contains("SURFACE_REPLICA"));
     assert!(text.contains("RECTANGULAR_TRIMMED_SURFACE"));
@@ -438,7 +477,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .iter()
         .any(|surface| {
             matches!(
-                &surface.definition,
+                surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
                     if source.as_str().starts_with("step:data:surface#")
             )
@@ -463,14 +502,13 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
 #13=SURFACE_REPLICA('',#14,#8);
 #14=SURFACE_REPLICA('',#12,#8);",
     );
-    let transform = Transform {
-        rows: [
-            [2.0, 0.0, 0.0, 10.0],
-            [0.0, 2.0, 0.0, 20.0],
-            [0.0, 0.0, 2.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [2.0, 0.0, 0.0, 10.0],
+        [0.0, 2.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let base_curve = CurveGeometry::Line {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(1.0, 0.0, 0.0),
@@ -498,7 +536,8 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         .model
         .curves
         .iter()
-        .any(|curve| curve.id.as_str() == "step:data:curve#9" && curve.geometry == expected_curve));
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"
+            && curve.geometry.solved_cache().unwrap_or(&curve.geometry) == &expected_curve));
     assert_eq!(
         decoded
             .ir()
@@ -516,7 +555,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#13"
-            && surface.geometry == expected_surface));
+            && surface.geometry.solved_cache().unwrap_or(&surface.geometry) == &expected_surface));
     assert_eq!(
         decoded
             .ir()
@@ -555,19 +594,21 @@ fn cartesian_transformation_operator_derives_optional_axes() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(|curve| match &curve.geometry {
-                CurveGeometry::Transformed { transform, .. } => Some(*transform),
-                _ => None,
-            })
+            .and_then(
+                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                    CurveGeometry::Transformed { transform, .. } => Some(*transform),
+                    _ => None,
+                },
+            )
             .unwrap_or_else(|| panic!("missing transformed curve {id}"))
     };
     let assert_rows = |actual: Transform, expected: [[f64; 4]; 4]| {
         for (row, values) in expected.iter().enumerate() {
             for (column, expected) in values.iter().enumerate() {
                 assert!(
-                    (actual.rows[row][column] - expected).abs() < 1.0e-12,
+                    (actual.rows()[row][column] - expected).abs() < 1.0e-12,
                     "matrix coefficient [{row}][{column}] was {}, expected {expected}",
-                    actual.rows[row][column]
+                    actual.rows()[row][column]
                 );
             }
         }
@@ -626,10 +667,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         panic!("pcurve replica lost its transformation")
     };
     let root_two = 2.0_f64.sqrt();
-    assert!((transform.rows[0][0] - 1.0 / root_two).abs() < 1.0e-12);
-    assert!((transform.rows[0][1] + 1.0 / root_two).abs() < 1.0e-12);
-    assert!((transform.rows[1][0] - 1.0 / root_two).abs() < 1.0e-12);
-    assert!((transform.rows[1][1] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[0][0] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[0][1] + 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[1][0] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[1][1] - 1.0 / root_two).abs() < 1.0e-12);
 }
 
 #[test]
@@ -653,7 +694,10 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
     let decoded = decode_inline(&records);
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
-            && matches!(curve.geometry, CurveGeometry::Transformed { .. })
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Transformed { .. }
+            )
     }));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message
@@ -713,9 +757,10 @@ fn replicas_retain_bounded_parent_relations() {
 
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if curve.curve.as_str() == "step:data:curve#9"
+                if decoded.ir().model.procedural_curve_owner(&curve.id).map(CurveId::as_str)
+                    == Some("step:data:curve#9")
                     && source.as_str() == "step:data:curve#7"
         )
     }));
@@ -726,25 +771,40 @@ fn replicas_retain_bounded_parent_relations() {
         .iter()
         .any(|surface| {
             matches!(
-                &surface.definition,
+                surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
-                    if surface.surface.as_str() == "step:data:surface#13"
+                    if decoded.ir().model.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
+                        == Some("step:data:surface#13")
                         && source.as_str() == "step:data:surface#12"
             )
         }));
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 0.0,),
+        model_curve_point_by_id(
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            0.0,
+        ),
         Some(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#13".into()), 0.0, 0.0,),
+        model_surface_point_by_id(
+            &index,
+            &SurfaceId::mint("step:data:surface#13").expect("identity grammar"),
+            0.0,
+            0.0,
+        ),
         Some(Point3::new(3.0, 9.0, 0.0))
     );
 
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
-        .expect("write replicas of bounded parents");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write replicas of bounded parents");
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("CURVE_REPLICA"));
     assert!(text.contains("SURFACE_REPLICA"));

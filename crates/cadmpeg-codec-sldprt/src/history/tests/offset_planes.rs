@@ -94,11 +94,10 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
 #[test]
 fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry() {
     let mut offset = cadmpeg_ir::features::Feature::new(
-        "offset".into(),
+        FeatureId::mint("offset").expect("identity grammar"),
         0,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
                 u_axis: Vector3::new(0.0, 0.0, -1.0),
@@ -126,7 +125,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         .source_properties
         .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
     let mut principal = cadmpeg_ir::features::Feature::new(
-        "right".into(),
+        FeatureId::mint("right").expect("identity grammar"),
         1,
         FeatureDefinition::DatumPrincipalPlane {
             plane: cadmpeg_ir::features::PrincipalPlane::Right,
@@ -150,7 +149,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
 #[test]
 fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     let mut base = cadmpeg_ir::features::Feature::new(
-        "base".into(),
+        FeatureId::mint("base").expect("identity grammar"),
         0,
         FeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -161,7 +160,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     base.native_ref = Some("sldprt:history:feature#0:base".into());
 
     let mut alias = cadmpeg_ir::features::Feature::new(
-        "alias".into(),
+        FeatureId::mint("alias").expect("identity grammar"),
         1,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(base.id.clone())),
@@ -180,11 +179,10 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         .insert("UAxis".into(), "0,0,-1".into());
 
     let mut offset = cadmpeg_ir::features::Feature::new(
-        "offset".into(),
+        FeatureId::mint("offset").expect("identity grammar"),
         2,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
                 u_axis: Vector3::new(0.0, 0.0, -1.0),
@@ -228,10 +226,12 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
 #[test]
 fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     let mut offset = cadmpeg_ir::features::Feature::new(
-        "offset".into(),
+        FeatureId::mint("offset").expect("identity grammar"),
         0,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature("reference".into())),
+            reference: Some(DatumPlaneReference::Feature(
+                FeatureId::mint("reference").expect("identity grammar"),
+            )),
             distance: Length(6.0),
         },
     );
@@ -249,7 +249,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         .source_properties
         .insert("UAxis".into(), "0,0,-1".into());
     let mut reference = cadmpeg_ir::features::Feature::new(
-        "reference".into(),
+        FeatureId::mint("reference").expect("identity grammar"),
         1,
         FeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -317,10 +317,7 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
     assert!(matches!(
         &projected[2].definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
-                ..
-            }),
+            reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: Length(6.0),
         }
     ));
@@ -366,7 +363,8 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
 #[test]
 fn planar_face_reference_requires_one_coincident_face() {
     let surface = Surface {
-        id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
+            .expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 12.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -375,11 +373,11 @@ fn planar_face_reference_requires_one_coincident_face() {
         source_object: None,
     };
     let face = Face {
-        id: cadmpeg_ir::ids::FaceId("face".into()),
-        shell: cadmpeg_ir::ids::ShellId("shell".into()),
+        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: Vec::new(),
+        loops: Vec::new().into(),
         name: None,
         color: None,
         tolerance: None,
@@ -412,7 +410,8 @@ fn planar_face_reference_requires_one_coincident_face() {
     );
 
     let mut duplicate = face.clone();
-    duplicate.id = cadmpeg_ir::ids::FaceId("duplicate".into());
+    duplicate.id =
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#duplicate").expect("identity grammar");
     let mut ambiguous = FaceSelection::Unresolved;
     resolve_planar_face_selection(
         &mut ambiguous,
@@ -443,7 +442,8 @@ fn planar_face_reference_requires_one_coincident_face() {
 #[test]
 fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
     let surface = Surface {
-        id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
+            .expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, -5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -452,11 +452,11 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
         source_object: None,
     };
     let face = Face {
-        id: cadmpeg_ir::ids::FaceId("face".into()),
-        shell: cadmpeg_ir::ids::ShellId("shell".into()),
+        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: Vec::new(),
+        loops: Vec::new().into(),
         name: None,
         color: None,
         tolerance: None,
@@ -486,20 +486,13 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
 }
 
 #[test]
-fn native_face_offset_reference_keeps_support_frame() {
-    for (native, source_origin, distance_text, expected_origin, expected_distance) in [
-        (
-            "native-face",
-            "0mm,0mm,0mm",
-            "6mm",
-            Point3::new(0.0, 0.0, 0.0),
-            Length(6.0),
-        ),
+fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
+    for (native, source_origin, distance_text, expected_distance) in [
+        ("native-face", "0mm,0mm,0mm", "6mm", Length(6.0)),
         (
             "sldprt:feature-input:surface-component-ids:630506365",
             "0mm,0mm,210mm",
             "40mm",
-            Point3::new(0.0, 0.0, 250.0),
             Length(40.0),
         ),
     ] {
@@ -517,14 +510,13 @@ fn native_face_offset_reference_keeps_support_frame() {
 
         let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
         let FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face { face, origin, .. }),
+            reference: Some(DatumPlaneReference::Face(face)),
             distance,
         } = definition
         else {
             panic!("native face offset did not project as a face reference");
         };
         assert_eq!(face, FaceSelection::Native(native.into()));
-        assert_eq!(origin, expected_origin);
         assert_eq!(distance, expected_distance);
     }
 }
@@ -703,10 +695,7 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
     assert!(matches!(
         &projected[0].definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
-                ..
-            }),
+            reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: Length(0.0),
         }
     ));

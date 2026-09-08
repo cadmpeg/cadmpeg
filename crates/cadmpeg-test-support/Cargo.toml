@@ -14,6 +14,7 @@ publish = false
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

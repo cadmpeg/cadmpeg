@@ -101,7 +101,7 @@ pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> 
         FaceSelection::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
-                .map(|face| face.0.as_str())
+                .map(cadmpeg_ir::ids::FaceId::as_str)
                 .collect::<Vec<_>>()
                 .join(","),
         ),
@@ -134,7 +134,7 @@ pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> 
         EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()
-                .map(|edge| edge.0.as_str())
+                .map(cadmpeg_ir::ids::EdgeId::as_str)
                 .collect::<Vec<_>>()
                 .join(","),
         ),
@@ -155,7 +155,7 @@ pub(super) fn body_selection_value(selection: &BodySelection) -> Option<String> 
         BodySelection::Bodies(bodies) if !bodies.is_empty() => Some(
             bodies
                 .iter()
-                .map(|body| body.0.as_str())
+                .map(cadmpeg_ir::ids::BodyId::as_str)
                 .collect::<Vec<_>>()
                 .join(","),
         ),
@@ -206,7 +206,7 @@ pub(super) fn profile_source(
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
-                .map(|face| face.0.as_str())
+                .map(cadmpeg_ir::ids::FaceId::as_str)
                 .collect::<Vec<_>>()
                 .join(","),
         ),
@@ -230,14 +230,14 @@ pub(super) fn path_source(
         PathRef::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()
-                .map(|edge| edge.0.as_str())
+                .map(cadmpeg_ir::ids::EdgeId::as_str)
                 .collect::<Vec<_>>()
                 .join(","),
         ),
         PathRef::Curves(curves) if !curves.is_empty() => Some(
             curves
                 .iter()
-                .map(|curve| curve.0.as_str())
+                .map(cadmpeg_ir::ids::CurveId::as_str)
                 .collect::<Vec<_>>()
                 .join(","),
         ),

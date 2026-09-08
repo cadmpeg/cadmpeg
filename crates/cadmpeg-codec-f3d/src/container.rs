@@ -10,17 +10,22 @@
 //! expose unique or legacy carrier sets for metadata reporting; model decode
 //! uses the typed Design body-map catalog.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ContainerSummary;
 
-use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::{acis_header, asm_header};
 
+use crate::dialect::F3dDialect;
 use crate::manifest;
 
 /// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
@@ -29,53 +34,6 @@ use crate::manifest;
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 /// Write-path per-entry inflate cap for `read_entry_bounded`.
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
-
-/// Codec-defined role labels for [`ContainerEntry::role`].
-pub mod role {
-    /// An ASM BREP entry with the `.smbh` extension. Its header normally
-    /// declares a history partition.
-    pub const BREP_SMBH: &str = "brep-smbh";
-    /// An ASM BREP entry with the `.smb` extension. Its header normally omits
-    /// the history partition.
-    pub const BREP_SMB: &str = "brep-smb";
-    /// An ASM BREP entry in the text encoding, with the `.sat` or `.smt`
-    /// extension. It carries the same entity model as `.smb` and `.smbh` in a
-    /// line-oriented ASCII form that ends with `End-of-ASM-data`. This role
-    /// exists so that a document whose only geometry carrier is text is
-    /// reported as a carrier that is present and not read, and not as a
-    /// document with no carrier.
-    pub const BREP_TEXT: &str = "brep-text";
-    /// A nested `.protein` material/appearance ZIP.
-    pub const PROTEIN: &str = "protein-assets";
-    /// A design/ACT/browser `BulkStream.dat`.
-    pub const BULKSTREAM: &str = "bulkstream";
-    /// A per-segment `MetaStream.dat` object table.
-    pub const METASTREAM: &str = "metastream";
-    /// A top-level or per-asset `Manifest.dat`.
-    pub const MANIFEST: &str = "manifest";
-    /// A thumbnail or preview asset.
-    pub const PREVIEW: &str = "preview";
-    /// An optional appearance/decal image blob.
-    pub const IMAGE: &str = "image";
-    /// Secondary tessellated mesh data (`.paramesh`), not the exact source.
-    pub const PARAMESH: &str = "paramesh";
-    /// The `OGS.BlobFolder` display scene graph and its buffer arenas. The
-    /// `world` member's drawable nodes carry the design entity ID they draw,
-    /// `stream_mesh_NNN` and `Fusion_mesh_NNN` are the vertex and index
-    /// buffer arenas that graph addresses by byte offset, its geometry is a
-    /// tessellation of the B-rep streams, and its appearance bindings repeat
-    /// the ACT and protein assets, so no carrier depends on it. See DR-28 for
-    /// the one value class whose design source is unknown.
-    pub const OGS_CACHE: &str = "ogs-cache";
-    /// An empty/placeholder design-configuration entry.
-    pub const DESIGN_CONFIG: &str = "design-config";
-    /// The empty top-level document-properties slot.
-    pub const PROPERTIES: &str = "properties";
-    /// A directory entry.
-    pub const DIRECTORY: &str = "directory";
-    /// Anything not matched by a known family.
-    pub const OTHER: &str = "other";
-}
 
 /// The f3d marker substrings used for confident detection from a byte prefix
 /// (ZIP local file headers store entry names in cleartext near the start).
@@ -125,48 +83,75 @@ pub(crate) fn read_entry_bounded(
 }
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#6-geometry-carriers)).
-pub fn classify(name: &str) -> &'static str {
+pub fn classify(name: &str) -> ContainerRole {
     if name.ends_with('/') {
-        return role::DIRECTORY;
+        return ContainerRole::Directory;
     }
     let base = name.rsplit('/').next().unwrap_or(name);
     if std::path::Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("smbh"))
     {
-        role::BREP_SMBH
+        ContainerRole::BrepSmbh
     } else if std::path::Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("smb"))
     {
-        role::BREP_SMB
+        ContainerRole::BrepSmb
     } else if std::path::Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("sat") || ext.eq_ignore_ascii_case("smt"))
     {
-        role::BREP_TEXT
+        ContainerRole::BrepText
     } else if name.ends_with(".protein") {
-        role::PROTEIN
+        ContainerRole::ProteinAssets
     } else if name.ends_with(".paramesh") {
-        role::PARAMESH
+        ContainerRole::Paramesh
     } else if name.ends_with(".dsgcfg") || name.ends_with(".dsgcfgrule") {
-        role::DESIGN_CONFIG
+        ContainerRole::DesignConfig
     } else if base == "Manifest.dat" {
-        role::MANIFEST
+        ContainerRole::Manifest
     } else if base == "MetaStream.dat" {
-        role::METASTREAM
+        ContainerRole::Metastream
     } else if base == "BulkStream.dat" {
-        role::BULKSTREAM
+        ContainerRole::Bulkstream
     } else if base == "Properties.dat" {
-        role::PROPERTIES
+        ContainerRole::Properties
     } else if name.contains("Previews/") {
-        role::PREVIEW
+        ContainerRole::Preview
     } else if name.contains("Images.BlobParts") {
-        role::IMAGE
+        ContainerRole::Image
     } else if name.contains("OGS.BlobFolder/") {
-        role::OGS_CACHE
+        ContainerRole::OgsCache
     } else {
-        role::OTHER
+        ContainerRole::Other
+    }
+}
+
+/// Owned binary kernel framing for one BREP stream.
+#[derive(Debug, Clone)]
+pub enum KernelFraming {
+    /// Autodesk Shape Manager binary framing.
+    Asm(KernelHeader),
+    /// Spatial ACIS binary framing.
+    Acis(KernelHeader),
+}
+
+impl KernelFraming {
+    /// Borrow this owned framing as the shared dialect-classification input.
+    pub(crate) fn as_header_ref(&self) -> cadmpeg_asm::dialect::KernelHeaderRef<'_> {
+        match self {
+            Self::Asm(header) => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
+            Self::Acis(header) => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
+        }
+    }
+
+    /// Return the header only when ASM framing owns it.
+    pub(crate) fn asm_header(&self) -> Option<&KernelHeader> {
+        match self {
+            Self::Asm(header) => Some(header),
+            Self::Acis(_) => None,
+        }
     }
 }
 
@@ -176,12 +161,10 @@ pub fn classify(name: &str) -> &'static str {
 pub struct BrepFacts {
     /// Entry name.
     pub name: String,
-    /// Whether the archive entry has the `.smbh` extension.
-    pub is_smbh: bool,
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
-    /// Parsed ASM header, if the magic was present.
-    pub header: Option<KernelHeader>,
+    /// Parsed ASM or ACIS framing, when either header matched.
+    pub kernel: Option<KernelFraming>,
     /// Exact byte boundary between solved records and construction history.
     pub solved_record_limit: Option<usize>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
@@ -195,10 +178,24 @@ pub enum F3dContainerKind {
     Document {
         /// Exact archive folder of the Design asset.
         design_asset_folder: String,
+        /// Dialect classified from the document manifest.
+        matched: DialectMatch,
     },
     /// An outer F3Z archive whose `.f3d` members each carry their own
     /// manifests and Design asset.
-    MultiDocument,
+    MultiDocument {
+        /// Dialect classified from the outer archive manifests.
+        matched: DialectMatch,
+    },
+}
+
+impl F3dContainerKind {
+    /// Primary dialect selected by this container kind's discriminants.
+    pub(crate) fn dialect(&self) -> &DialectMatch {
+        match self {
+            Self::Document { matched, .. } | Self::MultiDocument { matched } => matched,
+        }
+    }
 }
 
 /// The full result of reading a Fusion ZIP: the entry list plus decoded BREP
@@ -244,7 +241,7 @@ impl<'a> ContainerScan<'a> {
     /// `find` over `entries` with both predicates.
     pub(crate) fn design_stream_entry_for_scope(
         &self,
-        expected_role: &str,
+        expected_role: ContainerRole,
         scope: &str,
     ) -> Option<&ContainerEntry> {
         self.scope_entry_indices
@@ -275,14 +272,10 @@ impl<'a> ContainerScan<'a> {
         match &self.kind {
             F3dContainerKind::Document {
                 design_asset_folder,
+                ..
             } => Some(design_asset_folder),
-            F3dContainerKind::MultiDocument => None,
+            F3dContainerKind::MultiDocument { .. } => None,
         }
-    }
-
-    /// Whether this is an outer multi-document F3Z archive.
-    pub fn is_multi_document(&self) -> bool {
-        matches!(self.kind, F3dContainerKind::MultiDocument)
     }
 
     /// Whether `name` is inside the manifest-selected Design asset folder.
@@ -298,14 +291,18 @@ impl<'a> ContainerScan<'a> {
     pub(crate) fn is_design_asset_entry(
         &self,
         entry: &ContainerEntry,
-        expected_role: &str,
+        expected_role: ContainerRole,
     ) -> bool {
         entry.role == expected_role && self.belongs_to_design_asset(&entry.name)
     }
 
     /// Whether `entry` is a stream of `expected_role` in a Design segment of
     /// the manifest-selected Design asset.
-    pub(crate) fn is_design_stream(&self, entry: &ContainerEntry, expected_role: &str) -> bool {
+    pub(crate) fn is_design_stream(
+        &self,
+        entry: &ContainerEntry,
+        expected_role: ContainerRole,
+    ) -> bool {
         if !self.is_design_asset_entry(entry, expected_role) {
             return false;
         }
@@ -317,7 +314,7 @@ impl<'a> ContainerScan<'a> {
     /// Whether `entry` is a `BulkStream.dat` in an ACT segment of the
     /// manifest-selected Design asset.
     pub(crate) fn is_act_stream(&self, entry: &ContainerEntry) -> bool {
-        self.is_design_asset_entry(entry, role::BULKSTREAM)
+        self.is_design_asset_entry(entry, ContainerRole::Bulkstream)
             && self
                 .asset_segment(&entry.name)
                 .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
@@ -353,26 +350,33 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     for file in archive.entries() {
         let name = file.name.clone();
         let role = classify(&name);
-        let compression = file.compression.label().to_string();
+        let compression = file.compression.into();
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
         let mut attributes = BTreeMap::new();
 
-        let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
-        let view = archive.open(ctx, file)?;
+        let is_brep = role == ContainerRole::BrepSmbh || role == ContainerRole::BrepSmb;
+        let view = archive.open(ctx, &file.name)?;
         let buf = view.window();
         if is_brep {
-            let header = asm_header::parse(buf);
-            let solved_record_limit = asm_header::solved_record_limit(buf);
+            let kernel = if asm_header::has_asm_magic(buf) {
+                asm_header::parse(buf).map(KernelFraming::Asm)
+            } else {
+                acis_header::parse(buf).map(KernelFraming::Acis)
+            };
+            let solved_record_limit = kernel
+                .as_ref()
+                .and_then(KernelFraming::asm_header)
+                .and_then(|header| asm_header::solved_record_limit_with_header(buf, header));
             let sha = sha256_hex(buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
-            if let Some(h) = &header {
+            if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
                 attributes.insert("asm_width".to_string(), h.width.to_string());
                 if let Some(v) = h.save_format_version {
                     attributes.insert("acis_save_format_version".to_string(), v.to_string());
                 }
-                if let Some(v) = h.record_count {
+                if let Some(v) = asm_header::record_count(buf) {
                     attributes.insert("asm_record_count".to_string(), v.to_string());
                 }
                 if let Some(v) = h.entity_count {
@@ -413,9 +417,8 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
             breps.push(BrepFacts {
                 name: name.clone(),
-                is_smbh: role == role::BREP_SMBH,
                 uncompressed_len: uncompressed_size,
-                header,
+                kernel,
                 solved_record_limit,
                 sha256: sha,
             });
@@ -423,7 +426,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
         entries.push(ContainerEntry {
             name: name.clone(),
-            role: role.to_string(),
+            role,
             compression,
             compressed_size,
             uncompressed_size,
@@ -432,8 +435,13 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         inflated_entries.insert(name, view);
     }
 
+    // The parse strategy and the dialect row are chosen together, from the same
+    // discriminants, before anything semantic is read. Classifying here is what
+    // keeps the report from re-deriving an identity the parse already settled.
+    let root_document_members = root_f3d_members(&inflated_entries);
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
+        let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
         let design_asset_folder = manifest::resolve_design_folder(
             &top_level_manifest,
             inflated_entries.keys().map(String::as_str),
@@ -441,14 +449,15 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         )?;
         F3dContainerKind::Document {
             design_asset_folder,
+            matched,
         }
     } else if inflated_entries.contains_key("Manifest.json")
         && inflated_entries.contains_key("DesignDescription.json")
-        && inflated_entries
-            .keys()
-            .any(|name| !name.contains('/') && name.to_ascii_lowercase().ends_with(".f3d"))
+        && !root_document_members.is_empty()
     {
-        F3dContainerKind::MultiDocument
+        F3dContainerKind::MultiDocument {
+            matched: F3dDialect::classify_f3z(&root_document_members),
+        }
     } else {
         return Err(CodecError::Malformed(
             "Fusion ZIP has neither a top-level Manifest.dat nor the F3Z manifest set".into(),
@@ -476,7 +485,30 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP
 /// extension. Design body bindings perform the model selection during decode.
-pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
+pub fn summarize(
+    scan: &ContainerScan<'_>,
+    dialects: cadmpeg_core::dialect::DialectLayers,
+) -> ContainerSummary {
+    ContainerSummary::classified(
+        dialects,
+        cadmpeg_ir::ContainerKind::Zip,
+        scan.entries.clone(),
+        Vec::new(),
+        summary_notes(scan, SummaryScope::ContainerOnly),
+    )
+}
+
+/// Whether the caller transferred beyond container metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SummaryScope {
+    /// Inspection or a container-only decode.
+    ContainerOnly,
+    /// A decode that attempted the document model.
+    FullDecode,
+}
+
+/// Container notes shared by inspection and decode report construction.
+pub(crate) fn summary_notes(scan: &ContainerScan<'_>, scope: SummaryScope) -> Vec<String> {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
         notes.push(format!("Design asset folder (from manifests): {folder}"));
@@ -511,26 +543,45 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
         )),
         _ => {}
     }
-    notes.push(
-        "container-level inspection only; run `decode` to resolve Design body bindings and build \
-         each referenced BREP graph"
-            .to_string(),
-    );
-
-    ContainerSummary {
-        format: "f3d".to_string(),
-        container_kind: "zip".to_string(),
-        entries: scan.entries.clone(),
-        notes,
+    if scope == SummaryScope::ContainerOnly {
+        notes.push(
+            "container-level inspection only; run `decode` to resolve Design body bindings and build \
+             each referenced BREP graph"
+                .to_string(),
+        );
     }
+
+    notes
+}
+
+/// Root-level `*.f3d` member names, sorted by archive path.
+///
+/// The third clause of the F3Z discriminant: a member whose name carries no `/`
+/// and whose extension is `f3d`, case-insensitively. Each name is returned as
+/// the archive spells it, and the order is the entry map's, which is sorted
+/// rather than the archive's own sequence.
+fn root_f3d_members<'a>(entries: &'a BTreeMap<String, View<'_>>) -> Vec<&'a str> {
+    entries
+        .keys()
+        .map(String::as_str)
+        .filter(|name| !name.contains('/') && is_f3d_name(name))
+        .collect()
+}
+
+/// Whether an archive path names an F3D document by extension.
+pub(crate) fn is_f3d_name(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("f3d"))
 }
 
 /// Iterate over every BREP whose parsed header sets the history-partition bit.
 /// The extension is not used as a semantic substitute for the header flag.
 pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
     design_breps(scan).filter(|brep| {
-        brep.header
+        brep.kernel
             .as_ref()
+            .and_then(KernelFraming::asm_header)
             .is_some_and(KernelHeader::has_history_partition)
     })
 }
@@ -570,27 +621,11 @@ pub fn design_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s
 pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
     scan.entries
         .iter()
-        .filter(|entry| entry.role == role::BREP_TEXT && scan.belongs_to_design_asset(&entry.name))
+        .filter(|entry| {
+            entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
+        })
         .map(|entry| entry.name.as_str())
         .collect()
-}
-
-/// Return the complete BREP set for the legacy `Design1` segment layout.
-///
-/// That layout predates body-to-blob bindings: its model is distributed across
-/// the archive's BREP entries, in archive order. Both design streams must be
-/// present so an unrelated path component named `Design1` cannot select this
-/// fallback.
-pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<Vec<&'s BrepFacts>> {
-    let has = |leaf: &str| {
-        scan.design_asset_folder().is_some_and(|folder| {
-            scan.entries
-                .iter()
-                .any(|entry| entry.name == format!("{folder}/Design1/{leaf}"))
-        })
-    };
-    let breps = design_breps(scan).collect::<Vec<_>>();
-    (has("BulkStream.dat") && has("MetaStream.dat") && !breps.is_empty()).then_some(breps)
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {
@@ -600,5 +635,18 @@ fn asm_magic_label(bytes: &[u8]) -> String {
         String::from_utf8_lossy(&bytes[..15]).to_string()
     } else {
         "absent".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_f3d_name;
+
+    #[test]
+    fn f3d_name_requires_a_nonempty_stem_and_case_insensitive_extension() {
+        assert!(is_f3d_name("part.f3d"));
+        assert!(is_f3d_name("folder/part.F3D"));
+        assert!(!is_f3d_name(".f3d"));
+        assert!(!is_f3d_name("part.f3d.tmp"));
     }
 }

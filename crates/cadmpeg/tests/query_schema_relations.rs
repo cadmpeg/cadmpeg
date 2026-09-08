@@ -20,7 +20,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const REL_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "features": [
       {
@@ -33,11 +33,9 @@ const REL_DOC: &str = r#"{
   },
   "native": {
     "rhino": {
-      "arenas": {
-        "unknowns": [
-          {"id": "n1", "kind": "curve"}
-        ]
-      }
+      "unknowns": [
+        {"id": "n1", "kind": "curve"}
+      ]
     }
   }
 }"#;
@@ -49,7 +47,7 @@ fn schema_relation_column_marks_ref_and_refs() {
     let path = doc.to_str().unwrap();
 
     cadmpeg()
-        .args(["query", "schema", path, "model.features"])
+        .args(["query", "schema", "file", path, "model.features"])
         .assert()
         .success()
         .stdout(
@@ -66,13 +64,13 @@ fn schema_relation_column_marks_ref_and_refs() {
         ));
 
     let json = cadmpeg()
-        .args(["query", "schema", "--json", path, "model.features"])
+        .args(["query", "schema", "--json", "file", path, "model.features"])
         .output()
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query schema");
-    let fields = value["schema"]["fields"].as_array().unwrap();
+    assert_eq!(value["command"], "query");
+    let fields = value["payload"]["fields"].as_array().unwrap();
     let by_path: std::collections::BTreeMap<&str, &serde_json::Value> = fields
         .iter()
         .filter_map(|field| field["path"].as_str().map(|path| (path, field)))

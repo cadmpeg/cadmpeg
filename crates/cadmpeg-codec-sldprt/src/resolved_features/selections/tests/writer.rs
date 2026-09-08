@@ -24,9 +24,10 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
@@ -78,13 +79,12 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         groups[0].edges = EdgeSelection::Native("changed".into());
     }
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -95,7 +95,9 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 
 #[test]
 fn semantic_writer_rejects_compact_surface_selection_edits() {
-    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, FaceSelection, FeatureDefinition, LinearTermination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -108,9 +110,10 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moExtrusion_c", "UpTo", 31)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
@@ -143,7 +146,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                     ordinal: 0,
                     offset: marker as u64,
                     selector: 0,
-                    endpoint_selector: None,
+                    kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                     object_name_ref: lane
                         .names
                         .iter()
@@ -174,19 +177,18 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         else {
             panic!("typed extrusion");
         };
-        let Termination::ToFace { face, .. } = &mut side.termination else {
+        let LinearTermination::ToFace { face, .. } = &mut side.termination else {
             panic!("to-face termination");
         };
         *face = FaceSelection::Native("changed".into());
     }
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()

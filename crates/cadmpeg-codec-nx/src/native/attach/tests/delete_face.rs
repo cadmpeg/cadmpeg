@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
 
 #[test]
 fn nx_body_writing_delete_face_retains_unresolved_family() {
@@ -12,7 +12,12 @@ fn nx_body_writing_delete_face_retains_unresolved_family() {
     let definition =
         super::body_writing_unresolved_feature_definition("DELETE FACE", &source_properties);
 
-    assert_eq!(definition, Some(FeatureDefinition::DeleteFaceUnresolved));
+    assert_eq!(
+        definition,
+        Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DeleteFace
+        })
+    );
     assert_eq!(
         definition.unwrap().body_output_family(),
         Some("delete face")

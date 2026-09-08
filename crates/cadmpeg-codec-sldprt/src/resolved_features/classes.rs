@@ -19,7 +19,7 @@ use super::terminations::is_extrusion_end_spec_owner;
 #[cfg(test)]
 use crate::records::FeatureInputClass;
 #[cfg(test)]
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, Termination};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, LinearTermination};
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -32,7 +32,6 @@ fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
         record.input_class.is_none()
             && record.source_id.is_none()
             && record.tree_parent.is_none()
-            && record.parent_source_id.is_none()
             && record.xml_tag.eq_ignore_ascii_case("Feature")
             && record.properties.is_empty()
     };
@@ -118,7 +117,7 @@ pub(crate) fn bind_history_classes(
             let Some(name) = names_by_offset.get(&name_offset) else {
                 continue;
             };
-            if native_object_class(&class.name).role != FeatureInputClassRole::Native {
+            if class.role() != FeatureInputClassRole::Native {
                 direct_classes_by_name
                     .entry(name)
                     .or_default()
@@ -573,7 +572,6 @@ mod idless_history_binding_tests {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: None,
-            parent_source_id: None,
             ordinal,
             name: format!("name-{ordinal}"),
             kind: kind.into(),
@@ -751,14 +749,14 @@ mod idless_history_binding_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let profile_id = cadmpeg_ir::features::FeatureId("profile".into());
+        let profile_id =
+            cadmpeg_ir::features::FeatureId::mint("profile").expect("identity grammar");
         let mut features = vec![
             cadmpeg_ir::features::Feature {
                 id: profile_id.clone(),
                 ordinal: 0,
                 name: None,
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
@@ -766,17 +764,15 @@ mod idless_history_binding_tests {
                 source_content: Vec::new(),
                 outputs: Vec::new(),
                 definition: FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: None,
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 },
                 native_ref: Some("profile-native".into()),
             },
             cadmpeg_ir::features::Feature {
-                id: cadmpeg_ir::features::FeatureId("extrusion".into()),
+                id: cadmpeg_ir::features::FeatureId::mint("extrusion").expect("identity grammar"),
                 ordinal: 1,
                 name: None,
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
@@ -791,15 +787,13 @@ mod idless_history_binding_tests {
                     start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                     extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                         side: cadmpeg_ir::features::ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(1.0),
                             },
                             draft: None,
-                            offset: None,
                         },
                     },
                     op: BooleanOp::Join,
-                    direction_source: None,
                     solid: Some(true),
                     face_maker: None,
                     inner_wire_taper: None,
@@ -909,7 +903,6 @@ mod idless_history_binding_tests {
                 ordinal: 0,
                 offset: 0,
                 name: "moHoleWzd_c".into(),
-                role: FeatureInputClassRole::Feature,
             }],
             names: vec![
                 FeatureInputName {
@@ -1095,7 +1088,6 @@ mod idless_history_binding_tests {
             ordinal: ordinal as u32,
             offset: ordinal as u64 * 100,
             name: name.into(),
-            role: native_object_class(name).role,
         })
         .collect();
         let lane = FeatureInputLane {
@@ -1156,7 +1148,6 @@ mod idless_history_binding_tests {
             ordinal,
             offset,
             name: name.into(),
-            role: native_object_class(name).role,
         };
         let classes = vec![
             class(0, 100, "moCosmeticThread_c"),
@@ -1223,7 +1214,6 @@ mod idless_history_binding_tests {
             ordinal: 0,
             offset: 100,
             name: "moHoleWzd_c".into(),
-            role: native_object_class("moHoleWzd_c").role,
         };
         let direct_offset = class.offset + 6 + class.name.len() as u64;
         let names = vec![
@@ -1305,7 +1295,6 @@ mod idless_history_binding_tests {
             ordinal: 0,
             offset: 100,
             name: "moCosmeticThread_c".into(),
-            role: native_object_class("moCosmeticThread_c").role,
         };
         let names = histories[0]
             .features

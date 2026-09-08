@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::decode::scopes::ThreadPrefix;
 
 #[test]
 fn thread_scope_decodes_standard_size_and_face_group() {
@@ -36,19 +36,17 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
         designation: "M30x3.5".into(),
-        nominal_size_text: "30.0".into(),
-        nominal_size: 30.0,
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("30.0".to_owned())
+            .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 2.97345,
         minor_diameter: 2.5732,
         pitch: 0.35,
         pitch_diameter: 2.7568,
-        trailing_reference_record_index: None,
-        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
@@ -57,23 +55,27 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         parse_thread_payload(
             &invalid_standard_pitch_marker,
             38,
-            DesignThreadForm::Standard,
+            ThreadPrefix::Standard,
             vec![988],
         ),
         None
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#standard-thread", "Thread", 987);
-    scope.class_tag = "901".into();
-    scope.paired_class_tag = "902".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#standard-thread",
+        crate::records::feature::DesignFeatureKind::Thread,
+        987,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("901".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("902".to_owned()).unwrap();
     scope.frame_length = 17;
-    scope.reference_members = vec![988, 989];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
     let shifted_expected =
-        parse_thread_payload(&owner_marked, 42, DesignThreadForm::Standard, vec![988])
+        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Standard, vec![988])
             .expect("owner-marked standard Thread payload");
     assert_eq!(shifted_expected.designation_offset, 42);
     scope.frame_length += 4;
@@ -88,7 +90,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         None
     );
     assert_eq!(
-        parse_thread_payload(&owner_marked, 42, DesignThreadForm::Compact, vec![988]),
+        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Compact, vec![988]),
         None
     );
 }
@@ -117,30 +119,32 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
         designation: "M7x1".into(),
-        nominal_size_text: "7.0".into(),
-        nominal_size: 7.0,
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("7.0".to_owned())
+            .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 0.71472,
         minor_diameter: 0.60355,
         pitch: 0.1,
         pitch_diameter: 0.64255,
-        trailing_reference_record_index: None,
-        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
         &expected,
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-thread", "Thread", 987);
-    scope.class_tag = "334".into();
-    scope.paired_class_tag = "262".into();
-    scope.reference_members = vec![988, 991];
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#legacy-thread",
+        crate::records::feature::DesignFeatureKind::Thread,
+        987,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 991]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
-    scope.class_tag = "335".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("335".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
@@ -152,22 +156,20 @@ fn assert_thread_construction(
     assert_eq!(actual.form, expected.form);
     assert_eq!(actual.designation_offset, expected.designation_offset);
     assert_eq!(actual.designation, expected.designation);
-    assert_eq!(actual.nominal_size_text, expected.nominal_size_text);
+    assert_eq!(actual.nominal_size.text(), expected.nominal_size.text());
     assert_eq!(actual.profile, expected.profile);
-    assert_eq!(
-        actual.trailing_reference_record_index,
-        expected.trailing_reference_record_index
-    );
-    assert_eq!(
-        actual.trailing_reference_offset,
-        expected.trailing_reference_offset
-    );
     assert_eq!(
         actual.face_group_record_indices,
         expected.face_group_record_indices
     );
     for (actual, expected) in [
-        (actual.nominal_size, expected.nominal_size),
+        (
+            actual.nominal_size.value().expect("actual nominal size"),
+            expected
+                .nominal_size
+                .value()
+                .expect("expected nominal size"),
+        ),
         (actual.major_diameter, expected.major_diameter),
         (actual.minor_diameter, expected.minor_diameter),
         (actual.pitch, expected.pitch),
@@ -199,22 +201,20 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
 
     let expected = DesignThreadConstruction {
-        form: DesignThreadForm::Compact,
+        form: DesignThreadForm::Compact(None),
         designation_offset: 38,
         designation: "M3.5x0.6".into(),
-        nominal_size_text: "3.5".into(),
-        nominal_size: 3.5,
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("3.5".to_owned())
+            .expect("nominal size"),
         profile: "GB Metric profile".into(),
         major_diameter: 0.35995,
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
-        trailing_reference_record_index: None,
-        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
         &expected,
     );
     let mut referenced = bytes.clone();
@@ -222,18 +222,24 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
     referenced[after_profile + 43..after_profile + 49].fill(0);
     let mut referenced_expected = expected.clone();
-    referenced_expected.trailing_reference_record_index = Some(2075);
-    referenced_expected.trailing_reference_offset = Some((after_profile + 39) as u64);
+    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located {
+        value: std::num::NonZeroU32::new(2075).expect("reference"),
+        offset: (after_profile + 39) as u64,
+    }));
     assert_thread_construction(
-        parse_thread_payload(&referenced, 38, DesignThreadForm::Compact, vec![988]),
+        parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
         &referenced_expected,
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);
-    scope.class_tag = "903".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#compact-thread",
+        crate::records::feature::DesignFeatureKind::Thread,
+        987,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("903".to_owned()).unwrap();
     scope.frame_length = 19;
-    scope.reference_members = vec![988, 989, 992, 993];
-    scope.paired_class_tag = "904".into();
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
@@ -253,7 +259,11 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         None
     );
 
-    scope.reference_members.push(994);
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(994);
+        crate::records::ReferenceRun::unlocated(values)
+    };
     assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
 }
 
@@ -281,31 +291,35 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
         designation: "M190x8".into(),
-        nominal_size_text: "190.0".into(),
-        nominal_size: 190.0,
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
+            "190.0".to_owned(),
+        )
+        .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 19.08149,
         minor_diameter: 18.18397,
         pitch: 0.8,
         pitch_diameter: 18.50413,
-        trailing_reference_record_index: None,
-        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
+        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
         &expected,
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-compact-thread", "Thread", 987);
-    scope.class_tag = "414".into();
-    scope.paired_class_tag = "263".into();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#legacy-compact-thread",
+        crate::records::feature::DesignFeatureKind::Thread,
+        987,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("414".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     scope.frame_length = 19;
-    scope.reference_members = vec![988, 989];
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
-    scope.class_tag = "334".into();
-    scope.paired_class_tag = "262".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
@@ -334,13 +348,29 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("localized Sketch scope");
-    assert_eq!(scope.kind, "Esquisse");
-    assert_eq!(scope.reference_members, [55, 56]);
-    assert!(scope.entity_id.is_none());
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("localized Sketch scope");
+    assert_eq!(
+        scope.kind(),
+        crate::records::feature::DesignFeatureKind::Esquisse
+    );
+    assert_eq!(
+        scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [55, 56]
+    );
+    assert!(scope.sketch_entity().is_none());
 }

@@ -2,12 +2,12 @@
 //! Type 228 parameter-table boundary tests.
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::collections::BTreeMap;
 
 use super::{
     analyze_trailing_pointer_groups, entity_primary_end, ParameterRecord, Token, TokenValue,
 };
-use crate::directory::{DirectoryEntry, Status};
 
 fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
@@ -21,12 +21,7 @@ fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntr
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -61,9 +56,9 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
 
         assert_eq!(entity_primary_end(&record, &directory), Some(6));
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        let groups = analysis.groups.expect("Type 228 table boundary");
+        let groups = analysis.groups().expect("Type 228 table boundary");
         assert_eq!(groups.token_start, 6);
-        assert_eq!(groups.associations, vec![1]);
-        assert!(groups.properties.is_empty());
+        assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);
+        assert!(groups.properties().copied().collect::<Vec<_>>().is_empty());
     }
 }

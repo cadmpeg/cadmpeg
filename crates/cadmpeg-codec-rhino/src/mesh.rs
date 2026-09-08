@@ -20,7 +20,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::curves::{error, GeometryError};
-use crate::objects::UserdataDescriptor;
+use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::subd::MeshProxyFingerprint;
 use crate::wire::Uuid;
 
@@ -184,6 +184,8 @@ pub(crate) struct DecodedMesh {
     pub(crate) tessellation: Tessellation,
     /// Per-object warnings.
     pub(crate) warnings: Vec<String>,
+    /// Typed losses raised while selecting writer-version-dependent fields.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Whether source coordinates were converted to millimeters.
     pub(crate) scaled: bool,
     /// Number of stored n-gon group records not represented in the IR.
@@ -214,6 +216,7 @@ struct MeshChannels {
     normals: Vec<Vector3>,
     channels: Vec<TessellationChannel>,
     warnings: Vec<String>,
+    losses: Vec<cadmpeg_ir::report::LossNote>,
 }
 
 /// Returns whether a UUID is `ON_Mesh`.
@@ -408,11 +411,16 @@ pub(crate) fn decode(
         }
     }
     if ngon_count == 0 {
-        if let Some(extra) = userdata.iter().find(|value| {
-            value.class_uuid == V4V5_MESH_NGON_USERDATA
-                && value.item_uuid == V4V5_MESH_NGON_USERDATA
-                && (value.application_uuid.is_none() || value.application_uuid == Some(OPENNURBS4))
-        }) {
+        if let Some(extra) = userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|value| {
+                value.class_uuid == V4V5_MESH_NGON_USERDATA
+                    && value.item_uuid == V4V5_MESH_NGON_USERDATA
+                    && (value.application_uuid.is_none()
+                        || value.application_uuid == Some(OPENNURBS4))
+            })
+        {
             match read_v4v5_ngon_userdata(data, extra, archive, vertex_count, face_count) {
                 Ok(Some(count)) => ngon_count = count,
                 Ok(None) => decoded.warnings.push(format!(
@@ -427,7 +435,12 @@ pub(crate) fn decode(
         }
     }
     if major == 3 && minor >= 4 && !post_2006_fields {
-        reader.skip_remaining()?;
+        let dropped = reader.skip_remaining()?;
+        if dropped != 0 && writer_version.is_none() {
+            decoded.losses.push(crate::loss::writer_stamp_unverified(format!(
+                "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp"
+            )));
+        }
     }
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
@@ -436,10 +449,14 @@ pub(crate) fn decode(
             .push(format!("ON_Mesh skipped {skipped} trailing bytes"));
     }
     if double_vertices.is_none() {
-        if let Some(extra) = userdata.iter().find(|value| {
-            value.class_uuid == V5_MESH_DOUBLE_VERTICES
-                && value.item_uuid == V5_MESH_DOUBLE_VERTICES
-        }) {
+        if let Some(extra) = userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|value| {
+                value.class_uuid == V5_MESH_DOUBLE_VERTICES
+                    && value.item_uuid == V5_MESH_DOUBLE_VERTICES
+            })
+        {
             match read_v5_double_vertices(data, extra, archive, &decoded.vertices) {
                 Ok(Some(values)) => double_vertices = Some(values),
                 Ok(None) => decoded.warnings.push(format!(
@@ -467,6 +484,7 @@ pub(crate) fn decode(
     ] {
         for extra in userdata
             .iter()
+            .filter_map(UserdataDescriptor::known)
             .filter(|value| value.class_uuid == class && value.item_uuid == class)
         {
             if let Err(error) =
@@ -512,23 +530,19 @@ pub(crate) fn decode(
     let quad_count = quad_face_count(&faces);
     let triangles = triangulate_faces(&faces, &vertices);
     Ok(DecodedMesh {
-        tessellation: Tessellation {
+        tessellation: Tessellation::from_decoded(
             id,
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: association,
             vertices,
             triangles,
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: decoded.normals,
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: decoded.channels,
-        },
+            Vec::new(),
+            decoded.normals,
+            Vec::new(),
+            decoded.channels,
+        )
+        .map_err(|err| error(reader.position(), &err.to_string()))?
+        .with_source_object(association),
         warnings: decoded.warnings,
+        losses: decoded.losses,
         scaled: scale != 1.0,
         ngon_count,
         quad_count,
@@ -873,7 +887,7 @@ fn read_buffer<'a>(
                 archive,
                 false,
             )?;
-            if chunk.typecode != 0x4000_8000 || chunk.short {
+            if chunk.typecode != 0x4000_8000 || chunk.short() {
                 return Err(error(
                     reader.position(),
                     "compressed buffer is not anonymous",
@@ -881,23 +895,23 @@ fn read_buffer<'a>(
             }
             let source = expand
                 .root
-                .child(chunk.body.start, chunk.body.end)
+                .child(chunk.body().start, chunk.body().end)
                 .ok_or_else(|| {
                     error(
-                        chunk.body.start,
+                        chunk.body().start,
                         "compressed buffer body escapes the root view",
                     )
                 })?;
             debug_assert_eq!(
                 source.window(),
-                &reader.backing_bytes()[chunk.body.start..chunk.body.end],
+                &reader.backing_bytes()[chunk.body().start..chunk.body().end],
                 "expansion source must alias the compressed chunk body"
             );
             let (view, compressed) = inflate(expand, source, declared)?;
             commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
-            if compressed != chunk.body.len() {
+            if compressed != chunk.body().len() {
                 return Err(error(
-                    chunk.body.start + compressed,
+                    chunk.body().start + compressed,
                     "zlib chunk has trailing bytes",
                 ));
             }
@@ -909,7 +923,7 @@ fn read_buffer<'a>(
             }
             (
                 Cow::Borrowed(view.window()),
-                chunk.next_offset - reader.position(),
+                chunk.next_offset() - reader.position(),
             )
         }
         _ => {
@@ -991,7 +1005,8 @@ fn read_ngons(
         false,
     )?;
     push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh ngon")?;
-    let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut child =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor < 0 {
@@ -1015,7 +1030,7 @@ fn read_ngons(
         }
     }
     child.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(count)
 }
 
@@ -1032,7 +1047,8 @@ fn read_mapping_tag(
         false,
     )?;
     push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh mapping tag")?;
-    let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut child =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor < 0 {
@@ -1056,7 +1072,7 @@ fn read_mapping_tag(
         child.u32()?;
     }
     child.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -1083,7 +1099,8 @@ fn read_double_chunk<'a>(
         archive,
         false,
     )?;
-    let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut child =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor < 0 {
@@ -1102,7 +1119,7 @@ fn read_double_chunk<'a>(
             chunk_at(
                 reader.backing_bytes(),
                 buffer_start + 9,
-                chunk.body.end,
+                chunk.body().end,
                 archive,
                 false,
             )
@@ -1120,7 +1137,7 @@ fn read_double_chunk<'a>(
         archive,
     )?;
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested_buffer.as_slice())?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested_buffer.as_slice())?;
     if matches!(
         crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1130,7 +1147,7 @@ fn read_double_chunk<'a>(
             chunk.header_start
         ));
     }
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     if count != vertex_count {
         return Ok((count, None));
     }
@@ -1145,7 +1162,7 @@ fn read_double_chunk<'a>(
 /// values cast exactly to the owner's f32 vertices.
 fn read_v5_double_vertices(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     float_vertices: &[[f32; 3]],
 ) -> Result<Option<Vec<[f64; 3]>>, GeometryError> {
@@ -1156,13 +1173,13 @@ fn read_v5_double_vertices(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             "V5 mesh double-precision userdata is not anonymous",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let _minor = reader.i32()?;
     if major != 1 {
@@ -1203,7 +1220,7 @@ fn read_v5_double_vertices(
 /// checked for in-range vertices and face indices with a `-1` suffix.
 fn read_v4v5_ngon_userdata(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     vertex_count: usize,
     face_count: usize,
@@ -1215,7 +1232,7 @@ fn read_v4v5_ngon_userdata(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             "V4/V5 mesh n-gon userdata is not anonymous",
@@ -1227,7 +1244,7 @@ fn read_v4v5_ngon_userdata(
     ) {
         return Ok(None);
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
@@ -1333,7 +1350,7 @@ fn consume_optional_chunk(
 ) -> Result<(), GeometryError> {
     let bytes = reader.backing_bytes();
     let chunk = chunk_at(bytes, reader.position(), reader.end(), archive, false)?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -1411,15 +1428,14 @@ fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
 }
 
 fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> TessellationChannel {
-    TessellationChannel {
-        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
+    TessellationChannel::new(
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
         item_size,
         kind,
-        flags: 0,
-        count: count as u32,
+        0,
         data,
-        indices: Vec::new(),
-    }
+    )
+    .unwrap_or_else(|_| panic!("channel payload length {count} * {item_size} is inconsistent"))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
@@ -1532,7 +1548,7 @@ mod tests {
     }
 
     fn v5_double_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor {
+        UserdataDescriptor::Known(ClassUserdata {
             range: range.clone(),
             version: (2, 2),
             class_uuid: V5_MESH_DOUBLE_VERTICES,
@@ -1540,12 +1556,9 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: range,
-            unknown_version: false,
-        }
+        })
     }
 
     fn v4v5_ngon_userdata_payload(
@@ -1572,7 +1585,7 @@ mod tests {
     }
 
     fn v4v5_ngon_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor {
+        UserdataDescriptor::Known(ClassUserdata {
             range: range.clone(),
             version: (2, 2),
             class_uuid: V4V5_MESH_NGON_USERDATA,
@@ -1580,12 +1593,9 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: Some(OPENNURBS4),
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: range,
-            unknown_version: false,
-        }
+        })
     }
 
     fn correspondence_userdata_payload(version: i32, mapping: bool) -> Vec<u8> {
@@ -1651,6 +1661,7 @@ mod tests {
         bytes.extend([0_u8; 16]);
         bytes.extend(0_u32.to_le_bytes());
         bytes.extend(0_i32.to_le_bytes());
+        bytes.push(0);
         let decoded = with_expand(&bytes, |expand| {
             decode(
                 expand,
@@ -1667,7 +1678,10 @@ mod tests {
                 &mut MeshBudget::new(),
             )
         });
-        assert!(decoded.is_ok(), "{decoded:?}");
+        let decoded = decoded.expect("unstamped post-2006 fields are recoverable");
+        assert!(decoded.losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()
+        }));
     }
 
     #[test]
@@ -1695,7 +1709,7 @@ mod tests {
             )
         })
         .expect("V5 double userdata mesh");
-        assert_eq!(decoded.tessellation.vertices[1].x, 1.0 + delta);
+        assert_eq!(decoded.tessellation.vertices()[1].x, 1.0 + delta);
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
     }
 
@@ -1724,7 +1738,7 @@ mod tests {
             )
         })
         .expect("float mesh survives V5 double userdata mismatch");
-        assert_eq!(decoded.tessellation.vertices[1].x, 1.0);
+        assert_eq!(decoded.tessellation.vertices()[1].x, 1.0);
         assert!(decoded
             .warnings
             .iter()
@@ -2364,8 +2378,8 @@ mod tests {
         with_expand(&bytes, |expand| {
             let outer =
                 chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false).expect("outer chunk");
-            let mut child =
-                BoundedReader::new(&bytes, outer.body.start, outer.body.end).expect("child reader");
+            let mut child = BoundedReader::new(&bytes, outer.body().start, outer.body().end)
+                .expect("child reader");
             let decoded = read_buffer(
                 expand,
                 &mut child,

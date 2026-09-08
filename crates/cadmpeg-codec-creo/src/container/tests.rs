@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::container::SectionRole;
+
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
-use crate::container::{self, role, Layout};
+use crate::container::{self, Layout, UnknownLayout};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -26,12 +28,21 @@ fn scan_decodes_length_prefixed_native_model_name() {
         .to_vec();
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.framing.model_name.as_deref(), Some("widget.prt "));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("widget.prt ")
+    );
     let model_name_offset = data
         .windows(b"widget.prt ".len())
         .position(|window| window == b"widget.prt ")
         .expect("model name offset");
-    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
+    assert_eq!(
+        scan.framing.model_name.as_ref().map(|model| model.offset),
+        Some(model_name_offset)
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -92,7 +103,6 @@ fn scan_withholds_repeated_native_model_names() {
 
     let scan = container::scan_bytes(data);
     assert!(scan.framing.model_name.is_none());
-    assert!(scan.framing.model_name_offset.is_none());
 }
 
 #[test]
@@ -106,12 +116,21 @@ fn scan_decodes_binary_model_name_field_without_cmnm_header() {
     );
 
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.framing.model_name.as_deref(), Some("WIDGET_ROOT"));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("WIDGET_ROOT")
+    );
     let model_name_offset = data
         .windows(b"WIDGET_ROOT".len())
         .position(|window| window == b"WIDGET_ROOT")
         .expect("model name offset");
-    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
+    assert_eq!(
+        scan.framing.model_name.as_ref().map(|model| model.offset),
+        Some(model_name_offset)
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -138,7 +157,13 @@ fn scan_skips_empty_binary_model_name_fields() {
     );
 
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.framing.model_name.as_deref(), Some("ROOT"));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("ROOT")
+    );
 }
 
 #[test]
@@ -166,10 +191,10 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
     assert_eq!(scan.framing.sections[0].name, "VisibGeom");
-    assert_eq!(scan.framing.sections[0].role, role::GEOMETRY);
+    assert_eq!(scan.framing.sections[0].role, SectionRole::PsbGeometry);
     assert_eq!(scan.framing.sections[1].name, "AllFeatur");
-    assert_eq!(scan.framing.sections[1].role, role::MODEL_DATA);
-    assert_eq!(scan.framing.sections[2].role, role::THUMBNAIL);
+    assert_eq!(scan.framing.sections[1].role, SectionRole::ModelData);
+    assert_eq!(scan.framing.sections[2].role, SectionRole::Thumbnail);
     assert!(container::has_thumbnail(&scan));
 }
 
@@ -204,8 +229,8 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(scan.framing.sections[1].role, role::GEOMETRY);
-    assert_eq!(scan.framing.sections[2].role, role::MODEL_DATA);
+    assert_eq!(scan.framing.sections[1].role, SectionRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[2].role, SectionRole::ModelData);
 }
 
 #[test]
@@ -264,11 +289,12 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     data.extend_from_slice(&compressed);
 
     let scan = container::scan_bytes(data);
+    let classification = crate::dialect::classify(&scan);
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    let summary = container::summarize(&scan);
-    assert_eq!(summary.entries[0].compression, "unix-compress");
+    let summary = container::summarize(&scan, &classification);
+    assert_eq!(summary.entries[0].compression.as_str(), "unix-compress");
     assert_eq!(summary.entries[0].uncompressed_size, 18);
 }
 
@@ -330,7 +356,7 @@ fn scan_reads_legacy_geom_depend_first_quilt_discriminator() {
 
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.first_quilt_ptr, Some(0));
 }
 
@@ -413,7 +439,10 @@ fn depdb_layout_requires_root_record() {
         ],
     );
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.framing.layout, Layout::Unknown);
+    assert_eq!(
+        scan.framing.layout,
+        Layout::Unknown(UnknownLayout::DepdbRootMissing)
+    );
 }
 
 #[test]
@@ -468,18 +497,27 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     assert_eq!(scan.curves.prototypes.len(), 1);
     assert_eq!(scan.surfaces.nonvisible_parameters.len(), 1);
     assert_eq!(scan.surfaces.nonvisible_parameters[0].surface_id, 8);
-    assert_eq!(scan.surfaces.nonvisible_parameters[0].scalar_values, [1.0]);
+    assert_eq!(
+        scan.surfaces.nonvisible_parameters[0].scalar_values(),
+        [1.0]
+    );
     assert_eq!(scan.surfaces.nonvisible_prototype_records.len(), 1);
     assert_eq!(
-        scan.surfaces.nonvisible_prototype_records[0].declared_family,
+        scan.surfaces.nonvisible_prototype_records[0].family.name(),
         "cylinder"
     );
     assert_eq!(scan.curves.nonvisible_prototypes.len(), 1);
     assert_eq!(scan.curves.nonvisible_prototypes[0].feature_id, Some(5));
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.nonvisible_parameters.len(), 1);
-    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
-    assert_eq!(scan.curves.nonvisible_topology_rows[0].faces, [12, 13]);
+    assert_eq!(
+        scan.curves.topology_rows[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
+    assert_eq!(
+        scan.curves.nonvisible_topology_rows[0].faces,
+        [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)]
+    );
     assert_eq!(scan.topology.half_edges.len(), 2);
 
     let result = CreoCodec
@@ -488,18 +526,18 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
             &DecodeOptions::default(),
         )
         .expect("decode");
-    let rows = &result.ir().native.namespace("creo").unwrap().arenas["nonvisible_surface_rows"];
+    let rows = &result.ir().native.namespace("creo").unwrap().arenas()["nonvisible_surface_rows"];
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id(), "creo:novisgeom:surface_row#8");
     assert_eq!(rows[0].fields()["source_section"], "NovisGeom");
     let namespace = result.ir().native.namespace("creo").unwrap();
-    let surface_parameters = &namespace.arenas["nonvisible_surface_parameters"];
+    let surface_parameters = &namespace.arenas()["nonvisible_surface_parameters"];
     assert_eq!(
         surface_parameters[0].id(),
         "creo:novisgeom:surface_parameter#8"
     );
     assert_eq!(surface_parameters[0].fields()["slots"][0]["value"], 1.0);
-    let surface_prototypes = &namespace.arenas["nonvisible_surface_prototypes"];
+    let surface_prototypes = &namespace.arenas()["nonvisible_surface_prototypes"];
     assert!(surface_prototypes[0]
         .id()
         .starts_with("creo:novisgeom:surface_prototype#"));
@@ -507,12 +545,12 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
         surface_prototypes[0].fields()["source_section"],
         "NovisGeom"
     );
-    let prototypes = &namespace.arenas["nonvisible_curve_prototypes"];
+    let prototypes = &namespace.arenas()["nonvisible_curve_prototypes"];
     assert_eq!(prototypes[0].fields()["curve_id"], 7);
     assert_eq!(prototypes[0].fields()["source_section"], "NovisGeom");
-    let parameters = &namespace.arenas["nonvisible_curve_parameters"];
+    let parameters = &namespace.arenas()["nonvisible_curve_parameters"];
     assert_eq!(parameters[0].id(), "creo:novisgeom:curve_parameter#7");
-    let topology = &namespace.arenas["nonvisible_curve_topology_rows"];
+    let topology = &namespace.arenas()["nonvisible_curve_topology_rows"];
     assert_eq!(topology[0].id(), "creo:novisgeom:curve_topology#7");
     assert_eq!(topology[0].fields()["faces"][0], 12);
 }
@@ -532,11 +570,11 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
         .features
         .definitions
         .iter()
-        .any(|definition| definition.id == 12));
+        .any(|definition| definition.identity.id() == 12));
     assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(scan.features.operations[0].feature_id, 17);
     assert_eq!(
-        scan.features.operations[0].recipe,
+        scan.features.operations[0].recipe.resolved(),
         Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
     );
 }
@@ -560,7 +598,7 @@ fn inspect_summary_has_layout_and_census_notes() {
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
-    assert_eq!(summary.format, "creo");
+    assert_eq!(summary.format(), "creo");
     assert_eq!(summary.container_kind, "psb");
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));

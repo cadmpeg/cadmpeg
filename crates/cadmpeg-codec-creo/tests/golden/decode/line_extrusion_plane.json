@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -112,236 +112,80 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "surface_parameters": [
-            {
-              "body": [
-                15,
-                15,
-                228,
-                0,
-                12,
-                154,
-                15,
-                15,
-                15,
-                47,
-                0,
-                0,
-                15,
-                15
-              ],
-              "body_offset": 129,
-              "boundary": "compound_close",
-              "cone_half_angle_override": null,
-              "extrusion_direction": [
-                0.0,
-                0.0,
-                1.0
-              ],
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [
-                {
-                  "length": 3,
-                  "offset": 3,
-                  "raw": [
-                    0,
-                    12,
-                    154
-                  ]
-                }
-              ],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 123,
-              "scalar_frames": [
-                {
-                  "offset": 0,
-                  "slots": [
-                    {
-                      "length": 1,
-                      "offset": 0,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 1,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 2,
-                      "raw": [
-                        228
-                      ],
-                      "value": 1.0
-                    }
-                  ]
-                },
-                {
-                  "offset": 6,
-                  "slots": [
-                    {
-                      "length": 1,
-                      "offset": 6,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 7,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 8,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 3,
-                      "offset": 9,
-                      "raw": [
-                        47,
-                        0,
-                        0
-                      ],
-                      "value": 2.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 12,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 13,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    }
-                  ]
-                }
-              ],
-              "slots": [
-                {
-                  "length": 1,
-                  "offset": 0,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 1,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 2,
-                  "raw": [
-                    228
-                  ],
-                  "value": 1.0
-                },
-                {
-                  "length": 1,
-                  "offset": 6,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 7,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 8,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 3,
-                  "offset": 9,
-                  "raw": [
-                    47,
-                    0,
-                    0
-                  ],
-                  "value": 2.0
-                },
-                {
-                  "length": 1,
-                  "offset": 12,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 13,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                }
-              ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "extrusion",
-              "surface_id": 7,
-              "surface_type_byte": 44,
-              "tabulated_cylinder_frame": {
-                "prefixes": [
-                  15,
-                  15,
-                  15,
-                  47,
-                  15,
-                  15
-                ],
-                "values": [
-                  0.0,
-                  0.0,
-                  0.0,
-                  2.0,
-                  0.0,
-                  0.0
+        "surface_parameters": [
+          {
+            "body": [
+              15,
+              15,
+              228,
+              0,
+              12,
+              154,
+              15,
+              15,
+              15,
+              47,
+              0,
+              0,
+              15,
+              15
+            ],
+            "body_offset": 129,
+            "boundary": "compound_close",
+            "cone_half_angle_override": null,
+            "extrusion_direction": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [
+              {
+                "length": 3,
+                "offset": 3,
+                "raw": [
+                  0,
+                  12,
+                  154
+                ]
+              }
+            ],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 123,
+            "scalar_frames": [
+              {
+                "offset": 0,
+                "slots": [
+                  {
+                    "length": 1,
+                    "offset": 0,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 1,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 2,
+                    "raw": [
+                      228
+                    ],
+                    "value": 1.0
+                  }
                 ]
               },
-              "terminal_scalar_frame": {
+              {
                 "offset": 6,
                 "slots": [
                   {
@@ -395,35 +239,188 @@
                     "value": 0.0
                   }
                 ]
+              }
+            ],
+            "slots": [
+              {
+                "length": 1,
+                "offset": 0,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
               },
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 123,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "extrusion",
-              "surface_id": 7,
-              "surface_variant": "tabulated_cylinder",
-              "type_byte": 44
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        },
-        "version": 1
+              {
+                "length": 1,
+                "offset": 1,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 2,
+                "raw": [
+                  228
+                ],
+                "value": 1.0
+              },
+              {
+                "length": 1,
+                "offset": 6,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 7,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 8,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 3,
+                "offset": 9,
+                "raw": [
+                  47,
+                  0,
+                  0
+                ],
+                "value": 2.0
+              },
+              {
+                "length": 1,
+                "offset": 12,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 13,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "extrusion",
+            "surface_id": 7,
+            "surface_type_byte": 44,
+            "tabulated_cylinder_frame": {
+              "prefixes": [
+                15,
+                15,
+                15,
+                47,
+                15,
+                15
+              ],
+              "values": [
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ]
+            },
+            "terminal_scalar_frame": {
+              "offset": 6,
+              "slots": [
+                {
+                  "length": 1,
+                  "offset": 6,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 1,
+                  "offset": 7,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 1,
+                  "offset": 8,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 3,
+                  "offset": 9,
+                  "raw": [
+                    47,
+                    0,
+                    0
+                  ],
+                  "value": 2.0
+                },
+                {
+                  "length": 1,
+                  "offset": 12,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 1,
+                  "offset": 13,
+                  "raw": [
+                    15
+                  ],
+                  "value": 0.0
+                }
+              ]
+            },
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 123,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "extrusion",
+            "surface_id": 7,
+            "surface_variant": "tabulated_cylinder",
+            "type_byte": 44
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -432,7 +429,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "144",
-        "layout": "ND",
         "section.0.length": "68",
         "section.0.name": "VisibGeom",
         "section.0.offset": "76",
@@ -441,6 +437,17 @@
         "section_count": "1",
         "srf_array_count": "1",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:nd",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -817,6 +824,17 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:nd",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": true,
     "losses": [
@@ -948,7 +966,6 @@
         "sha256": "082dd8243589ca21aba79efefc5bb6fa199eb4c5d9d374a8871766cafa50002a",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

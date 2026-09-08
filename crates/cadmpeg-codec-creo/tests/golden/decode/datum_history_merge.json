@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -35,7 +35,8 @@
         },
         {
           "definition": {
-            "definition": "datum_plane_unresolved"
+            "definition": "unresolved",
+            "family": "datum_plane"
           },
           "id": "creo:model:feature#4",
           "name": "Datum Plane id 4",
@@ -71,78 +72,75 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "feature_operation_states": [
-            {
-              "current": true,
-              "display_name_stored": true,
-              "family": "Round",
-              "feature_id": 3,
-              "id": "creo:mdlstatus:feature_state#3:0",
-              "identifier_keyword": "id",
-              "offset": 144,
-              "parent_feature_id": null,
-              "recipe": null,
-              "root_schema_class": null,
-              "state_offset": 144,
-              "state_ordinal": 0,
-              "stored_name": "Round id 3",
-              "stored_name_bytes": [
-                82,
-                111,
-                117,
-                110,
-                100,
-                32,
-                105,
-                100,
-                32,
-                51
-              ],
-              "stored_name_prefix": null
-            },
-            {
-              "current": true,
-              "display_name_stored": true,
-              "family": "Datum Plane",
-              "feature_id": 4,
-              "id": "creo:mdlstatus:feature_state#4:0",
-              "identifier_keyword": "id",
-              "offset": 155,
-              "parent_feature_id": null,
-              "recipe": null,
-              "root_schema_class": null,
-              "state_offset": 155,
-              "state_ordinal": 0,
-              "stored_name": "Datum Plane id 4",
-              "stored_name_bytes": [
-                68,
-                97,
-                116,
-                117,
-                109,
-                32,
-                80,
-                108,
-                97,
-                110,
-                101,
-                32,
-                105,
-                100,
-                32,
-                52
-              ],
-              "stored_name_prefix": null
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:ActDatums:section#76"
-            }
-          ]
-        },
-        "version": 1
+        "feature_operation_states": [
+          {
+            "current": true,
+            "display_name_stored": true,
+            "family": "Round",
+            "feature_id": 3,
+            "id": "creo:mdlstatus:feature_state#3:0",
+            "identifier_keyword": "id",
+            "offset": 144,
+            "parent_feature_id": null,
+            "recipe": null,
+            "root_schema_class": null,
+            "state_offset": 144,
+            "state_ordinal": 0,
+            "stored_name": "Round id 3",
+            "stored_name_bytes": [
+              82,
+              111,
+              117,
+              110,
+              100,
+              32,
+              105,
+              100,
+              32,
+              51
+            ],
+            "stored_name_prefix": null
+          },
+          {
+            "current": true,
+            "display_name_stored": true,
+            "family": "Datum Plane",
+            "feature_id": 4,
+            "id": "creo:mdlstatus:feature_state#4:0",
+            "identifier_keyword": "id",
+            "offset": 155,
+            "parent_feature_id": null,
+            "recipe": null,
+            "root_schema_class": null,
+            "state_offset": 155,
+            "state_ordinal": 0,
+            "stored_name": "Datum Plane id 4",
+            "stored_name_bytes": [
+              68,
+              97,
+              116,
+              117,
+              109,
+              32,
+              80,
+              108,
+              97,
+              110,
+              101,
+              32,
+              105,
+              100,
+              32,
+              52
+            ],
+            "stored_name_prefix": null
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:ActDatums:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -150,7 +148,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "172",
-        "layout": "unknown",
         "section.0.length": "57",
         "section.0.name": "ActDatums",
         "section.0.offset": "76",
@@ -163,6 +160,17 @@
         "section.1.role": "metadata",
         "section_count": "2",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -539,9 +547,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -661,7 +689,6 @@
         "sha256": "1b333cc1f4c5d66ca7e15db0abda213fa92895969b69db64fa3f4f796364f9a2",
         "stream": "creo:ActDatums"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

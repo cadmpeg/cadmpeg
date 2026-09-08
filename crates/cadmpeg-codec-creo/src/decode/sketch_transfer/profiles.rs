@@ -5,12 +5,14 @@ use super::super::feature_history::feature_skamp_table_complete;
 use super::super::sketch::{trim_segment_id, unique_decoded_section_segment};
 use super::super::sketch_ids::sketch_entity_id;
 use super::super::uniqueness::exactly_one;
-use super::{
-    complete_section_skamps, saved_section_entity_fallback_allowed, section_degenerate_axis_line,
-    section_saved_entity, section_skamp_active, unique_bounded_curve_segment,
-    unique_centered_line_segment, unique_circle_segment, unique_point_segment,
-    unique_reference_line_segment,
+use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;
+use crate::decode::sketch_transfer::loci::{
+    complete_section_skamps, section_degenerate_axis_line, section_saved_entity,
+    section_skamp_active, unique_bounded_curve_segment, unique_centered_line_segment,
+    unique_circle_segment, unique_point_segment, unique_reference_line_segment,
 };
+use crate::feature::definitions::FeatureRelationTable;
+use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -113,7 +115,7 @@ pub(in super::super) fn resolved_profile_chains(
                 .as_ref()
                 .and_then(|table| table.segment(external_id))
                 .is_some_and(|segment| {
-                    segment.kind == crate::feature::FeatureSegmentKind::Arc
+                    matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                         && segment.arc_orientation == Some(0)
                 });
             profile.push(SketchEntityUse {
@@ -153,19 +155,19 @@ pub(in super::super) fn resolved_segment_profile_chains(
     };
     let rows = table
         .rows
-        .iter()
+        .ordinary()
         .filter(|segment| {
             emitted.contains(&segment.external_id)
                 && matches!(
                     segment.kind,
-                    crate::feature::FeatureSegmentKind::Line
-                        | crate::feature::FeatureSegmentKind::Arc
+                    crate::feature::FeatureSegmentKind::Line(_)
+                        | crate::feature::FeatureSegmentKind::Arc(_)
                 )
         })
         .collect::<Vec<_>>();
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, segment) in rows.iter().enumerate() {
-        for point in segment.point_ids {
+        for point in segment.point_ids() {
             incident.entry(point).or_default().push(index);
         }
     }
@@ -175,7 +177,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
         let mut component = BTreeSet::from([seed]);
         let mut frontier = vec![seed];
         while let Some(index) = frontier.pop() {
-            for point in rows[index].point_ids {
+            for point in rows[index].point_ids() {
                 for adjacent in &incident[&point] {
                     if component.insert(*adjacent) {
                         frontier.push(*adjacent);
@@ -185,7 +187,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
         }
         remaining.retain(|index| !component.contains(index));
         if component.iter().any(|index| {
-            rows[*index].point_ids.into_iter().any(|point| {
+            rows[*index].point_ids().into_iter().any(|point| {
                 incident[&point]
                     .iter()
                     .filter(|row| component.contains(row))
@@ -200,7 +202,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
             .min_by_key(|index| rows[**index].external_id)
             .copied()
             .expect("component contains seed");
-        let mut point = rows[first].point_ids[0].min(rows[first].point_ids[1]);
+        let mut point = rows[first].point_ids()[0].min(rows[first].point_ids()[1]);
         let start = point;
         let mut unused = component;
         let mut profile = Vec::new();
@@ -218,20 +220,21 @@ pub(in super::super) fn resolved_segment_profile_chains(
                 break;
             };
             let segment = rows[index];
-            let traversal_reversed = segment.point_ids[1] == point;
-            if !traversal_reversed && segment.point_ids[0] != point {
+            let traversal_reversed = segment.point_ids()[1] == point;
+            if !traversal_reversed && segment.point_ids()[0] != point {
                 break;
             }
-            let analytic_reversed = segment.kind == crate::feature::FeatureSegmentKind::Arc
-                && segment.arc_orientation == Some(0);
+            let analytic_reversed =
+                matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+                    && segment.arc_orientation == Some(0);
             profile.push(SketchEntityUse {
                 entity: sketch_entity_id(sketch, segment.external_id),
                 reversed: traversal_reversed ^ analytic_reversed,
             });
             point = if traversal_reversed {
-                segment.point_ids[0]
+                segment.point_ids()[0]
             } else {
-                segment.point_ids[1]
+                segment.point_ids()[1]
             };
             unused.remove(&index);
         }
@@ -248,39 +251,12 @@ pub(in super::super) fn solver_only_section_entities(
     let declared_segment_ids = definition
         .segments
         .iter()
-        .flat_map(|table| {
-            table
-                .rows
-                .iter()
-                .map(|segment| segment.external_id)
-                .chain(table.circle_rows.iter().map(|segment| segment.external_id))
-                .chain(table.point_rows.iter().map(|segment| segment.external_id))
-                .chain(
-                    table
-                        .centered_line_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    table
-                        .reference_line_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    table
-                        .bounded_curve_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(table.conic_rows.iter().map(|segment| segment.external_id))
-                .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
-        })
+        .flat_map(|table| table.rows.ids())
         .collect::<BTreeSet<_>>();
     definition
         .relations
         .iter()
-        .flat_map(|relations| &relations.skamps)
+        .flat_map(FeatureRelationTable::skamps)
         .flat_map(|skamp| {
             skamp
                 .items
@@ -316,7 +292,7 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     if item.sense == 0 {
         return unique_point_segment(definition, item.entity_id).is_some()
             || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
-                segment.kind == crate::feature::FeatureSegmentKind::Point
+                matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_))
                     && !section_degenerate_axis_line(definition, segment)
             });
     }
@@ -336,8 +312,8 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return matches!(
             (segment.kind, item.sense),
-            (crate::feature::FeatureSegmentKind::Line, 2 | 3)
-                | (crate::feature::FeatureSegmentKind::Arc, 2..=4)
+            (crate::feature::FeatureSegmentKind::Line(_), 2 | 3)
+                | (crate::feature::FeatureSegmentKind::Arc(_), 2..=4)
         );
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
@@ -406,7 +382,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         .relations
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| &relations.skamps)
+        .flat_map(FeatureRelationTable::skamps)
     {
         for item in &skamp.items {
             if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
@@ -486,13 +462,10 @@ fn unique_opaque_section_entity(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> bool {
-    definition.segments.as_ref().is_some_and(|segments| {
-        segments
-            .opaque_rows
-            .iter()
-            .any(|segment| segment.external_id == entity_id)
-            && segments.external_id_count(entity_id) == 1
-    })
+    definition
+        .segments
+        .as_ref()
+        .is_some_and(|segments| matches!(segments.rows.get(entity_id), Some(SegmentRow::Opaque(_))))
 }
 
 pub(in super::super) fn unique_section_incidence_curve_family(
@@ -566,8 +539,8 @@ pub(in super::super) fn solver_only_section_entity_family(
                             .is_some_and(|segment| {
                                 matches!(
                                     segment.kind,
-                                    crate::feature::FeatureSegmentKind::Line
-                                        | crate::feature::FeatureSegmentKind::Arc
+                                    crate::feature::FeatureSegmentKind::Line(_)
+                                        | crate::feature::FeatureSegmentKind::Arc(_)
                                 )
                             })
                             || (saved_section_entity_fallback_allowed(
@@ -643,8 +616,10 @@ mod tests {
             offset: 7,
         }];
         crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -654,14 +629,15 @@ mod tests {
                     .expect("segment count"),
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: Vec::new(),
-                circle_rows: Vec::new(),
-                point_rows,
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows,
+                rows: (point_rows)
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Point)
+                    .chain(
+                        (opaque_rows)
+                            .into_iter()
+                            .map(crate::feature::segment_rows::SegmentRow::Opaque),
+                    )
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -673,14 +649,15 @@ mod tests {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
-                skamps: vec![midpoint(target, 7)],
-                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
-                    declared_count: 1,
-                    entity_ref: 0,
-                    offset: 0,
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: crate::feature::definitions::FeatureSolverTableHeader {
+                        declared_count: 1,
+                        entity_ref: 0,
+                        offset: 0,
+                    },
+                    rows: vec![midpoint(target, 7)],
                 }),
-                triples: Vec::new(),
-                triples_header: None,
+                triples: None,
                 offset: 0,
             }),
             saved_section: None,
@@ -711,7 +688,11 @@ mod tests {
     fn type35_line_family_requires_unique_native_target() {
         let mut definition = definition(101, true);
         let segments = definition.segments.as_mut().expect("segments");
-        segments.opaque_rows.push(opaque(101));
+        segments
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque(
+                101,
+            )));
         segments.declared_count = 2;
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
@@ -722,7 +703,15 @@ mod tests {
     #[test]
     fn type_zero_point_locus_establishes_unique_native_point_family() {
         let mut opaque_target = definition(101, true);
-        opaque_target.relations.as_mut().expect("relations").skamps[0].kind = 0;
+        opaque_target
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .as_mut()
+            .expect("skamp table")
+            .rows_mut()[0]
+            .kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&opaque_target, 101),
             Some(SectionEntityIncidenceFamily::Point)
@@ -733,7 +722,10 @@ mod tests {
             .relations
             .as_mut()
             .expect("relations")
-            .skamps[0]
+            .skamps
+            .as_mut()
+            .expect("skamp table")
+            .rows_mut()[0]
             .kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&solver_only_target, 201),
@@ -749,9 +741,21 @@ mod tests {
     fn type_zero_point_family_requires_unique_native_target() {
         let mut definition = definition(101, true);
         let segments = definition.segments.as_mut().expect("segments");
-        segments.opaque_rows.push(opaque(101));
+        segments
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque(
+                101,
+            )));
         segments.declared_count += 1;
-        definition.relations.as_mut().expect("relations").skamps[0].kind = 0;
+        definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .as_mut()
+            .expect("skamp table")
+            .rows_mut()[0]
+            .kind = 0;
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
             None
@@ -761,24 +765,23 @@ mod tests {
     #[test]
     fn center_role_normalizes_bounded_curve_solver_family_to_arc() {
         let mut definition = definition(201, false);
-        definition
-            .segments
-            .as_mut()
-            .expect("segments")
-            .circle_rows
-            .push(crate::feature::FeatureCircleSegment {
-                center_id: 0,
-                radius_ref: 1,
-                external_id: 22,
-                offset: 22,
-            });
+        definition.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Circle(
+                crate::feature::FeatureCircleSegment {
+                    center_id: 0,
+                    radius_ref: 1,
+                    external_id: 22,
+                    offset: 22,
+                },
+            ),
+        );
         definition
             .segments
             .as_mut()
             .expect("segments")
             .declared_count += 1;
         let relations = definition.relations.as_mut().expect("relations");
-        relations.skamps.extend([
+        crate::decode::tests::declared_solver_rows(&mut relations.skamps).extend([
             crate::feature::FeatureSkamp {
                 id: 0,
                 kind: 0,
@@ -814,11 +817,7 @@ mod tests {
                 offset: 24,
             },
         ]);
-        relations
-            .skamp_header
-            .as_mut()
-            .expect("skamp header")
-            .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+        crate::decode::tests::synchronize_skamp_count(&mut definition);
 
         assert_eq!(
             solver_only_section_entity_family(&definition, 21),

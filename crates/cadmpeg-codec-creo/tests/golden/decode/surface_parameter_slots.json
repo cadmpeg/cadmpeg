@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -63,73 +63,30 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "surface_parameters": [
-            {
-              "body": [
-                115,
-                228,
-                47,
-                67,
-                0,
-                227,
-                224
-              ],
-              "body_offset": 122,
-              "boundary": "compound_close",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 116,
-              "scalar_frames": [
-                {
-                  "offset": 0,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 0,
-                      "raw": [
-                        115,
-                        228,
-                        47,
-                        67,
-                        0,
-                        227,
-                        224
-                      ],
-                      "value": 0.7778545674001371
-                    }
-                  ]
-                }
-              ],
-              "slots": [
-                {
-                  "length": 7,
-                  "offset": 0,
-                  "raw": [
-                    115,
-                    228,
-                    47,
-                    67,
-                    0,
-                    227,
-                    224
-                  ],
-                  "value": 0.7778545674001371
-                }
-              ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "torus_or_sphere",
-              "surface_id": 7,
-              "surface_type_byte": 38,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": {
+        "surface_parameters": [
+          {
+            "body": [
+              115,
+              228,
+              47,
+              67,
+              0,
+              227,
+              224
+            ],
+            "body_offset": 122,
+            "boundary": "compound_close",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 116,
+            "scalar_frames": [
+              {
                 "offset": 0,
                 "slots": [
                   {
@@ -147,35 +104,75 @@
                     "value": 0.7778545674001371
                   }
                 ]
-              },
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 116,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "torus_or_sphere",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 38
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        },
-        "version": 1
+              }
+            ],
+            "slots": [
+              {
+                "length": 7,
+                "offset": 0,
+                "raw": [
+                  115,
+                  228,
+                  47,
+                  67,
+                  0,
+                  227,
+                  224
+                ],
+                "value": 0.7778545674001371
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "torus_or_sphere",
+            "surface_id": 7,
+            "surface_type_byte": 38,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": {
+              "offset": 0,
+              "slots": [
+                {
+                  "length": 7,
+                  "offset": 0,
+                  "raw": [
+                    115,
+                    228,
+                    47,
+                    67,
+                    0,
+                    227,
+                    224
+                  ],
+                  "value": 0.7778545674001371
+                }
+              ]
+            },
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 116,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "torus_or_sphere",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 38
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -184,7 +181,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "130",
-        "layout": "unknown",
         "section.0.length": "54",
         "section.0.name": "VisibGeom",
         "section.0.offset": "76",
@@ -193,6 +189,17 @@
         "section_count": "1",
         "srf_array_count": "1",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -569,9 +576,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 1
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -684,7 +711,6 @@
         "sha256": "87a7ec542b628d656010bcae4f698c5215b516cb74140f15bbf73b794bf605b7",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

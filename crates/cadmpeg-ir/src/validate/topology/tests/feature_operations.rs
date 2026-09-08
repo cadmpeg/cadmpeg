@@ -9,14 +9,16 @@ use crate::validate::validate_neutral;
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FilletGroup, HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
-        RibDraft, RibSide, ScaleCenter, ScaleFactors, Termination, ThickenSide, VariableRadius,
+        FilletGroup, HoleKind, Length, LinearTermination, PatternKind, ProfileRef, RadiusSpec,
+        RibConstruction, RibDraft, RibSide, ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
         FeatureDefinition::Form { cages: Vec::new() },
         FeatureDefinition::Form {
-            cages: vec![crate::ids::SubdId("synthetic:test:subd#missing".into())],
+            cages: vec![
+                crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
+            ],
         },
         FeatureDefinition::Fillet {
             groups: vec![FilletGroup {
@@ -48,10 +50,13 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: FaceSelection::Unresolved,
-            parting_tool: None,
-            pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-            pull_plane: None,
+            anchor: crate::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Unresolved,
+                pull: Some(crate::features::DraftPull {
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                    plane: None,
+                }),
+            },
             angle: Some(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
             outward: Some(false),
         },
@@ -59,35 +64,37 @@ fn feature_operation_geometry_is_validated() {
             profile: None,
             profile_filter: None,
             face: Some(FaceSelection::Unresolved),
-            position: None,
             direction: None,
-            kind: HoleKind::Simple,
+            construction: crate::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                specification: None,
+            },
             exit_kind: None,
             diameter: Some(Length(0.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
-            specification: None,
-            placements: Vec::new(),
+            placements: None,
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
             face: None,
-            position: Some(Point3::new(0.0, 0.0, 0.0)),
-            direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-            kind: HoleKind::Simple,
+            direction: None,
+            construction: crate::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                specification: None,
+            },
             exit_kind: Some(HoleKind::Countersink {
                 diameter: Length(5.0),
                 angle: crate::features::Angle(0.5),
             }),
             diameter: Some(Length(5.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
-            specification: None,
-            placements: Vec::new(),
+            placements: None,
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Thicken {
@@ -124,12 +131,7 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::Scale {
             bodies: crate::features::BodySelection::Unresolved,
             center: Some(ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0))),
-            factors: ScaleFactors {
-                uniform: None,
-                x: Some(1.0),
-                y: Some(0.0),
-                z: Some(1.0),
-            },
+            factors: ScaleFactors::PerAxis(Vector3::new(1.0, 0.0, 1.0)),
         },
         FeatureDefinition::DatumCoordinateSystem {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -161,12 +163,12 @@ fn feature_operation_geometry_is_validated() {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 0.0),
             radius: Length(-1.0),
-            pitch: Length(f64::NAN),
+            shape: crate::features::HelixShape::Cylindrical {
+                pitch: crate::features::HelixPitch::new(Length(1.0)).unwrap(),
+            },
             revolutions: 0.0,
             start_angle: crate::features::Angle(0.0),
             clockwise: false,
-            radial_growth: None,
-            cone_angle: None,
             segment_turns: None,
             construction_style: None,
         },
@@ -233,12 +235,6 @@ fn feature_operation_geometry_is_validated() {
                 }),
                 context: None,
             },
-        },
-        FeatureDefinition::Wrap {
-            profile: ProfileRef::Native("profile".into()),
-            face: FaceSelection::Unresolved,
-            mode: crate::features::WrapMode::Emboss,
-            depth: None,
         },
         FeatureDefinition::MoveBody {
             bodies: crate::features::BodySelection::Unresolved,
@@ -340,7 +336,6 @@ fn feature_operation_geometry_is_validated() {
         "torus primitive is invalid",
         "helical sweep is invalid",
         "binder construction is invalid",
-        "wrap depth is invalid",
         "body motion is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
@@ -351,11 +346,11 @@ fn feature_operation_geometry_is_validated() {
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#invalid-{ordinal}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#invalid-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,

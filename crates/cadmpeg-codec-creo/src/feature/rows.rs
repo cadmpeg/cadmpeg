@@ -10,16 +10,15 @@ use crate::psb;
 use crate::scalar;
 
 use super::helpers::decode_exact_scalars;
+use super::schema::SchemaClass;
 
 /// One byte-bounded positional `AllFeatur` row for a known model feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRow {
     /// Feature identifier decoded from the row prefix.
     pub feature_id: u32,
-    /// Two-byte row header retained for downstream row-family dispatch.
-    pub header: [u8; 2],
     /// Root `FeatDefs` schema class from the fixed row prefix.
-    pub root_schema_class: Option<u32>,
+    pub root_schema_class: Option<SchemaClass>,
     /// Absolute offset of the containing `AllFeatur` section. Replay state is
     /// scoped to this stream.
     pub stream_offset: usize,
@@ -112,7 +111,7 @@ pub struct FeatureChoiceField {
 }
 
 /// Generated-geometry namespace declared inside a feature row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureGeometryTableKind {
     /// `edg_id_tab_ptr` edge identifiers.
     EdgeIds,
@@ -124,8 +123,17 @@ pub enum FeatureGeometryTableKind {
     UsedBodies,
     /// `geom_lists` geometry-list references.
     GeometryLists,
-    /// `dtm_id_tab` datum identifiers.
-    DatumIds,
+    /// `dtm_id_tab` datum identifiers, absent when the body is incomplete.
+    DatumIds(Option<Vec<u32>>),
+}
+
+impl FeatureGeometryTableKind {
+    pub fn datum_ids(&self) -> Option<&[u32]> {
+        match self {
+            Self::DatumIds(ids) => ids.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 /// One typed generated-geometry table header owned by a feature.
@@ -139,9 +147,6 @@ pub struct FeatureGeometryTable {
     pub count: u32,
     /// Entity-class identifier following the `f7` marker.
     pub entity_class: u32,
-    /// Complete datum identifiers for a `dtm_id_tab`; other table bodies remain
-    /// untyped.
-    pub entry_ids: Option<Vec<u32>>,
     /// Byte offset of the field label in the original stream.
     pub offset: usize,
 }
@@ -256,8 +261,8 @@ pub struct FeatureLoopHistoryEntry {
     pub ordinal: u32,
     /// Feature-local loop identifier.
     pub loop_id: u32,
-    /// Four required row fields and the optional final field, in stored order.
-    pub field_bytes: Vec<Vec<u8>>,
+    /// Four required row fields, in stored order.
+    pub field_bytes: [Vec<u8>; 4],
     /// Stored row boundary form.
     pub boundary: FeatureLoopHistoryBoundary,
     /// Byte offset of the loop identifier in the original stream.
@@ -266,8 +271,19 @@ pub struct FeatureLoopHistoryEntry {
     pub end_offset: usize,
 }
 
+impl FeatureLoopHistoryEntry {
+    /// Required fields followed by the optional named-boundary field.
+    pub fn fields(&self) -> impl Iterator<Item = &[u8]> {
+        let trailing = match &self.boundary {
+            FeatureLoopHistoryBoundary::NamedRecord { trailing } => trailing.as_ref(),
+            _ => None,
+        };
+        self.field_bytes.iter().chain(trailing).map(Vec::as_slice)
+    }
+}
+
 /// Boundary form terminating one `lo_hist` row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureLoopHistoryBoundary {
     /// Bare `e3` terminator.
     CompoundClose,
@@ -276,23 +292,16 @@ pub enum FeatureLoopHistoryBoundary {
     /// `f2 f7 <reference> e3` terminator.
     ReferenceFinal(u32),
     /// The next named-record header bounds the final row.
-    NamedRecord,
-}
-
-/// Angular termination selected by a rotational feature row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRevolutionExtentKind {
-    /// Complete 360-degree travel.
-    FullTurn,
+    NamedRecord { trailing: Option<Vec<u8>> },
 }
 
 /// One resolved rotational extent from an `AllFeatur` feature row.
+///
+/// The stored choice is a full turn; native CADIR still emits `kind: "full_turn"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRevolutionExtent {
     /// Owning feature identifier.
     pub feature_id: u32,
-    /// Resolved angular termination.
-    pub kind: FeatureRevolutionExtentKind,
     /// Byte offset of the stored `angle_choice` value.
     pub offset: usize,
 }
@@ -372,7 +381,7 @@ pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usi
 }
 
 /// Read the fixed-prefix root schema class from one candidate row span.
-fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<u32> {
+fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<SchemaClass> {
     let (_, body_start) = psb::reference_id(payload, start).ok()?;
     let body = payload.get(body_start..end)?;
     body[..body.len().min(16)]
@@ -383,28 +392,26 @@ fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<u32
             let value_offset = body_start + relative + 2;
             let (value, after) = psb::compact_int(payload, value_offset);
             (after > value_offset && after < end && payload.get(after) == Some(&0xe1))
-                .then_some(value)
+                .then_some(SchemaClass::from(value))
         })
 }
 
 /// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
 /// model-feature namespace. Unknown feature-like byte sequences remain unclaimed.
-pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
+pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>, stream_offset: usize) -> Vec<FeatureRow> {
     row_spans(payload, feature_ids)
         .into_iter()
         .filter_map(|(start, end, feature_id)| {
             let (_, body_start) = psb::reference_id(payload, start).ok()?;
             let body = payload.get(body_start..end)?;
-            let header = payload.get(body_start..body_start + 2)?.try_into().ok()?;
             let root_schema_class = row_root_schema_class(payload, start, end);
             Some(FeatureRow {
                 feature_id,
-                header,
                 root_schema_class,
-                stream_offset: 0,
+                stream_offset,
                 body: body.to_vec(),
-                body_offset: body_start,
-                offset: start,
+                body_offset: stream_offset + body_start,
+                offset: stream_offset + start,
             })
         })
         .collect()
@@ -421,7 +428,10 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
     const CR_FLAGS_ANCHOR: &[u8] = &[0xf2, 0xf7, 0x80, 0xa0];
     const MISC_CHOICE_ANCHOR: &[u8] = &[0xf3, 0xf7, 0x80, 0x97, 0xe2];
     let mut result = Vec::new();
-    for row in rows.iter().filter(|row| row.root_schema_class == Some(913)) {
+    for row in rows
+        .iter()
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
+    {
         let record_ends = row
             .body
             .windows(MISC_CHOICE_ANCHOR.len())
@@ -672,30 +682,29 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
         (b"bnd_type", FeatureGeometryTableKind::Boundaries),
         (b"used_bodies", FeatureGeometryTableKind::UsedBodies),
         (b"geom_lists", FeatureGeometryTableKind::GeometryLists),
-        (b"dtm_id_tab", FeatureGeometryTableKind::DatumIds),
+        (b"dtm_id_tab", FeatureGeometryTableKind::DatumIds(None)),
     ];
     let mut tables = Vec::new();
     let mut datum_class_by_stream = BTreeMap::<usize, u32>::new();
     for row in rows {
-        for &(label, kind) in FIELDS {
-            let needle = [label, b"\0"].concat();
+        for (label, kind) in FIELDS {
+            let needle = [*label, b"\0"].concat();
             let mut from = 0;
             while let Some(offset) = find_from(&row.body, &needle, from) {
                 from = offset + needle.len();
-                let Some((count, entity_class, entry_ids)) =
-                    geometry_table_at(&row.body, offset + needle.len(), kind)
+                let Some((count, entity_class, decoded_kind)) =
+                    geometry_table_at(&row.body, offset + needle.len(), kind.clone())
                 else {
                     continue;
                 };
                 tables.push(FeatureGeometryTable {
                     feature_id: row.feature_id,
-                    kind,
+                    kind: decoded_kind,
                     count,
                     entity_class,
-                    entry_ids,
                     offset: row.body_offset + offset,
                 });
-                if kind == FeatureGeometryTableKind::DatumIds {
+                if matches!(kind, FeatureGeometryTableKind::DatumIds(_)) {
                     datum_class_by_stream.insert(row.stream_offset, entity_class);
                 }
             }
@@ -711,10 +720,9 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
             };
             tables.push(FeatureGeometryTable {
                 feature_id: row.feature_id,
-                kind: FeatureGeometryTableKind::DatumIds,
+                kind: FeatureGeometryTableKind::DatumIds(Some(entry_ids)),
                 count,
                 entity_class,
-                entry_ids: Some(entry_ids),
                 offset: row.body_offset + cursor,
             });
         }
@@ -777,8 +785,8 @@ fn positional_datum_geometry_table_at(
 fn geometry_table_at(
     body: &[u8],
     mut cursor: usize,
-    kind: FeatureGeometryTableKind,
-) -> Option<(u32, u32, Option<Vec<u32>>)> {
+    mut kind: FeatureGeometryTableKind,
+) -> Option<(u32, u32, FeatureGeometryTableKind)> {
     if body
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
@@ -799,7 +807,7 @@ fn geometry_table_at(
     if body.get(after_class) == Some(&0xe2) {
         after_class += 1;
     }
-    let entry_ids = if kind == FeatureGeometryTableKind::DatumIds {
+    if let FeatureGeometryTableKind::DatumIds(ids) = &mut kind {
         let mut entries = Vec::new();
         let mut entry_cursor = after_class;
         for _ in 0..count {
@@ -816,11 +824,9 @@ fn geometry_table_at(
             entries.push(entry);
             entry_cursor = next;
         }
-        (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries)
-    } else {
-        None
-    };
-    Some((count, entity_class, entry_ids))
+        *ids = (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries);
+    }
+    Some((count, entity_class, kind))
 }
 
 /// Decode complete named affected-ID arrays from known feature rows.
@@ -1119,9 +1125,11 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
     const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
     let mut result = Vec::new();
-    let mut extents = BTreeMap::<(usize, u32), [Option<u32>; 2]>::new();
+    let mut extents = BTreeMap::<(usize, SchemaClass), [Option<u32>; 2]>::new();
     for row in rows {
-        let Some(schema_class @ (913 | 914)) = row.root_schema_class else {
+        let Some(schema_class @ (SchemaClass::Round | SchemaClass::Chamfer)) =
+            row.root_schema_class
+        else {
             continue;
         };
         let anchor = row.body.windows(ANCHOR_LEN).rposition(|window| {
@@ -1261,7 +1269,7 @@ pub fn surface_merge_replay_affected_ids(
     let mut result = Vec::new();
     let mut extents = BTreeMap::<usize, [Option<u32>; 3]>::new();
     for row in rows {
-        if row.root_schema_class != Some(946) {
+        if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
         let state = extents.entry(row.stream_offset).or_default();
@@ -1403,7 +1411,6 @@ pub(crate) fn loop_history_roster(
     mut cursor: usize,
     count: usize,
 ) -> Option<Vec<ParsedLoopHistoryEntry>> {
-    const FIELD_COUNT: usize = 4;
     (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
     let mut entries = Vec::with_capacity(count);
     for index in 0..count {
@@ -1411,18 +1418,17 @@ pub(crate) fn loop_history_roster(
         let (loop_id, after_id) = psb::compact_int(body, cursor);
         (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
         cursor = after_id;
-        let mut field_bytes = Vec::with_capacity(FIELD_COUNT + 1);
-        for _ in 0..FIELD_COUNT {
+        let mut field_bytes = std::array::from_fn(|_| Vec::new());
+        for field in &mut field_bytes {
             let token = psb::token_at(body, cursor)?;
             (!matches!(
                 token.kind,
                 psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
             ))
             .then_some(())?;
-            field_bytes.push(
-                body.get(cursor..cursor.checked_add(token.length)?)?
-                    .to_vec(),
-            );
+            *field = body
+                .get(cursor..cursor.checked_add(token.length)?)?
+                .to_vec();
             cursor = cursor.checked_add(token.length)?;
         }
         let boundary = if body.get(cursor) == Some(&0xe3) {
@@ -1445,24 +1451,26 @@ pub(crate) fn loop_history_roster(
         } else {
             (index + 1 == count).then_some(())?;
             let token = psb::token_at(body, cursor)?;
-            if token.kind != psb::TokenKind::NamedRecord {
+            let trailing = if token.kind == psb::TokenKind::NamedRecord {
+                None
+            } else {
                 (!matches!(
                     token.kind,
                     psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
                 ))
                 .then_some(())?;
-                field_bytes.push(
-                    body.get(cursor..cursor.checked_add(token.length)?)?
-                        .to_vec(),
-                );
+                let bytes = body
+                    .get(cursor..cursor.checked_add(token.length)?)?
+                    .to_vec();
                 cursor = cursor.checked_add(token.length)?;
                 matches!(
                     psb::token_at(body, cursor).map(|token| token.kind),
                     Some(psb::TokenKind::NamedRecord)
                 )
                 .then_some(())?;
-            }
-            FeatureLoopHistoryBoundary::NamedRecord
+                Some(bytes)
+            };
+            FeatureLoopHistoryBoundary::NamedRecord { trailing }
         };
         entries.push(ParsedLoopHistoryEntry {
             loop_id,
@@ -1477,7 +1485,7 @@ pub(crate) fn loop_history_roster(
 
 pub(crate) struct ParsedLoopHistoryEntry {
     pub(crate) loop_id: u32,
-    pub(crate) field_bytes: Vec<Vec<u8>>,
+    pub(crate) field_bytes: [Vec<u8>; 4],
     pub(crate) boundary: FeatureLoopHistoryBoundary,
     pub(crate) offset: usize,
     pub(crate) end_offset: usize,
@@ -1492,7 +1500,10 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
     ];
     let mut result = Vec::new();
     for row in rows {
-        if !matches!(row.root_schema_class, Some(916 | 917)) {
+        if !matches!(
+            row.root_schema_class,
+            Some(SchemaClass::Cut | SchemaClass::Protrusion)
+        ) {
             continue;
         }
         let Some(schema_end) = (0..row.body.len().min(20)).find_map(|offset| {
@@ -1500,8 +1511,9 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
                 return None;
             }
             let (schema_class, after) = psb::compact_int(&row.body, offset + 2);
-            (Some(schema_class) == row.root_schema_class && row.body.get(after) == Some(&0xe1))
-                .then_some(after + 1)
+            (Some(SchemaClass::from(schema_class)) == row.root_schema_class
+                && row.body.get(after) == Some(&0xe1))
+            .then_some(after + 1)
         }) else {
             continue;
         };
@@ -1526,7 +1538,6 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
         }
         result.push(FeatureRevolutionExtent {
             feature_id: row.feature_id,
-            kind: FeatureRevolutionExtentKind::FullTurn,
             offset: row.body_offset + choice_start + 2,
         });
     }

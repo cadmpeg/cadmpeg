@@ -7,14 +7,13 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
-    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
+    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
 };
 use cadmpeg_ir::transform::Transform;
 
-use crate::native::{
-    AssemblyOccurrenceRecord, AssemblyPlacementRecord, ExternalReferenceRecord,
-    UfrxOccurrenceRecord,
-};
+use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
+use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
@@ -34,7 +33,7 @@ const PLACEMENT_TYPE_B9: [u8; 16] = [
 pub(crate) struct AssemblyInventory<'a> {
     pub(crate) occurrences: Vec<AssemblyOccurrence>,
     pub(crate) placements: Vec<AssemblyPlacement<'a>>,
-    pub(crate) issues: Vec<AssemblyRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug)]
@@ -77,13 +76,6 @@ struct CompactTransform {
     prefixed: bool,
     encoding: [u16; 2],
     matrix: [[f64; 4]; 4],
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AssemblyRecordIssue {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
 }
 
 #[derive(Debug)]
@@ -130,11 +122,10 @@ pub(crate) fn project_occurrences(
                 for row in rows.iter_mut().take(3) {
                     row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
                 }
-                let transform = Transform { rows };
-                if !transform.is_affine() {
+                let Some(transform) = Transform::from_rows(rows) else {
                     unresolved_placements += 1;
                     continue;
-                }
+                };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
@@ -145,26 +136,20 @@ pub(crate) fn project_occurrences(
         };
 
         occurrences.push(Occurrence {
-            id: OccurrenceId(format!(
+            id: OccurrenceId::mint(format!(
                 "inventor:assembly:instance#{}",
                 source.occurrence_id
-            )),
+            ))
+            .expect("identity grammar"),
             prototype: external_prototype(reference),
             parent: OccurrenceParent::Root,
             ordinal: source.ordinal,
             transform,
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: source.title.clone().filter(|title| !title.is_empty()),
-            linked_subelements: Vec::new(),
             visible,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: Some(source.id.clone()),
         });
     }
@@ -198,16 +183,14 @@ fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference
     let document_id = reference
         .document_id
         .chars()
-        .any(|character| character != '0')
-        .then(|| reference.document_id.clone());
-    if path.is_none() && document_id.is_none() {
+        .any(|character| character != '0');
+    if path.is_none() && !document_id {
         return PrototypeReference::Unresolved;
     }
     PrototypeReference::External {
-        document: ExternalDocumentReference {
-            path,
-            document_id,
-            resolution: ExternalResolution::Unresolved,
+        document: match path {
+            Some(path) => ExternalDocumentReference::path(path),
+            None => ExternalDocumentReference::document_id(reference.document_id.clone()),
         },
         object: None,
     }
@@ -250,7 +233,8 @@ pub(crate) fn inventory<'a>(
                 continue;
             };
             if let Err(error) = result {
-                issues.push(AssemblyRecordIssue {
+                issues.push(RecordIssue {
+                    family: RecordIssueFamily::Assembly,
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
@@ -423,14 +407,6 @@ impl<'a> Cursor<'a> {
         Self { source }
     }
 
-    #[allow(dead_code)] // Retained for framed RSe walks that still use the helper.
-    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        Ok(self
-            .source
-            .req_take(len)
-            .map_err(|error| error.during(field))?)
-    }
-
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
         Ok(self.source.req_u8().map_err(|error| error.during(field))?)
     }
@@ -545,7 +521,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use cadmpeg_ir::products::{ExternalResolution, PrototypeReference};
+    use cadmpeg_ir::products::PrototypeReference;
 
     use super::*;
 
@@ -610,14 +586,14 @@ mod tests {
             panic!("one occurrence must be projected");
         };
         assert_eq!(projected.ordinal, 2);
-        assert_eq!(projected.transform.rows[0][3], 12.5);
-        assert_eq!(projected.transform.rows[1][3], -20.0);
+        assert_eq!(projected.transform.rows()[0][3], 12.5);
+        assert_eq!(projected.transform.rows()[1][3], -20.0);
         let PrototypeReference::External { document, object } = &projected.prototype else {
             panic!("the persisted file reference must remain external");
         };
-        assert_eq!(document.path.as_deref(), Some("components/part.ipt"));
-        assert_eq!(document.document_id, None);
-        assert_eq!(document.resolution, ExternalResolution::Unresolved);
+        assert_eq!(document.as_path(), Some("components/part.ipt"));
+        assert_eq!(document.as_document_id(), None);
+        assert!(!document.is_missing());
         assert_eq!(object, &None);
     }
 
@@ -643,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_path_and_document_id_on_external_prototypes() {
+    fn path_identity_takes_precedence_on_external_prototypes() {
         let mut reference = external_reference(4, "components/part.ipt", [0, 0]);
         reference.document_id = "00112233445566778899aabbccddeeff".into();
         let projection = project_occurrences(
@@ -659,11 +635,8 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.path.as_deref(), Some("components/part.ipt"));
-        assert_eq!(
-            document.document_id.as_deref(),
-            Some("00112233445566778899aabbccddeeff")
-        );
+        assert_eq!(document.as_path(), Some("components/part.ipt"));
+        assert_eq!(document.as_document_id(), None);
     }
 
     #[test]
@@ -685,9 +658,9 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.path, None);
+        assert_eq!(document.as_path(), None);
         assert_eq!(
-            document.document_id.as_deref(),
+            document.as_document_id(),
             Some(expected_document_id.as_str())
         );
     }
@@ -777,7 +750,7 @@ mod tests {
             state: 0,
             transform_prefix: false,
             transform_encoding: [0, 0],
-            transform: Transform::identity().rows,
+            transform: Transform::identity().rows(),
             branch: 0,
             graphics_state: 0,
             occurrence_id,

@@ -8,8 +8,8 @@ use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 
-use crate::records::DesignAssemblyOperandQualifier;
-use crate::records::{DesignComponentOccurrence, DesignParameterScope};
+use crate::records::feature::DesignAssemblyOperandQualifier;
+use crate::records::feature::{DesignComponentOccurrence, DesignParameterScope};
 
 /// Project components and occurrences proven by local component history operations.
 pub(crate) fn project_local_components(
@@ -21,25 +21,24 @@ pub(crate) fn project_local_components(
     let mut native_by_guid = BTreeMap::new();
     for occurrence in native_occurrences {
         native_by_guid
-            .entry(occurrence.occurrence_guid.to_ascii_lowercase())
+            .entry(occurrence.occurrence_guid.as_str().to_ascii_lowercase())
             .and_modify(|candidate| *candidate = None)
             .or_insert(Some(occurrence));
     }
 
     for scope in scopes {
         if let Some(qualifiers) = scope
-            .assembly_alignment
-            .as_ref()
-            .and_then(|alignment| alignment.operand_qualifiers.as_ref())
+            .assembly_alignment()
+            .and_then(super::super::records::feature::DesignAssemblyAlignment::operand_qualifiers)
         {
-            for qualifier in qualifiers {
+            for qualifier in &qualifiers {
                 let DesignAssemblyOperandQualifier::OccurrencePath { path } = qualifier else {
                     continue;
                 };
                 let Some(root) = path
                     .occurrence_guids
                     .first()
-                    .and_then(|guid| native_by_guid.get(&guid.to_ascii_lowercase()))
+                    .and_then(|guid| native_by_guid.get(&guid.value.as_str().to_ascii_lowercase()))
                     .copied()
                     .flatten()
                 else {
@@ -49,81 +48,66 @@ pub(crate) fn project_local_components(
                     &mut components,
                     &mut occurrences,
                     &native_by_guid,
-                    &root.component_guid,
-                    &root.occurrence_guid,
-                    root.transform.unwrap_or([
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ]),
+                    root.component_guid.as_str(),
+                    root.occurrence_guid.as_str(),
+                    root.transform().map_or(
+                        [
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
+                        |frame| frame.value,
+                    ),
                 );
             }
         }
-        if let Some(operation) = &scope.copy_paste_component_operation {
+        if let Some(operation) = scope.copy_paste_component_operation() {
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &operation.component_guid,
-                &operation.source_occurrence_guid,
+                operation.component_guid.as_str(),
+                operation.source_occurrence_guid.as_str(),
                 operation.source_transform,
             );
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &operation.component_guid,
-                &operation.copied_occurrence_guid,
+                operation.component_guid.as_str(),
+                operation.copied_occurrence_guid.as_str(),
                 operation.copied_transform,
             );
         }
-        if let Some(construction) = &scope.derived_instance_construction {
+        if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &construction.component_guid,
-                &construction.occurrence_guid,
+                construction.component_guid.as_str(),
+                construction.occurrence_guid.as_str(),
                 construction.transform,
             );
         }
-        let Some((instances, component_occurrences)) = scope
-            .rectangular_pattern_construction
-            .as_ref()
+        let Some(crate::records::feature::DesignRectangularPatternInstances::Components {
+            component_guid,
+            seed,
+            generated,
+        }) = scope
+            .rectangular_pattern_construction()
             .and_then(|construction| construction.instances.as_ref())
-            .and_then(|instances| Some((instances, instances.component_occurrences.as_ref()?)))
         else {
             continue;
         };
-        if instances.transforms.len()
-            != component_occurrences
-                .generated_occurrence_guids
-                .len()
-                .saturating_add(1)
-        {
-            continue;
-        }
-        project_occurrence(
-            &mut components,
-            &mut occurrences,
-            &native_by_guid,
-            &component_occurrences.component_guid,
-            &component_occurrences.seed_occurrence_guid,
-            instances.transforms[0],
-        );
-        for (occurrence_guid, transform) in component_occurrences
-            .generated_occurrence_guids
-            .iter()
-            .zip(&instances.transforms[1..])
-        {
+        for occurrence in std::iter::once(seed).chain(generated) {
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &component_occurrences.component_guid,
-                occurrence_guid,
-                *transform,
+                component_guid.as_str(),
+                occurrence.occurrence_guid.as_str(),
+                occurrence.instance.transform.value,
             );
         }
     }
@@ -141,7 +125,7 @@ pub(crate) fn project_derived_instance_features(
     scopes: &[DesignParameterScope],
 ) {
     for scope in scopes {
-        let Some(construction) = scope.derived_instance_construction.as_ref() else {
+        let Some(construction) = scope.derived_instance_construction() else {
             continue;
         };
         let Some(feature) = features
@@ -154,7 +138,9 @@ pub(crate) fn project_derived_instance_features(
             continue;
         }
         feature.definition = FeatureDefinition::InsertComponent {
-            occurrence: crate::ids::neutral_component_occurrence_id(&construction.occurrence_guid),
+            occurrence: crate::ids::neutral_component_occurrence_id(
+                construction.occurrence_guid.as_str(),
+            ),
         };
     }
 }
@@ -174,7 +160,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
 ) -> Vec<Occurrence> {
     let mut occurrences = Vec::new();
     for scope in scopes {
-        let Some(construction) = scope.component_insert_construction.as_ref() else {
+        let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
         let Some(feature) = features
@@ -197,19 +183,12 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             parent: OccurrenceParent::Root,
             ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
                 .unwrap_or(u32::MAX),
-            transform: neutral_transform(construction.transform),
-            prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+            transform: neutral_transform(*construction.transform()),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some(construction.neutron_role.clone()),
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: Some(scope.id.clone()),
         });
     }
@@ -229,7 +208,7 @@ fn project_occurrence(
     project_component(components, component_guid);
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     occurrences
-        .entry(occurrence_id.0.clone())
+        .entry(occurrence_id.as_str().to_owned())
         .or_insert_with(|| Occurrence {
             id: occurrence_id,
             prototype: PrototypeReference::Local {
@@ -238,18 +217,11 @@ fn project_occurrence(
             parent: OccurrenceParent::Root,
             ordinal: 0,
             transform,
-            prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: native_by_guid
                 .get(&occurrence_guid.to_ascii_lowercase())
                 .copied()
@@ -261,7 +233,7 @@ fn project_occurrence(
 fn project_component(components: &mut BTreeMap<String, ProductDefinition>, component_guid: &str) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     components
-        .entry(component_id.0.clone())
+        .entry(component_id.as_str().to_owned())
         .or_insert_with(|| ProductDefinition {
             id: component_id,
             kind: ProductDefinitionKind::Part,
@@ -279,12 +251,12 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
     for row in &mut transform[..3] {
         row[3] *= 10.0;
     }
-    cadmpeg_ir::transform::Transform { rows: transform }
+    cadmpeg_ir::transform::Transform::from_rows(transform).expect("affine transform")
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::records::{
+    use crate::records::feature::{
         DesignComponentOccurrence, DesignCopyPasteComponentOperation,
         DesignDerivedInstanceConstruction, DesignParameterScope,
     };
@@ -300,7 +272,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform).rows,
+            super::neutral_transform(transform).rows(),
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],
@@ -318,37 +290,37 @@ mod tests {
         let occurrence = |record_index: u32, component_record_index: u64, occurrence_guid: &str| {
             DesignComponentOccurrence {
                 id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-                class_tag: "256".into(),
+                class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
                 record_index,
                 byte_offset: u64::from(record_index),
                 component_record_index,
-                component_guid: COMPONENT.into(),
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 component_guid_offset: 48,
-                occurrence_guid: occurrence_guid.into(),
+                occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
                 occurrence_guid_offset: 124,
-                occurrence_ordinal: 1,
-                transform: None,
-                transform_offset: None,
+                placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
             }
         };
         let native_occurrences = [occurrence(100, 700, SOURCE), occurrence(101, 701, COPY)];
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-            "CopyPaste",
+            crate::records::feature::DesignFeatureKind::CopyPaste,
             10,
         );
-        scope.copy_paste_component_operation = Some(DesignCopyPasteComponentOperation {
-            relation_record_index: 20,
-            source_occurrence_record_index: 100,
-            copied_occurrence_record_index: 101,
-            component_guid: COMPONENT.into(),
-            source_occurrence_guid: SOURCE.into(),
-            copied_occurrence_guid: COPY.into(),
-            source_transform: identity_matrix(),
-            source_transform_offset: 0,
-            copied_transform: identity_matrix(),
-            copied_transform_offset: 0,
-        });
+        if let crate::records::feature::DesignScopePayload::CopyPaste(slot) = &mut scope.payload {
+            *slot = Some(DesignCopyPasteComponentOperation {
+                relation_record_index: 20,
+                source_occurrence_record_index: 100,
+                copied_occurrence_record_index: 101,
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                source_occurrence_guid: SOURCE.to_owned().try_into().expect("GUID"),
+                copied_occurrence_guid: COPY.to_owned().try_into().expect("GUID"),
+                source_transform: identity_matrix(),
+                source_transform_offset: 0,
+                copied_transform: identity_matrix(),
+                copied_transform_offset: 0,
+            });
+        }
 
         let (definitions, occurrences) =
             super::project_local_components(&[scope], &native_occurrences);
@@ -368,31 +340,39 @@ mod tests {
         const OCCURRENCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#385",
-            "DerivedInstance",
+            crate::records::feature::DesignFeatureKind::DerivedInstance,
             385,
         );
-        scope.derived_instance_construction = Some(DesignDerivedInstanceConstruction {
-            reference_record_index: 305,
-            relation_record_index: 383,
-            carrier_record_index: 382,
-            component_guid: COMPONENT.into(),
-            occurrence_guid: OCCURRENCE.into(),
-            transform: identity_matrix(),
-            transform_offset: 473,
-        });
+        if let crate::records::feature::DesignScopePayload::DerivedInstance(slot) =
+            &mut scope.payload
+        {
+            *slot = Some(DesignDerivedInstanceConstruction {
+                reference_record_index: 305,
+                relation_record_index: 383,
+                carrier_record_index: 382,
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
+                transform: identity_matrix(),
+                transform_offset: 473,
+            });
+        }
         let native_occurrence = DesignComponentOccurrence {
             id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
-            class_tag: "380".into(),
+            class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
             record_index: 382,
             byte_offset: 0,
             component_record_index: 305,
-            component_guid: COMPONENT.into(),
+            component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
             component_guid_offset: 0,
-            occurrence_guid: OCCURRENCE.into(),
+            occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
             occurrence_guid_offset: 0,
-            occurrence_ordinal: 1,
-            transform: Some(identity_matrix()),
-            transform_offset: Some(209),
+            placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
+                ordinal: std::num::NonZeroU32::MIN,
+                transform: crate::records::Located {
+                    value: identity_matrix(),
+                    offset: 209,
+                },
+            },
         };
         let (definitions, occurrences) =
             super::project_local_components(&[scope.clone()], &[native_occurrence]);
@@ -409,12 +389,11 @@ mod tests {
         ));
 
         let mut feature = Feature::new(
-            FeatureId("f3d:model:feature#derived".into()),
+            FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
             1,
             FeatureDefinition::Native {
                 kind: "DerivedInstance".into(),
                 parameters: std::collections::BTreeMap::new(),
-                properties: std::collections::BTreeMap::new(),
             },
         );
         feature.native_ref = Some(scope.id.clone());

@@ -1,5 +1,5 @@
-use super::super::*;
 use super::*;
+use crate::om::reference_value::{DirectReference, RecordReference};
 
 #[test]
 fn decode_retains_strict_tiff_material_texture_assets() {
@@ -19,17 +19,25 @@ fn decode_retains_strict_tiff_material_texture_assets() {
         .native
         .namespace("nx")
         .expect("required invariant")
-        .arena_as::<super::super::MaterialTextureAsset>("material_texture_assets")
+        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
+            "material_texture_assets",
+        )
         .expect("required invariant");
 
     assert_eq!(assets.len(), 1);
-    assert_eq!(assets[0].name, "AISI Steel 4340");
-    assert_eq!(assets[0].byte_order, "little_endian");
-    assert_eq!(assets[0].version, 42);
-    assert_eq!(assets[0].first_ifd_offset, 8);
-    assert_eq!(assets[0].byte_len, texture.len() as u64);
+    assert_eq!(assets[0].name(), "AISI Steel 4340");
+    assert_eq!(
+        serde_json::to_value(assets[0].byte_order).unwrap(),
+        "little_endian"
+    );
+    assert_eq!(serde_json::to_value(&assets[0]).unwrap()["version"], 42);
+    assert_eq!(assets[0].first_ifd_offset(), 8);
+    assert_eq!(assets[0].byte_len(), texture.len() as u64);
     assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
-    assert_eq!(assets[0].source_entry, "/Root/materialsTif/AISI Steel 4340");
+    assert_eq!(
+        assets[0].source_entry(),
+        "/Root/materialsTif/AISI Steel 4340"
+    );
 }
 
 #[test]
@@ -55,7 +63,9 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
         .namespace("nx")
         .expect("required invariant");
     let assets = namespace
-        .arena_as::<super::super::MaterialTextureAsset>("material_texture_assets")
+        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
+            "material_texture_assets",
+        )
         .expect("required invariant");
     let catalog = namespace
         .arena_as::<super::super::MaterialTextureCatalogEntry>("material_texture_catalog_entries")
@@ -122,7 +132,7 @@ fn decode_rejects_duplicate_nx_configuration_stream_paths_atomically() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
     assert_eq!(result.ir().model.configurations.len(), 1);
-    assert!(result.ir().model.configurations[0].active.is_inactive());
+    assert!(!result.ir().model.configurations[0].active);
     assert!(result.ir().model.configurations[0].bodies.is_unresolved());
     assert!(result.ir().native.namespace("nx").is_none_or(|namespace| {
         namespace
@@ -169,9 +179,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         record: "nx:test:om-record#0".into(),
         object_id: Some(1),
         ordinal: 0,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: 0x1020_3040,
-        target_record: None,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(0x1020_3040)),
         source_entry: "om".into(),
         source_offset: 0,
     };
@@ -180,9 +188,11 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         record_id: 6,
         declared_count: 1,
         id_slots: [0; 4],
-        handles: vec![0x1020_3040],
-        closing_duplicate: true,
-        prefix_byte_len: 31,
+        handles: crate::container::extref_handles::ExtrefHandles::new(vec![
+            0x1020_3040,
+            0x1020_3040,
+        ])
+        .unwrap(),
         tail_byte_len: 0,
         source_entry: "external".into(),
         source_offset: 10,
@@ -191,8 +201,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         id: "nx:test:control-reference#0".into(),
         data_block: "nx:test:control-block#0".into(),
         ordinal: 0,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: 0x1020_3040,
+        reference: DirectReference::PersistentHandle(0x1020_3040),
         source_offset: 20,
     };
 
@@ -201,7 +210,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         handle_set_record: external.id.clone(),
         ordinal: 0,
         persistent_handle: 0x5060_7080,
-        tagged_reference: 7,
+        tagged_reference: crate::om::reference_value::Tagged28::try_from(7).unwrap(),
         source_offset: 30,
     };
 
@@ -225,8 +234,7 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
         id: format!("reference#{ordinal}"),
         data_block: "block#0".into(),
         ordinal,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: ordinal + 100,
+        reference: DirectReference::PersistentHandle(ordinal + 100),
         source_offset: offset,
     };
     let references = [
@@ -252,9 +260,7 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
         record: record.into(),
         object_id: Some(7),
         ordinal,
-        kind: super::super::ObjectReferenceKind::PersistentHandle,
-        value: ordinal + 100,
-        target_record: None,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
         source_entry: "om".into(),
         source_offset: offset,
     };
@@ -292,8 +298,8 @@ fn native_retains_rmfastload_table_and_member_words() {
         super::super::rmfastload_object_id_table(&container).expect("native RMFastLoad table");
 
     assert_eq!(table.id, "nx:rmfastload:object-id-table#0");
-    assert_eq!(table.members.len(), 50);
-    assert_eq!(table.raw_count, 50u32.to_le_bytes());
+    assert_eq!(table.members.as_slice().len(), 50);
+    assert_eq!(table.raw_count(), 50u32.to_le_bytes());
     assert_eq!(table.registry_source_offset, entry_offset);
     assert_eq!(
         table.source_offset,
@@ -305,12 +311,12 @@ fn native_retains_rmfastload_table_and_member_words() {
         object_ids[0].stable_identity.as_deref(),
         Some("nx:rmfastload:object-id-table#0:value#1")
     );
-    assert_eq!(object_ids[0].raw, 1u32.to_le_bytes());
+    assert_eq!(object_ids[0].raw(), 1u32.to_le_bytes());
     assert_eq!(object_ids[0].source_offset, table.source_offset + 4);
     assert_eq!(object_ids[49].ordinal, 49);
     assert_eq!(object_ids[49].value, 50);
-    assert_eq!(object_ids[49].raw, 50u32.to_le_bytes());
-    assert_eq!(table.members[49], object_ids[49].id);
+    assert_eq!(object_ids[49].raw(), 50u32.to_le_bytes());
+    assert_eq!(table.members.as_slice()[49], object_ids[49].id);
     assert_eq!(
         super::super::rmfastload_target_object_id(&object_ids, 0),
         Some(object_ids[0].id.clone())
@@ -341,11 +347,14 @@ fn decode_selects_dominant_rmfastload_body() {
 
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].members.len(), 50);
+    assert_eq!(tables[0].members.as_slice().len(), 50);
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
-    assert!(result.ir().model.bodies[0].id.0.starts_with("nx:s0:"));
+    assert!(result.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with("nx:s0:"));
     assert_eq!(result.ir().model.faces.len(), 50);
     assert_eq!(result.ir().model.surfaces.len(), 50);
     assert!(result
@@ -353,13 +362,13 @@ fn decode_selects_dominant_rmfastload_body() {
         .model
         .faces
         .iter()
-        .all(|face| face.id.0.starts_with("nx:s0:")));
+        .all(|face| face.id.as_str().starts_with("nx:s0:")));
     assert!(result
         .ir()
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.0.starts_with("nx:s0:")));
+        .all(|surface| surface.id.as_str().starts_with("nx:s0:")));
     assert_eq!(
         result
             .ir()
@@ -379,68 +388,97 @@ fn decode_selects_dominant_rmfastload_body() {
 
 #[test]
 fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
-    use super::super::{
-        data_block_column_index_tables, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
-    };
+    use super::super::data_block_column_index_tables;
+    use crate::native::om::column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
+    use crate::om::column_row::{LinkedRow, TargetRow};
+    use crate::om::compact::CompactIndexTarget;
 
-    let linked = |id: &str, target: u32, mode: u8, offset: u64| DataBlockLinkedIndexRow {
+    let linked = |id: &str, target: u32, mode, offset: u64| DataBlockLinkedIndexRow {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
-        first_index: 20,
-        raw_first_index: vec![20],
-        discriminator: 0x16,
-        target_index: target,
-        raw_target_index: vec![target as u8],
-        indices: [5, 6, 7],
-        raw_indices: [vec![5], vec![6], vec![7]],
-        data_blocks: [
-            format!("block#{target}"),
-            "block#5".into(),
-            "block#6".into(),
-            "block#7".into(),
-        ],
-        flag: 3,
-        mode,
+        frame: LinkedRow::<String, u64>::new(
+            crate::om::compact::CompactIndexAtom::from_wire(20, &[128, 20]).unwrap(),
+            crate::om::discriminators::LinkedIndexDiscriminator::Form16,
+            CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(target, &[target as u8])
+                    .unwrap(),
+                target: format!("block#{target}"),
+            },
+            [5, 6, 7].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            crate::om::discriminators::LinkedIndexFlag::Form03,
+            mode,
+            offset,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: format!("opening-block-{id}"),
         opening_block_offset: 8,
-        source_offset: offset,
-        first_index_source_offset: offset + 2,
-        target_index_source_offset: offset + 7,
-        index_source_offsets: [offset + 12, offset + 13, offset + 14],
     };
-    let target = |id: &str, index: u32, mode: u8, offset: u64| DataBlockTargetIndexRow {
+    let target = |id: &str, index: u32, mode, offset: u64| DataBlockTargetIndexRow {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
-        target_index: index,
-        raw_target_index: vec![index as u8],
-        indices: [5, 6, 7],
-        raw_indices: [vec![5], vec![6], vec![7]],
-        data_blocks: [
-            format!("block#{index}"),
-            "block#5".into(),
-            "block#6".into(),
-            "block#7".into(),
-        ],
-        mode,
+        frame: TargetRow::<String, u64>::new(
+            CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(index, &[index as u8])
+                    .unwrap(),
+                target: format!("block#{index}"),
+            },
+            [5, 6, 7].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            mode,
+            offset,
+        )
+        .unwrap(),
         source_entry: "entry".into(),
         opening_data_block: format!("opening-block-{id}"),
         opening_block_offset: 8,
-        source_offset: offset,
-        target_index_source_offset: offset + 5,
-        index_source_offsets: [offset + 10, offset + 11, offset + 12],
     };
     let linked_rows = [
-        linked("opening", 63, 7, 100),
-        linked("linked-59", 59, 4, 200),
-        linked("linked-58", 58, 4, 225),
+        linked(
+            "opening",
+            63,
+            crate::om::discriminators::IndexRowMode::Form07,
+            100,
+        ),
+        linked(
+            "linked-59",
+            59,
+            crate::om::discriminators::IndexRowMode::Form04,
+            200,
+        ),
+        linked(
+            "linked-58",
+            58,
+            crate::om::discriminators::IndexRowMode::Form04,
+            225,
+        ),
     ];
     let target_rows = [
-        target("target-62", 62, 7, 125),
-        target("target-61", 61, 7, 150),
-        target("target-60", 60, 4, 175),
+        target(
+            "target-62",
+            62,
+            crate::om::discriminators::IndexRowMode::Form07,
+            125,
+        ),
+        target(
+            "target-61",
+            61,
+            crate::om::discriminators::IndexRowMode::Form07,
+            150,
+        ),
+        target(
+            "target-60",
+            60,
+            crate::om::discriminators::IndexRowMode::Form04,
+            175,
+        ),
     ];
 
     let tables = data_block_column_index_tables(&linked_rows, &target_rows);
@@ -448,19 +486,32 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
     assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
     assert_eq!(tables[0].opening_linked_row, "opening");
     assert_eq!(
-        tables[0].target_rows,
+        tables[0].rows.target_rows(),
         ["target-62", "target-61", "target-60"]
     );
-    assert_eq!(tables[0].linked_rows, ["linked-59", "linked-58"]);
-    assert_eq!(tables[0].first_target_index, 63);
-    assert_eq!(tables[0].last_target_index, 58);
+    assert_eq!(tables[0].rows.linked_rows(), ["linked-59", "linked-58"]);
+    assert_eq!(
+        serde_json::to_value(&tables[0]).unwrap()["first_target_index"],
+        63
+    );
+    assert_eq!(tables[0].rows.last_target_index(), 58);
     assert_eq!(tables[0].source_offset, 100);
 
     let mut gap = target_rows.clone();
-    gap[1].target_index = 60;
+    gap[1] = target(
+        "target-61",
+        60,
+        crate::om::discriminators::IndexRowMode::Form07,
+        150,
+    );
     assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
     let mut incomplete_mode = target_rows.clone();
-    incomplete_mode[2].mode = 7;
+    incomplete_mode[2] = target(
+        "target-60",
+        60,
+        crate::om::discriminators::IndexRowMode::Form07,
+        175,
+    );
     assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
 }
 
@@ -485,9 +536,7 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         record_id: 7,
         declared_count: 2,
         id_slots: [0, 3, 1, 2],
-        handles: vec![10, 20],
-        closing_duplicate: true,
-        prefix_byte_len: 40,
+        handles: crate::container::extref_handles::ExtrefHandles::new(vec![10, 20, 20]).unwrap(),
         tail_byte_len: 5,
         source_entry: "stream".into(),
         source_offset: 20,
@@ -496,7 +545,9 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
-        uses.iter().map(|use_| use_.slot).collect::<Vec<_>>(),
+        uses.iter()
+            .map(|use_| u8::from(use_.slot))
+            .collect::<Vec<_>>(),
         [0, 1, 2, 3]
     );
     assert_eq!(

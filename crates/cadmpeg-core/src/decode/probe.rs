@@ -61,8 +61,6 @@ pub enum ParseErrorKind {
     UnexpectedEof {
         /// How many bytes the read needed.
         needed: u64,
-        /// How many bytes remained in the view.
-        remaining: u64,
     },
     /// A value inside the view was inconsistent.
     InvalidValue,

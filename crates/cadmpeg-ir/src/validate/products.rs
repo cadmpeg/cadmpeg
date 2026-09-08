@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::document::CadIr;
-use crate::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
+use crate::products::{AssemblyGraph, OccurrenceParent, OperandContainer, PrototypeReference};
 use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -54,9 +54,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             PrototypeReference::Local { definition } => {
                 definitions.contains_key(definition.as_str())
             }
-            PrototypeReference::External { document, .. } => {
-                document.path.is_some() ^ document.document_id.is_some()
-            }
+            PrototypeReference::External { .. } => true,
             PrototypeReference::Unresolved => true,
         };
         let valid_parent = match &occurrence.parent {
@@ -70,17 +68,21 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str()),
         };
         let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
-        let auxiliary_definitions = [
-            occurrence.element_component.as_ref(),
-            occurrence.copy_on_change_source.as_ref(),
-            occurrence.copy_on_change_group.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        .all(|definition| definitions.contains_key(definition.as_str()));
-        let affine = occurrence.transform.is_affine()
-            && occurrence.prototype_transform.is_affine()
-            && occurrence.scale.iter().all(|value| value.is_finite());
+        let auxiliary_definitions = occurrence.link.as_ref().is_none_or(|link| {
+            [
+                link.element_component.as_ref(),
+                link.copy_on_change
+                    .as_ref()
+                    .and_then(|copy| copy.source.as_ref()),
+                link.copy_on_change
+                    .as_ref()
+                    .and_then(|copy| copy.group.as_ref()),
+            ]
+            .into_iter()
+            .flatten()
+            .all(|definition| definitions.contains_key(definition.as_str()))
+        });
+        let affine = occurrence.scale.iter().all(|value| value.is_finite());
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions || !affine
         {
             invalid(
@@ -92,59 +94,41 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 
     for joint in &ir.model.assembly_joints {
-        let expected = if joint.kind == crate::products::JointKind::Grounded {
-            1
-        } else {
-            2
-        };
-        let operands_valid = joint.operands.len() == expected
-            && joint.frames.len() == expected
-            && (joint.offset_frames.is_empty() || joint.offset_frames.len() == expected)
-            && joint.operands.iter().all(|operand| {
-                let external_valid = operand.external_document.as_ref().is_none_or(|document| {
-                    document.path.is_some() ^ document.document_id.is_some()
+        let operands_valid =
+            joint
+                .connectors()
+                .all(|connector| match &connector.operand.container {
+                    OperandContainer::Occurrence(occurrence) => {
+                        occurrences.contains_key(occurrence.as_str())
+                    }
+                    OperandContainer::Root | OperandContainer::External(_) => true,
                 });
-                let resolution_valid =
-                    !(operand.external_document.is_some() && operand.occurrence.is_some());
-                operand.object.is_some()
-                    && resolution_valid
-                    && operand
-                        .occurrence
-                        .as_ref()
-                        .is_none_or(|occurrence| occurrences.contains_key(occurrence.as_str()))
-                    && external_valid
-            });
         let finite = joint
-            .frames
-            .iter()
-            .chain(&joint.offset_frames)
-            .all(crate::transform::Transform::is_affine)
-            && joint
-                .angle
-                .into_iter()
-                .chain(joint.translation_offset.into_iter().flatten())
-                .chain(joint.distance)
-                .chain(joint.distance2)
-                .chain(
-                    joint
-                        .angular_limits
-                        .iter()
-                        .chain(joint.linear_limits.iter())
-                        .flat_map(|limits| [limits.minimum, limits.maximum])
-                        .flatten(),
-                )
-                .all(f64::is_finite);
-        let ordered = [joint.angular_limits.as_ref(), joint.linear_limits.as_ref()]
+            .angle()
+            .into_iter()
+            .chain(joint.translation_offset().into_iter().flatten())
+            .chain(joint.distance())
+            .chain(joint.distance2())
+            .chain(
+                joint
+                    .angular_limits()
+                    .into_iter()
+                    .chain(joint.linear_limits())
+                    .flat_map(|limits| [limits.minimum(), limits.maximum()])
+                    .flatten(),
+            )
+            .all(f64::is_finite);
+        let ordered = [joint.angular_limits(), joint.linear_limits()]
             .into_iter()
             .flatten()
-            .all(|limits| match (limits.minimum, limits.maximum) {
+            .all(|limits| match (limits.minimum(), limits.maximum()) {
                 (Some(minimum), Some(maximum)) => minimum <= maximum,
                 _ => true,
             });
         if !operands_valid || !finite || !ordered {
             invalid(
                 findings,
-                &joint.id.0,
+                joint.id.as_str(),
                 "invalid assembly joint operands, frames, or limits",
             );
         }
@@ -162,84 +146,70 @@ fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::check_products;
     use crate::document::CadIr;
     use crate::ids::OccurrenceId;
     use crate::products::{
-        AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointId, JointKind,
-        JointOperand, Occurrence, OccurrenceParent, PrototypeReference,
+        AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, OccurrenceParent,
+        PairedJointKind, PrototypeReference,
     };
     use crate::transform::Transform;
-    use crate::units::Units;
 
     fn root_operand(object: &str) -> JointOperand {
-        JointOperand {
-            occurrence: None,
-            external_document: None,
-            object: Some(object.into()),
-            subelements: Vec::new(),
-        }
+        JointOperand::root(object, Vec::new())
     }
 
     #[test]
     fn joint_operands_allow_document_root_and_reject_two_qualifiers() {
-        let mut ir = CadIr::empty(Units::default());
-        ir.model.assembly_joints.push(AssemblyJoint {
-            id: JointId("test:model:joint#root".into()),
-            kind: JointKind::Fixed,
-            operands: vec![root_operand("root:first"), root_operand("root:second")],
-            frames: vec![Transform::identity(), Transform::identity()],
-            offset_frames: Vec::new(),
-            suppressed: false,
-            detached: [false; 2],
-            angle: None,
-            translation_offset: None,
-            distance: None,
-            distance2: None,
-            angular_limits: None,
-            linear_limits: None,
-            properties: BTreeMap::new(),
-            native_ref: None,
-        });
+        let mut ir = CadIr::empty();
+        ir.model.assembly_joints.push(AssemblyJoint::paired(
+            JointId::mint("test:model:joint#root").expect("identity grammar"),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                JointConnector {
+                    operand: root_operand("root:first"),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+                JointConnector {
+                    operand: root_operand("root:second"),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+            ],
+            None,
+        ));
 
         let mut findings = Vec::new();
         check_products(&ir, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
 
-        let occurrence = OccurrenceId("test:model:occurrence#placed".into());
+        let occurrence =
+            OccurrenceId::mint("test:model:occurrence#placed").expect("valid identity");
         ir.model.occurrences.push(Occurrence {
             id: occurrence.clone(),
             prototype: PrototypeReference::Unresolved,
             parent: OccurrenceParent::Root,
             ordinal: 0,
             transform: Transform::identity(),
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: None,
         });
-        ir.model.assembly_joints[0].operands[0].occurrence = Some(occurrence);
-        ir.model.assembly_joints[0].operands[0].external_document =
-            Some(ExternalDocumentReference {
-                path: Some("external.f3d".into()),
-                document_id: None,
-                resolution: ExternalResolution::Unresolved,
-            });
-
-        findings.clear();
-        check_products(&ir, &mut findings);
-        assert_eq!(findings.len(), 1, "{findings:?}");
-        assert_eq!(findings[0].entity.as_deref(), Some("test:model:joint#root"));
+        let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
+        wire["operands"][0]["occurrence"] = serde_json::json!(occurrence.as_str());
+        wire["operands"][0]["external_document"] = serde_json::json!({
+            "path": "external.f3d",
+            "resolution": "unresolved"
+        });
+        assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
     }
 }

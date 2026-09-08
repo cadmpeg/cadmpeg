@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::chunks::{
     anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
     parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
     TCODE_CRC, TCODE_SHORT,
 };
-use crate::layout::endoffile_record_v50 as eof_v50;
+use crate::layout::endoffile_record_wide as eof_wide;
 use crate::layout::file_header;
-use crate::layout::long_chunk_header_v2 as long_v2;
-use crate::layout::long_chunk_header_v50 as long_v50;
+use crate::layout::long_chunk_header_narrow as long_narrow;
+use crate::layout::long_chunk_header_wide as long_wide;
 use crate::test_support::test_dump::*;
 use crate::{RhinoCodec, MAGIC};
 
@@ -81,32 +81,32 @@ fn parses_widths_short_long_and_bounds() {
     bytes.extend(42_i32.to_le_bytes());
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
-    assert!(parsed.short);
-    assert_eq!(parsed.value, 42);
-    assert_eq!(parsed.next_offset, long_v2::LEN);
+    assert!(parsed.short());
+    assert_eq!(parsed.value(), 42);
+    assert_eq!(parsed.next_offset(), long_narrow::LEN);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
-    assert_eq!(parsed.body, long_v2::LEN..11);
+    assert_eq!(parsed.body(), long_narrow::LEN..11);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..11);
-    assert_eq!(parsed.next_offset, 11);
+    assert_eq!(parsed.next_offset(), 11);
 
     let bytes = long_chunk(ArchiveVersion::V5, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).expect("required invariant");
-    assert_eq!(parsed.body, long_v50::LEN..15);
+    assert_eq!(parsed.body(), long_wide::LEN..15);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..15);
-    assert_eq!(parsed.next_offset, 15);
+    assert_eq!(parsed.next_offset(), 15);
 
     let mut bad = 9_u32.to_le_bytes().to_vec();
     bad.extend((-1_i64).to_le_bytes());
     let bodyless = chunk_at(&bad, 0, bad.len(), ArchiveVersion::V5, false)
         .expect("negative long value is bodyless");
-    assert!(bodyless.short);
-    assert_eq!(bodyless.body.len(), 0);
+    assert!(bodyless.short());
+    assert_eq!(bodyless.body().len(), 0);
     let mut overflow = 9_u32.to_le_bytes().to_vec();
     overflow.extend(i32::MAX.to_le_bytes());
     assert!(matches!(
@@ -140,11 +140,11 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
 
     assert_eq!(
         crate::chunks::checksum_kind(ArchiveVersion::V1, 0x0001_0000, false),
-        crate::chunks::ChecksumKind::Crc16
+        Some(crate::chunks::ChecksumKind::Crc16)
     );
     assert_eq!(
         crate::chunks::checksum_kind(ArchiveVersion::V1, 0x0002_fffd, true),
-        crate::chunks::ChecksumKind::Crc16
+        Some(crate::chunks::ChecksumKind::Crc16)
     );
 }
 
@@ -188,7 +188,7 @@ fn validates_eof_width_size_and_truncation() {
         let mut mismatch = bytes.clone();
         let size_offset = marker_start
             + if archive.uses_eight_byte_values() {
-                eof_v50::FILE_SIZE
+                eof_wide::FILE_SIZE
             } else {
                 8
             };
@@ -223,16 +223,16 @@ fn nested_bounds_and_unknown_skip_are_exact() {
         chunk_at(&parent, 0, parent.len(), ArchiveVersion::V5, false).expect("required invariant");
     let nested = chunk_at(
         &parent,
-        first.body.start,
-        first.body.end,
+        first.body().start,
+        first.body().end,
         ArchiveVersion::V5,
         false,
     )
     .expect("required invariant");
-    assert_eq!(nested.next_offset, first.body.start + child.len());
+    assert_eq!(nested.next_offset(), first.body().start + child.len());
     let next = chunk_at(
         &parent,
-        first.next_offset,
+        first.next_offset(),
         parent.len(),
         ArchiveVersion::V5,
         false,
@@ -242,8 +242,8 @@ fn nested_bounds_and_unknown_skip_are_exact() {
     assert!(matches!(
         chunk_at(
             &parent,
-            first.body.start,
-            first.body.start + child.len() - 1,
+            first.body().start,
+            first.body().start + child.len() - 1,
             ArchiveVersion::V5,
             false
         ),
@@ -314,7 +314,9 @@ fn top_level_framing_preserves_truncation_classification() {
             &mut Cursor::new(truncated),
             &InspectOptions::default()
         ),
-        Err(CodecError::Truncated { location, context })
-            if location.offset == 31 && context.operation == "rhino chunk framing"
+        Err(CodecError::Truncated {
+            location,
+            operation
+        }) if location.offset == 31 && operation == "rhino chunk framing"
     ));
 }

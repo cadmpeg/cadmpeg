@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode the auxiliary BRep-cell carrier of a `SurfaceTrim` operation.
 
-use crate::container::{role, ContainerScan};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::{exact_indexed_header_at, marked_record_reference};
 use crate::design::decode::sketch::{
     indexed_record_index, next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::ids::{native_design_surface_trim_operation_id, native_stream};
-use crate::records::{
+use crate::records::feature::{
     DesignParameterScope, DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord,
     DesignSurfaceTrimOperation,
 };
@@ -28,10 +30,12 @@ pub(crate) fn exact_surface_trim_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceTrimOperation> {
-    if scope.kind != "SurfaceTrim" || scope.reference_members.len() != 4 {
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SurfaceTrim
+        || scope.reference_members.len() != 4
+    {
         return None;
     }
-    let selection_record_index = *scope.reference_members.get(3)?;
+    let selection_record_index = *scope.reference_members.values().nth(3)?;
     let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
     let selection_class_tag =
         exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
@@ -52,7 +56,7 @@ pub(crate) fn exact_surface_trim_operation(
         chain_records.push(DesignSurfaceTrimChainRecord {
             record_index,
             byte_offset: u64::try_from(chain_start).ok()?,
-            class_tag,
+            class_tag: class_tag.try_into().ok()?,
             frame_length,
         });
         chain_start = frame_end;
@@ -128,9 +132,9 @@ pub(crate) fn exact_surface_trim_operation(
         chain_records,
         cell_table_record_index,
         cell_table_byte_offset: u64::try_from(primary).ok()?,
-        cell_table_class_tag,
+        cell_table_class_tag: cell_table_class_tag.try_into().ok()?,
         cell_table_frame_length: u64::try_from(paired.checked_sub(primary)?).ok()?,
-        cell_table_paired_class_tag,
+        cell_table_paired_class_tag: cell_table_paired_class_tag.try_into().ok()?,
         cell_table_paired_byte_offset: u64::try_from(paired).ok()?,
         cell_count,
         cell_count_offset: u64::try_from(cell_count_offset).ok()?,
@@ -148,11 +152,15 @@ pub(crate) fn decode_surface_trim_operations(
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "SurfaceTrim") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| scope.kind() == crate::records::feature::DesignFeatureKind::SurfaceTrim)
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

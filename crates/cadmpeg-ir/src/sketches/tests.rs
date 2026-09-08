@@ -8,6 +8,84 @@ use crate::validate::validate_neutral;
 use crate::CadIr;
 
 #[test]
+fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
+    use crate::math::{Point2, Point3};
+    use crate::sketches::{
+        SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
+        SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+    };
+
+    let planar = SketchEntity::new(
+        SketchEntityId("synthetic:test:sketch-entity#0".into()),
+        SketchId("synthetic:test:sketch#0".into()),
+        SketchGeometry::Point {
+            position: Point2::new(1.0, 2.0),
+        },
+    )
+    .with_construction(true)
+    .with_native_ref(Some("native-planar".into()))
+    .with_geometry_ref(Some("native-curve".into()))
+    .with_endpoint_refs(vec!["native-point".into()]);
+    let planar_wire = serde_json::to_value(&planar).unwrap();
+    assert_eq!(
+        serde_json::from_value::<SketchEntity>(planar_wire.clone()).unwrap(),
+        planar
+    );
+    assert_eq!(planar_wire["id"], "synthetic:test:sketch-entity#0");
+    let mut empty_planar = planar_wire;
+    empty_planar["id"] = serde_json::Value::String(String::new());
+    assert!(serde_json::from_value::<SketchEntity>(empty_planar)
+        .unwrap_err()
+        .to_string()
+        .contains("SketchEntity.id"));
+
+    let spatial = SpatialSketchEntity::new(
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#0".into()),
+        SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        SpatialSketchGeometry::Point {
+            position: Point3::new(1.0, 2.0, 3.0),
+        },
+    )
+    .with_construction(true)
+    .with_native_ref(Some("native-spatial".into()))
+    .with_geometry_ref(Some("native-curve".into()))
+    .with_endpoint_refs(vec!["native-point".into()]);
+    let spatial_wire = serde_json::to_value(&spatial).unwrap();
+    assert_eq!(
+        serde_json::from_value::<SpatialSketchEntity>(spatial_wire.clone()).unwrap(),
+        spatial
+    );
+    assert_eq!(spatial_wire["id"], "synthetic:test:spatial-sketch-entity#0");
+    let mut empty_spatial = spatial_wire;
+    empty_spatial["id"] = serde_json::Value::String(String::new());
+    assert!(serde_json::from_value::<SpatialSketchEntity>(empty_spatial)
+        .unwrap_err()
+        .to_string()
+        .contains("SpatialSketchEntity.id"));
+
+    assert!(std::panic::catch_unwind(|| {
+        SketchEntity::new(
+            SketchEntityId(String::new()),
+            SketchId("synthetic:test:sketch#0".into()),
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        )
+    })
+    .is_err());
+    assert!(std::panic::catch_unwind(|| {
+        SpatialSketchEntity::new(
+            SpatialSketchEntityId(String::new()),
+            SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+            SpatialSketchGeometry::Point {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        )
+    })
+    .is_err());
+}
+
+#[test]
 fn polygon_constraints_round_trip_and_require_distinct_members() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
@@ -33,22 +111,17 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
     let members = (0..3)
         .map(|ordinal| SketchEntityId(format!("synthetic:test:polygon-point#{ordinal}")))
         .collect::<Vec<_>>();
-    ir.model.sketch_entities.extend(
-        members
-            .iter()
-            .enumerate()
-            .map(|(ordinal, id)| SketchEntity {
-                id: id.clone(),
-                sketch: sketch.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
+    ir.model
+        .sketch_entities
+        .extend(members.iter().enumerate().map(|(ordinal, id)| {
+            SketchEntity::new(
+                id.clone(),
+                sketch.clone(),
+                SketchGeometry::Point {
                     position: Point2::new(ordinal as f64, 0.0),
                 },
-            }),
-    );
+            )
+        }));
     let constraint = SketchConstraintId("synthetic:test:polygon-constraint#0".into());
     ir.model.sketch_constraints.push(SketchConstraint {
         id: constraint.clone(),
@@ -90,13 +163,13 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        OffsetParameter, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
         SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityId,
         SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
-    let parameter = ParameterId("synthetic:test:parameter#0".into());
+    let parameter = ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar");
     let definitions = vec![
         SketchConstraintDefinition::Disabled,
         SketchConstraintDefinition::CoincidentLoci {
@@ -120,8 +193,10 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 source_reversed: false,
             }],
             distance: Length(2.0),
-            parameter: Some(parameter.clone()),
-            parameter_factor: Some(-1.0),
+            parameter: Some(OffsetParameter {
+                id: parameter.clone(),
+                negated: true,
+            }),
         },
         SketchConstraintDefinition::Concentric {
             first: entity.clone(),
@@ -176,18 +251,20 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
         },
-        SketchConstraintDefinition::HorizontalLoci {
+        SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
+            axis: crate::sketches::SketchCoordinateAxis::V,
         },
         SketchConstraintDefinition::VerticalDistance {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
         },
-        SketchConstraintDefinition::VerticalLoci {
+        SketchConstraintDefinition::SameCoordinate {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
+            axis: crate::sketches::SketchCoordinateAxis::U,
         },
         SketchConstraintDefinition::RepeatedDistance {
             measurements: vec![SketchDistanceMeasurement::Horizontal {
@@ -209,17 +286,16 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             incident: SketchLocus::Start(entity.clone()),
             refracted: SketchLocus::End(entity.clone()),
             interface: entity.clone(),
-            parameter: ParameterId("synthetic:test:parameter#0".into()),
+            parameter: ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar"),
         },
         SketchConstraintDefinition::Weight {
             entity: entity.clone(),
-            parameter: ParameterId("synthetic:test:parameter#0".into()),
+            parameter: ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar"),
         },
         SketchConstraintDefinition::InternalAlignment {
             helper: entity.clone(),
             parent: entity.clone(),
-            alignment: crate::sketches::SketchInternalAlignment::BsplineControlPoint,
-            index: Some(2),
+            alignment: crate::sketches::SketchInternalAlignment::BsplineControlPoint(2),
         },
         SketchConstraintDefinition::Group {
             elements: vec![SketchLocus::Entity(entity.clone())],
@@ -252,18 +328,14 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity.clone(),
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    });
+    ));
     let constraint_id = SketchConstraintId("synthetic:test:constraint#locus".into());
     ir.model.sketch_constraints.push(SketchConstraint {
         id: constraint_id.clone(),
@@ -362,14 +434,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             (midpoint.clone(), Point2::new(2.0, 1.0)),
         ]
         .into_iter()
-        .map(|(id, position)| SketchEntity {
-            id,
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point { position },
+        .map(|(id, position)| {
+            SketchEntity::new(id, sketch.clone(), SketchGeometry::Point { position })
         }),
     );
     ir.model
@@ -407,7 +473,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         .model
         .sketch_entities
         .iter_mut()
-        .find(|entity| entity.id == midpoint)
+        .find(|entity| entity.id() == &midpoint)
         .unwrap();
     midpoint_entity.geometry = SketchGeometry::Point {
         position: Point2::new(3.0, 1.0),
@@ -471,7 +537,7 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
 fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::features::{DesignParameter, Length, ParameterId, ParameterValue};
     use crate::sketches::{
-        SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
+        OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
         SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
     };
@@ -495,63 +561,59 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         }],
         native_ref: None,
     });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: circle.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: Length(4.0),
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            circle.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Circle {
+                center: Point3::new(1.0, 2.0, 3.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: Length(4.0),
+            },
+        ));
     let parallel_line =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#parallel-line".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: parallel_line.clone(),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: Point3::new(0.0, 2.0f64.sqrt(), -2.0f64.sqrt()),
-            end: Point3::new(1.0, 1.0 + 2.0f64.sqrt(), 1.0 - 2.0f64.sqrt()),
-        },
-    });
+    ir.model.spatial_sketch_entities.push(
+        SpatialSketchEntity::new(
+            parallel_line.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Line {
+                start: Point3::new(0.0, 2.0f64.sqrt(), -2.0f64.sqrt()),
+                end: Point3::new(1.0, 1.0 + 2.0f64.sqrt(), 1.0 - 2.0f64.sqrt()),
+            },
+        )
+        .with_construction(true),
+    );
     let collinear_line =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#collinear-line".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: collinear_line.clone(),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: Point3::new(2.0, 2.0, 2.0),
-            end: Point3::new(3.0, 3.0, 3.0),
-        },
-    });
+    ir.model.spatial_sketch_entities.push(
+        SpatialSketchEntity::new(
+            collinear_line.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Line {
+                start: Point3::new(2.0, 2.0, 2.0),
+                end: Point3::new(3.0, 3.0, 3.0),
+            },
+        )
+        .with_construction(true),
+    );
     let repeated_parallel_line =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#repeated-parallel-line".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: repeated_parallel_line.clone(),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: Point3::new(2.0, 2.0 + 2.0f64.sqrt(), 2.0 - 2.0f64.sqrt()),
-            end: Point3::new(3.0, 3.0 + 2.0f64.sqrt(), 3.0 - 2.0f64.sqrt()),
-        },
-    });
-    let distance = ParameterId("synthetic:test:parameter#spatial-distance".into());
+    ir.model.spatial_sketch_entities.push(
+        SpatialSketchEntity::new(
+            repeated_parallel_line.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Line {
+                start: Point3::new(2.0, 2.0 + 2.0f64.sqrt(), 2.0 - 2.0f64.sqrt()),
+                end: Point3::new(3.0, 3.0 + 2.0f64.sqrt(), 3.0 - 2.0f64.sqrt()),
+            },
+        )
+        .with_construction(true),
+    );
+    let distance =
+        ParameterId::mint("synthetic:test:parameter#spatial-distance").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: distance.clone(),
         owner: None,
@@ -565,7 +627,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         pmi: None,
         native_ref: None,
     });
-    let line_length = ParameterId("synthetic:test:parameter#spatial-line-length".into());
+    let line_length = ParameterId::mint("synthetic:test:parameter#spatial-line-length")
+        .expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: line_length.clone(),
         owner: None,
@@ -580,88 +643,80 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         native_ref: None,
     });
     let surface = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: surface.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-            ],
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            surface.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::NurbsSurface {
+                surface: crate::geometry::BsplineSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                    ],
+                )
+                .unwrap(),
+            },
+        ));
     let surface_point =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface-point".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: surface_point.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
-            position: Point3::new(0.5, 0.5, 0.0),
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            surface_point.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Point {
+                position: Point3::new(0.5, 0.5, 0.0),
+            },
+        ));
     let line = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: line.clone(),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: Point3::new(0.0, 0.0, 0.0),
-            end: Point3::new(1.0, 1.0, 1.0),
-        },
-    });
+    ir.model.spatial_sketch_entities.push(
+        SpatialSketchEntity::new(
+            line.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Line {
+                start: Point3::new(0.0, 0.0, 0.0),
+                end: Point3::new(1.0, 1.0, 1.0),
+            },
+        )
+        .with_construction(true),
+    );
     let point = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#point".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: point.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
-            position: Point3::new(0.5, 0.5, 0.5),
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            point.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Point {
+                position: Point3::new(0.5, 0.5, 0.5),
+            },
+        ));
     let measured_point =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#measured-point".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: measured_point.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
-            position: Point3::new(0.5, 0.5, 2.5),
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            measured_point.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Point {
+                position: Point3::new(0.5, 0.5, 2.5),
+            },
+        ));
     let coincident_point =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#coincident-point".into());
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: coincident_point.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
-            position: Point3::new(0.5, 0.5, 0.5),
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            coincident_point.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::Point {
+                position: Point3::new(0.5, 0.5, 0.5),
+            },
+        ));
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
@@ -708,8 +763,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                     1.0 / 6.0f64.sqrt(),
                 ),
                 distance: Length(2.0),
-                parameter: Some(distance.clone()),
-                parameter_factor: Some(1.0),
+                parameter: Some(OffsetParameter {
+                    id: distance.clone(),
+                    negated: false,
+                }),
             },
             native_ref: None,
         });
@@ -942,4 +999,494 @@ fn spatial_sketch_paths_round_trip_through_json() {
     };
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
+}
+
+fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection {
+    crate::sketches::SketchPatternDirection {
+        direction: axis,
+        spacing: crate::features::Length(2.0),
+        distance: None,
+        count_parameter: None,
+    }
+}
+
+#[test]
+fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
+    use crate::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchPatternDistance, SketchPatternInstance,
+        SketchRectangularPattern,
+    };
+
+    let mut first_direction = pattern_direction([1.0, 0.0]);
+    first_direction.distance = Some(SketchPatternDistance::Spacing(
+        crate::features::ParameterId::mint("test:parameter#spacing").expect("identity grammar"),
+    ));
+    let pattern = SketchRectangularPattern::new(
+        [first_direction, pattern_direction([0.0, 1.0])],
+        vec![
+            vec![SketchPatternInstance {
+                entities: vec![SketchEntityId("test:sketch-entity#0".into())],
+            }],
+            vec![SketchPatternInstance {
+                entities: vec![SketchEntityId("test:sketch-entity#1".into())],
+            }],
+        ],
+    )
+    .unwrap();
+    let definition = SketchConstraintDefinition::RectangularPattern { pattern };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["directions"][0]["count"], 2);
+    assert_eq!(wire["directions"][1]["count"], 1);
+    assert_eq!(
+        wire["directions"][0]["spacing_parameter"],
+        "test:parameter#spacing"
+    );
+    assert!(wire["directions"][0].get("span_parameter").is_none());
+    assert_eq!(wire["instances"][0]["indices"], serde_json::json!([0, 0]));
+    assert_eq!(wire["instances"][1]["indices"], serde_json::json!([1, 0]));
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut split_count = wire.clone();
+    split_count["directions"][0]["count"] = serde_json::json!(3);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(split_count).is_err());
+    let mut conflicting_distance = wire.clone();
+    conflicting_distance["directions"][0]["span_parameter"] =
+        serde_json::json!("test:parameter#span");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(conflicting_distance).is_err());
+    let mut displaced = wire;
+    displaced["instances"][1]["indices"] = serde_json::json!([0, 1]);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(displaced).is_err());
+}
+
+#[test]
+fn circular_pattern_derives_count_and_indices_on_the_wire() {
+    use crate::features::Angle;
+    use crate::sketches::{
+        SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinition,
+        SketchEntityId,
+    };
+
+    let pattern = SketchCircularPattern::new(
+        SketchEntityId("test:sketch-entity#center".into()),
+        Angle(1.0),
+        None,
+        None,
+        vec![
+            SketchCircularPatternInstance {
+                angle: Angle(0.0),
+                entities: vec![SketchEntityId("test:sketch-entity#0".into())],
+            },
+            SketchCircularPatternInstance {
+                angle: Angle(1.0),
+                entities: vec![SketchEntityId("test:sketch-entity#1".into())],
+            },
+        ],
+    )
+    .unwrap();
+    let definition = SketchConstraintDefinition::CircularPattern { pattern };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["count"], 2);
+    assert_eq!(wire["instances"][0]["index"], 0);
+    assert_eq!(wire["instances"][1]["index"], 1);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut split_count = wire.clone();
+    split_count["count"] = serde_json::json!(3);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(split_count).is_err());
+    let mut displaced = wire;
+    displaced["instances"][1]["index"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(displaced).is_err());
+}
+
+#[test]
+fn offset_parameter_keeps_the_paired_factor_wire_shape() {
+    use crate::features::{Length, ParameterId};
+    use crate::sketches::{
+        OffsetParameter, SketchConstraintDefinition, SketchEntityId, SketchOffsetPair,
+    };
+
+    let definition = SketchConstraintDefinition::Offset {
+        pairs: vec![SketchOffsetPair {
+            source: SketchEntityId("test:sketch-entity#source".into()),
+            result: SketchEntityId("test:sketch-entity#result".into()),
+            source_reversed: false,
+        }],
+        distance: Length(2.0),
+        parameter: Some(OffsetParameter {
+            id: ParameterId::mint("test:parameter#offset").expect("identity grammar"),
+            negated: true,
+        }),
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["parameter"], "test:parameter#offset");
+    assert_eq!(wire["parameter_factor"], -1.0);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut invalid_factor = wire.clone();
+    invalid_factor["parameter_factor"] = serde_json::json!(0.0);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(invalid_factor).is_err());
+    let mut split = wire;
+    split.as_object_mut().unwrap().remove("parameter_factor");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(split).is_err());
+}
+
+#[test]
+fn conic_bounds_keep_the_paired_wire_fields() {
+    use crate::features::{Angle, Length};
+    use crate::math::Point2;
+    use crate::sketches::SketchGeometry;
+
+    let cases = [
+        SketchGeometry::Ellipse {
+            center: Point2::new(1.0, 2.0),
+            major_angle: Angle(0.25),
+            major_radius: Length(4.0),
+            minor_radius: Length(2.0),
+            bounds: Some([Angle(-0.5), Angle(1.5)]),
+        },
+        SketchGeometry::Hyperbola {
+            center: Point2::new(1.0, 2.0),
+            major_angle: Angle(0.25),
+            major_radius: Length(4.0),
+            minor_radius: Length(2.0),
+            bounds: Some([-0.5, 1.5]),
+        },
+        SketchGeometry::Parabola {
+            vertex: Point2::new(1.0, 2.0),
+            axis_angle: Angle(0.25),
+            focal_length: Length(2.0),
+            bounds: Some([-0.5, 1.5]),
+        },
+    ];
+
+    for geometry in cases {
+        let wire = serde_json::to_value(&geometry).unwrap();
+        let start_field = if matches!(&geometry, SketchGeometry::Ellipse { .. }) {
+            "start_angle"
+        } else {
+            "start_parameter"
+        };
+        let end_field = if matches!(&geometry, SketchGeometry::Ellipse { .. }) {
+            "end_angle"
+        } else {
+            "end_parameter"
+        };
+        assert_eq!(wire[start_field], -0.5);
+        assert_eq!(wire[end_field], 1.5);
+        assert_eq!(
+            serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
+            geometry
+        );
+
+        let mut split = wire;
+        split.as_object_mut().unwrap().remove(end_field);
+        assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+    }
+}
+
+#[test]
+fn text_placement_keeps_the_paired_wire_fields() {
+    use crate::features::{Angle, Length};
+    use crate::math::Point2;
+    use crate::sketches::{SketchGeometry, TextPlacement};
+
+    let geometry = SketchGeometry::Text {
+        text: "cadmpeg".into(),
+        font_family: "sans".into(),
+        font_weight: 400,
+        height: Length(4.0),
+        width_factor: None,
+        placement: Some(TextPlacement {
+            anchor: Point2::new(1.0, 2.0),
+            rotation: Angle(0.5),
+        }),
+        horizontal_alignment: None,
+        vertical_alignment: None,
+    };
+    let wire = serde_json::to_value(&geometry).unwrap();
+    assert_eq!(wire["anchor"], serde_json::json!({ "u": 1.0, "v": 2.0 }));
+    assert_eq!(wire["rotation"], 0.5);
+    assert_eq!(
+        serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
+        geometry
+    );
+
+    let mut split = wire;
+    split.as_object_mut().unwrap().remove("rotation");
+    assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+}
+
+#[test]
+fn internal_alignment_index_stays_with_bspline_variants() {
+    use crate::sketches::{SketchConstraintDefinition, SketchEntityId, SketchInternalAlignment};
+
+    let definition = SketchConstraintDefinition::InternalAlignment {
+        helper: SketchEntityId("test:sketch-entity#helper".into()),
+        parent: SketchEntityId("test:sketch-entity#parent".into()),
+        alignment: SketchInternalAlignment::BsplineControlPoint(2),
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["alignment"], "bspline_control_point");
+    assert_eq!(wire["index"], 2);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut missing_index = wire.clone();
+    missing_index.as_object_mut().unwrap().remove("index");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(missing_index).is_err());
+    let mut extraneous_index = wire;
+    extraneous_index["alignment"] = serde_json::json!("ellipse_focus1");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(extraneous_index).is_err());
+}
+
+#[test]
+fn same_coordinate_accepts_legacy_relation_tags() {
+    use crate::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId,
+        SketchLocus,
+    };
+
+    let first = SketchLocus::Entity(SketchEntityId("test:sketch-entity#first".into()));
+    let second = SketchLocus::Entity(SketchEntityId("test:sketch-entity#second".into()));
+    for (kind, axis) in [
+        ("horizontal_loci", SketchCoordinateAxis::V),
+        ("horizontal_points", SketchCoordinateAxis::V),
+        ("vertical_loci", SketchCoordinateAxis::U),
+        ("vertical_points", SketchCoordinateAxis::U),
+    ] {
+        let constraint = serde_json::from_value::<SketchConstraint>(serde_json::json!({
+            "id": "test:sketch-constraint#axis",
+            "sketch": "test:sketch#axis",
+            "definition": {
+                "kind": kind,
+                "first": first,
+                "second": second,
+            },
+        }))
+        .unwrap();
+        assert_eq!(
+            constraint.definition,
+            SketchConstraintDefinition::SameCoordinate {
+                first: first.clone(),
+                second: second.clone(),
+                axis,
+            }
+        );
+        let wire = serde_json::to_value(constraint).unwrap();
+        assert_eq!(wire["definition"]["kind"], "same_coordinate");
+        assert_eq!(
+            wire["definition"]["axis"],
+            if axis == SketchCoordinateAxis::U {
+                "u"
+            } else {
+                "v"
+            }
+        );
+    }
+}
+
+#[test]
+fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
+    use crate::sketches::SketchConstraintDefinition;
+    let angle = SketchConstraintDefinition::AngleDifference {
+        first: 17,
+        second: 18,
+        difference: 19,
+        value: crate::features::Angle(0.5),
+    };
+    let wire = serde_json::to_value(&angle).unwrap();
+    assert_eq!(
+        wire["first"],
+        serde_json::json!({"variable_type": 4, "key": 17})
+    );
+    assert_eq!(
+        wire["second"],
+        serde_json::json!({"variable_type": 4, "key": 18})
+    );
+    assert_eq!(
+        wire["difference"],
+        serde_json::json!({"variable_type": 0, "key": 19})
+    );
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire).unwrap(),
+        angle
+    );
+
+    let equality = SketchConstraintDefinition::ScalarEquality {
+        first: 17,
+        second: 18,
+    };
+    let wire = serde_json::to_value(&equality).unwrap();
+    assert_eq!(
+        wire["first"],
+        serde_json::json!({"variable_type": 6, "key": 17})
+    );
+    assert_eq!(
+        wire["second"],
+        serde_json::json!({"variable_type": 6, "key": 18})
+    );
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire).unwrap(),
+        equality
+    );
+}
+
+#[test]
+fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
+    use crate::sketches::SketchConstraintDefinition;
+    for definition in [
+        SketchConstraintDefinition::AngleDifference {
+            first: 17,
+            second: 18,
+            difference: 19,
+            value: crate::features::Angle(0.5),
+        },
+        SketchConstraintDefinition::ScalarEquality {
+            first: 17,
+            second: 18,
+        },
+    ] {
+        let wire = serde_json::to_value(&definition).unwrap();
+        for slot in ["first", "second", "difference"] {
+            let Some(scalar) = wire.get(slot) else {
+                continue;
+            };
+            for wrong_class in [0, 4, 5, 6] {
+                if scalar["variable_type"] == wrong_class {
+                    continue;
+                }
+                let mut malformed = wire.clone();
+                malformed[slot]["variable_type"] = serde_json::json!(wrong_class);
+                let error =
+                    serde_json::from_value::<SketchConstraintDefinition>(malformed).unwrap_err();
+                assert!(error.to_string().contains("variable_type must be"));
+            }
+        }
+    }
+}
+
+#[test]
+fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
+    use crate::sketches::SketchGeometry;
+
+    let wire = serde_json::json!({
+        "kind": "nurbs", "degree": 1,
+        "knots": [0.0, 0.0, 1.0, 1.0],
+        "control_points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}],
+        "weights": [1.0, 0.5], "periodic": false
+    });
+    let geometry: SketchGeometry = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for (field, value) in [
+        ("degree", serde_json::json!(0)),
+        ("degree", serde_json::json!(2)),
+        ("knots", serde_json::json!([0.0, 1.0])),
+        ("control_points", serde_json::json!([{"u": 2.0, "v": 3.0}])),
+        ("weights", serde_json::json!([1.0])),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<SketchGeometry>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    let mut nonrational = wire;
+    nonrational.as_object_mut().unwrap().remove("weights");
+    nonrational.as_object_mut().unwrap().remove("periodic");
+    let SketchGeometry::Nurbs { curve } = serde_json::from_value(nonrational).unwrap() else {
+        panic!("NURBS geometry");
+    };
+    assert!(curve.weights().is_none());
+    assert!(!curve.periodic());
+}
+
+#[test]
+fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
+    use crate::sketches::SpatialSketchGeometry;
+
+    let wire = serde_json::json!({
+        "kind": "nurbs", "degree": 1,
+        "knots": [0.0, 0.0, 1.0, 1.0],
+        "control_points": [{"x": 2.0, "y": 3.0, "z": 4.0}, {"x": 5.0, "y": 6.0, "z": 7.0}],
+        "weights": [1.0, 0.5], "periodic": false
+    });
+    let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for (field, value) in [
+        ("degree", serde_json::json!(2)),
+        ("knots", serde_json::json!([0.0, 1.0])),
+        ("control_points", serde_json::json!([])),
+        ("weights", serde_json::json!([1.0])),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
+    use crate::sketches::SpatialSketchGeometry;
+
+    let wire = serde_json::json!({
+        "kind": "nurbs_surface", "u_degree": 1, "v_degree": 1,
+        "u_knots": [0.0, 0.0, 1.0, 1.0], "v_knots": [0.0, 0.0, 1.0, 1.0],
+        "control_points": [
+            [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 1.0, "z": 0.0}],
+            [{"x": 1.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 0.0}]
+        ]
+    });
+    let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    for field in ["u_knots", "v_knots", "control_points"] {
+        let mut invalid = wire.clone();
+        invalid[field].as_array_mut().unwrap().pop();
+        assert!(
+            serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    let mut ragged = wire;
+    ragged["control_points"][1].as_array_mut().unwrap().pop();
+    let error = serde_json::from_value::<SpatialSketchGeometry>(ragged).unwrap_err();
+    assert!(error.to_string().contains("control_points row"));
+}
+
+#[test]
+fn native_operand_requires_nonempty_names_and_keeps_the_role_inside_the_field() {
+    use crate::sketches::SketchNativeOperand;
+
+    for wire in [
+        serde_json::json!({"native_kind": "", "object_index": 0}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0,
+            "field": {"name": "", "role": 1}}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0, "native_role": 1}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0, "field": {"role": 1}}),
+    ] {
+        assert!(serde_json::from_value::<SketchNativeOperand>(wire).is_err());
+    }
+    for wire in [
+        serde_json::json!({"native_kind": "operand", "object_index": 0}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0, "field": {"name": "edge"}}),
+        serde_json::json!({"native_kind": "operand", "object_index": 0,
+            "field": {"name": "edge", "role": 1}}),
+    ] {
+        let operand: SketchNativeOperand = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+    }
 }

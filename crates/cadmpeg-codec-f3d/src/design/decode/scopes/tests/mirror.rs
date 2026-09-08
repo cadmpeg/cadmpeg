@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -58,7 +57,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
     let header = DesignRecordHeader {
         id: String::new(),
         record_index,
-        class_tag: "320".into(),
+        class_tag: crate::records::DesignClassTag::try_from("320".to_owned()).unwrap(),
         byte_offset: start as u64,
     };
 
@@ -73,11 +72,15 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
 #[test]
 fn class_413_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
-    scope.class_tag = "413".into();
-    scope.paired_class_tag = "262".into();
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Mirror,
+        10,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("413".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 43;
+    scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
     scope.paired_byte_offset = 89;
     bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
@@ -98,11 +101,15 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_369_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
-    scope.class_tag = "369".into();
-    scope.paired_class_tag = "261".into();
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Mirror,
+        10,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 43;
+    scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
     scope.paired_byte_offset = 89;
     bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
@@ -116,8 +123,8 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-369 tolerance");
     assert_eq!(value, 0.25);
     assert_eq!(offset, 51);
-    assert_eq!(carrier.marker, 89);
-    assert_eq!(carrier.repeated_marker_offset, Some(59));
+    assert_eq!(carrier.marker.code(), 89);
+    assert_eq!(carrier.marker.repeated_offset(), Some(59));
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 
@@ -128,11 +135,15 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_391_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 88];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
-    scope.class_tag = "391".into();
-    scope.paired_class_tag = "261".into();
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Mirror,
+        10,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("391".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 42;
+    scope.previous_history_state_id_offset = Some(42);
     scope.frame_length = 88;
     scope.paired_byte_offset = 88;
     bytes[46..50].copy_from_slice(&94_u32.to_le_bytes());
@@ -146,8 +157,8 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-391 tolerance");
     assert_eq!(value, 0.25);
     assert_eq!(offset, 50);
-    assert_eq!(carrier.marker, 94);
-    assert_eq!(carrier.repeated_marker_offset, Some(58));
+    assert_eq!(carrier.marker.code(), 94);
+    assert_eq!(carrier.marker.repeated_offset(), Some(58));
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 
@@ -158,11 +169,15 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_440_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
-    scope.class_tag = "440".into();
-    scope.paired_class_tag = "258".into();
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Mirror,
+        10,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("440".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 43;
+    scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
     scope.paired_byte_offset = 89;
     bytes[47..51].copy_from_slice(&100_u32.to_le_bytes());
@@ -176,7 +191,7 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-440 tolerance");
     assert_eq!(value, 0.25);
     assert_eq!(offset, 51);
-    assert_eq!(carrier.marker, 100);
+    assert_eq!(carrier.marker.code(), 100);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 }
@@ -184,11 +199,15 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     let mut bytes = vec![0; 84];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
-    scope.class_tag = "441".into();
-    scope.paired_class_tag = "267".into();
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Mirror,
+        10,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 42;
+    scope.previous_history_state_id_offset = Some(42);
     scope.frame_length = 84;
     scope.paired_byte_offset = 84;
     bytes[46..50].copy_from_slice(&61_u32.to_le_bytes());
@@ -201,8 +220,8 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-441 tolerance");
     assert_eq!(value, 0.125);
     assert_eq!(offset, 50);
-    assert_eq!(carrier.marker, 61);
-    assert_eq!(carrier.repeated_marker_offset, None);
+    assert_eq!(carrier.marker.code(), 61);
+    assert_eq!(carrier.marker.repeated_offset(), None);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 }
@@ -232,14 +251,19 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     bytes[89..93].copy_from_slice(&scope_record_index.to_le_bytes());
     indexed_header(&mut bytes, *b"267", count_record_index);
 
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", scope_record_index);
-    scope.class_tag = "441".into();
-    scope.paired_class_tag = "267".into();
-    scope.reference_members = vec![1, 2, 3, count_record_index];
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::feature::DesignFeatureKind::Mirror,
+        scope_record_index,
+    );
+    scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
     let records = IndexedRecordOffsets::build(&bytes);
 
     assert_eq!(
         exact_legacy_mirror_scope_count(&bytes, &records, &scope),
-        Some((2, count_record_index, 40))
+        Some((count_record_index, 40))
     );
 }

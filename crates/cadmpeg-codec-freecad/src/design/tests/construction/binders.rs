@@ -145,14 +145,14 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         assert!(
             matches!(
                 actual,
-                FeatureDefinition::Native { kind: value, .. } if value == kind
+                FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind
             ),
             "{name} expected native {kind}, got {actual:?}"
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     }

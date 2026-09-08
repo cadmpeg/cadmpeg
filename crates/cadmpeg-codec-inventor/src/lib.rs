@@ -3,12 +3,18 @@
 //!
 //! [`InventorCodec`] detects Inventor documents from the compound-file
 //! directory structure. It does not classify unrelated CFB files as Inventor.
+//!
+//! <!-- generated: capability inventor -->
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#autodesk-inventor-ipt-and-iam)).
+//! <!-- /generated: capability inventor -->
 
 mod assembly;
 mod container;
+mod coverage;
 mod database;
 mod decode;
 mod design;
+mod dialect;
 mod external_reference;
 mod feature;
 #[doc(hidden)]
@@ -24,6 +30,8 @@ mod pmdc;
 mod presentation;
 mod property_set;
 mod protein;
+mod record_identity;
+mod record_issue;
 mod records;
 mod rse;
 mod sketch;
@@ -31,8 +39,9 @@ mod validate;
 
 use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, Finding};
 
 pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
@@ -48,11 +57,13 @@ pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
 pub struct InventorCodec;
 
 impl CodecBackend for InventorCodec {
-    fn id(&self) -> &'static str {
-        "inventor"
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        validate::validate_native(ir)
     }
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix)
         else {
             return Confidence::No;
@@ -69,24 +80,12 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(
-            container::InventorContainer::open(ctx, root, container::ContainerPurpose::Inspect)?
-                .summary(),
-        )
+        Ok(container::InventorContainer::open(ctx, root)?.summary())
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
-}
-
-/// Validates the typed Inventor-native namespace.
-pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    validate::validate_native(ir)
 }
 
 #[cfg(test)]

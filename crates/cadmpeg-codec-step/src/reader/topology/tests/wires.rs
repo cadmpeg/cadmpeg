@@ -127,7 +127,7 @@ fn disconnected_edge_loop_is_not_committed() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:shell_based_surface_model#31"));
+        .any(|record| record.id.as_str() == "step:data:shell_based_surface_model#31"));
     assert!(decoded
         .report()
         .losses
@@ -327,7 +327,7 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .all(|record| record.id.0 != "step:data:subedge#19"));
+        .all(|record| record.id.as_str() != "step:data:subedge#19"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -415,7 +415,7 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:connected_edge_set#34"));
+        .any(|record| record.id.as_str() == "step:data:connected_edge_set#34"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -448,7 +448,7 @@ fn connected_edge_sub_set_keeps_topology_when_parent_is_invalid() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:connected_edge_sub_set#33"));
+        .any(|record| record.id.as_str() == "step:data:connected_edge_sub_set#33"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -556,7 +556,9 @@ fn shared_edge_wire_model_marks_every_representation_typed() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| { record.id.0 == "step:data:manifold_surface_shape_representation#71" }));
+        .any(|record| {
+            record.id.as_str() == "step:data:manifold_surface_shape_representation#71"
+        }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

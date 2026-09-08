@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use super::{
     anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
@@ -18,10 +18,19 @@ const OBSOLETE_IDEF_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
 
 #[test]
 fn parent_child_composition_uses_column_point_order() {
-    let mut parent = Transform::identity();
-    parent.rows[0][3] = 10.0;
-    let mut child = Transform::identity();
-    child.rows[0][0] = 2.0;
+    let parent = Transform::affine([
+        [1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("affine transform");
+    let child = Transform::from_rows([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     assert_eq!(
         parent
             .compose(child)
@@ -32,18 +41,26 @@ fn parent_child_composition_uses_column_point_order() {
 
 #[test]
 fn translation_scales_once_without_scaling_linear_coefficients() {
-    let mut source = Transform::identity();
-    source.rows[0][0] = 2.0;
-    source.rows[1][3] = 3.0;
+    let source = Transform::from_rows([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let scaled = scale_translation(source, 25.4).expect("finite translation");
-    assert_eq!(scaled.rows[0][0], 2.0);
-    assert_eq!(scaled.rows[1][3], 76.199_999_999_999_99);
+    assert_eq!(scaled.rows()[0][0], 2.0);
+    assert_eq!(scaled.rows()[1][3], 76.199_999_999_999_99);
 }
 
 #[test]
 fn translation_scaling_rejects_overflow() {
-    let mut source = Transform::identity();
-    source.rows[0][3] = f64::MAX;
+    let source = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("affine transform");
     assert!(scale_translation(source, 2.0).is_none());
 }
 
@@ -78,14 +95,13 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
 
 #[test]
 fn normals_use_inverse_transpose_and_normalization() {
-    let transform = Transform {
-        rows: [
-            [2.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.5, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.5, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     assert_eq!(
         transform.apply_normal(Vector3::new(1.0, 0.0, 1.0)),
         Some(Vector3::new(
@@ -97,12 +113,16 @@ fn normals_use_inverse_transpose_and_normalization() {
 }
 
 fn reference_bytes(transform: Transform) -> Vec<u8> {
+    reference_matrix_bytes(transform.rows())
+}
+
+fn reference_matrix_bytes(rows: [[f64; 4]; 4]) -> Vec<u8> {
     let mut bytes = vec![0x10];
     bytes.extend_from_slice(&[
         0x33, 0x22, 0x11, 0x00, 0x55, 0x44, 0x77, 0x66, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,
         0xff,
     ]);
-    for value in transform.rows.into_iter().flatten() {
+    for value in rows.into_iter().flatten() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 1.0] {
@@ -135,14 +155,14 @@ fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future
     );
     assert_eq!(parsed.transform, Transform::identity());
 
-    let mut singular = Transform::identity();
-    singular.rows[2][2] = 0.0;
-    let singular = reference_bytes(singular);
+    let mut singular = Transform::identity().rows();
+    singular[2][2] = 0.0;
+    let singular = reference_matrix_bytes(singular);
     assert!(parse_reference(&singular, 0..singular.len()).is_err());
 
-    let mut projective = Transform::identity();
-    projective.rows[3][0] = 1.0;
-    let projective = reference_bytes(projective);
+    let mut projective = Transform::identity().rows();
+    projective[3][0] = 1.0;
+    let projective = reference_matrix_bytes(projective);
     assert!(parse_reference(&projective, 0..projective.len()).is_err());
 
     let mut trailing = valid;
@@ -158,9 +178,9 @@ fn instance_reference_rejects_nil_definition_and_nonfinite_transform() {
     nil[1..17].fill(0);
     assert!(parse_reference(&nil, 0..nil.len()).is_err());
 
-    let mut nonfinite = Transform::identity();
-    nonfinite.rows[1][2] = f64::NAN;
-    let nonfinite = reference_bytes(nonfinite);
+    let mut nonfinite = Transform::identity().rows();
+    nonfinite[1][2] = f64::NAN;
+    let nonfinite = reference_matrix_bytes(nonfinite);
     assert!(parse_reference(&nonfinite, 0..nonfinite.len()).is_err());
 }
 
@@ -181,7 +201,7 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     ))
     .expect("required invariant");
     assert_eq!(scan.definitions.definitions.len(), 1);
-    assert!(scan.definitions.definitions[0].file_reference.is_some());
+    assert!(scan.definitions.definitions[0].file_reference().is_some());
 
     let mut future_payload =
         v5_definition_payload(ArchiveVersion::V5, 6, definition_id, &[], false);
@@ -273,7 +293,7 @@ fn obsolete_idef_layer_settings_are_consumed_without_definition_fields() {
         assert_eq!(scan.definitions.definitions.len(), 1);
         let definition = &scan.definitions.definitions[0];
         assert_eq!(definition.kind, super::DefinitionKind::Linked);
-        assert_eq!(definition.legacy_linked_path, "/full/source.3dm");
+        assert_eq!(definition.legacy_linked_path(), "/full/source.3dm");
         assert!(scan.definitions.diagnostics.is_empty());
         assert!(scan.opaque_records.is_empty());
     }
@@ -342,9 +362,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
             .expect("V5 alternate-path witness");
     let parsed = &scan.definitions.definitions[0];
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
-    assert_eq!(parsed.legacy_linked_path, "/full/source.3dm");
-    assert_eq!(parsed.legacy_relative_linked_path, "relative/source.3dm");
-    assert!(parsed.legacy_relative_path);
+    assert_eq!(parsed.legacy_linked_path(), "/full/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path(), "relative/source.3dm");
+    assert!(parsed.legacy_relative_path());
     assert!(scan.definitions.diagnostics.is_empty());
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
@@ -353,7 +373,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .native
         .namespace("rhino")
         .expect("Rhino native namespace")
-        .arenas["external_references"][0];
+        .arenas()["external_references"][0];
     assert_eq!(external.fields()["full_path"], "/full/source.3dm");
     assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
     assert_eq!(external.fields()["relative_path_preferred"], true);
@@ -385,8 +405,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     ))
     .expect("occupied full-path witness");
     let parsed = &scan.definitions.definitions[0];
-    assert_eq!(parsed.legacy_linked_path, "/full/original.3dm");
-    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert_eq!(parsed.legacy_linked_path(), "/full/original.3dm");
+    assert!(parsed.legacy_relative_linked_path().is_empty());
 
     let relative_base = v5_definition_payload_with_paths(
         archive,
@@ -407,9 +427,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     ))
     .expect("relative-base witness");
     let parsed = &scan.definitions.definitions[0];
-    assert_eq!(parsed.legacy_linked_path, "/replacement/source.3dm");
-    assert_eq!(parsed.legacy_relative_linked_path, "relative/base.3dm");
-    assert!(parsed.legacy_relative_path);
+    assert_eq!(parsed.legacy_linked_path(), "/replacement/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path(), "relative/base.3dm");
+    assert!(parsed.legacy_relative_path());
 
     let static_payload = v5_definition_payload_with_paths(
         archive,
@@ -430,8 +450,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     .expect("static-path witness");
     let parsed = &scan.definitions.definitions[0];
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Static);
-    assert!(parsed.legacy_linked_path.is_empty());
-    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert!(parsed.legacy_linked_path().is_empty());
+    assert!(parsed.legacy_relative_linked_path().is_empty());
 
     let malformed_body = utf16_bytes("/ignored/malformed.3dm");
     let malformed_carrier =
@@ -452,8 +472,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let mut scan = crate::container::scan_owned(malformed_document)
         .expect("malformed optional carrier remains framed");
     let parsed = &scan.definitions.definitions[0];
-    assert_eq!(parsed.legacy_linked_path, "/retained/source.3dm");
-    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert_eq!(parsed.legacy_linked_path(), "/retained/source.3dm");
+    assert!(parsed.legacy_relative_linked_path().is_empty());
     assert!(scan
         .definitions
         .diagnostics
@@ -478,10 +498,10 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|source| source.offset == malformed_range.start as u64)
+        .find(|source| source.offset() == malformed_range.start as u64)
         .expect("malformed definition fidelity");
     assert_eq!(
-        malformed_retained.data.as_deref(),
+        malformed_retained.data(),
         Some(&malformed_source_bytes[malformed_range])
     );
 
@@ -512,8 +532,8 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let mut future_scan = crate::container::scan_owned(future_document)
         .expect("future optional carrier remains framed");
     let future_definition = &future_scan.definitions.definitions[0];
-    assert_eq!(future_definition.legacy_linked_path, "/future/full.3dm");
-    assert!(future_definition.legacy_relative_linked_path.is_empty());
+    assert_eq!(future_definition.legacy_linked_path(), "/future/full.3dm");
+    assert!(future_definition.legacy_relative_linked_path().is_empty());
     assert!(future_scan
         .definitions
         .diagnostics
@@ -540,18 +560,15 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .native
         .namespace("rhino")
         .expect("Rhino native namespace")
-        .arenas["external_references"][0];
+        .arenas()["external_references"][0];
     assert_eq!(future_external.fields()["relative_path"], "");
     let future_retained = future_result
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|source| source.offset == future_range.start as u64)
+        .find(|source| source.offset() == future_range.start as u64)
         .expect("future definition fidelity");
-    assert_eq!(
-        future_retained.data.as_deref(),
-        Some(future_record.as_slice())
-    );
+    assert_eq!(future_retained.data(), Some(future_record.as_slice()));
 }
 
 #[test]
@@ -575,15 +592,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     assert_eq!(parsed.units.unit, 2);
     assert_eq!(parsed.units.meters_per_unit, 0.001);
     assert_eq!(parsed.linked_appearance, 2);
-    assert_eq!(
-        parsed
-            .legacy_checksum_range
-            .as_ref()
-            .expect("required invariant")
-            .len(),
-        48
-    );
-    assert!(parsed.file_reference_range.is_none());
+    assert!(parsed.file_reference().is_none());
 
     let v6 = definition_record(
         ArchiveVersion::V6,
@@ -597,7 +606,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     ))
     .expect("required invariant");
     let parsed = &scan.definitions.definitions[0];
-    assert!(parsed.file_reference_range.is_some());
+    assert!(parsed.file_reference().is_some());
 }
 
 #[test]
@@ -648,8 +657,7 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         assert!(linked.members.is_empty());
         assert_eq!(linked.linked_depth, 2);
         assert_eq!(linked.linked_appearance, 2);
-        assert!(linked.reference_settings_range.is_some());
-        assert!(linked.file_reference_range.is_some());
+        assert!(linked.file_reference().is_some());
         assert_eq!(
             scan.definitions.definitions[2].kind,
             crate::instances::DefinitionKind::LinkedAndEmbedded
@@ -716,7 +724,8 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         diagnostic.source_range.start < diagnostic.source_range.end
             && !diagnostic.message.contains("unsupported class")
     }));
-    let container_only = crate::container::container_only_result(&scan);
+    let container_only =
+        crate::decode::seal_for_test(crate::container::container_only_result(&scan), true);
     assert!(container_only.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss
@@ -804,7 +813,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .model
             .bodies
             .iter()
-            .map(|body| body.transform.expect("required invariant").rows[0][3])
+            .map(|body| body.transform.expect("required invariant").rows()[0][3])
             .collect::<Vec<_>>(),
         vec![10.0, 20.0]
     );
@@ -847,14 +856,14 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
         .native
         .namespace("rhino")
         .expect("required invariant");
-    assert_eq!(native.arenas["product_definitions"].len(), 1);
-    assert_eq!(native.arenas["product_occurrences"].len(), 2);
+    assert_eq!(native.arenas()["product_definitions"].len(), 1);
+    assert_eq!(native.arenas()["product_occurrences"].len(), 2);
     assert_eq!(
-        native.arenas["product_occurrences"][0].fields()["definition_uuid"],
+        native.arenas()["product_occurrences"][0].fields()["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
     assert_eq!(
-        native.arenas["product_occurrences"][0].fields()["transform_units"],
+        native.arenas()["product_occurrences"][0].fields()["transform_units"],
         "millimeter"
     );
     assert!(result.report().losses.iter().any(|loss| loss.code
@@ -900,15 +909,15 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
         result.ir().model.bodies[0]
             .transform
             .expect("body carrier transform")
-            .rows[0][3],
+            .rows()[0][3],
         10.0
     );
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry
     else {
         panic!("free member curve must remain a transformed solved carrier");
     };
-    assert_eq!(curve.control_points[0].x, 11.0);
-    assert_eq!(curve.control_points[1].x, 12.0);
+    assert_eq!(curve.control_points()[0].x, 11.0);
+    assert_eq!(curve.control_points()[1].x, 12.0);
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
@@ -970,8 +979,8 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         panic!("expected transformed NURBS");
     };
-    assert_eq!(nurbs.control_points[0].x, 12.0);
-    assert_eq!(nurbs.control_points[1].x, 14.0);
+    assert_eq!(nurbs.control_points()[0].x, 12.0);
+    assert_eq!(nurbs.control_points()[1].x, 14.0);
     assert_eq!(
         curve
             .source_object
@@ -1135,10 +1144,10 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
 
     let result = crate::decode::decode_for_test(&scan);
     let mesh = &result.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices[0].x, 5.0);
-    assert_eq!(mesh.vertices[1].x, 7.0);
+    assert_eq!(mesh.vertices()[0].x, 5.0);
+    assert_eq!(mesh.vertices()[1].x, 7.0);
     assert_eq!(
-        mesh.normals[0],
+        mesh.normals()[0],
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
     let subd = &result.ir().model.subds[0];
@@ -1179,7 +1188,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.decode_geometry();
         assert!(context.mesh_budget_used() > 0);
-        let result = context.commit();
+        let result = crate::decode::seal_for_test(context.commit(), false);
         assert!(result.ir().model.tessellations.is_empty());
         assert!(result.ir().model.bodies.is_empty());
     });
@@ -1211,11 +1220,11 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     else {
         panic!("nonuniform circle must become NURBS");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points[0].x, 2.0);
-    assert_eq!(nurbs.control_points[2].y, 1.0);
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points()[0].x, 2.0);
+    assert_eq!(nurbs.control_points()[2].y, 1.0);
     assert_eq!(
-        nurbs.weights.as_ref().expect("required invariant")[1],
+        nurbs.weights().expect("required invariant")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
@@ -1311,13 +1320,13 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry();
-        let result = context.commit();
+        let result = crate::decode::seal_for_test(context.commit(), false);
         assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
             result.ir().model.bodies[0]
                 .transform
                 .expect("instance transform")
-                .rows[0][3],
+                .rows()[0][3],
             10.0
         );
         assert!(result
@@ -1456,7 +1465,7 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
         result.ir().model.bodies[0]
             .transform
             .expect("required invariant")
-            .rows[0][3],
+            .rows()[0][3],
         30.0
     );
     for unknown in &result

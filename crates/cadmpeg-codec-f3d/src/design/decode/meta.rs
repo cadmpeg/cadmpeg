@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
-};
-use crate::container::{role, ContainerScan};
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
+use crate::container::ContainerScan;
 use crate::ids::{self, native_stream};
 use crate::records::{
     DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION,
@@ -32,7 +32,13 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
         && design_type.module == DESIGN_MODULE_FUSION
         && design_type
             .base_type_guid
-            .as_deref()
+            .as_ref()
+            .and_then(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map(crate::records::DesignRelaxedGuidText::as_str)
+            })
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -42,7 +48,7 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let meta = scan.parsed_metastream(&entry.name)?;
         out.extend(meta.types.iter().cloned().map(|mut design_type| {
@@ -58,7 +64,7 @@ fn insert_component_naming_space(
     bulk_name: &str,
     marker: usize,
     component_record_index: u64,
-    context_uuid: String,
+    context_uuid: crate::records::DesignRelaxedGuidText,
     context_uuid_offset: usize,
 ) -> Result<(), CodecError> {
     let binding = DesignComponentNamingSpace {
@@ -87,7 +93,7 @@ pub fn decode_component_naming_spaces(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let meta = scan.parsed_metastream(&meta_entry.name)?;
         let component_entities = meta
@@ -95,11 +101,20 @@ pub fn decode_component_naming_spaces(
             .iter()
             .filter(|design_type| {
                 design_type.module == COMPONENT_MODULE
-                    && design_type.base_type_guid.as_deref().is_some_and(|base| {
-                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                    })
+                    && design_type
+                        .base_type_guid
+                        .as_ref()
+                        .and_then(|field| {
+                            field
+                                .value
+                                .as_ref()
+                                .map(crate::records::DesignRelaxedGuidText::as_str)
+                        })
+                        .is_some_and(|base| {
+                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        })
             })
-            .flat_map(|design_type| design_type.entity_ids.iter().copied())
+            .flat_map(|design_type| design_type.entities.values().copied())
             .collect::<HashSet<_>>();
         if component_entities.is_empty() {
             continue;
@@ -130,9 +145,11 @@ pub fn decode_component_naming_spaces(
                 let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                     continue;
                 };
-                if !is_guid_relaxed(&context_uuid) {
+                let Ok(context_uuid) =
+                    crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+                else {
                     continue;
-                }
+                };
                 insert_component_naming_space(
                     &mut by_component,
                     &bulk_name,
@@ -148,30 +165,41 @@ pub fn decode_component_naming_spaces(
             let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
                 continue;
             };
-            let (Some(component_record_index), Some(inline_type_guid)) =
-                (reference.target, reference.inline_type_guid.as_deref())
-            else {
+            let Some((component_record_index, Some(inline_type_guid))) = reference.local() else {
                 continue;
             };
-            if reference.segment.is_some()
-                || reference.link_name.is_some()
-                || !meta.types.iter().any(|design_type| {
-                    design_type.module == COMPONENT_MODULE
-                        && design_type.base_type_guid.as_deref().is_some_and(|base| {
+            if !meta.types.iter().any(|design_type| {
+                design_type.module == COMPONENT_MODULE
+                    && design_type
+                        .base_type_guid
+                        .as_ref()
+                        .and_then(|field| {
+                            field
+                                .value
+                                .as_ref()
+                                .map(crate::records::DesignRelaxedGuidText::as_str)
+                        })
+                        .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
-                        && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
-                        && design_type.entity_ids.contains(&component_record_index)
-                })
-            {
+                    && design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(inline_type_guid)
+                    && design_type
+                        .entities
+                        .values()
+                        .any(|registered| *registered == component_record_index)
+            }) {
                 continue;
             }
             let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                 continue;
             };
-            if !is_guid_relaxed(&context_uuid) {
+            let Ok(context_uuid) = crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+            else {
                 continue;
-            }
+            };
             insert_component_naming_space(
                 &mut by_component,
                 &bulk_name,
@@ -214,20 +242,20 @@ pub(crate) fn metadata_for_bulk_stream(
 
 /// One live Design record selected by the primary index and resolved through
 /// its segment-local class tag.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct DesignPrimaryFrame<'a> {
     pub(crate) entity_id: u64,
-    pub(crate) class_tag: u32,
+    pub(crate) class_tag: crate::records::DesignClassTag,
     pub(crate) start: usize,
     pub(crate) end: usize,
     pub(crate) design_type: &'a SegmentType,
 }
 
-fn dynamic_type(
-    meta: &crate::metastream::MetaStream,
-    class_tag: u32,
-) -> Option<(usize, &SegmentType)> {
-    let ordinal = usize::try_from(class_tag.checked_sub(256)?).ok()?;
+fn dynamic_type<'a>(
+    meta: &'a crate::metastream::MetaStream,
+    class_tag: &crate::records::DesignClassTag,
+) -> Option<(usize, &'a SegmentType)> {
+    let ordinal = class_tag.as_str().parse::<usize>().ok()?.checked_sub(256)?;
     Some((ordinal, meta.types.get(ordinal)?))
 }
 
@@ -236,7 +264,7 @@ fn record_header_class_tag(
     at: usize,
     end: usize,
     expected_entity_id: u64,
-) -> Option<u32> {
+) -> Option<crate::records::DesignClassTag> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
     let indexed_matches = after_tag
         .checked_add(4)
@@ -251,7 +279,7 @@ fn record_header_class_tag(
     if !indexed_matches && !named_matches {
         return None;
     }
-    class_tag.parse().ok()
+    crate::records::DesignClassTag::try_from(class_tag).ok()
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -270,8 +298,8 @@ pub(crate) fn design_primary_frames<'a>(
         .enumerate()
         .flat_map(|(ordinal, design_type)| {
             design_type
-                .entity_ids
-                .iter()
+                .entities
+                .values()
                 .copied()
                 .map(move |entity_id| (ordinal, entity_id))
         })
@@ -285,7 +313,7 @@ pub(crate) fn design_primary_frames<'a>(
                 "F3D primary record index points to an invalid record header".into(),
             ));
         };
-        let Some((type_ordinal, design_type)) = dynamic_type(meta, class_tag) else {
+        let Some((type_ordinal, design_type)) = dynamic_type(meta, &class_tag) else {
             return Err(CodecError::Malformed(
                 "F3D primary record class tag is outside its type table".into(),
             ));
@@ -303,7 +331,7 @@ pub(crate) fn design_primary_frames<'a>(
                     "F3D secondary record index points to an invalid nested header".into(),
                 ));
             };
-            if dynamic_type(meta, nested_class_tag).is_none() {
+            if dynamic_type(meta, &nested_class_tag).is_none() {
                 return Err(CodecError::Malformed(
                     "F3D secondary record header is incompatible with its primary record".into(),
                 ));
@@ -339,10 +367,14 @@ pub(crate) fn typed_primary_frames<'a>(
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
     let mut typed_entities = HashSet::new();
     for design_type in &meta.types {
-        if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
+        if !design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
+        {
             continue;
         }
-        for &entity_id in &design_type.entity_ids {
+        for &entity_id in design_type.entities.values() {
             if !typed_entities.insert(entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design {record_kind} entity {entity_id} is registered more than once"
@@ -357,6 +389,7 @@ pub(crate) fn typed_primary_frames<'a>(
         if !primary_frame
             .design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(type_guid)
         {
             continue;
@@ -391,7 +424,7 @@ pub(crate) fn stream_types_by_entity<'a>(
         .iter()
         .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
         .flat_map(|design_type| {
-            design_type.entity_ids.iter().map(|entity_id| {
+            design_type.entities.values().map(|entity_id| {
                 (
                     *entity_id,
                     (design_type.type_guid.as_str(), design_type.version),
@@ -424,11 +457,8 @@ fn local_reference(
     reference: &Reference,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Option<u64> {
-    if reference.segment.is_some() || reference.link_name.is_some() {
-        return None;
-    }
-    let target = reference.target?;
-    if let Some(inline_type_guid) = &reference.inline_type_guid {
+    let (target, inline_type_guid) = reference.local()?;
+    if let Some(inline_type_guid) = inline_type_guid {
         let registered_type_guids = type_guids_by_entity.get(&target)?;
         if !registered_type_guids
             .iter()
@@ -466,28 +496,24 @@ fn parse_feature_timeline_record(
 
     let mut at = payload.checked_add(2)?;
     let context_reference_offset = at.checked_add(1)?;
-    let context_record_index =
-        local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
-    if context_record_index == 0 {
-        return None;
-    }
+    let context_record_index = std::num::NonZeroU64::new(local_reference(
+        &take_reference(bytes, &mut at)?,
+        type_guids_by_entity,
+    )?)?;
     let item_count_offset = at;
     let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     at = at.checked_add(4)?;
     if count > end.checked_sub(at)? / 11 {
         return None;
     }
-    let mut item_record_indices = Vec::with_capacity(count);
-    let mut item_record_index_offsets = Vec::with_capacity(count);
-    let mut unique = HashSet::with_capacity(count);
+    let mut items = Vec::with_capacity(count);
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let target = local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
-        if target == 0 || !unique.insert(target) {
-            return None;
-        }
-        item_record_indices.push(target);
-        item_record_index_offsets.push(target_offset as u64);
+        items.push(crate::records::Located {
+            value: target,
+            offset: target_offset as u64,
+        });
     }
     if at != end {
         return None;
@@ -495,16 +521,18 @@ fn parse_feature_timeline_record(
 
     Some(DesignFeatureTimeline {
         id: ids::native_design_feature_timeline_id(stream, start),
-        byte_offset: start as u64,
-        class_tag,
-        record_index: expected_entity_id,
+        frame: crate::records::DesignTimelineFrame::new(
+            start as u64,
+            end.checked_sub(start)? as u64,
+            context_reference_offset as u64,
+            item_count_offset as u64,
+            items,
+        )
+        .ok()?,
+        class_tag: crate::records::DesignClassTag::try_from(class_tag).ok()?,
+        record_index: std::num::NonZeroU64::new(expected_entity_id)?,
         source_ordinal,
-        frame_length: end.checked_sub(start)? as u64,
         context_record_index,
-        context_record_index_offset: context_reference_offset as u64,
-        item_count_offset: item_count_offset as u64,
-        item_record_indices,
-        item_record_index_offsets,
     })
 }
 
@@ -516,7 +544,7 @@ pub fn decode_feature_timelines(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let timeline_types = meta
@@ -526,6 +554,7 @@ pub fn decode_feature_timelines(
             .filter(|(_, design_type)| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
             })
             .collect::<Vec<_>>();
@@ -565,11 +594,11 @@ pub fn decode_feature_timelines(
         let bytes = scan.entry_bytes(&bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
-            for entity_id in &design_type.entity_ids {
+            for entity_id in design_type.entities.values() {
                 type_guids_by_entity
                     .entry(*entity_id)
                     .or_default()
-                    .push(&design_type.type_guid);
+                    .push(design_type.type_guid.as_str());
             }
         }
         let mut source_ordinal = 0_u32;
@@ -584,7 +613,7 @@ pub fn decode_feature_timelines(
                     )
                 })?
                 .to_string();
-            for entity_id in &design_type.entity_ids {
+            for entity_id in design_type.entities.values() {
                 let entity_source_ordinal = source_ordinal;
                 source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())

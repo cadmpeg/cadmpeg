@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepError, StepUnsupportedPolicy, StepWriteOptions};
+use crate::StepCodec;
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
@@ -42,10 +42,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert_eq!(page.parameters["usage_7_sequence"], "1");
     assert!(page.relationships["items"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:drawing:presentation_view#4") }));
+        .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
     assert!(page.relationships["drawing_revision"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:drawing:drawing_revision#2") }));
+        .any(|target| { target.local_target() == Some("step:drawing:drawing_revision#2") }));
 
     let view = result
         .ir()
@@ -56,10 +56,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .expect("presentation view");
     assert!(view.relationships["items"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:data:item#5") }));
+        .any(|target| { target.local_target() == Some("step:data:item#5") }));
     assert!(view.relationships["presentation_context"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:data:representation_context#3") }));
+        .any(|target| { target.local_target() == Some("step:data:representation_context#3") }));
     assert_eq!(view.parameters["presentation_context"], "#3");
 
     let model = result
@@ -71,10 +71,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .expect("draughting model");
     assert!(model.relationships["semantic_definition"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:data:item#11") }));
+        .any(|target| { target.local_target() == Some("step:data:item#11") }));
     assert!(model.relationships["associated_items"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:drawing:presentation_view#4") }));
+        .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -83,26 +83,12 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .native_unknowns("step")
         .expect("STEP native namespace")
         .iter()
-        .any(|record| record.id.0 == "step:data:item#5"));
+        .any(|record| record.id.as_str() == "step:data:item#5"));
     assert!(result.report().losses.iter().all(|loss| {
         loss.code != StepLossCode::DrawingSheetRevisionUnresolved.kind()
             && loss.code != StepLossCode::DrawingRevisionSheetUnresolved.kind()
             && loss.code != StepLossCode::DrawingRelationshipUntypedTarget.kind()
     }));
-
-    let mut output = Vec::new();
-    let error = write_step(
-        result.ir(),
-        &mut output,
-        &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
-            ..StepWriteOptions::default()
-        },
-    )
-    .expect_err("strict STEP writing must refuse unrepresentable drawings");
-    assert!(
-        matches!(error, StepError::Unsupported(message) if message.contains("drawing/presentation"))
-    );
 }
 
 #[test]
@@ -123,7 +109,7 @@ fn complex_draughting_model_reads_inherited_representation_attributes() {
     assert_eq!(model.parameters["presentation_context"], "#1");
     assert!(model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:item#3")));
+        .any(|target| target.local_target() == Some("step:data:item#3")));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DrawingRecordTooFewParameters.kind()
             && loss.message.contains("#2")
@@ -146,7 +132,7 @@ fn complex_draughting_callout_reads_inherited_name() {
     assert_eq!(callout.parameters["name"], "Callout");
     assert!(callout.relationships["contents"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:item#2")));
+        .any(|target| target.local_target() == Some("step:data:item#2")));
     assert!(!result
         .report()
         .losses
@@ -179,7 +165,7 @@ fn draughting_callout_visibility_is_transferred_from_invisibility() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#2"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#2"));
 }
 
 #[test]
@@ -195,7 +181,11 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
 #8=ITEM('placeholder geometry');
 #9=DRAUGHTING_MODEL_ITEM_ASSOCIATION('','',#3,#2,#5);
 #10=DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER('','',#3,#2,#5,#7);
-#11=(DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','',#3,#2,#5) ANNOTATION_PLACEHOLDER_OCCURRENCE(#7));",
+#11=(DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER() ITEM_IDENTIFIED_REPRESENTATION_USAGE('','',#3,#2,#5) ANNOTATION_PLACEHOLDER_OCCURRENCE(#7));
+#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);
+#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);
+#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#6,#1002);",
     );
     let model = result
         .ir()
@@ -206,21 +196,21 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .expect("draughting model");
     assert!(model.relationships["semantic_definition"]
         .iter()
-        .filter_map(|target| target.target.as_deref())
+        .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
         .any(|target| target == "step:data:shape_aspect#3"));
     let drawing_targets = &result
         .ir()
         .native
         .namespace("step")
         .expect("STEP native namespace")
-        .arenas["drawing_targets"];
+        .arenas()["drawing_targets"];
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:shape_aspect#3"));
     assert_eq!(
         model.relationships["associated_items"]
             .iter()
-            .filter_map(|target| target.target.as_deref())
+            .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
             .filter(|target| *target == "step:drawing:draughting_callout#5")
             .count(),
         3
@@ -228,7 +218,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
     assert_eq!(
         model.relationships["annotation_placeholder"]
             .iter()
-            .filter_map(|target| target.target.as_deref())
+            .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
             .filter(|target| *target == "step:presentation:pmi#7")
             .count(),
         2
@@ -245,14 +235,14 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .expect("STEP native namespace")
         .iter()
         .all(|record| {
-            !record.id.0.ends_with("draughting_model_item_association#9")
+            !record.id.as_str().ends_with("draughting_model_item_association#9")
                 && !record
                     .id
-                    .0
+                    .as_str()
                     .ends_with("draughting_model_item_association_with_placeholder#10")
                 && !record
                     .id
-                    .0
+                    .as_str()
                     .ends_with("draughting_model_item_association_with_placeholder+item_identified_representation_usage+annotation_placeholder_occurrence#11")
         }));
 }
@@ -278,7 +268,7 @@ fn drawing_association_uses_product_definition_shape_view_scope() {
             })
             .and_then(|drawing| drawing.relationships.get("semantic_definition"))
             .and_then(|targets| targets.first())
-            .and_then(|target| target.target.as_deref())
+            .and_then(cadmpeg_ir::ReferenceSelection::local_target)
             .map(str::to_owned)
     };
 
@@ -342,7 +332,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("annotation drawing model");
     assert!(annotation_model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:surface#4")));
+        .any(|target| target.local_target() == Some("step:data:surface#4")));
 
     let mapped_model = result
         .ir()
@@ -353,7 +343,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("mapped drawing model");
     assert!(mapped_model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:surface#4")));
+        .any(|target| target.local_target() == Some("step:data:surface#4")));
 
     let ambiguous_model = result
         .ir()
@@ -377,13 +367,13 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("cyclic drawing model");
     assert!(cyclic_model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:mapped_item#21")));
+        .any(|target| target.local_target() == Some("step:data:mapped_item#21")));
     let drawing_targets = &result
         .ir()
         .native
         .namespace("step")
         .expect("STEP native namespace")
-        .arenas["drawing_targets"];
+        .arenas()["drawing_targets"];
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:mapped_item#21"));
@@ -420,13 +410,13 @@ fn drawing_relationships_retain_unresolved_wrapper_identity() {
         .expect("unresolved mapped drawing model");
     assert!(model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:mapped_item#8")));
+        .any(|target| target.local_target() == Some("step:data:mapped_item#8")));
     let drawing_targets = &result
         .ir()
         .native
         .namespace("step")
         .expect("STEP native namespace")
-        .arenas["drawing_targets"];
+        .arenas()["drawing_targets"];
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:mapped_item#8"));

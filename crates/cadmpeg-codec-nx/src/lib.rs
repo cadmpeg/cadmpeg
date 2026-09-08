@@ -9,7 +9,10 @@
 //! topology. Detection uses file content because NX and Creo share the `.prt`
 //! extension.
 //!
-//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+//! <!-- generated: capability nx -->
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)).
+//! <!-- /generated: capability nx -->
+//!
 //! Connected B-rep on selected or terminal-lineage-resolved body images
 //! shows as extras. `RMFastLoad` body selection retains every body
 //! whose complete nonempty topology node-ID set is covered by the active
@@ -22,7 +25,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_nx::NxCodec;
-//! use cadmpeg_ir::codec::{CodecBackend, Codec, DecodeOptions};
+//! use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -71,9 +74,11 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
+mod canonical_uuid;
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod deltas;
+mod dialect;
 pub(crate) mod evaluation;
 mod framing;
 pub(crate) mod geometry;
@@ -89,6 +94,8 @@ pub(crate) mod nurbs;
 pub(crate) mod om;
 pub(crate) mod om_tokens;
 pub(crate) mod parasolid;
+mod payload_text;
+mod printable_string;
 pub(crate) mod topology;
 mod vec3_at;
 
@@ -96,24 +103,28 @@ mod vec3_at;
 pub mod fuzz;
 
 #[doc(hidden)]
-pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
+pub use evaluation::{
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
+};
+
+use crate::framing::node_kind::NodeKind;
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
 
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::ContainerSummary;
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NxCodec;
 
 impl CodecBackend for NxCodec {
-    fn id(&self) -> &'static str {
-        "nx"
-    }
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {
             Confidence::High
         } else {
@@ -130,11 +141,7 @@ impl CodecBackend for NxCodec {
         Ok(summarize(&scan))
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }
@@ -160,8 +167,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         };
         entries.push(ContainerEntry {
             name: entry.name.clone(),
-            role: entry.content().label().to_string(),
-            compression: "none".to_string(),
+            role: entry.content().role(),
+            compression: EntryCompression::None,
             compressed_size: compressed,
             uncompressed_size: uncompressed,
             attributes,
@@ -171,45 +178,45 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
-        attributes.insert("kind".to_string(), stream.kind.label().to_string());
-        if let Some(schema) = &stream.schema {
-            attributes.insert("schema".to_string(), schema.clone());
+        attributes.insert("kind".to_string(), stream.kind().label().to_string());
+        if let Some(schema) = stream.schema() {
+            attributes.insert("schema".to_string(), schema.to_owned());
         }
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             let graph = topology::Graph::parse(&stream.inflated);
             for (kind, name) in [
-                (12, "body"),
-                (13, "shell"),
-                (14, "face"),
-                (15, "loop"),
-                (16, "edge"),
-                (17, "fin"),
-                (18, "vertex"),
-                (19, "region"),
+                (NodeKind::Body, "body"),
+                (NodeKind::Shell, "shell"),
+                (NodeKind::Face, "face"),
+                (NodeKind::Loop, "loop"),
+                (NodeKind::Edge, "edge"),
+                (NodeKind::Fin, "fin"),
+                (NodeKind::Vertex, "vertex"),
+                (NodeKind::Region, "region"),
             ] {
                 attributes.insert(
                     format!("records.{name}"),
                     graph.of_kind(kind).count().to_string(),
                 );
             }
-            if stream.kind == parasolid::StreamKind::Partition {
+            if stream.kind() == parasolid::StreamKind::Partition {
                 let graph = topology::Graph::parse(&semantic_streams[si]);
                 for (kind, name) in [
-                    (12, "body"),
-                    (13, "shell"),
-                    (14, "face"),
-                    (15, "loop"),
-                    (16, "edge"),
-                    (17, "fin"),
-                    (18, "vertex"),
-                    (19, "region"),
+                    (NodeKind::Body, "body"),
+                    (NodeKind::Shell, "shell"),
+                    (NodeKind::Face, "face"),
+                    (NodeKind::Loop, "loop"),
+                    (NodeKind::Edge, "edge"),
+                    (NodeKind::Fin, "fin"),
+                    (NodeKind::Vertex, "vertex"),
+                    (NodeKind::Region, "region"),
                 ] {
                     attributes.insert(
                         format!("records.live.{name}"),
                         graph.of_kind(kind).count().to_string(),
                     );
                 }
-            } else if stream.kind == parasolid::StreamKind::Deltas {
+            } else if stream.kind() == parasolid::StreamKind::Deltas {
                 let census = deltas::walk(&stream.inflated);
                 if census.transmit_header.is_some() {
                     attributes.insert(
@@ -259,13 +266,13 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.inline_schema_declarations.len().to_string(),
                     );
                 }
-                for (family, count) in census.full_counts {
+                for (family, count) in census.full_counts() {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),
                         count.to_string(),
                     );
                 }
-                for (family, count) in census.tombstone_counts {
+                for (family, count) in census.tombstone_counts() {
                     attributes.insert(
                         format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
                         count.to_string(),
@@ -273,32 +280,31 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             }
         }
-        let legacy_cfb = scan.container.is_legacy_cfb();
+        let (compression, compressed_size) = match scan.container.layout {
+            container::ContainerLayout::Modern { .. } => (EntryCompression::Zlib, 0),
+            container::ContainerLayout::LegacyCfb { .. } => {
+                (EntryCompression::Stored, stream.consumed)
+            }
+        };
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
-            role: if stream.kind.is_parasolid() {
-                "parasolid-stream".to_string()
+            role: if stream.kind().is_parasolid() {
+                ContainerRole::ParasolidStream
             } else {
-                "preview".to_string()
+                ContainerRole::Preview
             },
-            compression: if legacy_cfb { "stored" } else { "zlib" }.to_string(),
-            compressed_size: if legacy_cfb { stream.consumed } else { 0 },
+            compression,
+            compressed_size,
             uncompressed_size: stream.inflated.len() as u64,
             attributes,
         });
     }
 
-    ContainerSummary {
-        format: "nx".to_string(),
-        container_kind: if scan.container.is_legacy_cfb() {
-            "cfb"
-        } else {
-            "splmsstr"
-        }
-        .to_string(),
-        entries,
-        notes: decode::summary_notes(scan),
-    }
+    let (classification, notes) = decode::summarize(scan);
+    let container_kind = cadmpeg_ir::ContainerKind::parse(classification.container_kind())
+        .expect("nx container kind is a closed label");
+    let (dialects, dialect_losses) = classification.into_report_parts();
+    ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
 }
 
 #[cfg(test)]

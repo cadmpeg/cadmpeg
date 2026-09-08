@@ -95,29 +95,22 @@ fn spatial_oriented_endpoints(
             };
             (at(start_angle.0), at(end_angle.0))
         }
-        SpatialSketchGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        } => {
-            let degree_index = usize::try_from(*degree).ok()?;
-            let start = *knots.get(degree_index)?;
-            let end = *knots.get(knots.len().checked_sub(degree_index + 1)?)?;
+        SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let start = curve.knots()[curve.degree() as usize];
+            let end = curve.knots()[curve.control_points().len()];
             (
                 crate::eval::nurbs_curve_point(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     start,
                 )?,
                 crate::eval::nurbs_curve_point(
-                    *degree,
-                    knots,
-                    control_points,
-                    weights.as_deref(),
+                    curve.degree(),
+                    curve.knots(),
+                    curve.control_points(),
+                    curve.weights(),
                     end,
                 )?,
             )
@@ -504,7 +497,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
         let Some((origin, normal_axis, u_axis)) = sketch.resolved_placement() else {
@@ -571,7 +564,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 
     for entity in &ir.model.sketch_entities {
-        let id = &entity.id.0;
+        let id = entity.id().0.as_str();
         match &entity.geometry {
             SketchGeometry::Point { position } => {
                 if !finite2(*position) {
@@ -622,8 +615,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 major_angle,
                 major_radius,
                 minor_radius,
-                start_angle,
-                end_angle,
+                bounds,
             } => {
                 if !finite2(*center)
                     || !major_angle.0.is_finite()
@@ -633,12 +625,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch ellipse");
                 }
-                if start_angle.is_some() != end_angle.is_some()
-                    || start_angle
-                        .iter()
-                        .chain(end_angle)
-                        .any(|angle| !angle.0.is_finite())
-                {
+                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -652,8 +639,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 major_angle,
                 major_radius,
                 minor_radius,
-                start_parameter,
-                end_parameter,
+                bounds,
             } => {
                 if !finite2(*center)
                     || !major_angle.0.is_finite()
@@ -662,7 +648,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch hyperbola");
                 }
-                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -675,13 +661,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 vertex,
                 axis_angle,
                 focal_length,
-                start_parameter,
-                end_parameter,
+                bounds,
             } => {
                 if !finite2(*vertex) || !axis_angle.0.is_finite() || nonpositive(focal_length.0) {
                     finding(findings, Check::Bounds, id, "invalid sketch parabola");
                 }
-                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -690,36 +675,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                ..
-            } => {
-                let expected = control_points.len().checked_add(*degree as usize + 1);
-                if *degree == 0
-                    || control_points.len() <= *degree as usize
-                    || expected != Some(knots.len())
-                    || knots.iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(knots)
-                    || control_points.iter().any(|point| !finite2(*point))
-                    || weights.as_ref().is_some_and(|weights| {
-                        weights.len() != control_points.len()
-                            || weights.iter().any(|weight| nonpositive(*weight))
-                    })
-                {
-                    finding(findings, Check::ParameterDomain, id, "invalid sketch NURBS");
-                }
-            }
+            SketchGeometry::Nurbs { .. } => {}
             SketchGeometry::Text {
                 text,
                 font_family,
                 font_weight,
                 height,
                 width_factor,
-                anchor,
-                rotation,
+                placement,
                 ..
             } => {
                 if text.is_empty()
@@ -727,8 +690,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     || !matches!(font_weight, 400 | 500 | 750)
                     || nonpositive(height.0)
                     || width_factor.is_some_and(nonpositive)
-                    || anchor.is_some_and(|anchor| !finite2(anchor))
-                    || rotation.is_some_and(|rotation| !rotation.0.is_finite())
+                    || placement.is_some_and(|placement| {
+                        !finite2(placement.anchor) || !placement.rotation.0.is_finite()
+                    })
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
@@ -761,7 +725,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (&entity.id, (&entity.sketch, &entity.geometry)))
+        .map(|entity| (entity.id(), (&entity.sketch, &entity.geometry)))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.spatial_sketches {
         for profile in &sketch.profiles {
@@ -851,7 +815,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for entity in &ir.model.spatial_sketch_entities {
-        let id = &entity.id.0;
+        let id = entity.id().0.as_str();
         if !spatial_sketches.contains(&entity.sketch) {
             finding(
                 findings,
@@ -923,24 +887,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                 }
             }
-            SpatialSketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                ..
-            } => {
-                let expected = control_points.len().checked_add(*degree as usize + 1);
-                if *degree == 0
-                    || control_points.len() <= *degree as usize
-                    || expected != Some(knots.len())
-                    || knots.iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(knots)
-                    || control_points.iter().any(|point| !finite3(*point))
-                    || weights.as_ref().is_some_and(|weights| {
-                        weights.len() != control_points.len()
-                            || weights.iter().any(|weight| nonpositive(*weight))
-                    })
+            SpatialSketchGeometry::Nurbs { curve } => {
+                if curve.degree() == 0
+                    || curve.knots().iter().any(|value| !value.is_finite())
+                    || !knots_nondecreasing(curve.knots())
+                    || curve.control_points().iter().any(|point| !finite3(*point))
+                    || curve
+                        .weights()
+                        .is_some_and(|weights| weights.iter().any(|weight| nonpositive(*weight)))
                 {
                     finding(
                         findings,
@@ -950,33 +904,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            SpatialSketchGeometry::NurbsSurface {
-                u_degree,
-                v_degree,
-                u_knots,
-                v_knots,
-                control_points,
-            } => {
-                let u_count = control_points.len();
-                let v_count = control_points.first().map_or(0, Vec::len);
-                let expected_u_knots = usize::try_from(*u_degree)
-                    .ok()
-                    .and_then(|degree| u_count.checked_add(degree)?.checked_add(1));
-                let expected_v_knots = usize::try_from(*v_degree)
-                    .ok()
-                    .and_then(|degree| v_count.checked_add(degree)?.checked_add(1));
-                if *u_degree == 0
-                    || *v_degree == 0
-                    || u_count <= *u_degree as usize
-                    || v_count <= *v_degree as usize
-                    || control_points.iter().any(|row| row.len() != v_count)
-                    || expected_u_knots != Some(u_knots.len())
-                    || expected_v_knots != Some(v_knots.len())
-                    || u_knots.iter().any(|value| !value.is_finite())
-                    || v_knots.iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(u_knots)
-                    || !knots_nondecreasing(v_knots)
-                    || control_points
+            SpatialSketchGeometry::NurbsSurface { surface } => {
+                if surface.u_degree() == 0
+                    || surface.v_degree() == 0
+                    || surface.u_knots().iter().any(|value| !value.is_finite())
+                    || surface.v_knots().iter().any(|value| !value.is_finite())
+                    || !knots_nondecreasing(surface.u_knots())
+                    || !knots_nondecreasing(surface.v_knots())
+                    || surface
+                        .control_points()
                         .iter()
                         .flatten()
                         .any(|point| !finite3(*point))
@@ -1006,13 +942,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (entity.id.clone(), entity.sketch.clone()))
+        .map(|entity| (entity.id().clone(), entity.sketch.clone()))
         .collect::<HashMap<_, _>>();
     let spatial_geometry = ir
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     let parameter_values = ir
         .model
@@ -1081,18 +1017,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 results,
                 normal,
                 distance,
-                parameter,
-                parameter_factor,
+                parameter: _,
             } => {
                 !sources.is_empty()
                     && !results.is_empty()
                     && (normal.norm() - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && distance.0.is_finite()
                     && distance.0 > 0.0
-                    && matches!(
-                        (parameter, parameter_factor),
-                        (None, None) | (Some(_), Some(-1.0 | 1.0))
-                    )
             }
             _ => entities.len() >= 2,
         };
@@ -1426,7 +1357,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 results,
                 distance,
                 parameter,
-                parameter_factor,
                 ..
             } => {
                 let curves_match = sources.iter().chain(results).all(|entity| {
@@ -1440,17 +1370,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         )
                     })
                 });
-                let parameter_matches = match (parameter, parameter_factor) {
-                    (None, None) => true,
-                    (Some(parameter), Some(factor)) => match parameter_values.get(parameter) {
+                let parameter_matches = match parameter {
+                    None => true,
+                    Some(parameter) => match parameter_values.get(&parameter.id) {
                         Some(Some(crate::features::ParameterValue::Length(value))) => {
-                            let expected = value.0 * factor;
+                            let expected = if parameter.negated { -value.0 } else { value.0 };
                             let scale = 1.0 + expected.abs().max(distance.0);
                             (expected - distance.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                         }
                         _ => false,
                     },
-                    _ => false,
                 };
                 if !curves_match {
                     finding(
@@ -1511,7 +1440,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.sketch_constraints {
         if constraint
@@ -1530,73 +1459,38 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::SplineGroup { entities } => entities.len() >= 2,
-            Constraint::RectangularPattern {
-                directions,
-                instances,
-            } => {
-                let expected_instances =
-                    directions.iter().try_fold(1usize, |product, direction| {
-                        product.checked_mul(usize::try_from(direction.count).ok()?)
-                    });
-                let seed_arity = instances
-                    .first()
-                    .map_or(0, |instance| instance.entities.len());
-                let mut indices = HashSet::new();
+            Constraint::RectangularPattern { pattern } => {
+                let directions = pattern.directions();
                 let mut entities = HashSet::new();
                 let dot = directions[0].direction[0] * directions[1].direction[0]
                     + directions[0].direction[1] * directions[1].direction[1];
-                expected_instances == Some(instances.len())
-                    && seed_arity > 0
-                    && dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
-                    && instances
-                        .first()
-                        .is_some_and(|instance| instance.indices == [0, 0])
+                dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && directions.iter().all(|direction| {
                         let length = direction.direction[0].hypot(direction.direction[1]);
-                        direction.count > 0
-                            && direction.spacing.0.is_finite()
+                        direction.spacing.0.is_finite()
                             && direction.direction.iter().all(|value| value.is_finite())
                             && (length - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     })
-                    && instances.iter().all(|instance| {
-                        instance.indices[0] < directions[0].count
-                            && instance.indices[1] < directions[1].count
-                            && instance.entities.len() == seed_arity
-                            && indices.insert(instance.indices)
-                            && instance
-                                .entities
-                                .iter()
-                                .all(|entity| entities.insert(entity))
+                    && pattern.rows().iter().flatten().all(|instance| {
+                        instance
+                            .entities
+                            .iter()
+                            .all(|entity| entities.insert(entity))
                     })
             }
-            Constraint::CircularPattern {
-                center,
-                angle,
-                count,
-                instances,
-                ..
-            } => {
-                let seed_arity = instances
-                    .first()
-                    .map_or(0, |instance| instance.entities.len());
-                let mut indices = HashSet::new();
+            Constraint::CircularPattern { pattern } => {
+                let instances = pattern.instances();
                 let mut entities = HashSet::new();
-                *count > 0
-                    && angle.0.is_finite()
-                    && seed_arity > 0
-                    && instances.len() == usize::try_from(*count).unwrap_or(usize::MAX)
+                pattern.angle().0.is_finite()
                     && instances
                         .first()
-                        .is_some_and(|instance| instance.index == 0 && instance.angle.0 == 0.0)
+                        .is_some_and(|instance| instance.angle.0 == 0.0)
                     && !instances
                         .iter()
                         .flat_map(|instance| &instance.entities)
-                        .any(|entity| entity == center)
+                        .any(|entity| entity == pattern.center())
                     && instances.iter().all(|instance| {
-                        instance.index < *count
-                            && instance.angle.0.is_finite()
-                            && instance.entities.len() == seed_arity
-                            && indices.insert(instance.index)
+                        instance.angle.0.is_finite()
                             && instance
                                 .entities
                                 .iter()
@@ -1627,9 +1521,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         )
                     })
                     && !glyph_transforms.is_empty()
-                    && glyph_transforms
-                        .iter()
-                        .all(crate::transform::Transform::is_affine)
             }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
@@ -1770,21 +1661,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && angle_matches
                     && parameter_matches
             }
-            Constraint::AngleDifference {
-                first,
-                second,
-                difference,
-                value,
-            } => {
-                first.variable_type == 4
-                    && second.variable_type == 4
-                    && difference.variable_type == 0
-                    && value.0.is_finite()
-                    && (0.0..=std::f64::consts::PI).contains(&value.0)
+            Constraint::AngleDifference { value, .. } => {
+                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
             }
-            Constraint::ScalarEquality { first, second } => {
-                first.variable_type == 6 && second.variable_type == 6 && first.key != second.key
-            }
+            Constraint::ScalarEquality { first, second } => first != second,
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()
@@ -1907,16 +1787,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Offset {
                 pairs,
                 distance,
-                parameter,
-                parameter_factor,
+                parameter: _,
             } => {
                 let mut sources = HashSet::new();
                 let mut results = HashSet::new();
-                let valid_parameter = match (parameter, parameter_factor) {
-                    (None, None) => true,
-                    (Some(_), Some(factor)) => factor.abs() == 1.0,
-                    _ => false,
-                };
                 !pairs.is_empty()
                     && pairs.iter().all(|pair| {
                         pair.source != pair.result
@@ -1925,7 +1799,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     })
                     && distance.0.is_finite()
                     && distance.0 > 0.0
-                    && valid_parameter
             }
             Constraint::ProjectedCopy { source, result } => source != result,
             Constraint::Group { elements } | Constraint::Text { elements, .. } => {
@@ -1940,12 +1813,11 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 !native_kind.is_empty()
                     && (!entities.is_empty() || !operands.is_empty())
                     && operands.iter().all(|operand| {
-                        !operand.native_kind.is_empty()
+                        !operand.native_kind.as_str().is_empty()
                             && operand
-                                .native_field
+                                .field
                                 .as_ref()
-                                .is_none_or(|field| !field.is_empty())
-                            && (operand.native_role.is_none() || operand.native_field.is_some())
+                                .is_none_or(|field| !field.name.as_str().is_empty())
                     })
             }
             _ => true,
@@ -2042,10 +1914,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-fn invalid_optional_parameter_pair(start: Option<f64>, end: Option<f64>) -> bool {
-    start.is_some() != end.is_some() || start.into_iter().chain(end).any(|value| !value.is_finite())
-}
-
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
     (left.u - right.u).hypot(left.v - right.v)
 }
@@ -2139,8 +2007,7 @@ fn oriented_endpoints(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle: Some(start),
-            end_angle: Some(end),
+            bounds: Some([start, end]),
         } => (
             ellipse_point(
                 *center,
@@ -2157,11 +2024,8 @@ fn oriented_endpoints(
                 end.0,
             ),
         ),
-        SketchGeometry::Nurbs {
-            control_points,
-            periodic: false,
-            ..
-        } if control_points.len() >= 2 => {
+        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+            let control_points = curve.control_points();
             (control_points[0], control_points[control_points.len() - 1])
         }
         _ => return None,

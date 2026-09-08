@@ -12,7 +12,6 @@ fn component_path_type_identities_name_ordered_features() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source_id.into()),
-        parent_source_id: None,
         ordinal: 0,
         name: String::new(),
         kind: String::new(),

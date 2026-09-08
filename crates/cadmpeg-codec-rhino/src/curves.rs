@@ -100,24 +100,54 @@ pub(crate) struct PointCloud {
     pub(crate) warnings: Vec<String>,
 }
 
-/// A validated polycurve construction.
+/// A curve carrier or a recursive polycurve construction.
 #[derive(Debug, Clone)]
-pub(crate) struct Compound {
-    /// Child curve trees in source order.
-    pub(crate) children: Vec<DecodedCurve>,
-    /// Child segment parameters.
-    pub(crate) parameters: Vec<f64>,
+pub(crate) enum DecodedCurve {
+    /// Solved leaf geometry.
+    Leaf {
+        /// Solved carrier geometry.
+        geometry: CurveGeometry,
+        /// Non-fatal source warnings.
+        warnings: Vec<String>,
+    },
+    /// Polycurve with one start parameter per child and a closing end parameter.
+    Compound {
+        /// Child curve trees with their start parameters.
+        children: Vec<(f64, DecodedCurve)>,
+        /// End parameter of the last child.
+        end_parameter: f64,
+        /// Non-fatal source warnings.
+        warnings: Vec<String>,
+    },
 }
 
-/// A curve carrier and its optional recursive construction.
-#[derive(Debug, Clone)]
-pub(crate) struct DecodedCurve {
-    /// Solved carrier geometry.
-    pub(crate) geometry: CurveGeometry,
-    /// Compound construction, when this is a polycurve.
-    pub(crate) compound: Option<Compound>,
-    /// Non-fatal source warnings.
-    pub(crate) warnings: Vec<String>,
+impl DecodedCurve {
+    pub(crate) fn leaf(geometry: CurveGeometry, warnings: Vec<String>) -> Self {
+        Self::Leaf { geometry, warnings }
+    }
+
+    pub(crate) fn warnings(&self) -> &[String] {
+        match self {
+            Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
+        }
+    }
+
+    pub(crate) fn warnings_mut(&mut self) -> &mut Vec<String> {
+        match self {
+            Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
+        }
+    }
+
+    pub(crate) fn is_compound(&self) -> bool {
+        matches!(self, Self::Compound { .. })
+    }
+
+    pub(crate) fn reported_geometry(&self) -> CurveGeometry {
+        match self {
+            Self::Leaf { geometry, .. } => geometry.clone(),
+            Self::Compound { .. } => CurveGeometry::Unknown { record: None },
+        }
+    }
 }
 
 /// A semantic geometry error.
@@ -357,7 +387,7 @@ pub(crate) fn decode_inner(
                 "curve-on-surface has no stored model-space carrier",
             ));
         };
-        curve.warnings.splice(0..0, construction.warnings);
+        curve.warnings_mut().splice(0..0, construction.warnings);
         return Ok(DecodedGeometry::Curve { curve });
     }
     if matches!(
@@ -386,48 +416,38 @@ pub(crate) fn decode_inner(
         }
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
-            curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
-                compound: None,
-                warnings: Vec::new(),
-            },
+            curve: DecodedCurve::leaf(
+                CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
+                Vec::new(),
+            ),
         },
         ARC => {
             let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
             DecodedGeometry::Curve {
-                curve: DecodedCurve {
-                    geometry,
-                    compound: None,
-                    warnings,
-                },
+                curve: DecodedCurve::leaf(geometry, warnings),
             }
         }
         POLYLINE => DecodedGeometry::Curve {
-            curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
-                compound: None,
-                warnings: Vec::new(),
-            },
+            curve: DecodedCurve::leaf(
+                CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
+                Vec::new(),
+            ),
         },
         POLYCURVE | POLYCURVE_LEGACY => {
             let curve = read_polycurve(data, &mut reader, scale, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
-            curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(
-                    &mut reader,
-                    scale,
-                )?),
-                compound: None,
-                warnings: Vec::new(),
-            },
+            curve: DecodedCurve::leaf(
+                CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(&mut reader, scale)?),
+                Vec::new(),
+            ),
         },
         _ => {
             return Err(GeometryError::unsupported(
                 range.start,
                 "unsupported Rhino geometry class",
-            ))
+            ));
         }
     };
     reader.skip_remaining()?;
@@ -453,11 +473,11 @@ pub(crate) fn decode_embedded_curve(
     let mut wrapper_warnings = Vec::new();
     let class = parse_class_wrapper(
         data,
-        start..wrapper.next_offset,
+        start..wrapper.next_offset(),
         archive,
         &mut wrapper_warnings,
     )?;
-    reader.skip(wrapper.next_offset - start)?;
+    reader.skip(wrapper.next_offset() - start)?;
     if !matches!(
         class.class_uuid,
         LINE | ARC
@@ -487,7 +507,7 @@ pub(crate) fn decode_embedded_curve(
             "embedded surface child is not a curve",
         ));
     };
-    curve.warnings.splice(0..0, wrapper_warnings);
+    curve.warnings_mut().splice(0..0, wrapper_warnings);
     Ok(curve)
 }
 
@@ -510,11 +530,11 @@ pub(crate) fn decode_embedded_curve_2d(
     let mut wrapper_warnings = Vec::new();
     let class = parse_class_wrapper(
         data,
-        start..wrapper.next_offset,
+        start..wrapper.next_offset(),
         archive,
         &mut wrapper_warnings,
     )?;
-    reader.skip(wrapper.next_offset - start)?;
+    reader.skip(wrapper.next_offset() - start)?;
     if !curve_class(class.class_uuid) || matches!(class.class_uuid, CURVE_PROXY | CURVE_ON_SURFACE)
     {
         return Err(GeometryError::malformed(
@@ -536,7 +556,7 @@ pub(crate) fn decode_embedded_curve_2d(
         ));
     };
     scale_decoded_curve(&mut curve, scale, start)?;
-    curve.warnings.splice(0..0, wrapper_warnings);
+    curve.warnings_mut().splice(0..0, wrapper_warnings);
     Ok(curve)
 }
 
@@ -545,54 +565,64 @@ fn scale_decoded_curve(
     scale: f64,
     offset: usize,
 ) -> Result<(), GeometryError> {
-    if let Some(compound) = &mut curve.compound {
-        for child in &mut compound.children {
-            scale_decoded_curve(child, scale, offset)?;
+    match curve {
+        DecodedCurve::Compound { children, .. } => {
+            for (_, child) in children {
+                scale_decoded_curve(child, scale, offset)?;
+            }
+            return Ok(());
         }
-        return Ok(());
-    }
-    match &mut curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => {
-            for point in &mut nurbs.control_points {
-                *point = scale_ir_point(*point, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space curve is invalid")
+        DecodedCurve::Leaf { geometry, .. } => match geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                let scaled = nurbs
+                    .control_points()
+                    .iter()
+                    .copied()
+                    .map(|point| {
+                        scale_ir_point(point, scale).ok_or_else(|| {
+                            GeometryError::malformed(offset, "scaled plane-space curve is invalid")
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                nurbs
+                    .edit_control_points(|points| points.copy_from_slice(&scaled))
+                    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
+            }
+            CurveGeometry::Circle { center, radius, .. } => {
+                *center = scale_ir_point(*center, scale).ok_or_else(|| {
+                    GeometryError::malformed(offset, "scaled plane-space circle is invalid")
+                })?;
+                *radius *= scale;
+                if !radius.is_finite() || *radius <= 0.0 {
+                    return Err(GeometryError::malformed(
+                        offset,
+                        "scaled plane-space circle radius is invalid",
+                    ));
+                }
+            }
+            CurveGeometry::Line { origin, .. } => {
+                *origin = scale_ir_point(*origin, scale).ok_or_else(|| {
+                    GeometryError::malformed(offset, "scaled plane-space line is invalid")
                 })?;
             }
-        }
-        CurveGeometry::Circle { center, radius, .. } => {
-            *center = scale_ir_point(*center, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled plane-space circle is invalid")
-            })?;
-            *radius *= scale;
-            if !radius.is_finite() || *radius <= 0.0 {
+            CurveGeometry::Degenerate { point } => {
+                *point = scale_ir_point(*point, scale).ok_or_else(|| {
+                    GeometryError::malformed(offset, "scaled plane-space point is invalid")
+                })?;
+            }
+            CurveGeometry::Unknown { .. } => {
                 return Err(GeometryError::malformed(
                     offset,
-                    "scaled plane-space circle radius is invalid",
+                    "plane-space curve has unknown geometry",
                 ));
             }
-        }
-        CurveGeometry::Line { origin, .. } => {
-            *origin = scale_ir_point(*origin, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled plane-space line is invalid")
-            })?;
-        }
-        CurveGeometry::Degenerate { point } => {
-            *point = scale_ir_point(*point, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled plane-space point is invalid")
-            })?;
-        }
-        CurveGeometry::Unknown { .. } => {
-            return Err(GeometryError::malformed(
-                offset,
-                "plane-space curve has unknown geometry",
-            ));
-        }
-        _ => {
-            return Err(GeometryError::malformed(
-                offset,
-                "unsupported plane-space analytic curve",
-            ))
-        }
+            _ => {
+                return Err(GeometryError::malformed(
+                    offset,
+                    "unsupported plane-space analytic curve",
+                ));
+            }
+        },
     }
     Ok(())
 }
@@ -607,8 +637,8 @@ pub(crate) fn exact_nurbs(
     curve: &DecodedCurve,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    let Some(compound) = &curve.compound else {
-        return match &curve.geometry {
+    match curve {
+        DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Nurbs(nurbs) => Ok(nurbs.clone()),
             CurveGeometry::Circle {
                 center,
@@ -624,27 +654,33 @@ pub(crate) fn exact_nurbs(
                     yaxis,
                     radius: *radius,
                 };
-                Ok(arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU))
+                arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU, offset)
             }
             _ => Err(error(offset, "curve has no exact NURBS representation")),
-        };
-    };
-    if compound.children.len().checked_add(1) != Some(compound.parameters.len()) {
-        return Err(error(offset, "polycurve parameter count mismatch"));
-    }
-    let mut segments = Vec::with_capacity(compound.children.len());
-    for (index, child) in compound.children.iter().enumerate() {
-        let target = [compound.parameters[index], compound.parameters[index + 1]];
-        if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
-            return Err(error(offset, "polycurve segment domain is invalid"));
+        },
+        DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let mut segments = Vec::with_capacity(children.len());
+            for (index, (start, child)) in children.iter().enumerate() {
+                let end = children
+                    .get(index + 1)
+                    .map_or(*end_parameter, |(next, _)| *next);
+                let target = [*start, end];
+                if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+                    return Err(error(offset, "polycurve segment domain is invalid"));
+                }
+                segments.push(remap_nurbs_domain(
+                    exact_nurbs(child, offset)?,
+                    target,
+                    offset,
+                )?);
+            }
+            Ok(join_nurbs_segments(segments, offset)?.curve)
         }
-        segments.push(remap_nurbs_domain(
-            exact_nurbs(child, offset)?,
-            target,
-            offset,
-        )?);
     }
-    Ok(join_nurbs_segments(segments, offset)?.curve)
 }
 
 pub(crate) fn remap_nurbs_domain(
@@ -653,30 +689,39 @@ pub(crate) fn remap_nurbs_domain(
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let degree =
-        usize::try_from(curve.degree).map_err(|_| error(offset, "curve degree is too large"))?;
+        usize::try_from(curve.degree()).map_err(|_| error(offset, "curve degree is too large"))?;
     let end_index = curve
-        .knots
+        .knots()
         .len()
         .checked_sub(degree + 1)
         .ok_or_else(|| error(offset, "curve knot vector is invalid"))?;
     let source = [
         *curve
-            .knots
+            .knots()
             .get(degree)
             .ok_or_else(|| error(offset, "curve knot vector is invalid"))?,
-        curve.knots[end_index],
+        curve.knots()[end_index],
     ];
     let denominator = source[1] - source[0];
     if !denominator.is_finite() || denominator <= 0.0 {
         return Err(error(offset, "curve domain is invalid"));
     }
     let factor = (target[1] - target[0]) / denominator;
-    for knot in &mut curve.knots {
-        *knot = target[0] + (*knot - source[0]) * factor;
-        if !knot.is_finite() {
-            return Err(error(offset, "curve knot remap overflowed"));
-        }
-    }
+    let remapped = curve
+        .knots()
+        .iter()
+        .copied()
+        .map(|knot| {
+            let value = target[0] + (knot - source[0]) * factor;
+            value
+                .is_finite()
+                .then_some(value)
+                .ok_or_else(|| error(offset, "curve knot remap overflowed"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    curve
+        .edit_knots(|knots| knots.copy_from_slice(&remapped))
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     Ok(curve)
 }
 
@@ -748,22 +793,19 @@ fn insert_knot_once(
 }
 
 fn elevate_to_degree(
-    curve: NurbsCurve,
+    curve: &NurbsCurve,
     target: usize,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let degree =
-        usize::try_from(curve.degree).map_err(|_| error(offset, "curve degree overflow"))?;
-    if degree > target
-        || curve.periodic
-        || curve.control_points.len() + degree + 1 != curve.knots.len()
-    {
+        usize::try_from(curve.degree()).map_err(|_| error(offset, "curve degree overflow"))?;
+    if degree > target || curve.periodic() {
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
-    let weights = match curve.weights {
-        Some(weights) => weights,
+    let weights = match curve.weights() {
+        Some(weights) => weights.to_vec(),
         None => alloc_filled(
-            curve.control_points.len(),
+            curve.control_points().len(),
             1.0,
             "Rhino polycurve segment weights",
         )
@@ -774,19 +816,17 @@ fn elevate_to_degree(
             )
         })?,
     };
-    if weights.len() != curve.control_points.len() {
-        return Err(error(offset, "polycurve segment weight count mismatch"));
-    }
     let rational = weights.iter().any(|weight| *weight != 1.0);
     let mut points = curve
-        .control_points
-        .into_iter()
+        .control_points()
+        .iter()
+        .copied()
         .zip(weights)
         .map(|(point, weight)| {
             Homogeneous([point.x * weight, point.y * weight, point.z * weight, weight])
         })
         .collect::<Vec<_>>();
-    let mut knots = curve.knots;
+    let mut knots = curve.knots().to_vec();
     let domain = [knots[degree], knots[knots.len() - degree - 1]];
     for endpoint in domain {
         while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
@@ -857,13 +897,14 @@ fn elevate_to_degree(
         ));
         output_weights.push(weight);
     }
-    Ok(NurbsCurve {
-        degree: target as u32,
-        knots: elevated_knots,
+    NurbsCurve::new(
+        target as u32,
+        elevated_knots,
         control_points,
-        weights: rational.then_some(output_weights),
-        periodic: false,
-    })
+        rational.then_some(output_weights),
+        false,
+    )
+    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 pub(crate) fn join_nurbs_segments(
@@ -875,7 +916,7 @@ pub(crate) fn join_nurbs_segments(
     };
     let degree = segments
         .iter()
-        .map(|segment| segment.degree)
+        .map(NurbsCurve::degree)
         .max()
         .expect("nonempty segments");
     let target = usize::try_from(degree).map_err(|_| error(offset, "curve degree overflow"))?;
@@ -883,7 +924,7 @@ pub(crate) fn join_nurbs_segments(
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
     segments = segments
-        .into_iter()
+        .iter()
         .map(|segment| elevate_to_degree(segment, target, offset))
         .collect::<Result<_, _>>()?;
     if segments.len() == 1 {
@@ -897,39 +938,36 @@ pub(crate) fn join_nurbs_segments(
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| error(offset, "curve degree overflow"))?;
     for segment in &segments {
-        if segment.knots.len() < multiplicity {
-            return Err(error(offset, "polycurve segment knot vector is invalid"));
-        }
-        let start = segment.knots.get(multiplicity - 1).copied();
+        let start = segment.knots().get(multiplicity - 1).copied();
         let end = segment
-            .knots
+            .knots()
             .len()
             .checked_sub(multiplicity)
-            .and_then(|index| segment.knots.get(index))
+            .and_then(|index| segment.knots().get(index))
             .copied();
         if start.is_none()
             || end.is_none()
-            || segment.knots[..multiplicity]
+            || segment.knots()[..multiplicity]
                 .iter()
                 .any(|value| Some(*value) != start)
-            || segment.knots[segment.knots.len() - multiplicity..]
+            || segment.knots()[segment.knots().len() - multiplicity..]
                 .iter()
                 .any(|value| Some(*value) != end)
         {
             return Err(error(offset, "polycurve segment is not endpoint-clamped"));
         }
     }
-    let rational = segments.iter().any(|segment| segment.weights.is_some());
+    let rational = segments.iter().any(|segment| segment.weights().is_some());
     let control_count = segments
         .iter()
         .try_fold(0_usize, |total, segment| {
-            total.checked_add(segment.control_points.len())
+            total.checked_add(segment.control_points().len())
         })
         .ok_or_else(|| error(offset, "polycurve size overflow"))?;
     let knot_count = segments
         .iter()
         .try_fold(0_usize, |total, segment| {
-            total.checked_add(segment.knots.len())
+            total.checked_add(segment.knots().len())
         })
         .and_then(|total| {
             (segments.len() - 1)
@@ -944,7 +982,7 @@ pub(crate) fn join_nurbs_segments(
     for (index, mut segment) in segments.into_iter().enumerate() {
         if index > 0 {
             let previous = *control_points.last().expect("previous segment endpoint");
-            let next = segment.control_points[0];
+            let next = segment.control_points()[0];
             let midpoint = Point3::new(
                 (previous.x + next.x) * 0.5,
                 (previous.y + next.y) * 0.5,
@@ -960,20 +998,22 @@ pub(crate) fn join_nurbs_segments(
                 ));
             }
             *control_points.last_mut().expect("previous endpoint") = midpoint;
-            segment.control_points[0] = midpoint;
+            segment
+                .edit_control_points(|points| points[0] = midpoint)
+                .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
         }
         let skip = usize::from(index > 0);
         if let Some(target) = &mut weights {
-            match segment.weights {
-                Some(values) => target.extend(values.into_iter().skip(skip)),
+            match segment.weights() {
+                Some(values) => target.extend(values.iter().copied().skip(skip)),
                 None => target.extend(std::iter::repeat_n(
                     1.0,
-                    segment.control_points.len() - skip,
+                    segment.control_points().len() - skip,
                 )),
             }
         }
-        control_points.extend(segment.control_points.into_iter().skip(skip));
-        let segment_start = segment.knots[multiplicity - 1];
+        control_points.extend(segment.control_points().iter().copied().skip(skip));
+        let segment_start = segment.knots()[multiplicity - 1];
         let dk = if index == 0 {
             0.0
         } else {
@@ -984,20 +1024,16 @@ pub(crate) fn join_nurbs_segments(
         }
         knots.extend(
             segment
-                .knots
-                .into_iter()
+                .knots()
+                .iter()
+                .copied()
                 .map(|knot| knot + dk)
                 .skip(if index == 0 { 0 } else { multiplicity }),
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic: false,
-        },
+        curve: NurbsCurve::new(degree, knots, control_points, weights, false)
+            .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
 }
@@ -1018,34 +1054,27 @@ pub(crate) fn decode_inner_2d(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
-            curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
-                compound: None,
-                warnings: Vec::new(),
-            },
+            curve: DecodedCurve::leaf(
+                CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
+                Vec::new(),
+            ),
         },
         LINE => DecodedGeometry::Curve {
-            curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_line(&mut reader, 1.0, Some(2))?),
-                compound: None,
-                warnings: Vec::new(),
-            },
+            curve: DecodedCurve::leaf(
+                CurveGeometry::Nurbs(read_line(&mut reader, 1.0, Some(2))?),
+                Vec::new(),
+            ),
         },
         POLYLINE => DecodedGeometry::Curve {
-            curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, 1.0, Some(2))?),
-                compound: None,
-                warnings: Vec::new(),
-            },
+            curve: DecodedCurve::leaf(
+                CurveGeometry::Nurbs(read_polyline(&mut reader, 1.0, Some(2))?),
+                Vec::new(),
+            ),
         },
         ARC => {
             let (geometry, warnings) = read_arc(&mut reader, 1.0, Some(2), true)?;
             DecodedGeometry::Curve {
-                curve: DecodedCurve {
-                    geometry,
-                    compound: None,
-                    warnings,
-                },
+                curve: DecodedCurve::leaf(geometry, warnings),
             }
         }
         POLYCURVE | POLYCURVE_LEGACY => {
@@ -1056,7 +1085,7 @@ pub(crate) fn decode_inner_2d(
             return Err(GeometryError::unsupported(
                 range.start,
                 "unsupported Rhino C2 curve class",
-            ))
+            ));
         }
     };
     reader.skip_remaining()?;
@@ -1086,30 +1115,20 @@ fn read_polycurve_2d(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    let parameter_count = count(reader, 8)?;
-    if parameter_count != segment_count + 1 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "C2 polycurve parameter count mismatch",
-        ));
-    }
-    let mut parameters = Vec::with_capacity(parameter_count);
-    for _ in 0..parameter_count {
-        let value = reader.f64()?;
-        push_polycurve_parameter(&mut parameters, value, reader.position(), "C2 polycurve")?;
-    }
+    let (parameters, end_parameter) =
+        read_polycurve_parameters(reader, segment_count, "C2 polycurve")?;
     let mut children = Vec::with_capacity(segment_count);
-    for _ in 0..segment_count {
+    for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
-            start..wrapper.next_offset,
+            start..wrapper.next_offset(),
             archive,
             &mut wrapper_warnings,
         )?;
-        reader.skip(wrapper.next_offset - start)?;
+        reader.skip(wrapper.next_offset() - start)?;
         let child = decode_inner_2d(
             data,
             class.class_uuid,
@@ -1123,15 +1142,12 @@ fn read_polycurve_2d(
                 "C2 polycurve child is not a curve",
             ));
         };
-        curve.warnings.splice(0..0, wrapper_warnings);
-        children.push(curve);
+        curve.warnings_mut().splice(0..0, wrapper_warnings);
+        children.push((parameter, curve));
     }
-    Ok(DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(Compound {
-            children,
-            parameters,
-        }),
+    Ok(DecodedCurve::Compound {
+        children,
+        end_parameter,
         warnings: Vec::new(),
     })
 }
@@ -1168,54 +1184,47 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
                 .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
         );
     }
-    let native_plane = plane(reader)?;
-    let _bounds = bbox(reader)?;
-    let flags = reader.i32()?;
+    plane(reader)?;
+    bbox(reader)?;
+    reader.i32()?;
     let mut warnings = Vec::new();
-    let normals = if minor >= 1 {
-        read_vectors(reader, point_count, &mut warnings)?
-    } else {
-        Vec::new()
-    };
-    let colors = if minor >= 1 {
+    if minor >= 1 {
+        let normal_count = count(reader, 24)?;
+        if normal_count != 0 && normal_count != point_count {
+            warnings
+                .push("redundant point-cloud normal count mismatch; channel dropped".to_string());
+        }
+        for _ in 0..normal_count {
+            crate::settings::vector(reader)?;
+        }
         let color_count = count(reader, 4)?;
-        let mut values: Vec<[u8; 4]> = Vec::with_capacity(color_count);
         for _ in 0..color_count {
-            values.push(reader.take(4)?.try_into().expect("color width checked"));
+            reader.take(4)?;
         }
         if color_count != 0 && color_count != point_count {
             warnings
                 .push("redundant point-cloud color count mismatch; channel dropped".to_string());
         }
-        values
-    } else {
-        Vec::new()
-    };
-    let values = if minor >= 2 {
+    }
+    if minor >= 2 {
         let value_count = count(reader, 8)?;
-        let mut values = Vec::with_capacity(value_count);
         for _ in 0..value_count {
             let value = reader.f64()?;
             if !value.is_finite() {
                 return Err(error(reader.position(), "point-cloud value is not finite"));
             }
-            values.push(value);
         }
         if value_count != 0 && value_count != point_count {
             warnings
                 .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
         }
-        values
-    } else {
-        Vec::new()
-    };
+    }
     if point_count == 0 {
         return Err(error(
             reader.position(),
             "point-cloud point count is invalid",
         ));
     }
-    let _ = (normals, colors, values, flags, native_plane);
     reader.skip_remaining()?;
     Ok(PointCloud {
         points,
@@ -1244,13 +1253,14 @@ fn read_line(
     {
         return Err(error(reader.position(), "invalid bounded line"));
     }
-    Ok(NurbsCurve {
-        degree: 1,
-        knots: vec![domain[0], domain[0], domain[1], domain[1]],
-        control_points: vec![from, to],
-        weights: None,
-        periodic: false,
-    })
+    NurbsCurve::new(
+        1,
+        vec![domain[0], domain[0], domain[1], domain[1]],
+        vec![from, to],
+        None,
+        false,
+    )
+    .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_polyline(
@@ -1305,13 +1315,8 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    Ok(NurbsCurve {
-        degree: 1,
-        knots,
-        control_points: points,
-        weights: None,
-        periodic: false,
-    })
+    NurbsCurve::new(1, knots, points, None, false)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
 fn read_arc(
@@ -1352,7 +1357,7 @@ fn read_arc(
         ));
     }
     Ok((
-        CurveGeometry::Nurbs(arc_nurbs(&circle, angle, domain, delta)),
+        CurveGeometry::Nurbs(arc_nurbs(&circle, angle, domain, delta, reader.position())?),
         warnings,
     ))
 }
@@ -1433,30 +1438,20 @@ fn read_polycurve(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    let parameter_count = count(reader, 8)?;
-    if parameter_count != segment_count + 1 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "polycurve parameter count mismatch",
-        ));
-    }
-    let mut parameters = Vec::with_capacity(parameter_count);
-    for _ in 0..parameter_count {
-        let value = reader.f64()?;
-        push_polycurve_parameter(&mut parameters, value, reader.position(), "polycurve")?;
-    }
+    let (parameters, end_parameter) =
+        read_polycurve_parameters(reader, segment_count, "polycurve")?;
     let mut children = Vec::with_capacity(segment_count);
-    for _ in 0..segment_count {
+    for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
-            start..wrapper.next_offset,
+            start..wrapper.next_offset(),
             archive,
             &mut wrapper_warnings,
         )?;
-        reader.skip(wrapper.next_offset - start)?;
+        reader.skip(wrapper.next_offset() - start)?;
         if !supported_class(class.class_uuid) || matches!(class.class_uuid, POINT | POINT_CLOUD) {
             return Err(GeometryError::malformed(
                 start,
@@ -1477,21 +1472,12 @@ fn read_polycurve(
                 "polycurve child is not a curve",
             ));
         };
-        curve.warnings.splice(0..0, wrapper_warnings);
-        children.push(curve);
+        curve.warnings_mut().splice(0..0, wrapper_warnings);
+        children.push((parameter, curve));
     }
-    if children.len() != segment_count {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "polycurve child count changed",
-        ));
-    }
-    Ok(DecodedCurve {
-        geometry: CurveGeometry::Unknown { record: None },
-        compound: Some(Compound {
-            children,
-            parameters,
-        }),
+    Ok(DecodedCurve::Compound {
+        children,
+        end_parameter,
         warnings: Vec::new(),
     })
 }
@@ -1508,23 +1494,56 @@ pub(crate) fn consume_legacy_polycurve(
     Ok(start..reader.position())
 }
 
-fn push_polycurve_parameter(
-    parameters: &mut Vec<f64>,
+fn read_polycurve_parameters(
+    reader: &mut BoundedReader<'_>,
+    segment_count: usize,
+    label: &str,
+) -> Result<(Vec<f64>, f64), GeometryError> {
+    let parameter_count = count(reader, 8)?;
+    if parameter_count != segment_count + 1 {
+        return Err(GeometryError::malformed(
+            reader.position(),
+            format!("{label} parameter count mismatch"),
+        ));
+    }
+    let mut parameters = Vec::with_capacity(segment_count);
+    for _ in 0..segment_count {
+        let value = reader.f64()?;
+        parameters.push(checked_polycurve_parameter(
+            parameters.last().copied(),
+            value,
+            reader.position(),
+            label,
+        )?);
+    }
+    let value = reader.f64()?;
+    let end_parameter =
+        checked_polycurve_parameter(parameters.last().copied(), value, reader.position(), label)?;
+    Ok((parameters, end_parameter))
+}
+
+fn checked_polycurve_parameter(
+    previous: Option<f64>,
     value: f64,
     offset: usize,
     label: &str,
-) -> Result<(), GeometryError> {
-    if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
+) -> Result<f64, GeometryError> {
+    if !value.is_finite() || previous.is_some_and(|previous| value <= previous) {
         return Err(GeometryError::malformed(
             offset,
             format!("{label} parameters are invalid"),
         ));
     }
-    parameters.push(value);
-    Ok(())
+    Ok(value)
 }
 
-fn arc_nurbs(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> NurbsCurve {
+fn arc_nurbs(
+    circle: &Circle,
+    angle: [f64; 2],
+    domain: [f64; 2],
+    delta: f64,
+    offset: usize,
+) -> Result<NurbsCurve, GeometryError> {
     let spans = (delta / FRAC_PI_2).ceil().max(1.0) as usize;
     let step = delta / spans as f64;
     let mut control_points = Vec::with_capacity(spans * 2 + 1);
@@ -1557,13 +1576,8 @@ fn arc_nurbs(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> 
             knots.extend([t1, t1, t1]);
         }
     }
-    NurbsCurve {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    }
+    NurbsCurve::new(2, knots, control_points, Some(weights), false)
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
@@ -1589,22 +1603,6 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
         circle.center.y + radial.y * circle.radius * radial_scale,
         circle.center.z + radial.z * circle.radius * radial_scale,
     )
-}
-
-fn read_vectors(
-    reader: &mut BoundedReader<'_>,
-    expected: usize,
-    warnings: &mut Vec<String>,
-) -> Result<Vec<Vector3>, GeometryError> {
-    let count = count(reader, 24)?;
-    if count != 0 && count != expected {
-        warnings.push("redundant point-cloud normal count mismatch; channel dropped".to_string());
-    }
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        values.push(vector(crate::settings::vector(reader)?));
-    }
-    Ok(values)
 }
 
 fn vector(value: crate::settings::Vector3) -> Vector3 {
@@ -1693,6 +1691,8 @@ pub(crate) fn error(offset: usize, message: &str) -> GeometryError {
 mod tests {
     use super::*;
 
+    const EPS_EXACT_ARC: f64 = 1.0e-12;
+
     #[test]
     fn stored_count_above_legacy_limit_is_bounded_by_payload() {
         let item_count = 65_537_usize;
@@ -1733,22 +1733,25 @@ mod tests {
     #[test]
     fn arc_nurbs_preserves_endpoints_midpoint_and_weights() {
         let circle = unit_circle();
-        let arc = arc_nurbs(&circle, [0.0, PI], [10.0, 20.0], PI);
-        assert_eq!(arc.degree, 2);
+        let arc = arc_nurbs(&circle, [0.0, PI], [10.0, 20.0], PI, 0).expect("valid arc");
+        assert_eq!(arc.degree(), 2);
         assert_eq!(
-            arc.control_points.first(),
+            arc.control_points().first(),
             Some(&circle_point(&circle, 0.0))
         );
-        assert_eq!(arc.control_points.last(), Some(&circle_point(&circle, PI)));
         assert_eq!(
-            arc.weights.as_ref().expect("rational arc")[1],
+            arc.control_points().last(),
+            Some(&circle_point(&circle, PI))
+        );
+        assert_eq!(
+            arc.weights().expect("rational arc")[1],
             2.0_f64.sqrt() / 2.0
         );
         let midpoint = circle_point(&circle, PI / 2.0);
-        let pole = arc.control_points[2];
-        let weight = arc.weights.as_ref().expect("rational arc")[2];
-        assert!((pole.x * weight - midpoint.x).abs() < 1.0e-12);
-        assert!((pole.y * weight - midpoint.y).abs() < 1.0e-12);
+        let pole = arc.control_points()[2];
+        let weight = arc.weights().expect("rational arc")[2];
+        assert!((pole.x * weight - midpoint.x).abs() < EPS_EXACT_ARC);
+        assert!((pole.y * weight - midpoint.y).abs() < EPS_EXACT_ARC);
     }
 
     #[test]
@@ -1772,9 +1775,9 @@ mod tests {
     #[test]
     fn arc_spans_never_exceed_quarter_turn() {
         let circle = unit_circle();
-        let arc = arc_nurbs(&circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI);
-        assert_eq!(arc.control_points.len(), 2 * 6 + 1);
-        assert_eq!(arc.knots.len(), arc.control_points.len() + 3);
+        let arc = arc_nurbs(&circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0).expect("valid arc");
+        assert_eq!(arc.control_points().len(), 2 * 6 + 1);
+        assert_eq!(arc.knots().len(), arc.control_points().len() + 3);
     }
 
     #[test]
@@ -1787,7 +1790,7 @@ mod tests {
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
             let curve = read_line(&mut reader, 1.0, None).expect("valid line");
-            assert_eq!(curve.knots, vec![2.0, 2.0, 5.0, 5.0]);
+            assert_eq!(curve.knots(), vec![2.0, 2.0, 5.0, 5.0]);
         }
     }
 
@@ -1805,9 +1808,35 @@ mod tests {
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
             let curve = read_polyline(&mut reader, 1.0, None).expect("valid polyline");
-            assert_eq!(curve.control_points.len(), 2);
-            assert_eq!(curve.knots, vec![10.0, 10.0, 12.0, 12.0]);
+            assert_eq!(curve.control_points().len(), 2);
+            assert_eq!(curve.knots(), vec![10.0, 10.0, 12.0, 12.0]);
         }
+    }
+
+    #[test]
+    fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
+        let curve = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid test curve");
+        let mut decoded = DecodedCurve::leaf(CurveGeometry::Nurbs(curve), Vec::new());
+        let error = scale_decoded_curve(&mut decoded, f64::MAX, 17)
+            .expect_err("scaling overflow must reject the NURBS curve");
+        assert!(error
+            .to_string()
+            .contains("scaled plane-space curve is invalid"));
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Nurbs(curve),
+            ..
+        } = decoded
+        else {
+            unreachable!("test retains the NURBS curve carrier");
+        };
+        assert_eq!(curve.control_points()[0], Point3::new(2.0, 0.0, 0.0));
     }
 
     #[test]
@@ -1834,95 +1863,95 @@ mod tests {
 
     #[test]
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
-        let mut parameters = vec![1.0];
-        assert!(push_polycurve_parameter(&mut parameters, 1.0, 8, "polycurve").is_err());
+        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "polycurve").is_err());
     }
 
     #[test]
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
-        let mut parameters = vec![1.0];
-        assert!(push_polycurve_parameter(&mut parameters, 1.0, 8, "C2 polycurve").is_err());
+        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "C2 polycurve").is_err());
     }
 
     #[test]
     fn analytic_full_circle_converts_to_exact_quadratic_nurbs() {
         let circle = unit_circle();
-        let decoded = DecodedCurve {
-            geometry: CurveGeometry::Circle {
+        let decoded = DecodedCurve::leaf(
+            CurveGeometry::Circle {
                 center: circle.center,
                 axis: circle.axis,
                 ref_direction: circle.xaxis,
                 radius: circle.radius,
             },
-            compound: None,
-            warnings: Vec::new(),
-        };
+            Vec::new(),
+        );
         let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
-        assert_eq!(nurbs.degree, 2);
-        assert_eq!(nurbs.control_points.len(), 9);
-        assert_eq!(nurbs.knots.len(), 12);
-        assert_eq!(nurbs.knots[0], 0.0);
-        assert_eq!(*nurbs.knots.last().expect("required invariant"), TAU);
+        assert_eq!(nurbs.degree(), 2);
+        assert_eq!(nurbs.control_points().len(), 9);
+        assert_eq!(nurbs.knots().len(), 12);
+        assert_eq!(nurbs.knots()[0], 0.0);
+        assert_eq!(*nurbs.knots().last().expect("nonempty knots"), TAU);
         assert_eq!(
-            nurbs.weights.expect("required invariant")[1],
+            nurbs.weights().expect("rational circle")[1],
             2.0_f64.sqrt() / 2.0
         );
     }
 
     #[test]
     fn recursive_compound_conversion_preserves_parent_domain_when_exact() {
-        let line = |start: f64, end: f64| DecodedCurve {
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![start, start, end, end],
-                control_points: vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            }),
-            compound: None,
-            warnings: Vec::new(),
+        let line = |start: f64, end: f64| {
+            DecodedCurve::leaf(
+                CurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        1,
+                        vec![start, start, end, end],
+                        vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                        None,
+                        false,
+                    )
+                    .expect("valid test line"),
+                ),
+                Vec::new(),
+            )
         };
-        let nested = DecodedCurve {
-            geometry: CurveGeometry::Unknown { record: None },
-            compound: Some(Compound {
-                children: vec![line(0.0, 1.0), line(0.0, 1.0)],
-                parameters: vec![2.0, 3.0, 5.0],
-            }),
+        let nested = DecodedCurve::Compound {
+            children: vec![(2.0, line(0.0, 1.0)), (3.0, line(0.0, 1.0))],
+            end_parameter: 5.0,
             warnings: Vec::new(),
         };
         let converted = exact_nurbs(&nested, 0).expect("required invariant");
-        assert_eq!(converted.knots, vec![2.0, 2.0, 3.0, 5.0, 5.0]);
-        assert_eq!(converted.control_points.len(), 3);
+        assert_eq!(converted.knots(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
+        assert_eq!(converted.control_points().len(), 3);
     }
 
     #[test]
     fn join_elevates_degree_and_midpoints_a_gap() {
-        let line = NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        };
-        let quadratic = NurbsCurve {
-            degree: 2,
-            knots: vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
-            control_points: vec![
+        let line = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid test line");
+        let quadratic = NurbsCurve::new(
+            2,
+            vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
+            vec![
                 Point3::new(3.0, 0.0, 0.0),
                 Point3::new(4.0, 1.0, 0.0),
                 Point3::new(5.0, 0.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+            false,
+        )
+        .expect("valid test quadratic");
         let joined = join_nurbs_segments(vec![line, quadratic], 0).expect("join");
-        assert_eq!(joined.curve.degree, 2);
+        assert_eq!(joined.curve.degree(), 2);
         assert_eq!(
-            joined.curve.knots,
+            joined.curve.knots(),
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 3.0, 3.0, 3.0]
         );
-        assert_eq!(joined.curve.control_points.len(), 5);
-        assert_eq!(joined.curve.control_points[2], Point3::new(2.0, 0.0, 0.0));
+        assert_eq!(joined.curve.control_points().len(), 5);
+        assert_eq!(joined.curve.control_points()[2], Point3::new(2.0, 0.0, 0.0));
         assert_eq!(joined.warnings.len(), 1);
         assert!(joined.warnings[0].contains("gap 2"));
     }

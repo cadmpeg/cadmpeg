@@ -36,7 +36,7 @@ Archive version 1 is a reader-only L0 boundary. Archive version 5 has header
 inspection only. The transfer claim therefore covers archive versions 2, 3, 4,
 50, 60, 70, and 80 with the floors above. Native source-less writing targets
 50, 60, 70, and 80. For each writing target, the test writes one point with
-`RhinoEncoder`, requires `example_read` to enumerate one model object, and
+`RhinoCodec`, requires `example_read` to enumerate one model object, and
 decodes the same file as one transferred object. This checks both directions
 at the object-record boundary; it does not claim acceptance by a vendor UI.
 

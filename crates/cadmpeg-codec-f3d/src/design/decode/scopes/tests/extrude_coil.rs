@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -153,10 +152,17 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: 12,
-            class_tag: "301".into(),
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
+        parse_parameter_scope(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .unwrap()
     };
 
     let direct = scope(
@@ -173,7 +179,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert_eq!(
-        direct.extrude_prologue,
+        direct.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
             reference: None,
             operation: DesignExtrudeOperation::Join,
@@ -206,13 +212,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert_eq!(
-        referenced.extrude_prologue,
+        referenced.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
-            reference: Some(crate::records::DesignExtrudePrologueReference {
+            reference: Some(crate::records::feature::DesignExtrudePrologueReference {
                 record_index: 77,
                 record_index_offset: 26,
                 trailing_zero_count: 8,
-                operation_prefix_marker: None,
                 operation_prefix_marker_offset: None,
             }),
             operation: DesignExtrudeOperation::Intersect,
@@ -246,7 +251,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         two_sided_to_faces
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedToFaces)
     );
@@ -267,7 +272,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         reference: Some(reference),
         operation_offset,
         ..
-    }) = compact_reference.extrude_prologue
+    }) = compact_reference.extrude_prologue()
     else {
         panic!("compact referenced Extrude prologue");
     };
@@ -291,11 +296,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         reference: Some(reference),
         operation_offset,
         ..
-    }) = marked_reference.extrude_prologue
+    }) = marked_reference.extrude_prologue()
     else {
         panic!("marked indexed-reference Extrude prologue");
     };
-    assert_eq!(reference.operation_prefix_marker, Some(1));
     assert_eq!(reference.operation_prefix_marker_offset, Some(37));
     assert_eq!(operation_offset, 38);
 
@@ -312,8 +316,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     );
-    assert_eq!(to_face.kind, "Extrusion");
-    let Some(prologue) = to_face.extrude_prologue else {
+    assert_eq!(
+        to_face.kind(),
+        crate::records::feature::DesignFeatureKind::Extrusion
+    );
+    let Some(prologue) = to_face.extrude_prologue() else {
         panic!("to-face Extrude prologue");
     };
     assert_eq!(prologue.extent(), Some(DesignExtrudeExtent::OneSidedToFace));
@@ -335,7 +342,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         same_face_extend_blind
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
@@ -354,7 +361,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         same_face_extend_through_all
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedThroughAll)
     );
@@ -372,11 +379,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert!(matches!(
-        target_ordinal.extrude_prologue,
+        target_ordinal.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
             side_extent_discriminators: [2, 0],
             side_extent_discriminator_offsets: [92, 176],
-            first_side_target_ordinal: Some(crate::records::DesignExtrudeTargetOrdinal {
+            first_side_target_ordinal: Some(crate::records::feature::DesignExtrudeTargetOrdinal {
                 scope_reference_ordinal: 0,
                 scope_reference_ordinal_offset: 87,
             }),
@@ -400,7 +407,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_distance
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
@@ -419,12 +426,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_symmetric
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::SymmetricDistance)
     );
     assert!(matches!(
-        shifted_symmetric.extrude_prologue,
+        shifted_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             side_extent_discriminator_offsets: [116, 130],
             ..
@@ -444,9 +451,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(283),
     );
     assert!(matches!(
-        shifted_compact_symmetric.extrude_prologue,
+        shifted_compact_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
             side_extent_discriminator_offsets: [116, 130],
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
@@ -467,9 +473,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(283),
     );
     assert!(matches!(
-        shifted_marked_symmetric.extrude_prologue,
+        shifted_marked_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: Some(1),
             operation_prefix_marker_offset: Some(27),
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 28,
@@ -497,9 +502,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(262),
     );
     assert!(matches!(
-        shifted_offset_profile.extrude_prologue,
+        shifted_offset_profile.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Cut,
             operation_offset: 27,
@@ -525,7 +529,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_two_sided
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedDistance)
     );
@@ -543,7 +547,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(283),
     );
     assert!(matches!(
-        shifted_compact_two_sided.extrude_prologue,
+        shifted_compact_two_sided.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             side_extent_discriminator_offsets: [166, 181],
             extent: Some(DesignExtrudeExtent::TwoSidedDistance),
@@ -566,7 +570,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_through_all
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedThroughAll)
     );
@@ -585,12 +589,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_to_face
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedToFace)
     );
     assert!(matches!(
-        shifted_to_face.extrude_prologue,
+        shifted_to_face.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             side_extent_discriminator_offsets: [116, 268],
             ..
@@ -612,7 +616,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             Some(reference_count_offset),
         );
         assert!(matches!(
-            shifted_compact_to_face.extrude_prologue,
+            shifted_compact_to_face.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
                 extent: Some(DesignExtrudeExtent::OneSidedToFace),
                 side_extent_discriminator_offsets: [106, offset],
@@ -635,7 +639,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(294),
     );
     assert!(matches!(
-        shifted_symmetric_through_all.extrude_prologue,
+        shifted_symmetric_through_all.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             extent: Some(DesignExtrudeExtent::SymmetricThroughAll),
             side_extent_discriminator_offsets: [116, 129],
@@ -656,7 +660,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(((0, 0), false)),
         None,
     );
-    assert_eq!(invalid_absent_first_side.extrude_prologue, None);
+    assert_eq!(invalid_absent_first_side.extrude_prologue(), None);
 
     let contradictory_direction_and_sides = scope(
         "Extrude",
@@ -671,11 +675,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     );
-    assert_eq!(contradictory_direction_and_sides.extrude_prologue, None);
+    assert_eq!(contradictory_direction_and_sides.extrude_prologue(), None);
 
     let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None, None);
-    assert_eq!(unrecognized.kind, "Extrude");
-    assert_eq!(unrecognized.extrude_prologue, None);
+    assert_eq!(
+        unrecognized.kind(),
+        crate::records::feature::DesignFeatureKind::Extrude
+    );
+    assert_eq!(unrecognized.extrude_prologue(), None);
     assert_eq!(
         scope(
             "Extrude",
@@ -690,7 +697,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             None,
             None,
         )
-        .extrude_prologue,
+        .extrude_prologue(),
         None
     );
     let sheet = scope(
@@ -706,7 +713,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     )
-    .extrude_prologue
+    .extrude_prologue()
     .expect("sheet Extrude prologue");
     assert!(!sheet.solid_operation());
     assert_eq!(
@@ -723,7 +730,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             None,
             None,
         )
-        .extrude_prologue,
+        .extrude_prologue(),
         None
     );
 }
@@ -765,49 +772,45 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: 12,
-            class_tag: "376".into(),
+            class_tag: crate::records::DesignClassTag::try_from("376".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
+        parse_parameter_scope(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .unwrap()
     };
 
     assert_eq!(
-        scope(false, 1, 1).extrude_prologue,
+        scope(false, 1, 1).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
-            prefix_value: None,
-            prefix_value_offset: None,
+            prefix_zero_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 21,
-            extent_kind: 2,
             extent_kind_offset: 25,
             direction_reversed: true,
             direction_reversed_offset: 29,
-            geometry_kind: 1,
-            geometry_kind_offset: 30,
+            solid_operation: true,
+            solid_operation_offset: 30,
         })
     );
     assert_eq!(
-        scope(true, 4, 0).extrude_prologue,
+        scope(true, 4, 0).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
-            prefix_value: Some(0),
-            prefix_value_offset: Some(21),
+            prefix_zero_offset: Some(21),
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 25,
-            extent_kind: 2,
             extent_kind_offset: 29,
             direction_reversed: true,
             direction_reversed_offset: 33,
-            geometry_kind: 0,
-            geometry_kind_offset: 34,
+            solid_operation: false,
+            solid_operation_offset: 34,
         })
     );
-
-    let mut invalid_extent_kind = scope(false, 1, 1).extrude_prologue.unwrap();
-    let DesignExtrudePrologue::LegacyDistance { extent_kind, .. } = &mut invalid_extent_kind else {
-        unreachable!("the fixture constructs the early distance-only layout");
-    };
-    *extent_kind = 1;
-    assert_eq!(invalid_extent_kind.extent(), None);
 }
 
 #[test]
@@ -850,16 +853,21 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "304".into(),
+        class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact shifted Extrude scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("compact shifted Extrude scope");
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: OPERATION_OFFSET as u64,
@@ -926,17 +934,29 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "304".into(),
+        class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact mixed Extrude scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("compact mixed Extrude scope");
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
-    assert_eq!(scope.reference_members, reference_members);
     assert_eq!(
-        scope.extrude_prologue,
+        scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        reference_members
+    );
+    assert_eq!(
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: OPERATION_OFFSET as u64,
@@ -956,133 +976,6 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
             start_offset: 40,
         })
     );
-}
-
-#[test]
-fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"301");
-    bytes.extend_from_slice(&12u32.to_le_bytes());
-    bytes.resize(120, 0);
-    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    bytes[24] = 1;
-    bytes[26..30].copy_from_slice(&2u32.to_le_bytes());
-    bytes[30..34].copy_from_slice(&3u32.to_le_bytes());
-    bytes[92..96].copy_from_slice(&2u32.to_le_bytes());
-    bytes[107..111].copy_from_slice(&4u32.to_le_bytes());
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&55u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.extend_from_slice(&7u32.to_le_bytes());
-    lp_utf16(&mut bytes, "SpirePrimitive");
-    let mut tail = [0; 78];
-    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
-    bytes.extend_from_slice(&tail);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"261");
-    bytes.extend_from_slice(&12u32.to_le_bytes());
-    let header = DesignRecordHeader {
-        id: "generated:scope-header#0".into(),
-        record_index: 12,
-        class_tag: "301".into(),
-        byte_offset: 0,
-    };
-
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("Coil scope");
-    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::Cut));
-    assert_eq!(scope.coil_operation_offset, Some(20));
-    assert_eq!(scope.coil_extent, Some(DesignCoilExtent::HeightPitch));
-    assert_eq!(scope.coil_extent_offset, Some(30));
-    assert_eq!(
-        scope.coil_section,
-        Some(DesignCoilSection::ExternalTriangle)
-    );
-    assert_eq!(scope.coil_section_offset, Some(92));
-    assert_eq!(
-        scope.coil_section_placement,
-        Some(DesignCoilSectionPlacement::Inside)
-    );
-    assert_eq!(scope.coil_section_placement_offset, Some(107));
-    assert_eq!(scope.coil_clockwise, Some(true));
-    assert_eq!(scope.coil_clockwise_offset, Some(24));
-}
-
-#[test]
-fn compact_coil_scope_uses_its_own_closed_discriminators() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"353");
-    bytes.extend_from_slice(&6644u32.to_le_bytes());
-    bytes.resize(120, 0);
-    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
-    bytes[24] = 0;
-    bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
-    bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
-    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
-    bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
-    let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
-    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
-    for reference in references {
-        bytes.push(1);
-        bytes.extend_from_slice(&reference.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-    bytes.extend_from_slice(&310u32.to_le_bytes());
-    lp_utf16(&mut bytes, "CoilPrimitive");
-    let mut tail = [0; 78];
-    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-    tail[31..35].copy_from_slice(&309u32.to_le_bytes());
-    bytes.extend_from_slice(&tail);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"259");
-    bytes.extend_from_slice(&6644u32.to_le_bytes());
-    let header = DesignRecordHeader {
-        id: "generated:scope-header#0".into(),
-        record_index: 6644,
-        class_tag: "353".into(),
-        byte_offset: 0,
-    };
-
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact Coil scope");
-    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
-    assert_eq!(scope.coil_extent, Some(DesignCoilExtent::RevolutionsHeight));
-    assert_eq!(scope.coil_section, Some(DesignCoilSection::Circular));
-    assert_eq!(
-        scope.coil_section_placement,
-        Some(DesignCoilSectionPlacement::Inside)
-    );
-    assert_eq!(scope.coil_clockwise, Some(false));
-
-    for (placement_code, placement) in [
-        (1u32, DesignCoilSectionPlacement::Inside),
-        (2u32, DesignCoilSectionPlacement::Center),
-        (3u32, DesignCoilSectionPlacement::Outside),
-    ] {
-        for (section_code, section) in [
-            (1u32, DesignCoilSection::Circular),
-            (2u32, DesignCoilSection::Square),
-            (3u32, DesignCoilSection::ExternalTriangle),
-            (4u32, DesignCoilSection::InternalTriangle),
-        ] {
-            bytes[92..96].copy_from_slice(&placement_code.to_le_bytes());
-            bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
-            let parsed =
-                parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-                    .expect("compact Coil scope");
-            assert_eq!(parsed.coil_section, Some(section));
-            assert_eq!(parsed.coil_section_placement, Some(placement));
-        }
-    }
-
-    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    let unsupported = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("unsupported Coil operation remains a native scope");
-    assert!(unsupported.coil_operation.is_none());
 }
 
 #[test]
@@ -1155,11 +1048,17 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: RECORD_INDEX,
-            class_tag: class_tag.into(),
+            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-415 scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-415 scope envelope")
     };
 
     for (reference_members, frame_length, operation) in [
@@ -1186,7 +1085,7 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
         assert_eq!(scope.frame_length, frame_length);
         assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
         assert_eq!(
-            scope.extrude_prologue,
+            scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation,
@@ -1216,16 +1115,16 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
     let valid = make_bytes(&REFERENCE_MEMBERS_5, 1);
     let mut invalid_marker = valid.clone();
     invalid_marker[layout::OPERATION_PREFIX_MARKER] = 0;
-    assert!(parse(&invalid_marker, "415").extrude_prologue.is_none());
+    assert!(parse(&invalid_marker, "415").extrude_prologue().is_none());
 
     let mut invalid_class = valid.clone();
-    assert!(parse(&invalid_class, "414").extrude_prologue.is_none());
+    assert!(parse(&invalid_class, "414").extrude_prologue().is_none());
     invalid_class[447 + 4..447 + 7].copy_from_slice(b"264");
-    assert!(parse(&invalid_class, "415").extrude_prologue.is_none());
+    assert!(parse(&invalid_class, "415").extrude_prologue().is_none());
 
     let mut invalid_slots = valid;
     invalid_slots[layout::REFERENCE_SLOTS + 1] = 0;
-    assert!(parse(&invalid_slots, "415").extrude_prologue.is_none());
+    assert!(parse(&invalid_slots, "415").extrude_prologue().is_none());
 }
 
 #[test]
@@ -1305,17 +1204,30 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: RECORD_INDEX,
-            class_tag: "415".into(),
+            class_tag: crate::records::DesignClassTag::try_from("415".to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-415 one-sided scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-415 one-sided scope envelope")
     };
 
     let to_face = parse(&make_bytes(true, &TO_FACE_REFERENCES));
     assert_eq!(to_face.frame_length, 481);
     assert_eq!(to_face.reference_count_offset, 278);
-    assert_eq!(to_face.reference_members, TO_FACE_REFERENCES);
+    assert_eq!(
+        to_face
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        TO_FACE_REFERENCES
+    );
     let Some(DesignExtrudePrologue::ReferenceAware {
         operation,
         direction_face_extend_values,
@@ -1324,7 +1236,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         extent,
         direction_reversed,
         ..
-    }) = to_face.extrude_prologue
+    }) = to_face.extrude_prologue()
     else {
         panic!("class-415 one-sided to-face prologue");
     };
@@ -1338,7 +1250,14 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     let distance = parse(&make_bytes(false, &DISTANCE_REFERENCES));
     assert_eq!(distance.frame_length, 449);
     assert_eq!(distance.reference_count_offset, 268);
-    assert_eq!(distance.reference_members, DISTANCE_REFERENCES);
+    assert_eq!(
+        distance
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        DISTANCE_REFERENCES
+    );
     let Some(DesignExtrudePrologue::ReferenceAware {
         direction_face_extend_values,
         side_extent_discriminators,
@@ -1346,7 +1265,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         extent,
         direction_reversed,
         ..
-    }) = distance.extrude_prologue
+    }) = distance.extrude_prologue()
     else {
         panic!("class-415 one-sided distance prologue");
     };
@@ -1359,56 +1278,11 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     let mut invalid_extent = make_bytes(false, &DISTANCE_REFERENCES);
     invalid_extent[distance_layout::SECOND_SIDE_EXTENT..distance_layout::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&1u32.to_le_bytes());
-    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+    assert!(parse(&invalid_extent).extrude_prologue().is_none());
 
     let mut invalid_paired_class = make_bytes(true, &TO_FACE_REFERENCES);
     invalid_paired_class[481 + 4..481 + 7].copy_from_slice(b"264");
-    assert!(parse(&invalid_paired_class).extrude_prologue.is_none());
-}
-
-#[test]
-fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"338");
-    bytes.extend_from_slice(&6644u32.to_le_bytes());
-    bytes.resize(228, 0);
-    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
-    bytes[24] = 0;
-    bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
-    bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
-    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
-    bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
-    let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
-    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
-    for reference in references {
-        bytes.push(1);
-        bytes.extend_from_slice(&reference.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    lp_utf16(&mut bytes, "CoilPrimitive");
-    let mut tail = [0; 88];
-    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&tail);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"259");
-    bytes.extend_from_slice(&6644u32.to_le_bytes());
-    let header = DesignRecordHeader {
-        id: "generated:scope-header#0".into(),
-        record_index: 6644,
-        class_tag: "338".into(),
-        byte_offset: 0,
-    };
-
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("compact Coil new-body scope");
-    assert_eq!(scope.frame_length, 442);
-    assert_eq!(scope.kind, "CoilPrimitive");
-    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
-    assert_eq!(scope.history_state_id, Some(3));
-    assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, 0);
+    assert!(parse(&invalid_paired_class).extrude_prologue().is_none());
 }
 
 #[test]
@@ -1477,11 +1351,17 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: RECORD_INDEX,
-            class_tag: class_tag.into(),
+            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("shifted reference-aware Extrude scope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("shifted reference-aware Extrude scope")
     };
 
     for (class_tag, primary_class, paired_class) in [
@@ -1493,7 +1373,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
         assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
         assert_eq!(
-            scope.extrude_prologue,
+            scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ShiftedReferenceAware {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 27,
@@ -1517,46 +1397,42 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let invalid_scope = parse_parameter_scope(
         &invalid_class_397,
         &IndexedRecordOffsets::build(&invalid_class_397),
-        &DesignRecordHeader {
-            id: "generated:scope-header#class-397-variant".into(),
-            record_index: RECORD_INDEX,
-            class_tag: "397".into(),
-            byte_offset: 0,
-        },
+        RECORD_INDEX,
+        &crate::records::DesignClassTag::try_from("397".to_owned()).unwrap(),
+        0,
     )
     .expect("class-397 scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_tail = make_bytes(b"357", b"258", 2);
     invalid_tail[135..139].copy_from_slice(&0u32.to_le_bytes());
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
-        class_tag: "357".into(),
+        class_tag: crate::records::DesignClassTag::try_from("357".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let invalid_scope = parse_parameter_scope(
         &invalid_tail,
         &IndexedRecordOffsets::build(&invalid_tail),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_class = make_bytes(b"349", b"266", 2);
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
     let invalid_scope = parse_parameter_scope(
         &invalid_class,
         &IndexedRecordOffsets::build(&invalid_class),
-        &DesignRecordHeader {
-            id: "generated:scope-header#0".into(),
-            record_index: RECORD_INDEX,
-            class_tag: "349".into(),
-            byte_offset: 0,
-        },
+        RECORD_INDEX,
+        &crate::records::DesignClassTag::try_from("349".to_owned()).unwrap(),
+        0,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let prefix_length = 17;
     let mut nonzero_start = vec![0; prefix_length];
@@ -1564,13 +1440,15 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let nonzero_header = DesignRecordHeader {
         id: "generated:scope-header#nonzero".into(),
         record_index: RECORD_INDEX,
-        class_tag: "349".into(),
+        class_tag: crate::records::DesignClassTag::try_from("349".to_owned()).unwrap(),
         byte_offset: prefix_length as u64,
     };
     let nonzero_scope = parse_parameter_scope(
         &nonzero_start,
         &IndexedRecordOffsets::build(&nonzero_start),
-        &nonzero_header,
+        nonzero_header.record_index,
+        &nonzero_header.class_tag,
+        nonzero_header.byte_offset,
     )
     .expect("nonzero-start shifted reference-aware Extrude scope");
     assert_eq!(nonzero_scope.byte_offset, prefix_length as u64);
@@ -1578,7 +1456,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         nonzero_scope.reference_count_offset,
         (prefix_length + REFERENCE_COUNT_OFFSET) as u64
     );
-    assert!(nonzero_scope.extrude_prologue.is_some());
+    assert!(nonzero_scope.extrude_prologue().is_some());
 }
 
 #[test]
@@ -1672,15 +1550,21 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
-        class_tag: "323".into(),
+        class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("shifted reference-aware class-323 Extrude scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("shifted reference-aware class-323 Extrude scope");
     assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
     assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: layout::OPERATION as u64,
@@ -1708,20 +1592,24 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     let invalid_scope = parse_parameter_scope(
         &invalid_trailing_reference,
         &IndexedRecordOffsets::build(&invalid_trailing_reference),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_class = bytes;
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
     let invalid_scope = parse_parameter_scope(
         &invalid_class,
         &IndexedRecordOffsets::build(&invalid_class),
-        &header,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 }
 
 #[test]
@@ -1809,12 +1697,18 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
-        class_tag: "323".into(),
+        class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("shifted reference-aware symmetric Extrude scope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("shifted reference-aware symmetric Extrude scope")
     };
     let scope = parse(&bytes);
     assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
@@ -1823,7 +1717,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         symmetric::REFERENCE_COUNT as u64
     );
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::Cut,
             operation_offset: layout::OPERATION as u64,
@@ -1847,124 +1741,17 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
     let mut invalid_extent = bytes.clone();
     invalid_extent[symmetric::SECOND_SIDE_EXTENT..symmetric::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&3u32.to_le_bytes());
-    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+    assert!(parse(&invalid_extent).extrude_prologue().is_none());
 
     let mut invalid_trailing_reference = bytes.clone();
     invalid_trailing_reference
         [symmetric::TRAILING_REFERENCE + 1..symmetric::TRAILING_REFERENCE + 5]
         .copy_from_slice(&9001u32.to_le_bytes());
     assert!(parse(&invalid_trailing_reference)
-        .extrude_prologue
+        .extrude_prologue()
         .is_none());
 
     let mut invalid_class = bytes;
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
-    assert!(parse(&invalid_class).extrude_prologue.is_none());
-}
-
-#[test]
-fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
-    let scope = |frame_length: usize, operation: u32| {
-        let reference_members: [u32; 10] =
-            [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010];
-        let kind = "CoilPrimitive";
-        let kind_length = 4 + kind.encode_utf16().count() * 2;
-        let tail_length = if frame_length == 572 { 76 } else { 78 };
-        let kind_at = frame_length - tail_length - kind_length;
-        let reference_count_at = kind_at - 4 - 4 - reference_members.len() * 11;
-        let mut bytes = vec![0; reference_count_at];
-        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
-        bytes[4..7].copy_from_slice(b"345");
-        bytes[7..11].copy_from_slice(&331u32.to_le_bytes());
-        bytes[22..26].copy_from_slice(&operation.to_le_bytes());
-        bytes[26..30].copy_from_slice(&1u32.to_le_bytes());
-        for (offset, target) in [(30usize, 1005u32), (41, 1009)] {
-            bytes[offset] = 1;
-            bytes[offset + 1..offset + 5].copy_from_slice(&target.to_le_bytes());
-        }
-        if matches!(frame_length, 572 | 578) {
-            let matrix: [f64; 16] = [
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            ];
-            for (ordinal, value) in matrix.into_iter().enumerate() {
-                bytes[77 + ordinal * 8..85 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
-            }
-        }
-        bytes.extend_from_slice(&(reference_members.len() as u32).to_le_bytes());
-        for reference in reference_members {
-            bytes.push(1);
-            bytes.extend_from_slice(&reference.to_le_bytes());
-            bytes.extend_from_slice(&[0; 6]);
-        }
-        bytes.extend_from_slice(&310u32.to_le_bytes());
-        lp_utf16(&mut bytes, kind);
-        let mut tail = vec![0; tail_length];
-        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-        tail[31..35].copy_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&tail);
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"259");
-        bytes.extend_from_slice(&331u32.to_le_bytes());
-        assert_eq!(bytes.len(), frame_length + 11);
-        let header = DesignRecordHeader {
-            id: "generated:scope-header#0".into(),
-            record_index: 331,
-            class_tag: "345".into(),
-            byte_offset: 0,
-        };
-        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-            .expect("long Coil scope")
-    };
-
-    let boolean = scope(450, 1);
-    assert_eq!(boolean.coil_operation, Some(DesignExtrudeOperation::Join));
-    assert_eq!(boolean.coil_operation_offset, Some(22));
-    assert_eq!(boolean.coil_extent, None);
-    assert_eq!(boolean.coil_section, Some(DesignCoilSection::Circular));
-    assert_eq!(boolean.coil_section_offset, None);
-    assert_eq!(
-        boolean.coil_section_placement,
-        Some(DesignCoilSectionPlacement::Inside)
-    );
-    assert_eq!(boolean.coil_section_placement_offset, None);
-    assert_eq!(boolean.coil_clockwise, Some(false));
-    assert_eq!(boolean.coil_clockwise_offset, None);
-
-    let new_body = scope(578, 2);
-    assert_eq!(
-        new_body.coil_operation,
-        Some(DesignExtrudeOperation::NewBody)
-    );
-    assert_eq!(new_body.coil_operation_offset, Some(22));
-    let transform = new_body.coil_transform.expect("long Coil placement");
-    assert_eq!(transform.transform_offset, 77);
-    assert_eq!(
-        transform.transform,
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    );
-
-    for (operation, expected) in [
-        (1, DesignExtrudeOperation::Join),
-        (2, DesignExtrudeOperation::Cut),
-        (3, DesignExtrudeOperation::Intersect),
-    ] {
-        let boolean = scope(572, operation);
-        assert_eq!(boolean.coil_operation, Some(expected));
-        let transform = boolean.coil_transform.expect("572-byte Coil placement");
-        assert_eq!(transform.transform_offset, 77);
-        assert_eq!(
-            transform.transform,
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
-        );
-    }
+    assert!(parse(&invalid_class).extrude_prologue().is_none());
 }

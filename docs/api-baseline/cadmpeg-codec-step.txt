@@ -1,25 +1,5 @@
-# generated at 410399168
+# generated at 948026409
 pub mod cadmpeg_codec_step
-pub enum cadmpeg_codec_step::StepError
-pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
-pub cadmpeg_codec_step::StepError::Unsupported(alloc::string::String)
-impl core::convert::From<cadmpeg_codec_step::StepError> for cadmpeg_core::error::CodecError
-pub fn cadmpeg_core::error::CodecError::from(cadmpeg_codec_step::StepError) -> Self
-impl core::convert::From<core::io::error::Error> for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::from(core::io::error::Error) -> Self
-impl core::error::Error for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
-impl core::fmt::Debug for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for cadmpeg_codec_step::StepError
-pub fn cadmpeg_codec_step::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_step::StepError
-impl core::marker::Send for cadmpeg_codec_step::StepError
-impl core::marker::Sync for cadmpeg_codec_step::StepError
-impl core::marker::Unpin for cadmpeg_codec_step::StepError
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepError
-impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepError
-impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepError
 pub enum cadmpeg_codec_step::StepSchema
 pub cadmpeg_codec_step::StepSchema::Ap203Edition1
 pub cadmpeg_codec_step::StepSchema::Ap203Edition2
@@ -28,88 +8,25 @@ pub cadmpeg_codec_step::StepSchema::Ap242Edition1
 pub cadmpeg_codec_step::StepSchema::Ap242Edition2
 pub cadmpeg_codec_step::StepSchema::Ap242Edition3
 impl cadmpeg_codec_step::StepSchema
+pub const fn cadmpeg_codec_step::StepSchema::descriptor(self) -> cadmpeg_core::target::TargetDescriptor
 pub const fn cadmpeg_codec_step::StepSchema::file_schema(self) -> &'static str
-impl core::clone::Clone for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::clone(&self) -> cadmpeg_codec_step::StepSchema
-impl core::cmp::Eq for cadmpeg_codec_step::StepSchema
-impl core::cmp::PartialEq for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::eq(&self, &cadmpeg_codec_step::StepSchema) -> bool
-impl core::default::Default for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::default() -> cadmpeg_codec_step::StepSchema
-impl core::fmt::Debug for cadmpeg_codec_step::StepSchema
-pub fn cadmpeg_codec_step::StepSchema::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_step::StepSchema
-impl core::marker::StructuralPartialEq for cadmpeg_codec_step::StepSchema
-impl core::marker::Freeze for cadmpeg_codec_step::StepSchema
-impl core::marker::Send for cadmpeg_codec_step::StepSchema
-impl core::marker::Sync for cadmpeg_codec_step::StepSchema
-impl core::marker::Unpin for cadmpeg_codec_step::StepSchema
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepSchema
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepSchema
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepSchema
-pub enum cadmpeg_codec_step::StepUnsupportedPolicy
-pub cadmpeg_codec_step::StepUnsupportedPolicy::Reject
-pub cadmpeg_codec_step::StepUnsupportedPolicy::Report
-impl core::clone::Clone for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::clone(&self) -> cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::cmp::Eq for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::cmp::PartialEq for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::eq(&self, &cadmpeg_codec_step::StepUnsupportedPolicy) -> bool
-impl core::default::Default for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::default() -> cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::fmt::Debug for cadmpeg_codec_step::StepUnsupportedPolicy
-pub fn cadmpeg_codec_step::StepUnsupportedPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::StructuralPartialEq for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Freeze for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Send for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Sync for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::Unpin for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepUnsupportedPolicy
 pub struct cadmpeg_codec_step::StepCodec
 pub cadmpeg_codec_step::StepCodec::options: cadmpeg_codec_step::StepWriteOptions
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_step::StepCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
-impl core::clone::Clone for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::clone(&self) -> cadmpeg_codec_step::StepCodec
-impl core::default::Default for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::default() -> cadmpeg_codec_step::StepCodec
-impl core::fmt::Debug for cadmpeg_codec_step::StepCodec
-pub fn cadmpeg_codec_step::StepCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_step::StepCodec
-impl core::marker::Send for cadmpeg_codec_step::StepCodec
-impl core::marker::Sync for cadmpeg_codec_step::StepCodec
-impl core::marker::Unpin for cadmpeg_codec_step::StepCodec
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepCodec
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepCodec
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepCodec
+pub const cadmpeg_codec_step::StepCodec::FORMAT: cadmpeg_ir::codec::FormatId
+pub fn cadmpeg_codec_step::StepCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_step::StepCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl cadmpeg_ir::codec::write::backend::EncoderBackend for cadmpeg_codec_step::StepCodec
+pub type cadmpeg_codec_step::StepCodec::Target = cadmpeg_ir::codec::write::backend::Catalog
+pub const cadmpeg_codec_step::StepCodec::FORMAT: cadmpeg_ir::codec::FormatId
+pub const cadmpeg_codec_step::StepCodec::TARGET: cadmpeg_ir::codec::write::backend::Catalog
+pub fn cadmpeg_codec_step::StepCodec::plan_resolved(&self, cadmpeg_ir::codec::write::backend::EncodeInput<'_>, cadmpeg_ir::codec::write::resolve::ResolvedWrite<'_>) -> core::result::Result<cadmpeg_ir::codec::write::backend::ExportBody, cadmpeg_core::error::CodecError>
 pub struct cadmpeg_codec_step::StepWriteOptions
 pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::originating_system: alloc::string::String
 pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
-pub cadmpeg_codec_step::StepWriteOptions::schema: cadmpeg_codec_step::StepSchema
-pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
-pub cadmpeg_codec_step::StepWriteOptions::unsupported: cadmpeg_codec_step::StepUnsupportedPolicy
-impl core::clone::Clone for cadmpeg_codec_step::StepWriteOptions
-pub fn cadmpeg_codec_step::StepWriteOptions::clone(&self) -> cadmpeg_codec_step::StepWriteOptions
+pub cadmpeg_codec_step::StepWriteOptions::timestamp: core::option::Option<alloc::string::String>
 impl core::default::Default for cadmpeg_codec_step::StepWriteOptions
 pub fn cadmpeg_codec_step::StepWriteOptions::default() -> Self
-impl core::fmt::Debug for cadmpeg_codec_step::StepWriteOptions
-pub fn cadmpeg_codec_step::StepWriteOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::Send for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::Sync for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::Unpin for cadmpeg_codec_step::StepWriteOptions
-impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepWriteOptions
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepWriteOptions
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepWriteOptions
-pub fn cadmpeg_codec_step::write_step(&cadmpeg_ir::document::CadIr, &mut impl core::io::write::Write + ?core::marker::Sized, &cadmpeg_codec_step::StepWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_codec_step::StepError>

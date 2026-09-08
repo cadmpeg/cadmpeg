@@ -3,6 +3,7 @@
 
 use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
+use crate::products::NonEmptyString;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -23,6 +24,13 @@ macro_rules! string_id {
                 S: serde::Serializer,
             {
                 crate::schema::serialize_reference_id(&self.0, serializer)
+            }
+        }
+
+        impl $name {
+            /// Borrow the underlying id string.
+            pub fn as_str(&self) -> &str {
+                &self.0
             }
         }
     };
@@ -162,9 +170,10 @@ pub struct SketchEntityUse {
 /// public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchEntityWire")]
 pub struct SketchEntity {
     /// Globally unique entity id.
-    pub id: SketchEntityId,
+    id: SketchEntityId,
     /// Owning sketch.
     pub sketch: SketchId,
     /// Whether the entity is construction geometry.
@@ -186,6 +195,7 @@ pub struct SketchEntity {
 impl SketchEntity {
     /// Construct a sketch entity from its id, owning sketch, and geometry.
     pub fn new(id: SketchEntityId, sketch: SketchId, geometry: SketchGeometry) -> Self {
+        assert!(!id.0.is_empty(), "SketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -195,6 +205,74 @@ impl SketchEntity {
             endpoint_refs: Vec::new(),
             geometry,
         }
+    }
+
+    /// Return the globally unique entity id.
+    pub fn id(&self) -> &SketchEntityId {
+        &self.id
+    }
+
+    /// Set whether this entity is construction geometry.
+    #[must_use]
+    pub fn with_construction(mut self, construction: bool) -> Self {
+        self.construction = construction;
+        self
+    }
+
+    /// Set the source-native geometry record.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
+    /// Set the source-native curve carrier.
+    #[must_use]
+    pub fn with_geometry_ref(mut self, geometry_ref: Option<String>) -> Self {
+        self.geometry_ref = geometry_ref;
+        self
+    }
+
+    /// Set the source-native endpoint records.
+    #[must_use]
+    pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
+        self.endpoint_refs = endpoint_refs;
+        self
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchEntityWire {
+    id: SketchEntityId,
+    sketch: SketchId,
+    #[serde(default)]
+    construction: bool,
+    #[serde(default)]
+    native_ref: Option<String>,
+    #[serde(default)]
+    geometry_ref: Option<String>,
+    #[serde(default)]
+    endpoint_refs: Vec<String>,
+    geometry: SketchGeometry,
+}
+
+impl TryFrom<SketchEntityWire> for SketchEntity {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchEntityWire) -> Result<Self, Self::Error> {
+        if wire.id.0.is_empty() {
+            return Err("SketchEntity.id must not be empty");
+        }
+        Ok(Self {
+            id: wire.id,
+            sketch: wire.sketch,
+            construction: wire.construction,
+            native_ref: wire.native_ref,
+            geometry_ref: wire.geometry_ref,
+            endpoint_refs: wire.endpoint_refs,
+            geometry: wire.geometry,
+        })
     }
 }
 
@@ -250,12 +328,10 @@ pub enum SketchGeometry {
         major_radius: Length,
         /// Semi-minor radius.
         minor_radius: Length,
-        /// Start parameter for a bounded arc; absent for a full ellipse.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_angle: Option<Angle>,
-        /// End parameter for a bounded arc; absent for a full ellipse.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        end_angle: Option<Angle>,
+        /// Parameter bounds for an arc; absent for a full ellipse.
+        #[serde(flatten, with = "angle_bounds_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "AngleBoundsWire"))]
+        bounds: Option<[Angle; 2]>,
     },
     /// Full or bounded hyperbola.
     Hyperbola {
@@ -267,12 +343,10 @@ pub enum SketchGeometry {
         major_radius: Length,
         /// Semi-minor radius.
         minor_radius: Length,
-        /// Start parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_parameter: Option<f64>,
-        /// End parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        end_parameter: Option<f64>,
+        /// Parameter bounds for a branch; absent for the full curve.
+        #[serde(flatten, with = "parameter_bounds_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "ParameterBoundsWire"))]
+        bounds: Option<[f64; 2]>,
     },
     /// Full or bounded parabola.
     Parabola {
@@ -282,27 +356,16 @@ pub enum SketchGeometry {
         axis_angle: Angle,
         /// Distance from the vertex to the focus.
         focal_length: Length,
-        /// Start parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_parameter: Option<f64>,
-        /// End parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        end_parameter: Option<f64>,
+        /// Parameter bounds for a branch; absent for the full curve.
+        #[serde(flatten, with = "parameter_bounds_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "ParameterBoundsWire"))]
+        bounds: Option<[f64; 2]>,
     },
     /// NURBS curve in sketch coordinates.
     Nurbs {
-        /// Curve degree.
-        degree: u32,
-        /// Full knot vector.
-        knots: Vec<f64>,
-        /// Control points in parameter order.
-        control_points: Vec<Point2>,
-        /// Per-pole weights; absent for non-rational curves.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        weights: Option<Vec<f64>>,
-        /// Whether the curve is periodic.
-        #[serde(default)]
-        periodic: bool,
+        /// Checked two-dimensional knot, pole, and weight payload.
+        #[serde(flatten)]
+        curve: crate::geometry::PcurveNurbs,
     },
     /// Text placed in sketch coordinates.
     Text {
@@ -318,14 +381,10 @@ pub enum SketchGeometry {
         /// source stores none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         width_factor: Option<f64>,
-        /// Point the text is placed and rotated about, in sketch coordinates,
-        /// absent when the source stores no placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        anchor: Option<Point2>,
-        /// Rotation about the anchor, counterclockwise from the sketch u axis,
-        /// absent when the source stores no placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        rotation: Option<Angle>,
+        /// Text placement in sketch coordinates, absent when the source stores none.
+        #[serde(flatten, with = "text_placement_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "TextPlacementWire"))]
+        placement: Option<TextPlacement>,
         /// Horizontal placement about the text anchor, when the source class
         /// carries an alignment enum.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -351,6 +410,142 @@ pub enum SketchGeometry {
         /// Source geometry family.
         native_kind: String,
     },
+}
+
+/// Placement of sketch text about one anchor point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextPlacement {
+    /// Point the text is placed and rotated about, in sketch coordinates.
+    pub anchor: Point2,
+    /// Counterclockwise rotation from the sketch u axis.
+    pub rotation: Angle,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TextPlacementWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchor: Option<Point2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rotation: Option<Angle>,
+}
+
+mod text_placement_wire {
+    use super::{TextPlacement, TextPlacementWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
+    pub fn serialize<S>(value: &Option<TextPlacement>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        TextPlacementWire {
+            anchor: value.map(|placement| placement.anchor),
+            rotation: value.map(|placement| placement.rotation),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TextPlacement>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = TextPlacementWire::deserialize(deserializer)?;
+        match (wire.anchor, wire.rotation) {
+            (None, None) => Ok(None),
+            (Some(anchor), Some(rotation)) => Ok(Some(TextPlacement { anchor, rotation })),
+            _ => Err(serde::de::Error::custom(
+                "text anchor and rotation must be present together",
+            )),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AngleBoundsWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    start_angle: Option<Angle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    end_angle: Option<Angle>,
+}
+
+mod angle_bounds_wire {
+    use super::{Angle, AngleBoundsWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
+    pub fn serialize<S>(value: &Option<[Angle; 2]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let [start_angle, end_angle] =
+            (*value).map_or([None, None], |[start, end]| [Some(start), Some(end)]);
+        AngleBoundsWire {
+            start_angle,
+            end_angle,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[Angle; 2]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = AngleBoundsWire::deserialize(deserializer)?;
+        match (wire.start_angle, wire.end_angle) {
+            (None, None) => Ok(None),
+            (Some(start), Some(end)) => Ok(Some([start, end])),
+            _ => Err(serde::de::Error::custom(
+                "start_angle and end_angle must be present together",
+            )),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ParameterBoundsWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    start_parameter: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    end_parameter: Option<f64>,
+}
+
+mod parameter_bounds_wire {
+    use super::ParameterBoundsWire;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
+    pub fn serialize<S>(value: &Option<[f64; 2]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let [start_parameter, end_parameter] =
+            value.map_or([None, None], |[start, end]| [Some(start), Some(end)]);
+        ParameterBoundsWire {
+            start_parameter,
+            end_parameter,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[f64; 2]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ParameterBoundsWire::deserialize(deserializer)?;
+        match (wire.start_parameter, wire.end_parameter) {
+            (None, None) => Ok(None),
+            (Some(start), Some(end)) => Ok(Some([start, end])),
+            _ => Err(serde::de::Error::custom(
+                "start_parameter and end_parameter must be present together",
+            )),
+        }
+    }
 }
 
 /// A sketch whose solved geometry is expressed directly in model space.
@@ -407,9 +602,10 @@ pub struct SpatialSketchEntityUse {
 /// is no public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchEntityWire")]
 pub struct SpatialSketchEntity {
     /// Globally unique spatial entity id.
-    pub id: SpatialSketchEntityId,
+    id: SpatialSketchEntityId,
     /// Owning spatial sketch.
     pub sketch: SpatialSketchId,
     /// Whether the entity is construction geometry.
@@ -435,6 +631,7 @@ impl SpatialSketchEntity {
         sketch: SpatialSketchId,
         geometry: SpatialSketchGeometry,
     ) -> Self {
+        assert!(!id.0.is_empty(), "SpatialSketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -444,6 +641,74 @@ impl SpatialSketchEntity {
             endpoint_refs: Vec::new(),
             geometry,
         }
+    }
+
+    /// Return the globally unique spatial entity id.
+    pub fn id(&self) -> &SpatialSketchEntityId {
+        &self.id
+    }
+
+    /// Set whether this entity is construction geometry.
+    #[must_use]
+    pub fn with_construction(mut self, construction: bool) -> Self {
+        self.construction = construction;
+        self
+    }
+
+    /// Set the source-native geometry record.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
+    /// Set the source-native curve carrier.
+    #[must_use]
+    pub fn with_geometry_ref(mut self, geometry_ref: Option<String>) -> Self {
+        self.geometry_ref = geometry_ref;
+        self
+    }
+
+    /// Set the source-native endpoint records.
+    #[must_use]
+    pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
+        self.endpoint_refs = endpoint_refs;
+        self
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpatialSketchEntityWire {
+    id: SpatialSketchEntityId,
+    sketch: SpatialSketchId,
+    #[serde(default)]
+    construction: bool,
+    #[serde(default)]
+    native_ref: Option<String>,
+    #[serde(default)]
+    geometry_ref: Option<String>,
+    #[serde(default)]
+    endpoint_refs: Vec<String>,
+    geometry: SpatialSketchGeometry,
+}
+
+impl TryFrom<SpatialSketchEntityWire> for SpatialSketchEntity {
+    type Error = &'static str;
+
+    fn try_from(wire: SpatialSketchEntityWire) -> Result<Self, Self::Error> {
+        if wire.id.0.is_empty() {
+            return Err("SpatialSketchEntity.id must not be empty");
+        }
+        Ok(Self {
+            id: wire.id,
+            sketch: wire.sketch,
+            construction: wire.construction,
+            native_ref: wire.native_ref,
+            geometry_ref: wire.geometry_ref,
+            endpoint_refs: wire.endpoint_refs,
+            geometry: wire.geometry,
+        })
     }
 }
 
@@ -598,12 +863,10 @@ pub enum SpatialSketchConstraintDefinition {
         normal: Vector3,
         /// Strictly positive operation-level offset magnitude.
         distance: crate::features::Length,
-        /// Driving offset-distance parameter, when dimensional.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter: Option<crate::features::ParameterId>,
-        /// Multiplier from the driving parameter value to `distance`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_factor: Option<f64>,
+        /// Signed driving offset-distance parameter, when dimensional.
+        #[serde(flatten, with = "offset_parameter_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
+        parameter: Option<OffsetParameter>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
     ParallelToDirection {
@@ -664,31 +927,15 @@ pub enum SpatialSketchGeometry {
     },
     /// Model-space NURBS curve.
     Nurbs {
-        /// Curve degree.
-        degree: u32,
-        /// Full knot vector.
-        knots: Vec<f64>,
-        /// Control points in parameter order.
-        control_points: Vec<Point3>,
-        /// Per-pole weights; absent for non-rational curves.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        weights: Option<Vec<f64>>,
-        /// Whether the curve is periodic.
-        #[serde(default)]
-        periodic: bool,
+        /// Checked model-space knot, pole, and weight payload.
+        #[serde(flatten)]
+        curve: crate::geometry::NurbsCurve,
     },
-    /// Tensor-product NURBS surface embedded in model space.
+    /// Polynomial tensor-product B-spline surface embedded in model space.
     NurbsSurface {
-        /// Degree in the first parameter.
-        u_degree: u32,
-        /// Degree in the second parameter.
-        v_degree: u32,
-        /// Full knot vector in the first parameter.
-        u_knots: Vec<f64>,
-        /// Full knot vector in the second parameter.
-        v_knots: Vec<f64>,
-        /// Rectangular control grid in first-parameter-major order.
-        control_points: Vec<Vec<Point3>>,
+        /// Checked rectangular control grid and full knot vectors.
+        #[serde(flatten)]
+        surface: crate::geometry::BsplineSurface,
     },
     /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
@@ -706,6 +953,7 @@ pub struct SketchConstraint {
     /// Owning sketch.
     pub sketch: SketchId,
     /// Constraint semantics.
+    #[serde(deserialize_with = "deserialize_sketch_constraint_definition")]
     pub definition: SketchConstraintDefinition,
     /// User-visible constraint name, when assigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -739,6 +987,30 @@ pub struct SketchConstraint {
     pub native_ref: Option<String>,
 }
 
+fn deserialize_sketch_constraint_definition<'de, D>(
+    deserializer: D,
+) -> Result<SketchConstraintDefinition, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(object) = value.as_object_mut() {
+        let axis = match object.get("kind").and_then(serde_json::Value::as_str) {
+            Some("horizontal_loci" | "horizontal_points") => Some("v"),
+            Some("vertical_loci" | "vertical_points") => Some("u"),
+            _ => None,
+        };
+        if let Some(axis) = axis {
+            object.insert(
+                "kind".into(),
+                serde_json::Value::String("same_coordinate".into()),
+            );
+            object.insert("axis".into(), serde_json::Value::String(axis.into()));
+        }
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+
 /// A geometric locus on a sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -765,18 +1037,28 @@ pub enum SketchCoordinateAxis {
     V,
 }
 
+/// Source-native field and optional role carrying one sketch operand.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperandField {
+    /// Non-empty source-native field name.
+    pub name: NonEmptyString,
+    /// Source-native role code, when the field carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<u32>,
+}
+
 /// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SketchNativeOperand {
-    /// Source-native operand family.
-    pub native_kind: String,
-    /// Source-native field containing this operand.
+    /// Non-empty source-native operand family.
+    pub native_kind: NonEmptyString,
+    /// Source-native field and optional role containing this operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_field: Option<String>,
-    /// Source-native role code, when the field carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_role: Option<u32>,
+    pub field: Option<NativeOperandField>,
     /// Source-native object index.
     pub object_index: u32,
     /// Resolved source-native operand record.
@@ -797,48 +1079,496 @@ pub struct SketchOffsetPair {
     pub source_reversed: bool,
 }
 
-/// One axis of a rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Signed use of a driving offset-distance parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetParameter {
+    /// Driving parameter identity.
+    pub id: ParameterId,
+    /// Whether the stored positive distance is the negation of the parameter.
+    pub negated: bool,
+}
+
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct OffsetParameterWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parameter_factor: Option<f64>,
+}
+
+mod offset_parameter_wire {
+    use super::{OffsetParameter, OffsetParameterWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    // Serde passes the borrowed field to this adapter.
+    #[allow(clippy::ref_option)]
+    pub fn serialize<S>(value: &Option<OffsetParameter>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        OffsetParameterWire {
+            parameter: value.as_ref().map(|parameter| parameter.id.clone()),
+            parameter_factor: value
+                .as_ref()
+                .map(|parameter| if parameter.negated { -1.0 } else { 1.0 }),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OffsetParameter>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = OffsetParameterWire::deserialize(deserializer)?;
+        match (wire.parameter, wire.parameter_factor) {
+            (None, None) => Ok(None),
+            (Some(id), Some(1.0)) => Ok(Some(OffsetParameter { id, negated: false })),
+            (Some(id), Some(-1.0)) => Ok(Some(OffsetParameter { id, negated: true })),
+            (Some(_), Some(_)) => Err(serde::de::Error::custom("parameter_factor must be -1 or 1")),
+            _ => Err(serde::de::Error::custom(
+                "offset parameter and parameter_factor must be present together",
+            )),
+        }
+    }
+}
+
+/// One axis of a rectangular sketch pattern.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
     pub direction: [f64; 2],
     /// Adjacent-instance spacing along `direction`.
     pub spacing: Length,
-    /// Number of instances along this axis, including the seed instance.
-    pub count: u32,
-    /// Driving adjacent-spacing parameter, when the source exposes it as a neutral parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spacing_parameter: Option<ParameterId>,
-    /// Driving seed-to-final-span parameter, when the source exposes span
-    /// rather than adjacent spacing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub span_parameter: Option<ParameterId>,
+    /// Driving distance parameter and the distance form it controls.
+    pub distance: Option<SketchPatternDistance>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count_parameter: Option<ParameterId>,
 }
 
+/// Distance form controlled by a rectangular-pattern parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SketchPatternDistance {
+    /// The parameter controls adjacent-instance spacing.
+    Spacing(ParameterId),
+    /// The parameter controls the seed-to-final-instance span.
+    Span(ParameterId),
+}
+
+impl SketchPatternDistance {
+    /// Parameter that controls this distance form.
+    #[must_use]
+    pub fn parameter(&self) -> &ParameterId {
+        match self {
+            Self::Spacing(parameter) | Self::Span(parameter) => parameter,
+        }
+    }
+}
+
 /// One resolved rectangular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SketchPatternInstance {
-    /// Zero-based indices along the two pattern directions.
-    pub indices: [u32; 2],
     /// Entities in fixed seed-entity order.
     pub entities: Vec<SketchEntityId>,
 }
 
 /// One resolved circular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SketchCircularPatternInstance {
-    /// Zero-based position in pattern order; zero is the seed instance.
-    pub index: u32,
     /// Signed rotation from the seed instance in radians.
     pub angle: Angle,
     /// Entities in fixed seed-entity order.
     pub entities: Vec<SketchEntityId>,
+}
+
+/// Checked two-axis rectangular sketch pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchRectangularPattern {
+    directions: [SketchPatternDirection; 2],
+    rows: Vec<Vec<SketchPatternInstance>>,
+}
+
+impl SketchRectangularPattern {
+    /// Construct a non-empty rectangular grid whose instances have one fixed
+    /// positive entity arity.
+    pub fn new(
+        directions: [SketchPatternDirection; 2],
+        rows: Vec<Vec<SketchPatternInstance>>,
+    ) -> Option<Self> {
+        let row_count = u32::try_from(rows.len()).ok()?;
+        let column_count = u32::try_from(rows.first()?.len()).ok()?;
+        if row_count == 0
+            || column_count == 0
+            || rows.iter().any(|row| row.len() != column_count as usize)
+        {
+            return None;
+        }
+        let entity_arity = rows.first()?.first()?.entities.len();
+        if entity_arity == 0
+            || rows
+                .iter()
+                .flatten()
+                .any(|instance| instance.entities.len() != entity_arity)
+        {
+            return None;
+        }
+        Some(Self { directions, rows })
+    }
+
+    /// Ordered pattern directions.
+    #[must_use]
+    pub fn directions(&self) -> &[SketchPatternDirection; 2] {
+        &self.directions
+    }
+
+    /// Rectangular instance rows. Outer and inner positions are the two
+    /// zero-based pattern indices.
+    #[must_use]
+    pub fn rows(&self) -> &[Vec<SketchPatternInstance>] {
+        &self.rows
+    }
+
+    /// Number of instances along each direction.
+    #[must_use]
+    pub fn counts(&self) -> [u32; 2] {
+        [self.rows.len() as u32, self.rows[0].len() as u32]
+    }
+}
+
+/// Checked circular sketch pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchCircularPattern {
+    center: SketchEntityId,
+    angle: Angle,
+    angle_parameter: Option<ParameterId>,
+    count_parameter: Option<ParameterId>,
+    instances: Vec<SketchCircularPatternInstance>,
+}
+
+impl SketchCircularPattern {
+    /// Construct a non-empty pattern whose instances have one fixed positive
+    /// entity arity.
+    pub fn new(
+        center: SketchEntityId,
+        angle: Angle,
+        angle_parameter: Option<ParameterId>,
+        count_parameter: Option<ParameterId>,
+        instances: Vec<SketchCircularPatternInstance>,
+    ) -> Option<Self> {
+        u32::try_from(instances.len()).ok()?;
+        let entity_arity = instances.first()?.entities.len();
+        if entity_arity == 0
+            || instances
+                .iter()
+                .any(|instance| instance.entities.len() != entity_arity)
+        {
+            return None;
+        }
+        Some(Self {
+            center,
+            angle,
+            angle_parameter,
+            count_parameter,
+            instances,
+        })
+    }
+
+    /// Point entity defining the center of rotation.
+    #[must_use]
+    pub fn center(&self) -> &SketchEntityId {
+        &self.center
+    }
+
+    /// Evaluated angular span stored by the native pattern.
+    #[must_use]
+    pub fn angle(&self) -> Angle {
+        self.angle
+    }
+
+    /// Number of instances, including the seed instance.
+    #[must_use]
+    pub fn count(&self) -> u32 {
+        self.instances.len() as u32
+    }
+
+    /// Driving angular-span parameter.
+    #[must_use]
+    pub fn angle_parameter(&self) -> Option<&ParameterId> {
+        self.angle_parameter.as_ref()
+    }
+
+    /// Driving instance-count parameter.
+    #[must_use]
+    pub fn count_parameter(&self) -> Option<&ParameterId> {
+        self.count_parameter.as_ref()
+    }
+
+    /// Instances in pattern order. Slice position is the zero-based index.
+    #[must_use]
+    pub fn instances(&self) -> &[SketchCircularPatternInstance] {
+        &self.instances
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPatternDirectionWire {
+    direction: [f64; 2],
+    spacing: Length,
+    count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spacing_parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    span_parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count_parameter: Option<ParameterId>,
+}
+
+impl SketchPatternDirectionWire {
+    fn from_direction(value: &SketchPatternDirection, count: u32) -> Self {
+        Self {
+            direction: value.direction,
+            spacing: value.spacing,
+            count,
+            spacing_parameter: match &value.distance {
+                Some(SketchPatternDistance::Spacing(parameter)) => Some(parameter.clone()),
+                _ => None,
+            },
+            span_parameter: match &value.distance {
+                Some(SketchPatternDistance::Span(parameter)) => Some(parameter.clone()),
+                _ => None,
+            },
+            count_parameter: value.count_parameter.clone(),
+        }
+    }
+
+    fn into_direction(self) -> Result<SketchPatternDirection, &'static str> {
+        let distance = match (self.spacing_parameter, self.span_parameter) {
+            (None, None) => None,
+            (Some(parameter), None) => Some(SketchPatternDistance::Spacing(parameter)),
+            (None, Some(parameter)) => Some(SketchPatternDistance::Span(parameter)),
+            (Some(_), Some(_)) => {
+                return Err("spacing_parameter and span_parameter are mutually exclusive")
+            }
+        };
+        Ok(SketchPatternDirection {
+            direction: self.direction,
+            spacing: self.spacing,
+            distance,
+            count_parameter: self.count_parameter,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPatternInstanceWire {
+    indices: [u32; 2],
+    entities: Vec<SketchEntityId>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchCircularPatternInstanceWire {
+    index: u32,
+    angle: Angle,
+    entities: Vec<SketchEntityId>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchRectangularPatternWire {
+    directions: [SketchPatternDirectionWire; 2],
+    instances: Vec<SketchPatternInstanceWire>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchCircularPatternWire {
+    center: SketchEntityId,
+    angle: Angle,
+    count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    angle_parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count_parameter: Option<ParameterId>,
+    instances: Vec<SketchCircularPatternInstanceWire>,
+}
+
+impl Serialize for SketchRectangularPattern {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let counts = self.counts();
+        SketchRectangularPatternWire {
+            directions: [
+                SketchPatternDirectionWire::from_direction(&self.directions[0], counts[0]),
+                SketchPatternDirectionWire::from_direction(&self.directions[1], counts[1]),
+            ],
+            instances: self
+                .rows
+                .iter()
+                .enumerate()
+                .flat_map(|(first, row)| {
+                    row.iter().enumerate().map(move |(second, instance)| {
+                        SketchPatternInstanceWire {
+                            indices: [first as u32, second as u32],
+                            entities: instance.entities.clone(),
+                        }
+                    })
+                })
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchRectangularPattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SketchRectangularPatternWire::deserialize(deserializer)?;
+        let counts = wire.directions.each_ref().map(|direction| direction.count);
+        let row_count = usize::try_from(counts[0]).map_err(serde::de::Error::custom)?;
+        let column_count = usize::try_from(counts[1]).map_err(serde::de::Error::custom)?;
+        let expected = row_count
+            .checked_mul(column_count)
+            .ok_or_else(|| serde::de::Error::custom("rectangular pattern count overflows"))?;
+        if row_count == 0 || column_count == 0 || wire.instances.len() != expected {
+            return Err(serde::de::Error::custom(
+                "rectangular pattern directions.count must match instances",
+            ));
+        }
+        if wire
+            .instances
+            .iter()
+            .enumerate()
+            .any(|(position, instance)| {
+                usize::try_from(instance.indices[0]).ok() != Some(position / column_count)
+                    || usize::try_from(instance.indices[1]).ok() != Some(position % column_count)
+            })
+        {
+            return Err(serde::de::Error::custom(
+                "rectangular pattern instance indices must match their positions",
+            ));
+        }
+        let [first, second] = wire.directions;
+        let directions = [
+            first.into_direction().map_err(serde::de::Error::custom)?,
+            second.into_direction().map_err(serde::de::Error::custom)?,
+        ];
+        let mut instances = wire.instances.into_iter();
+        let rows = (0..row_count)
+            .map(|_| {
+                instances
+                    .by_ref()
+                    .take(column_count)
+                    .map(|instance| SketchPatternInstance {
+                        entities: instance.entities,
+                    })
+                    .collect()
+            })
+            .collect();
+        Self::new(directions, rows).ok_or_else(|| {
+            serde::de::Error::custom(
+                "rectangular pattern instances require one fixed positive entity arity",
+            )
+        })
+    }
+}
+
+impl Serialize for SketchCircularPattern {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SketchCircularPatternWire {
+            center: self.center.clone(),
+            angle: self.angle,
+            count: self.count(),
+            angle_parameter: self.angle_parameter.clone(),
+            count_parameter: self.count_parameter.clone(),
+            instances: self
+                .instances
+                .iter()
+                .enumerate()
+                .map(|(index, instance)| SketchCircularPatternInstanceWire {
+                    index: index as u32,
+                    angle: instance.angle,
+                    entities: instance.entities.clone(),
+                })
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchCircularPattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SketchCircularPatternWire::deserialize(deserializer)?;
+        if usize::try_from(wire.count).ok() != Some(wire.instances.len()) {
+            return Err(serde::de::Error::custom(
+                "circular pattern count must match instances",
+            ));
+        }
+        if wire
+            .instances
+            .iter()
+            .enumerate()
+            .any(|(index, instance)| u32::try_from(index).ok() != Some(instance.index))
+        {
+            return Err(serde::de::Error::custom(
+                "circular pattern instance index must match its position",
+            ));
+        }
+        let instances = wire
+            .instances
+            .into_iter()
+            .map(|instance| SketchCircularPatternInstance {
+                angle: instance.angle,
+                entities: instance.entities,
+            })
+            .collect();
+        Self::new(
+            wire.center,
+            wire.angle,
+            wire.angle_parameter,
+            wire.count_parameter,
+            instances,
+        )
+        .ok_or_else(|| {
+            serde::de::Error::custom(
+                "circular pattern instances require one fixed positive entity arity",
+            )
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SketchRectangularPattern {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SketchRectangularPattern".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SketchRectangularPatternWire::json_schema(generator)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SketchCircularPattern {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SketchCircularPattern".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SketchCircularPatternWire::json_schema(generator)
+    }
 }
 
 /// One independently measured pair within a repeated linear dimension.
@@ -880,24 +1610,46 @@ pub struct SketchDistancePair {
     pub second: SketchLocus,
 }
 
-/// One opaque scalar symbol in a sketch solver graph.
-///
-/// The identity is local to the owning sketch. `variable_type` preserves the
-/// solver's scalar class so relations can join only compatible symbols; it has
-/// no meaning outside that solver graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SketchSolverScalar {
-    /// Solver scalar class.
-    pub variable_type: u32,
-    /// Solver-local scalar key.
-    pub key: u32,
+struct SolverScalarWire {
+    variable_type: u32,
+    key: u32,
+}
+
+mod solver_scalar_wire {
+    use super::SolverScalarWire;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    // Serde passes this scalar field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub fn serialize<const CLASS: u32, S: Serializer>(
+        key: &u32,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        SolverScalarWire {
+            variable_type: CLASS,
+            key: *key,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, const CLASS: u32, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<u32, D::Error> {
+        let wire = SolverScalarWire::deserialize(deserializer)?;
+        if wire.variable_type != CLASS {
+            return Err(serde::de::Error::custom(format_args!(
+                "variable_type must be {CLASS} for this scalar slot, got {}",
+                wire.variable_type
+            )));
+        }
+        Ok(wire.key)
+    }
 }
 
 /// Meaning of an internal sketch alignment helper relation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SketchInternalAlignment {
     /// Major diameter helper for an ellipse.
     EllipseMajorDiameter,
@@ -916,11 +1668,92 @@ pub enum SketchInternalAlignment {
     /// Parabola focus helper.
     ParabolaFocus,
     /// B-spline control-point helper.
-    BsplineControlPoint,
+    BsplineControlPoint(u32),
     /// B-spline knot-point helper.
-    BsplineKnotPoint,
+    BsplineKnotPoint(u32),
     /// Parabola focal-axis helper.
     ParabolaFocalAxis,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum SketchInternalAlignmentWireKind {
+    EllipseMajorDiameter,
+    EllipseMinorDiameter,
+    EllipseFocus1,
+    EllipseFocus2,
+    HyperbolaMajor,
+    HyperbolaMinor,
+    HyperbolaFocus,
+    ParabolaFocus,
+    BsplineControlPoint,
+    BsplineKnotPoint,
+    ParabolaFocalAxis,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchInternalAlignmentWire {
+    alignment: SketchInternalAlignmentWireKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    index: Option<u32>,
+}
+
+mod internal_alignment_wire {
+    use super::{
+        SketchInternalAlignment as Alignment, SketchInternalAlignmentWire as Wire,
+        SketchInternalAlignmentWireKind as Kind,
+    };
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    // Serde passes this alignment field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub fn serialize<S>(value: &Alignment, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (alignment, index) = match *value {
+            Alignment::EllipseMajorDiameter => (Kind::EllipseMajorDiameter, None),
+            Alignment::EllipseMinorDiameter => (Kind::EllipseMinorDiameter, None),
+            Alignment::EllipseFocus1 => (Kind::EllipseFocus1, None),
+            Alignment::EllipseFocus2 => (Kind::EllipseFocus2, None),
+            Alignment::HyperbolaMajor => (Kind::HyperbolaMajor, None),
+            Alignment::HyperbolaMinor => (Kind::HyperbolaMinor, None),
+            Alignment::HyperbolaFocus => (Kind::HyperbolaFocus, None),
+            Alignment::ParabolaFocus => (Kind::ParabolaFocus, None),
+            Alignment::BsplineControlPoint(index) => (Kind::BsplineControlPoint, Some(index)),
+            Alignment::BsplineKnotPoint(index) => (Kind::BsplineKnotPoint, Some(index)),
+            Alignment::ParabolaFocalAxis => (Kind::ParabolaFocalAxis, None),
+        };
+        Wire { alignment, index }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Alignment, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.alignment, wire.index) {
+            (Kind::EllipseMajorDiameter, None) => Ok(Alignment::EllipseMajorDiameter),
+            (Kind::EllipseMinorDiameter, None) => Ok(Alignment::EllipseMinorDiameter),
+            (Kind::EllipseFocus1, None) => Ok(Alignment::EllipseFocus1),
+            (Kind::EllipseFocus2, None) => Ok(Alignment::EllipseFocus2),
+            (Kind::HyperbolaMajor, None) => Ok(Alignment::HyperbolaMajor),
+            (Kind::HyperbolaMinor, None) => Ok(Alignment::HyperbolaMinor),
+            (Kind::HyperbolaFocus, None) => Ok(Alignment::HyperbolaFocus),
+            (Kind::ParabolaFocus, None) => Ok(Alignment::ParabolaFocus),
+            (Kind::BsplineControlPoint, Some(index)) => Ok(Alignment::BsplineControlPoint(index)),
+            (Kind::BsplineKnotPoint, Some(index)) => Ok(Alignment::BsplineKnotPoint(index)),
+            (Kind::ParabolaFocalAxis, None) => Ok(Alignment::ParabolaFocalAxis),
+            (Kind::BsplineControlPoint | Kind::BsplineKnotPoint, None) => Err(
+                serde::de::Error::custom("B-spline internal alignment requires index"),
+            ),
+            (_, Some(_)) => Err(serde::de::Error::custom(
+                "internal alignment index is only valid for B-spline families",
+            )),
+        }
+    }
 }
 
 /// Neutral geometric and dimensional sketch relations.
@@ -948,27 +1781,15 @@ pub enum SketchConstraintDefinition {
     },
     /// A complete two-axis rectangular pattern with resolved instances.
     RectangularPattern {
-        /// Ordered pattern directions.
-        directions: [SketchPatternDirection; 2],
-        /// Instances in source order; `[0, 0]` is the seed instance.
-        instances: Vec<SketchPatternInstance>,
+        /// Checked directions and rectangular instance grid.
+        #[serde(flatten)]
+        pattern: SketchRectangularPattern,
     },
     /// A parameter-driven circular pattern with geometrically resolved instances.
     CircularPattern {
-        /// Point entity defining the center of rotation.
-        center: SketchEntityId,
-        /// Evaluated angular span stored by the native pattern.
-        angle: Angle,
-        /// Number of instances, including the seed instance.
-        count: u32,
-        /// Driving angular-span parameter, when the source exposes it as a neutral parameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angle_parameter: Option<ParameterId>,
-        /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        count_parameter: Option<ParameterId>,
-        /// Instances in source order; index zero is the seed instance.
-        instances: Vec<SketchCircularPatternInstance>,
+        /// Checked center, parameters, and positional instances.
+        #[serde(flatten)]
+        pattern: SketchCircularPattern,
     },
     /// Text entity bounded by ordered frame curves.
     TextFrame {
@@ -1039,12 +1860,10 @@ pub enum SketchConstraintDefinition {
         /// Strictly positive common offset magnitude, measured along each
         /// oriented source entity's left normal.
         distance: Length,
-        /// Driving offset-distance parameter, when the source relation is dimensional.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter: Option<ParameterId>,
-        /// Multiplier from the driving parameter value to `distance`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_factor: Option<f64>,
+        /// Signed driving offset-distance parameter, when dimensional.
+        #[serde(flatten, with = "offset_parameter_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
+        parameter: Option<OffsetParameter>,
     },
     /// A regular profile entity copied from a projected reference entity.
     ProjectedCopy {
@@ -1106,38 +1925,10 @@ pub enum SketchConstraintDefinition {
         /// Constrained entity.
         entity: SketchEntityId,
     },
-    /// Two loci have equal vertical sketch coordinate.
-    HorizontalLoci {
-        /// First constrained locus.
-        first: SketchLocus,
-        /// Second constrained locus.
-        second: SketchLocus,
-    },
     /// Line is vertical in sketch coordinates.
     Vertical {
         /// Constrained entity.
         entity: SketchEntityId,
-    },
-    /// Two loci have equal horizontal sketch coordinate.
-    VerticalLoci {
-        /// First constrained locus.
-        first: SketchLocus,
-        /// Second constrained locus.
-        second: SketchLocus,
-    },
-    /// Two explicit loci have equal horizontal sketch coordinates.
-    HorizontalPoints {
-        /// First aligned locus.
-        first: SketchLocus,
-        /// Second aligned locus.
-        second: SketchLocus,
-    },
-    /// Two explicit loci have equal vertical sketch coordinates.
-    VerticalPoints {
-        /// First aligned locus.
-        first: SketchLocus,
-        /// Second aligned locus.
-        second: SketchLocus,
     },
     /// Two entities are parallel.
     Parallel {
@@ -1247,21 +2038,46 @@ pub enum SketchConstraintDefinition {
     },
     /// Direct difference between two angle-valued solver scalars.
     AngleDifference {
-        /// First angle scalar in the subtraction.
-        first: SketchSolverScalar,
-        /// Second angle scalar in the subtraction.
-        second: SketchSolverScalar,
-        /// Scalar receiving `first - second`.
-        difference: SketchSolverScalar,
+        /// Solver-local key of the first angle scalar.
+        #[serde(
+            serialize_with = "solver_scalar_wire::serialize::<4, _>",
+            deserialize_with = "solver_scalar_wire::deserialize::<4, _>"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
+        first: u32,
+        /// Solver-local key of the second angle scalar.
+        #[serde(
+            serialize_with = "solver_scalar_wire::serialize::<4, _>",
+            deserialize_with = "solver_scalar_wire::deserialize::<4, _>"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
+        second: u32,
+        /// Solver-local key of the difference scalar receiving `first - second`.
+        #[serde(
+            serialize_with = "solver_scalar_wire::serialize::<0, _>",
+            deserialize_with = "solver_scalar_wire::deserialize::<0, _>"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
+        difference: u32,
         /// Source-evaluated non-negative angle difference in radians.
         value: Angle,
     },
-    /// Equality between two type-6 solver scalars.
+    /// Equality between two equality-class solver scalars.
     ScalarEquality {
-        /// First scalar in the equality.
-        first: SketchSolverScalar,
-        /// Second scalar in the equality.
-        second: SketchSolverScalar,
+        /// Solver-local key of the first equality-class scalar.
+        #[serde(
+            serialize_with = "solver_scalar_wire::serialize::<6, _>",
+            deserialize_with = "solver_scalar_wire::deserialize::<6, _>"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
+        first: u32,
+        /// Solver-local key of the second equality-class scalar.
+        #[serde(
+            serialize_with = "solver_scalar_wire::serialize::<6, _>",
+            deserialize_with = "solver_scalar_wire::deserialize::<6, _>"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SolverScalarWire"))]
+        second: u32,
     },
     /// Two explicit Euclidean locus pairs have equal separation.
     EqualDistance {
@@ -1381,11 +2197,10 @@ pub enum SketchConstraintDefinition {
         helper: SketchEntityId,
         /// Parent geometry receiving the alignment.
         parent: SketchEntityId,
-        /// Exact helper relation family.
+        /// Exact helper relation family, including its B-spline index when required.
+        #[serde(flatten, with = "internal_alignment_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "SketchInternalAlignmentWire"))]
         alignment: SketchInternalAlignment,
-        /// Control-point or knot index when carried by the family.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        index: Option<u32>,
     },
     /// Ordered geometry grouped under a sketch construction handle.
     Group {

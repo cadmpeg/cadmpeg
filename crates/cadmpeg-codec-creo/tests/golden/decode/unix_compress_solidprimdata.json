@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,20 +42,17 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "expanded_sections": [
-            {
-              "compressed_length": 7,
-              "expanded_length": 3,
-              "id": "creo:container:expanded_section#SolidPrimdata:211",
-              "name": "SolidPrimdata",
-              "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
-              "source_offset": 211
-            }
-          ],
-          "unknowns": []
-        },
-        "version": 1
+        "expanded_sections": [
+          {
+            "compressed_length": 7,
+            "expanded_length": 3,
+            "id": "creo:container:expanded_section#SolidPrimdata:211",
+            "name": "SolidPrimdata",
+            "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
+            "source_offset": 211
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {
@@ -63,7 +60,6 @@
         "expanded_section_byte_count": "3",
         "expanded_section_count": "1",
         "file_size": "218",
-        "layout": "unknown",
         "section.0.length": "22",
         "section.0.name": "SolidPrimdata",
         "section.0.offset": "196",
@@ -71,6 +67,17 @@
         "section.0.role": "metadata",
         "section_count": "1",
         "version_line": "#UGC:2 P test"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P test"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -447,9 +454,29 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P test"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo"
+        },
+        "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "container.census",
@@ -521,7 +548,6 @@
       "streams": [
         "creo:SolidPrimdata"
       ]
-    },
-    "version": "3"
+    }
   }
 }

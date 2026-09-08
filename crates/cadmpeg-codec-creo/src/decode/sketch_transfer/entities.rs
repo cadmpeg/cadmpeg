@@ -13,13 +13,16 @@ use super::super::sketch_ids::{
 use super::super::sweep::{
     placed_section_geometry_curve, placed_sketch_curve_ref, saved_spline_sketch_geometry,
 };
-use super::{
-    opaque_section_segment_identity_suffix, saved_section_external_id,
-    section_degenerate_axis_line, section_segment_identity_suffix, semantic_saved_section_entities,
-    unique_section_incidence_curve_family, unresolved_saved_section_entity,
-    SectionEntityIncidenceFamily,
-};
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::identity::{
+    opaque_section_segment_identity_suffix, saved_section_external_id,
+    section_segment_identity_suffix, semantic_saved_section_entities,
+    unresolved_saved_section_entity,
+};
+use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
+use crate::decode::sketch_transfer::profiles::{
+    unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::CurveId;
@@ -37,7 +40,7 @@ pub(super) fn transfer_section_entities(
     definition: &crate::feature::FeatureDefinition,
     transform: Option<&crate::placement::FeatureSectionTransform>,
     sketch_id: &SketchId,
-    segments: &[crate::feature::FeatureSegment],
+    segments: &[&crate::feature::FeatureSegment],
     unique_segment_ids: &BTreeSet<u32>,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
@@ -85,9 +88,9 @@ pub(super) fn transfer_section_entities(
                     (SketchGeometry::ReferenceLine { .. }, _) => {
                         "solved_section_axis_reference_line"
                     }
-                    (_, crate::feature::FeatureSegmentKind::Line) => "solved_section_line",
-                    (_, crate::feature::FeatureSegmentKind::Arc) => "solved_section_arc",
-                    (_, crate::feature::FeatureSegmentKind::Point) => "solved_section_point",
+                    (_, crate::feature::FeatureSegmentKind::Line(_)) => "solved_section_line",
+                    (_, crate::feature::FeatureSegmentKind::Arc(_)) => "solved_section_arc",
+                    (_, crate::feature::FeatureSegmentKind::Point(_)) => "solved_section_point",
                 },
                 if matches!(&geometry, SketchGeometry::Native { .. }) {
                     Exactness::ByteExact
@@ -98,34 +101,34 @@ pub(super) fn transfer_section_entities(
             let construction = matches!(geometry, SketchGeometry::ReferenceLine { .. })
                 || !unique_segment_ids.contains(&segment.external_id)
                 || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
-            Some(SketchEntity {
-                id,
-                sketch: sketch_id.clone(),
-                construction,
-                native_ref: Some(sketch_native_ref(sketch_id)),
-                geometry_ref: placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry),
-                endpoint_refs: match (&geometry, segment.kind) {
-                    (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
-                        vec![segment.point_ids[0]]
-                    }
-                    (SketchGeometry::ReferenceLine { .. }, _)
-                        if section_degenerate_axis_line(definition, segment) =>
-                    {
-                        vec![segment.point_ids[0]]
-                    }
-                    (_, crate::feature::FeatureSegmentKind::Arc) => {
-                        vec![segment.point_ids[1], segment.point_ids[0]]
-                    }
-                    (_, crate::feature::FeatureSegmentKind::Line) => segment.point_ids.to_vec(),
-                    (_, crate::feature::FeatureSegmentKind::Point) => {
-                        vec![segment.point_ids[0]]
-                    }
+            let endpoint_refs = match (&geometry, segment.kind) {
+                (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                    vec![segment.point_ids()[0]]
                 }
-                .into_iter()
-                .map(|point| sketch_point_ref(sketch_id, point))
-                .collect(),
-                geometry,
-            })
+                (SketchGeometry::ReferenceLine { .. }, _)
+                    if section_degenerate_axis_line(definition, segment) =>
+                {
+                    vec![segment.point_ids()[0]]
+                }
+                (_, crate::feature::FeatureSegmentKind::Arc(_)) => {
+                    vec![segment.point_ids()[1], segment.point_ids()[0]]
+                }
+                (_, crate::feature::FeatureSegmentKind::Line(_)) => segment.point_ids().to_vec(),
+                (_, crate::feature::FeatureSegmentKind::Point(_)) => {
+                    vec![segment.point_ids()[0]]
+                }
+            }
+            .into_iter()
+            .map(|point| sketch_point_ref(sketch_id, point))
+            .collect();
+            let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+            Some(
+                SketchEntity::new(id, sketch_id.clone(), geometry)
+                    .with_construction(construction)
+                    .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                    .with_geometry_ref(geometry_ref)
+                    .with_endpoint_refs(endpoint_refs),
+            )
         })
         .collect::<Vec<_>>();
     for segment in segments
@@ -144,36 +147,38 @@ pub(super) fn transfer_section_entities(
             "unresolved_section_segment",
             Exactness::ByteExact,
         );
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: None,
-            endpoint_refs: match segment.kind {
-                crate::feature::FeatureSegmentKind::Arc => {
-                    vec![segment.point_ids[1], segment.point_ids[0]]
-                }
-                crate::feature::FeatureSegmentKind::Line => segment.point_ids.to_vec(),
-                crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
+        let endpoint_refs = match segment.kind {
+            crate::feature::FeatureSegmentKind::Arc(_) => {
+                vec![segment.point_ids()[1], segment.point_ids()[0]]
             }
-            .into_iter()
-            .map(|point| sketch_point_ref(sketch_id, point))
-            .collect(),
-            geometry: SketchGeometry::Native {
-                native_kind: match segment.kind {
-                    crate::feature::FeatureSegmentKind::Line => "line",
-                    crate::feature::FeatureSegmentKind::Arc => "arc",
-                    crate::feature::FeatureSegmentKind::Point => "point",
-                }
-                .to_string(),
-            },
-        });
+            crate::feature::FeatureSegmentKind::Line(_) => segment.point_ids().to_vec(),
+            crate::feature::FeatureSegmentKind::Point(_) => vec![segment.point_ids()[0]],
+        }
+        .into_iter()
+        .map(|point| sketch_point_ref(sketch_id, point))
+        .collect();
+        entities.push(
+            SketchEntity::new(
+                id,
+                sketch_id.clone(),
+                SketchGeometry::Native {
+                    native_kind: match segment.kind {
+                        crate::feature::FeatureSegmentKind::Line(_) => "line",
+                        crate::feature::FeatureSegmentKind::Arc(_) => "arc",
+                        crate::feature::FeatureSegmentKind::Point(_) => "point",
+                    }
+                    .to_string(),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(sketch_native_ref(sketch_id)))
+            .with_endpoint_refs(endpoint_refs),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.circle_rows)
+        .flat_map(|table| table.rows.circles())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -211,20 +216,18 @@ pub(super) fn transfer_section_entities(
             },
         );
         let construction = !unique_external_id || !profile_entities.contains(&id);
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry),
-            endpoint_refs: Vec::new(),
-            geometry,
-        });
+        let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        entities.push(
+            SketchEntity::new(id, sketch_id.clone(), geometry)
+                .with_construction(construction)
+                .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                .with_geometry_ref(geometry_ref),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.point_rows)
+        .flat_map(|table| table.rows.points())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -262,20 +265,17 @@ pub(super) fn transfer_section_entities(
             },
         );
         let construction = !unique_external_id || !profile_entities.contains(&id);
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: None,
-            endpoint_refs: vec![sketch_point_ref(sketch_id, segment.point_id)],
-            geometry,
-        });
+        entities.push(
+            SketchEntity::new(id, sketch_id.clone(), geometry)
+                .with_construction(construction)
+                .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                .with_endpoint_refs(vec![sketch_point_ref(sketch_id, segment.point_id)]),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.centered_line_rows)
+        .flat_map(|table| table.rows.centered_lines())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -312,23 +312,23 @@ pub(super) fn transfer_section_entities(
                 Exactness::ByteExact
             },
         );
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry),
-            endpoint_refs: [0, 1]
-                .into_iter()
-                .map(|point| sketch_point_ref(sketch_id, point))
-                .collect(),
-            geometry,
-        });
+        let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        let endpoint_refs = [0, 1]
+            .into_iter()
+            .map(|point| sketch_point_ref(sketch_id, point))
+            .collect();
+        entities.push(
+            SketchEntity::new(id, sketch_id.clone(), geometry)
+                .with_construction(true)
+                .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                .with_geometry_ref(geometry_ref)
+                .with_endpoint_refs(endpoint_refs),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.reference_line_rows)
+        .flat_map(|table| table.rows.reference_lines())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -365,25 +365,25 @@ pub(super) fn transfer_section_entities(
                 Exactness::ByteExact
             },
         );
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry),
-            endpoint_refs: segment
-                .point_ids
-                .into_iter()
-                .flatten()
-                .map(|point| sketch_point_ref(sketch_id, point))
-                .collect(),
-            geometry,
-        });
+        let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        let endpoint_refs = segment
+            .point_ids
+            .into_iter()
+            .flatten()
+            .map(|point| sketch_point_ref(sketch_id, point))
+            .collect();
+        entities.push(
+            SketchEntity::new(id, sketch_id.clone(), geometry)
+                .with_construction(true)
+                .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                .with_geometry_ref(geometry_ref)
+                .with_endpoint_refs(endpoint_refs),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.bounded_curve_rows)
+        .flat_map(|table| table.rows.bounded_curves())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -406,26 +406,28 @@ pub(super) fn transfer_section_entities(
             "unresolved_section_bounded_curve",
             Exactness::ByteExact,
         );
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: None,
-            endpoint_refs: segment
-                .point_ids
-                .into_iter()
-                .map(|point| sketch_point_ref(sketch_id, point))
-                .collect(),
-            geometry: SketchGeometry::Native {
-                native_kind: "bounded_curve".to_string(),
-            },
-        });
+        let endpoint_refs = segment
+            .point_ids
+            .into_iter()
+            .map(|point| sketch_point_ref(sketch_id, point))
+            .collect();
+        entities.push(
+            SketchEntity::new(
+                id,
+                sketch_id.clone(),
+                SketchGeometry::Native {
+                    native_kind: "bounded_curve".to_string(),
+                },
+            )
+            .with_construction(construction)
+            .with_native_ref(Some(sketch_native_ref(sketch_id)))
+            .with_endpoint_refs(endpoint_refs),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.conic_rows)
+        .flat_map(|table| table.rows.conics())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -447,22 +449,22 @@ pub(super) fn transfer_section_entities(
             "unresolved_section_conic",
             Exactness::ByteExact,
         );
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Native {
-                native_kind: "conic".to_string(),
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                id,
+                sketch_id.clone(),
+                SketchGeometry::Native {
+                    native_kind: "conic".to_string(),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(sketch_native_ref(sketch_id))),
+        );
     }
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.opaque_rows)
+        .flat_map(|table| table.rows.opaque())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -497,24 +499,22 @@ pub(super) fn transfer_section_entities(
             "opaque_section_segment",
             Exactness::ByteExact,
         );
-        entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction,
-            native_ref: Some(sketch_native_ref(sketch_id)),
-            geometry_ref: placed_sketch_curve_ref(
-                transform,
-                sketch_id,
-                if unique_external_id {
-                    segment.external_id.to_string()
-                } else {
-                    format!("opaque:offset:{}", segment.offset)
-                },
-                &geometry,
-            ),
-            endpoint_refs: Vec::new(),
-            geometry,
-        });
+        let geometry_ref = placed_sketch_curve_ref(
+            transform,
+            sketch_id,
+            if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("opaque:offset:{}", segment.offset)
+            },
+            &geometry,
+        );
+        entities.push(
+            SketchEntity::new(id, sketch_id.clone(), geometry)
+                .with_construction(construction)
+                .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                .with_geometry_ref(geometry_ref),
+        );
     }
     let mut saved_section_geometries = Vec::new();
     let mut generated_saved_geometries = Vec::new();
@@ -543,14 +543,14 @@ pub(super) fn transfer_section_entities(
             format!("saved:offset:{offset}")
         };
         let entity_id = sketch_entity_id(sketch_id, &suffix);
-        if entities.iter().any(|entity| entity.id == entity_id) {
+        if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
         let generated = external_id.is_some_and(|external_id| {
             section_generated_profile_surface_kinds(&geometry).is_some_and(|expected_kinds| {
                 section_entity_is_generated_profile(
                     complete_segment_table,
-                    definition.owner_feature_id,
+                    definition.identity.owner_feature_id(),
                     external_id,
                     expected_kinds,
                     &scan.features.entity_tables,
@@ -558,7 +558,8 @@ pub(super) fn transfer_section_entities(
                 )
             })
         });
-        let curve_id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+        let curve_id =
+            CurveId::mint(sketch_section_curve_id(sketch_id, &suffix)).expect("identity grammar");
         annotate(
             annotations,
             &entity_id.0,
@@ -570,18 +571,17 @@ pub(super) fn transfer_section_entities(
         if let Some(external_id) = external_id.filter(|_| generated) {
             generated_saved_geometries.push((external_id, geometry.clone()));
         }
-        entities.push(SketchEntity {
-            id: entity_id,
-            sketch: sketch_id.clone(),
-            construction: !generated,
-            native_ref: Some(format!(
-                "{}:saved_entity#{internal_id}",
-                sketch_native_ref(sketch_id)
-            )),
-            geometry_ref: placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry),
-            endpoint_refs: Vec::new(),
-            geometry: geometry.clone(),
-        });
+        entities.push(
+            SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
+                .with_construction(!generated)
+                .with_native_ref(Some(format!(
+                    "{}:saved_entity#{internal_id}",
+                    sketch_native_ref(sketch_id)
+                )))
+                .with_geometry_ref(placed_sketch_curve_ref(
+                    transform, sketch_id, &suffix, &geometry,
+                )),
+        );
         saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
     }
     for spline in semantic_saved_section_entities(definition).filter_map(|entity| match entity {
@@ -620,7 +620,7 @@ pub(super) fn transfer_section_entities(
             };
             section_entity_is_generated_profile(
                 complete_segment_table,
-                definition.owner_feature_id,
+                definition.identity.owner_feature_id(),
                 external_id,
                 expected_kinds,
                 &scan.features.entity_tables,
@@ -636,11 +636,12 @@ pub(super) fn transfer_section_entities(
             },
             |external_id| sketch_entity_id(sketch_id, external_id),
         );
-        let curve_id = CurveId(format!(
+        let curve_id = CurveId::mint(format!(
             "creo:featdefs:saved_spline_curve#{}:{suffix}",
             sketch_identity_scope(sketch_id)
-        ));
-        if entities.iter().any(|entity| entity.id == entity_id) {
+        ))
+        .expect("identity grammar");
+        if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
         annotate(
@@ -651,18 +652,15 @@ pub(super) fn transfer_section_entities(
             "saved_interpolation_spline",
             Exactness::Derived,
         );
-        entities.push(SketchEntity {
-            id: entity_id,
-            sketch: sketch_id.clone(),
-            construction: !generated,
-            native_ref: Some(format!(
-                "{}:saved_spline#{suffix}",
-                sketch_native_ref(sketch_id)
-            )),
-            geometry_ref: transform.map(|_| curve_id.0.clone()),
-            endpoint_refs: Vec::new(),
-            geometry: geometry.clone(),
-        });
+        entities.push(
+            SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
+                .with_construction(!generated)
+                .with_native_ref(Some(format!(
+                    "{}:saved_spline#{suffix}",
+                    sketch_native_ref(sketch_id)
+                )))
+                .with_geometry_ref(transform.map(|_| curve_id.as_str().to_owned())),
+        );
         if let Some(external_id) = external_id.filter(|_| generated) {
             generated_saved_geometries.push((external_id, geometry));
         }
@@ -675,12 +673,12 @@ pub(super) fn transfer_section_entities(
             unique_saved_ids,
             ambiguous_segment_ids,
         );
-        if entities.iter().any(|existing| existing.id == entity.id) {
+        if entities.iter().any(|existing| existing.id() == entity.id()) {
             continue;
         }
         annotate(
             annotations,
-            &entity.id.0,
+            entity.id().0.as_str(),
             "FeatDefs",
             offset as u64,
             "unresolved_saved_section_entity",
@@ -709,7 +707,8 @@ pub(super) fn transfer_section_entities(
                 continue;
             };
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -725,7 +724,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
@@ -741,7 +740,7 @@ pub(super) fn transfer_section_entities(
         for segment in definition
             .segments
             .iter()
-            .flat_map(|segments| &segments.circle_rows)
+            .flat_map(|segments| segments.rows.circles())
         {
             let Some(section_geometry) = circle_geometries.get(&segment.offset).cloned() else {
                 continue;
@@ -754,7 +753,8 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("circle:offset:{}", segment.offset)
             };
-            let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -770,7 +770,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
@@ -786,7 +786,7 @@ pub(super) fn transfer_section_entities(
         for segment in definition
             .segments
             .iter()
-            .flat_map(|segments| &segments.centered_line_rows)
+            .flat_map(|segments| segments.rows.centered_lines())
         {
             let Some(section_geometry) = centered_line_geometries.get(&segment.offset).cloned()
             else {
@@ -800,7 +800,8 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("centered_line:offset:{}", segment.offset)
             };
-            let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -816,7 +817,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
@@ -848,7 +849,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: external_id.map_or_else(
                         || format!("FeatDefs:saved_entity#{internal_id}"),
                         |external_id| {

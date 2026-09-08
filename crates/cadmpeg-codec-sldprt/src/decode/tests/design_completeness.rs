@@ -7,24 +7,21 @@ use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection,
     FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, Length, ParameterId, PathRef, PatternKind, RadiusSpec, RuledSurfaceMode,
-    SurfaceContinuity,
+    SurfaceContinuity, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::DecodeReport;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -41,12 +38,12 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
             radius: Length(1.0),
-            pitch: Length(2.0),
+            shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+                pitch: cadmpeg_ir::features::HelixPitch::new(Length(2.0)).unwrap(),
+            },
             revolutions: 3.0,
             start_angle: Angle(0.0),
             clockwise: false,
-            radial_growth: None,
-            cone_angle: None,
             segment_turns: None,
             construction_style: None,
         },
@@ -64,22 +61,16 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     ir.model.features.push(feature(
         "unresolved-plane",
         2,
-        FeatureDefinition::DatumPlaneUnresolved,
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
     ));
     ir.model.features.push(feature(
         "unaudited-stored-geometry",
         3,
         FeatureDefinition::StoredGeometry,
     ));
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -91,16 +82,15 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 
 #[test]
 fn design_completeness_audits_direct_body_and_shape_families() {
-    let mut ir = CadIr::empty(Units::default());
-    let body = BodyId("body".into());
-    let source = FeatureId("base".into());
+    let mut ir = CadIr::empty();
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+    let source = FeatureId::mint("base").expect("identity grammar");
     let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
         ir.model.features.push(Feature {
-            id: FeatureId(id.into()),
+            id: FeatureId::mint(id).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -188,15 +178,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
             approximate: None,
         },
     );
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -208,10 +190,13 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 
 #[test]
 fn design_completeness_audits_typed_construction_families() {
-    let mut ir = CadIr::empty(Units::default());
-    let body = BodyId("body".into());
+    let mut ir = CadIr::empty();
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
-    let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
+    let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+        "test:model:entity#face",
+    )
+    .expect("identity grammar")]);
     let definitions = [
         FeatureDefinition::PointGeometry {
             position: Point3::new(0.0, 0.0, 0.0),
@@ -282,11 +267,10 @@ fn design_completeness_audits_typed_construction_families() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("construction-{ordinal}")),
+            id: FeatureId::mint(format!("construction-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -297,15 +281,7 @@ fn design_completeness_audits_typed_construction_families() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -317,14 +293,13 @@ fn design_completeness_audits_typed_construction_families() {
 
 #[test]
 fn binder_completeness_requires_resolved_targets_and_shape_arity() {
-    let mut ir = CadIr::empty(Units::default());
-    let source = FeatureId("source".into());
+    let mut ir = CadIr::empty();
+    let source = FeatureId::mint("source").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies,
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -393,15 +368,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
             },
         ]),
     ));
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -413,7 +380,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
 
 #[test]
 fn post_process_completeness_delegates_to_the_wrapped_operation() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let post_process = |operation| FeatureDefinition::PostProcess {
         operation: Box::new(operation),
         refine: true,
@@ -424,26 +391,27 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
             radius: Length(1.0),
-            pitch: Length(2.0),
+            shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+                pitch: cadmpeg_ir::features::HelixPitch::new(Length(2.0)).unwrap(),
+            },
             revolutions: 3.0,
             start_angle: Angle(0.0),
             clockwise: false,
-            radial_growth: None,
-            cone_angle: None,
             segment_turns: None,
             construction_style: None,
         }),
-        post_process(post_process(FeatureDefinition::DatumPlaneUnresolved)),
+        post_process(post_process(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        })),
     ]
     .into_iter()
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("post-process-{ordinal}")),
+            id: FeatureId::mint(format!("post-process-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -454,15 +422,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -474,8 +434,10 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 
 #[test]
 fn design_completeness_recurses_through_pattern_operands() {
-    let mut ir = CadIr::empty(Units::default());
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(FeatureId("seed".into()));
+    let mut ir = CadIr::empty();
+    let seed = cadmpeg_ir::features::PatternSeed::Feature(
+        FeatureId::mint("seed").expect("identity grammar"),
+    );
     for (ordinal, pattern) in [
         (
             0,
@@ -524,11 +486,10 @@ fn design_completeness_recurses_through_pattern_operands() {
         ),
     ] {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("pattern-{ordinal}")),
+            id: FeatureId::mint(format!("pattern-{ordinal}")).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -542,15 +503,7 @@ fn design_completeness_recurses_through_pattern_operands() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -562,7 +515,7 @@ fn design_completeness_recurses_through_pattern_operands() {
 
 #[test]
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
@@ -603,8 +556,9 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
                 cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
                 cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
             ],
-            guides: Vec::new(),
-            centerline: Some(PathRef::Native("centerline".into())),
+            guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Native(
+                "centerline".into(),
+            )),
             op: BooleanOp::NewBody,
             closed: false,
             solid: false,
@@ -617,11 +571,10 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("path-feature-{ordinal}")),
+            id: FeatureId::mint(format!("path-feature-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -632,15 +585,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -652,11 +597,14 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 
 #[test]
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
-    let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
+    let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+        "test:model:entity#face",
+    )
+    .expect("identity grammar")]);
     let extrude = |direction, termination| FeatureDefinition::Extrude {
         profile: profile.clone(),
         direction,
@@ -665,11 +613,9 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination,
                 draft: None,
-                offset: None,
             },
         },
         op: BooleanOp::NewBody,
-        direction_source: None,
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,
@@ -687,13 +633,13 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         },
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::Unresolved,
-            cadmpeg_ir::features::Termination::Blind {
+            cadmpeg_ir::features::LinearTermination::Blind {
                 length: Length(10.0),
             },
         ),
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            cadmpeg_ir::features::Termination::ToVertex {
+            cadmpeg_ir::features::LinearTermination::ToVertex {
                 vertex: cadmpeg_ir::features::VertexSelection::Native("vertex".into()),
             },
         ),
@@ -715,22 +661,20 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
             support_faces: face.clone(),
-            continuity: None,
-            boundary_continuities: Vec::new(),
+            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
             merge_result: Some(false),
         },
         FeatureDefinition::TrimSurface {
             faces: face.clone(),
             tool: path.clone(),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: None,
         },
         FeatureDefinition::Draft {
             faces: face.clone(),
-            neutral_plane: face.clone(),
-            parting_tool: None,
-            pull_direction: None,
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: face.clone(),
+                pull: None,
+            },
             angle: None,
             outward: None,
         },
@@ -745,11 +689,10 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("operation-{ordinal}")),
+            id: FeatureId::mint(format!("operation-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -760,15 +703,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -780,13 +715,12 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
 
 #[test]
 fn empty_required_operands_are_incomplete_design_semantics() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature = |ordinal, definition| Feature {
-        id: FeatureId(format!("feature-{ordinal}")),
+        id: FeatureId::mint(format!("feature-{ordinal}")).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -847,18 +781,21 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             5,
             FeatureDefinition::FilledSurface {
                 boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
-                    EdgeId("boundary".into()),
+                    EdgeId::mint("test:model:entity#boundary").expect("identity grammar"),
                 ])),
                 support_faces: FaceSelection::Faces(Vec::new()),
-                continuity: Some(SurfaceContinuity::Contact),
-                boundary_continuities: Vec::new(),
+                continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                    SurfaceContinuity::Contact,
+                ),
                 merge_result: Some(false),
             },
         ),
         feature(
             6,
             FeatureDefinition::RuledSurface {
-                edges: EdgeSelection::Edges(vec![EdgeId("boundary".into())]),
+                edges: EdgeSelection::Edges(vec![
+                    EdgeId::mint("test:model:entity#boundary").expect("identity grammar")
+                ]),
                 support_faces: FaceSelection::Faces(Vec::new()),
                 mode: RuledSurfaceMode::Direction {
                     direction: Vector3::new(0.0, 0.0, 1.0),
@@ -873,22 +810,16 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             7,
             FeatureDefinition::Fillet {
                 groups: vec![cadmpeg_ir::features::FilletGroup {
-                    edges: EdgeSelection::Edges(vec![EdgeId("edge".into())]),
+                    edges: EdgeSelection::Edges(vec![
+                        EdgeId::mint("test:model:entity#edge").expect("identity grammar")
+                    ]),
                     radius: RadiusSpec::Variable { points: Vec::new() },
                     tangency_weight: None,
                 }],
             },
         ),
     ]);
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -900,24 +831,24 @@ fn empty_required_operands_are_incomplete_design_semantics() {
 
 #[test]
 fn hole_completeness_checks_optional_operands_when_present() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let hole = |profile, exit_kind| FeatureDefinition::Hole {
         profile,
         profile_filter: None,
         face: None,
-        position: None,
         direction: None,
-        placements: vec![cadmpeg_ir::features::HolePlacement::Directed {
+        placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
             position: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
-        }],
-        kind: cadmpeg_ir::features::HoleKind::Simple,
+        }]),
+        construction: cadmpeg_ir::features::HoleConstruction::form(
+            cadmpeg_ir::features::HoleKind::Simple,
+        ),
         exit_kind,
         diameter: Some(Length(5.0)),
-        extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+        extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
     for (ordinal, definition) in [
@@ -925,27 +856,17 @@ fn hole_completeness_checks_optional_operands_when_present() {
             Some(cadmpeg_ir::features::ProfileRef::Native("profile".into())),
             None,
         ),
-        hole(
-            None,
-            Some(cadmpeg_ir::features::HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            }),
-        ),
+        hole(None, Some(cadmpeg_ir::features::HoleKind::Unresolved(None))),
         hole(None, None),
     ]
     .into_iter()
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("hole-{ordinal}")),
+            id: FeatureId::mint(format!("hole-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -956,15 +877,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -976,14 +889,13 @@ fn hole_completeness_checks_optional_operands_when_present() {
 
 #[test]
 fn incomplete_parameter_semantics_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
-    let owner = FeatureId("owner".into());
+    let mut ir = CadIr::empty();
+    let owner = FeatureId::mint("owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
         name: Some("Boss-Extrude1".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -998,7 +910,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("base-parameter".into()),
+        id: ParameterId::mint("base-parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 0,
         name: "D0".into(),
@@ -1011,7 +923,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 1,
         name: "D1".into(),
@@ -1024,7 +936,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("bare-reference".into()),
+        id: ParameterId::mint("bare-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 2,
         name: "D2".into(),
@@ -1037,7 +949,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("malformed-reference".into()),
+        id: ParameterId::mint("malformed-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 3,
         name: "D3".into(),
@@ -1049,9 +961,9 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         pmi: None,
         native_ref: None,
     });
-    let future = ParameterId("future".into());
+    let future = ParameterId::mint("future").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("forward-reference".into()),
+        id: ParameterId::mint("forward-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 4,
         name: "D4".into(),
@@ -1077,7 +989,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("omitted-dependency".into()),
+        id: ParameterId::mint("omitted-dependency").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 6,
         name: "D6".into(),
@@ -1090,7 +1002,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("cached-unsupported-expression".into()),
+        id: ParameterId::mint("cached-unsupported-expression").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 7,
         name: "D7".into(),
@@ -1109,7 +1021,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ("ordinal", 10, "Unique"),
     ] {
         ir.model.parameters.push(DesignParameter {
-            id: ParameterId(format!("identity:{id}")),
+            id: ParameterId::mint(format!("identity:{id}")).expect("identity grammar"),
             owner: Some(owner.clone()),
             ordinal,
             name: name.into(),
@@ -1122,15 +1034,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
             native_ref: None,
         });
     }
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -1146,16 +1050,15 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
 
 #[test]
 fn incoherent_feature_graph_is_reported_as_design_loss() {
-    let mut ir = CadIr::empty(Units::default());
-    let first = FeatureId("first".into());
-    let second = FeatureId("second".into());
-    let missing = FeatureId("missing".into());
-    let feature = |id, ordinal, parent, dependencies| Feature {
+    let mut ir = CadIr::empty();
+    let first = FeatureId::mint("first").expect("identity grammar");
+    let second = FeatureId::mint("second").expect("identity grammar");
+    let missing = FeatureId::mint("missing").expect("identity grammar");
+    let feature = |id, ordinal, dependencies| Feature {
         id,
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent,
         dependencies,
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1171,34 +1074,24 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     };
     ir.model
         .features
-        .push(feature(first.clone(), 0, None, vec![second.clone()]));
-    ir.model
-        .features
-        .push(feature(second, 1, Some(first.clone()), vec![first]));
+        .push(feature(first.clone(), 0, vec![second.clone()]));
+    ir.model.features.push(feature(second, 1, vec![first]));
     ir.model.features.push(feature(
-        FeatureId("third".into()),
+        FeatureId::mint("third").expect("identity grammar"),
         1,
-        Some(missing),
-        Vec::new(),
+        vec![missing],
     ));
     ir.model.features[0].source_content = vec![
-        FeatureSourceContent::Feature(FeatureId("second".into())),
-        FeatureSourceContent::Feature(FeatureId("second".into())),
+        FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
+        FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
     ];
-    ir.model.features[1].source_content =
-        vec![FeatureSourceContent::Feature(FeatureId("third".into()))];
-    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(ParameterId(
-        "missing-parameter".into(),
-    ))];
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    ir.model.features[1].source_content = vec![FeatureSourceContent::Feature(
+        FeatureId::mint("third").expect("identity grammar"),
+    )];
+    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(
+        ParameterId::mint("missing-parameter").expect("identity grammar"),
+    )];
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -1219,11 +1112,10 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
     ir.model.parameters.clear();
     let body = ir.model.bodies[0].id.clone();
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1240,18 +1132,12 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
     ir.model
         .features
         .push(feature("duplicate", 0, vec![body.clone(), body]));
-    ir.model
-        .features
-        .push(feature("missing", 1, vec![BodyId("missing-body".into())]));
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    ir.model.features.push(feature(
+        "missing",
+        1,
+        vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")],
+    ));
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 

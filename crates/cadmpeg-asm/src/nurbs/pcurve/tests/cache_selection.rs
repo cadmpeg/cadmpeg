@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::kernel_header::RefWidth;
 
 #[test]
 fn curve_cache_decodes_in_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let block = curve_block(int_width);
         let curve = decode_curve_cache(&block)
             .unwrap_or_else(|| panic!("curve cache at width {int_width}"));
-        assert_eq!(curve.degree, 1);
-        assert_eq!(curve.control_points.len(), 2);
-        assert_eq!(curve.control_points[1].x, 10.0); // cm→mm ×10
-        assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(curve.control_points().len(), 2);
+        assert_eq!(curve.control_points()[1].x, 10.0); // cm→mm ×10
+        assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
         assert!(first_curve_patch_layout(&block, int_width).is_some());
         assert!(final_curve_patch_layout(&block, int_width).is_some());
-        let other_width = if int_width == 4 { 8 } else { 4 };
+        let other_width = match int_width {
+            RefWidth::Four => RefWidth::Eight,
+            RefWidth::Eight => RefWidth::Four,
+        };
         assert!(first_curve_patch_layout(&block, other_width).is_none());
         assert!(final_curve_patch_layout(&block, other_width).is_none());
     }
@@ -22,7 +26,7 @@ fn curve_cache_decodes_in_both_integer_widths() {
 
 #[test]
 fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut curves = curve_block(int_width);
         curves.extend_from_slice(&curve_block(int_width));
         assert!(decode_curve_cache(&curves).is_none());
@@ -33,7 +37,10 @@ fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
 
         let block = pcurve_block(int_width);
         assert!(super::final_pcurve_patch_layout(&block, int_width).is_some());
-        let other_width = if int_width == 4 { 8 } else { 4 };
+        let other_width = match int_width {
+            RefWidth::Four => RefWidth::Eight,
+            RefWidth::Eight => RefWidth::Four,
+        };
         assert!(super::final_pcurve_patch_layout(&block, other_width).is_none());
 
         let mut surfaces = b"comp_spl_sur".to_vec();
@@ -45,7 +52,7 @@ fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
 
 #[test]
 fn wrapper_directrix_fields_reject_nested_curve_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut subset = vec![0x0f];
         push_ident(&mut subset, "subset_int_cur");
         subset.push(0x0f);
@@ -61,7 +68,10 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         let subset_decoded =
             procedural_curve_resolving_refs(&subset_tokens, &test_table(&subset, int_width))
                 .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
-        assert!(subset_decoded.subset.is_none());
+        assert!(!matches!(
+            subset_decoded.construction,
+            crate::nurbs::proc_curve::ProceduralCurveConstruction::Subset(_)
+        ));
 
         let mut offset = vec![0x0f];
         push_ident(&mut offset, "offset_int_cur");
@@ -84,13 +94,16 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         let offset_decoded =
             procedural_curve_resolving_refs(&offset_tokens, &test_table(&offset, int_width))
                 .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
-        assert!(offset_decoded.vector_offset.is_none());
+        assert!(!matches!(
+            offset_decoded.construction,
+            crate::nurbs::proc_curve::ProceduralCurveConstruction::VectorOffset(_)
+        ));
     }
 }
 
 #[test]
 fn pcurve_fit_tolerance_withholds_nested_only_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "exp_par_cur");
         bytes.push(0x0f);
@@ -107,7 +120,7 @@ fn pcurve_fit_tolerance_withholds_nested_only_cache() {
 
 #[test]
 fn patch_layout_roles_exclude_nested_construction_caches() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut surfaces = Vec::new();
         push_ident(&mut surfaces, "spline");
         surfaces.push(0x0f);
@@ -124,7 +137,7 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         assert_eq!(
             final_surface_patch_layout(&surfaces, int_width)
                 .expect("owned surface layout")
-                .end,
+                .end(),
             surface_end
         );
         assert!(surface_patch_layout_at(&surfaces, 1, int_width).is_none());
@@ -151,13 +164,13 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         assert_eq!(
             first_curve_patch_layout(&curves, int_width)
                 .expect("first owned curve layout")
-                .end,
+                .end(),
             curve_end
         );
         assert_eq!(
             final_curve_patch_layout(&curves, int_width)
                 .expect("final owned curve layout")
-                .end,
+                .end(),
             curve_end
         );
 
@@ -177,7 +190,7 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         assert_eq!(
             super::final_pcurve_patch_layout(&pcurves, int_width)
                 .expect("final owned pcurve layout")
-                .control_end,
+                .control_end(),
             pcurve_end
         );
     }
@@ -185,21 +198,24 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
 
 #[test]
 fn surface_cache_decodes_in_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let block = surface_block(int_width);
         let surface = decode_surface_cache(&block)
             .unwrap_or_else(|| panic!("surface cache at width {int_width}"));
-        assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-        assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+        assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
         assert!(final_surface_patch_layout(&block, int_width).is_some());
-        let other_width = if int_width == 4 { 8 } else { 4 };
+        let other_width = match int_width {
+            RefWidth::Four => RefWidth::Eight,
+            RefWidth::Eight => RefWidth::Four,
+        };
         assert!(final_surface_patch_layout(&block, other_width).is_none());
     }
 }
 
 #[test]
 fn token_curve_cache_ignores_nested_support_scope() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "exact_int_cur");
         bytes.push(0x0f);
@@ -213,13 +229,13 @@ fn token_curve_cache_ignores_nested_support_scope() {
         let curve = curve_cache(&tokens)
             .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
 
-        assert!((curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
     }
 }
 
 #[test]
 fn procedural_curve_cache_ignores_nested_support_scope() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "spring_int_cur");
         bytes.push(0x0f);
@@ -233,13 +249,13 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
         let decoded = procedural_curve_resolving_refs(&tokens, &test_table(&bytes, int_width))
             .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
 
-        assert!((decoded.curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        assert!((decoded.curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
     }
 }
 
 #[test]
 fn procedural_curve_with_only_nested_cache_is_withheld() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "spring_int_cur");
         bytes.push(0x0f);
@@ -256,7 +272,7 @@ fn procedural_curve_with_only_nested_cache_is_withheld() {
 
 #[test]
 fn token_surface_cache_ignores_later_nested_support_scope() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "off_spl_sur");
         bytes.extend_from_slice(&surface_block_with_x_offset(int_width, 5.0));
@@ -270,6 +286,6 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
         let surface = surface_cache(&tokens)
             .unwrap_or_else(|| panic!("owned surface cache at width {int_width}"));
 
-        assert!((surface.control_points[0].x - 50.0).abs() < f64::EPSILON);
+        assert!((surface.control_points()[0].x - 50.0).abs() < f64::EPSILON);
     }
 }

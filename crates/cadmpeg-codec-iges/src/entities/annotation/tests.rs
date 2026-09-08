@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -9,24 +10,22 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
-use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use crate::entities::presentation::general_note_font_valid_for_dialect;
-use crate::global::Dialect;
+use crate::entities::presentation::general_note_font_valid_for_global_table;
+use crate::global::GlobalTable;
 
 use super::{
-    dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
-    general_note_string_count_valid, general_note_text_valid_for_dialect,
-    general_symbol_note_valid, justification_valid, leader_valid_for_dialect, mirror_flag_valid,
-    new_general_note_charset_valid, new_general_note_font_valid, sectioned_area_curves_coplanar,
-    sectioned_area_valid, vertical_text_flag_valid,
+    dimension_enclosure_type_allowed, fill_pattern_valid_for_global_table, fixed_or_variable_valid,
+    general_note_string_count_valid, general_note_text_valid_for_global_table,
+    general_symbol_note_valid, justification_valid, leader_valid_for_global_table,
+    mirror_flag_valid, new_general_note_charset_valid, new_general_note_font_valid,
+    sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
 
 #[test]
@@ -69,7 +68,7 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 2);
     assert_eq!(annotations[0].fields()["kind"], "general_note");
     assert_eq!(
@@ -95,46 +94,46 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
 
 #[test]
 fn general_note_kanji_text_uses_biased_jis_hex_pairs() {
-    assert!(general_note_text_valid_for_dialect(
+    assert!(general_note_text_valid_for_global_table(
         b"34413B7A",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
-    assert!(general_note_text_valid_for_dialect(
+    assert!(general_note_text_valid_for_global_table(
         b"",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"34413B7",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"34413B7G",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"20413B7A",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         false
     ));
-    assert!(general_note_text_valid_for_dialect(
+    assert!(general_note_text_valid_for_global_table(
         b" ",
         2001,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         true
     ));
-    assert!(!general_note_text_valid_for_dialect(
+    assert!(!general_note_text_valid_for_global_table(
         b"34413B7A",
         2001,
-        Dialect::V4_0,
+        GlobalTable::V4_0,
         false
     ));
 }
@@ -147,7 +146,7 @@ fn decode_accepts_and_retains_v5_0_kanji_general_note() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(
         annotations[0].fields()["strings"][0]["text"],
         serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
@@ -181,7 +180,7 @@ fn decode_rejects_malformed_v5_0_kanji_general_note_text() {
             "text {text:?}: {:#?}",
             result.report().losses
         );
-        let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+        let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
         assert_eq!(
             annotations[0].fields()["strings"][0]["text"],
             serde_json::json!(text.as_bytes())
@@ -214,7 +213,7 @@ fn decode_applies_new_general_note_defaults_with_positive_metrics() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
     assert_eq!(annotation.fields()["kind"], "new_general_note");
     assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 0);
     assert!(annotation.fields()["strings"][0]["control_codes"].is_null());
@@ -233,7 +232,7 @@ fn decode_applies_variable_spacing_default() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
     assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 1);
     assert!(annotation.fields()["strings"][0]["character_spacing"].is_null());
     assert!(
@@ -369,7 +368,7 @@ fn decode_rejects_new_general_note_character_set_outside_table() {
             result.report().losses
         );
         assert_eq!(
-            result.ir().native.namespace("iges").unwrap().arenas["annotations"].len(),
+            result.ir().native.namespace("iges").unwrap().arenas()["annotations"].len(),
             1
         );
     }
@@ -458,7 +457,7 @@ fn decode_rejects_negative_text_box_dimensions_at_cadir_boundary() {
         )
         .unwrap();
 
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 2);
     assert!(result.ir().model.semantic_annotations.is_empty());
     assert!(
@@ -479,13 +478,13 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
+            general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5Later),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
+            !general_note_font_valid_for_global_table(value, &entries, GlobalTable::V5Later),
             "font code {value}"
         );
     }
@@ -537,7 +536,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
     ] {
         assert!(
-            fill_pattern_valid_for_dialect(value, Dialect::V5_3),
+            fill_pattern_valid_for_global_table(value, GlobalTable::V5Later),
             "admitted fill pattern {value}"
         );
     }
@@ -545,7 +544,7 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
     ] {
         assert!(
-            !fill_pattern_valid_for_dialect(value, Dialect::V5_3),
+            !fill_pattern_valid_for_global_table(value, GlobalTable::V5Later),
             "reserved fill pattern {value}"
         );
     }
@@ -553,19 +552,25 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
 
 #[test]
 fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
-    assert!(fill_pattern_valid_for_dialect(19, Dialect::V4_0));
-    assert!(!fill_pattern_valid_for_dialect(20, Dialect::V4_0));
-    assert!(fill_pattern_valid_for_dialect(20, Dialect::V5_0));
-    assert!(fill_pattern_valid_for_dialect(268, Dialect::V5_3));
-    assert!(!fill_pattern_valid_for_dialect(269, Dialect::V5_3));
+    assert!(fill_pattern_valid_for_global_table(19, GlobalTable::V4_0));
+    assert!(!fill_pattern_valid_for_global_table(20, GlobalTable::V4_0));
+    assert!(fill_pattern_valid_for_global_table(20, GlobalTable::V5_0));
+    assert!(fill_pattern_valid_for_global_table(
+        268,
+        GlobalTable::V5Later
+    ));
+    assert!(!fill_pattern_valid_for_global_table(
+        269,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]
 fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (sequence, z) in [(1, 0.0), (3, 0.0)] {
         ir.model.curves.push(Curve {
-            id: CurveId(format!("iges:model:curve#D{sequence}")),
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, z),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -603,12 +608,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -632,23 +632,23 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         TokenValue::Integer(1),
         TokenValue::Integer(3),
     ];
-    let record = ParameterRecord {
-        directory_sequence: 5,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        parameter_end: record_values.len(),
-        tokens: record_values
+    let record = ParameterRecord::from_test_tokens(
+        5,
+        1..2,
+        Vec::new(),
+        record_values.len(),
+        record_values
             .into_iter()
             .map(|value| Token { value, span: 0..0 })
             .collect(),
-        comment: Vec::new(),
-    };
+        Vec::new(),
+    );
     assert!(sectioned_area_valid(
         &ir,
         &record,
         &entries,
         0,
-        Dialect::V4_0,
+        GlobalTable::V4_0,
         Transform::identity(),
         1.0,
         0.001
@@ -658,7 +658,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &record,
         &entries,
         0,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -666,20 +666,19 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     if let CurveGeometry::Circle { center, .. } = &mut ir.model.curves[0].geometry {
         center.z = 0.01;
     }
-    let translated_pattern_plane = Transform {
-        rows: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.01],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let translated_pattern_plane = Transform::from_rows([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.01],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     assert!(sectioned_area_valid(
         &ir,
         &record,
         &entries,
         0,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         translated_pattern_plane,
         1.0,
         0.001
@@ -688,10 +687,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
 
 #[test]
 fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for sequence in [1, 3] {
         ir.model.curves.push(Curve {
-            id: CurveId(format!("iges:model:curve#D{sequence}")),
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -712,12 +711,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -741,17 +735,17 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             TokenValue::Integer(island_count),
             TokenValue::Integer(3),
         ];
-        ParameterRecord {
-            directory_sequence: 5,
-            line_range: 1..2,
-            bytes: Vec::new(),
-            parameter_end: if island_count == 0 { 9 } else { values.len() },
-            tokens: values
+        ParameterRecord::from_test_tokens(
+            5,
+            1..2,
+            Vec::new(),
+            if island_count == 0 { 9 } else { values.len() },
+            values
                 .into_iter()
                 .map(|value| Token { value, span: 0..0 })
                 .collect(),
-            comment: Vec::new(),
-        }
+            Vec::new(),
+        )
     };
 
     assert!(sectioned_area_valid(
@@ -759,7 +753,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(1),
         &entries,
         1,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -769,7 +763,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(0),
         &entries,
         1,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -779,7 +773,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         &record(1),
         &entries,
         0,
-        Dialect::V5_0,
+        GlobalTable::V5_0,
         Transform::identity(),
         1.0,
         0.001
@@ -788,10 +782,14 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
 
 #[test]
 fn point_dimension_enclosure_types_follow_the_declared_dialect() {
-    assert!(dimension_enclosure_type_allowed(100, 0, Dialect::V4_0));
-    assert!(dimension_enclosure_type_allowed(102, 0, Dialect::V4_0));
-    assert!(!dimension_enclosure_type_allowed(106, 63, Dialect::V4_0));
-    assert!(dimension_enclosure_type_allowed(106, 63, Dialect::V5_0));
+    assert!(dimension_enclosure_type_allowed(100, 0, GlobalTable::V4_0));
+    assert!(dimension_enclosure_type_allowed(102, 0, GlobalTable::V4_0));
+    assert!(!dimension_enclosure_type_allowed(
+        106,
+        63,
+        GlobalTable::V4_0
+    ));
+    assert!(dimension_enclosure_type_allowed(106, 63, GlobalTable::V5_0));
 }
 
 fn leader_record(arrowhead_height: f64, arrowhead_width: f64) -> ParameterRecord {
@@ -806,17 +804,17 @@ fn leader_record(arrowhead_height: f64, arrowhead_width: f64) -> ParameterRecord
         TokenValue::Real(4.0),
         TokenValue::Real(5.0),
     ];
-    ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        parameter_end: values.len(),
-        tokens: values
+    ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
             .into_iter()
             .map(|value| Token { value, span: 0..0 })
             .collect(),
-        comment: Vec::new(),
-    }
+        Vec::new(),
+    )
 }
 
 fn leader_entry(form: i64) -> DirectoryEntry {
@@ -831,12 +829,7 @@ fn leader_entry(form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 1,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 1, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -852,31 +845,47 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(5);
 
-    assert!(leader_valid_for_dialect(&entry, &record, Dialect::V4_0));
-    assert!(!leader_valid_for_dialect(&entry, &record, Dialect::V5_3));
+    assert!(leader_valid_for_global_table(
+        &entry,
+        &record,
+        GlobalTable::V4_0
+    ));
+    assert!(!leader_valid_for_global_table(
+        &entry,
+        &record,
+        GlobalTable::V5Later
+    ));
 
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(4);
-    assert!(leader_valid_for_dialect(&entry, &record, Dialect::V4_0));
-    assert!(!leader_valid_for_dialect(&entry, &record, Dialect::V5_3));
+    assert!(leader_valid_for_global_table(
+        &entry,
+        &record,
+        GlobalTable::V4_0
+    ));
+    assert!(!leader_valid_for_global_table(
+        &entry,
+        &record,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]
 fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
-    let record = ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens: [228, 0, 1, 0]
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        4,
+        [228, 0, 1, 0]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
             .collect(),
-        parameter_end: 4,
-        comment: Vec::new(),
-    };
+        Vec::new(),
+    );
     let entries = BTreeMap::new();
     let records = BTreeMap::new();
 
@@ -885,21 +894,21 @@ fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
         &entries,
         &records,
         0,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(general_symbol_note_valid(
         &record,
         &entries,
         &records,
         0,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(!general_symbol_note_valid(
         &record,
         &entries,
         &records,
         1,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
 }
 
@@ -911,7 +920,7 @@ fn decode_types_every_leader_arrow_form_and_segment_chain() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 12);
     let mut forms = Vec::new();
     for annotation in annotations {
@@ -955,7 +964,7 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     let kinds = annotations
         .iter()
         .filter_map(|annotation| annotation.fields()["kind"].as_str().map(str::to_owned))
@@ -1021,7 +1030,7 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     for kind in [
         "angular_dimension",
         "curve_dimension",
@@ -1048,7 +1057,7 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     let symbol = annotations
         .iter()
         .find(|annotation| annotation.fields()["kind"] == "general_symbol")
@@ -1090,12 +1099,12 @@ fn decode_general_symbol_standard_forms_preserves_form_in_iges_4_0_and_5_0() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            let symbol = result.ir().native.namespace("iges").unwrap().arenas["annotations"]
+            let symbol = result.ir().native.namespace("iges").unwrap().arenas()["annotations"]
                 .iter()
                 .find(|annotation| annotation.fields()["kind"] == "general_symbol")
                 .unwrap();
             assert_eq!(
-                result.ir().source.as_ref().unwrap().attributes["iges_version"],
+                result.report().dialects().unwrap().primary().declared()["effective_version"],
                 version
             );
             assert_eq!(symbol.fields()["form"], form);
@@ -1123,7 +1132,7 @@ fn decode_general_symbol_implementor_form_is_admitted_in_iges_5_0() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let symbol = result.ir().native.namespace("iges").unwrap().arenas["annotations"]
+    let symbol = result.ir().native.namespace("iges").unwrap().arenas()["annotations"]
         .iter()
         .find(|annotation| annotation.fields()["kind"] == "general_symbol")
         .unwrap();
@@ -1143,7 +1152,7 @@ fn decode_type230_form1_preserves_inverted_crosshatching() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 1);
     let section = &annotations[0];
     assert_eq!(section.fields()["kind"], "sectioned_area");
@@ -1167,10 +1176,10 @@ fn decode_type230_form1_is_admitted_in_iges_5_0() {
         )
         .unwrap();
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["iges_version"],
+        result.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.0"
     );
-    let section = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let section = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
     assert_eq!(section.fields()["form"], 1);
     assert!(section.fields()["boundary"].is_null());
     assert_eq!(section.fields()["islands"][0], "iges:entity:directory#1");

@@ -36,13 +36,13 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments.len(), 1);
     assert_eq!(attachments[0].map_mode.as_deref(), Some("5"));
     assert_eq!(
-        attachments[0].supports[0].object.as_deref(),
+        attachments[0].supports[0].object(),
         Some("fcstd:native:object#Support")
     );
     assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);
     assert_eq!(attachments[0].placement.expect("placement")[0][3], 10.0);
     assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
-    assert_eq!(attachments[0].effective_frame[0][3], 12.0);
+    assert_eq!(attachments[0].effective_frame()[0][3], 12.0);
     let sketch = result.ir().model.sketches.first().expect("sketch");
     assert_eq!(
         sketch
@@ -75,7 +75,9 @@ fn rejects_ambiguous_attachment_carriers() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -98,7 +100,9 @@ fn rejects_noncanonical_map_mode_value_grammar() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }
@@ -122,7 +126,9 @@ fn rejects_invalid_attachment_placement_values() {
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
+            Err(cadmpeg_ir::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::Malformed(_)
+            ))
         ));
     }
 }

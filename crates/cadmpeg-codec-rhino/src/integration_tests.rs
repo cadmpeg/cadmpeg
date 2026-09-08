@@ -9,14 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
-use cadmpeg_ir::Encoder;
 
 use crate::chunks::ArchiveVersion;
 use crate::test_support as support;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 mod angular_dimension_userdata;
 mod annotations_userdata;
 mod dimension_userdata;
@@ -26,6 +25,7 @@ mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
 mod settings_userdata;
+mod undeclared_archive_word;
 mod unknown_userdata;
 mod v5_hatch_extra_userdata;
 mod views_userdata;
@@ -52,7 +52,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
             .expect("3DM inspection");
-        assert_eq!(summary.format, "rhino");
+        assert_eq!(summary.format(), "rhino");
         assert!(summary.notes.iter().any(|note| note.contains(version)));
         let result = decode(bytes.clone());
         assert_eq!(result.ir().model.points.len(), 1);
@@ -66,7 +66,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 },
             )
             .expect("container-only 3DM decode");
-        assert!(container.report().container_only);
+        assert!(container.report().container_only());
         assert!(container.ir().model.points.is_empty());
     }
 }
@@ -175,9 +175,9 @@ fn document_pipeline_composes_definitions_history_identity_attributes_and_settin
 
 #[test]
 fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topology() {
-    let mut point_ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut point_ir = cadmpeg_ir::CadIr::empty();
     point_ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("integration:point#0".into()),
+        id: cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
         source_object: None,
     });
@@ -188,11 +188,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         crate::RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        crate::RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &point_ir,
-                fidelity: None,
-            })
+        crate::test_support::plan_at(version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))
             .unwrap();
         let result = decode(bytes);
@@ -221,11 +217,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         point.source_object = None;
     }
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &sheet,
-            fidelity: None,
-        })
+    crate::test_support::plan_at(RhinoArchiveVersion::V8, &sheet)
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let result = decode(bytes);
@@ -280,9 +272,9 @@ fn registered_future_object_major_is_retained_without_known_prefix() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future-major object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(future_record.as_slice()));
+    assert_eq!(retained.data(), Some(future_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("simple geometry retained")
             && loss.message.contains("unsupported version")
@@ -346,11 +338,11 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000018-20008073-")
         })
         .expect("future-major table record is retained");
-    assert_eq!(retained.data.as_deref(), Some(future_group.as_slice()));
+    assert_eq!(retained.data(), Some(future_group.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
             && loss.message.contains("could not be transferred")
@@ -471,7 +463,7 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let lights = &result.ir().native.namespace("rhino").unwrap().arenas["lights"];
+    let lights = &result.ir().native.namespace("rhino").unwrap().arenas()["lights"];
     assert_eq!(lights.len(), 1);
     assert_eq!(
         lights[0]
@@ -485,11 +477,11 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000012-20008060-")
         })
         .expect("future userdata table record is retained");
-    assert_eq!(retained.data.as_deref(), Some(light_record.as_slice()));
+    assert_eq!(retained.data(), Some(light_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("user-string") && loss.message.contains("unsupported")
     }));
@@ -612,7 +604,7 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let materials = &result.ir().native.namespace("rhino").unwrap().arenas["materials"];
+    let materials = &result.ir().native.namespace("rhino").unwrap().arenas()["materials"];
     assert_eq!(materials.len(), 1);
     assert_eq!(
         materials[0]
@@ -627,11 +619,11 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000010-20008040-")
         })
         .expect("future material userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(material_record.as_slice()));
+    assert_eq!(retained.data(), Some(material_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("physically based material userdata")
             && loss.message.contains("could not be transferred")
@@ -753,7 +745,7 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
 
     assert_eq!(result.ir().model.points.len(), 1);
     let dimension_styles =
-        &result.ir().native.namespace("rhino").unwrap().arenas["dimension_styles"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["dimension_styles"];
     assert_eq!(dimension_styles.len(), 1);
     assert_eq!(
         dimension_styles[0]
@@ -767,11 +759,11 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000020-20008075-")
         })
         .expect("future dimension-style userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(dimstyle_record.as_slice()));
+    assert_eq!(retained.data(), Some(dimstyle_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("V5 dimension-style userdata")
             && loss.message.contains("could not be transferred")
@@ -888,7 +880,7 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let materials = &result.ir().native.namespace("rhino").unwrap().arenas["materials"];
+    let materials = &result.ir().native.namespace("rhino").unwrap().arenas()["materials"];
     assert_eq!(materials.len(), 1);
     assert_eq!(
         materials[0]
@@ -906,11 +898,11 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000010-20008040-")
         })
         .expect("callback-owned RDK material record is retained");
-    assert_eq!(retained.data.as_deref(), Some(material_record.as_slice()));
+    assert_eq!(retained.data(), Some(material_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("RDK material userdata")
             && loss.message.contains("could not be transferred")
@@ -996,7 +988,7 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
 
     assert_eq!(result.ir().model.points.len(), 2);
     let presentation =
-        &result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(presentation.len(), 1);
     assert_ne!(
         presentation[0]
@@ -1008,9 +1000,9 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future object userdata record is retained");
-    assert_eq!(retained.data.as_deref(), Some(object_record.as_slice()));
+    assert_eq!(retained.data(), Some(object_record.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("object user-string userdata") && loss.message.contains("unsupported")
     }));
@@ -1081,9 +1073,9 @@ fn mesh_subd_proxy_future_payload_retains_parent_mesh_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future SubD proxy object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(mesh_record.as_slice()));
+    assert_eq!(retained.data(), Some(mesh_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1148,9 +1140,9 @@ fn brep_region_userdata_future_payload_retains_parent_brep_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("future Brep userdata object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(brep_record.as_slice()));
+    assert_eq!(retained.data(), Some(brep_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1204,7 +1196,7 @@ fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
         .rev()
         .find(|offset| {
             crate::chunks::chunk_at(&brep_payload, *offset, payload_end, archive, false).is_ok_and(
-                |chunk| chunk.typecode == 0x4000_8000 && chunk.next_offset == payload_end,
+                |chunk| chunk.typecode == 0x4000_8000 && chunk.next_offset() == payload_end,
             )
         })
         .expect("Brep fixture has an inline region wrapper");
@@ -1253,9 +1245,9 @@ fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("nested mesh userdata object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(brep_record.as_slice()));
+    assert_eq!(retained.data(), Some(brep_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1355,9 +1347,9 @@ fn extrusion_display_mesh_cache_nested_userdata_future_payload_retains_parent_re
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.id == "rhino:object:record#000000")
+        .find(|record| record.id() == "rhino:object:record#000000")
         .expect("extrusion cache object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(extrusion_record.as_slice()));
+    assert_eq!(retained.data(), Some(extrusion_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1440,7 +1432,7 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
     let result = decode(bytes);
 
     let texture_mappings =
-        &result.ir().native.namespace("rhino").unwrap().arenas["texture_mappings"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["texture_mappings"];
     assert_eq!(texture_mappings.len(), 1);
     assert_eq!(
         texture_mappings[0]
@@ -1468,11 +1460,11 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000025-2000807a-")
         })
         .expect("future mapping cache record is retained");
-    assert_eq!(retained.data.as_deref(), Some(mapping_record.as_slice()));
+    assert_eq!(retained.data(), Some(mapping_record.as_slice()));
     assert_valid(&result);
 }
 
@@ -1514,11 +1506,11 @@ fn future_settings_payload_is_retained_without_known_prefix() {
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000015-20008034-")
         })
         .expect("future settings payload is retained");
-    assert_eq!(retained.data.as_deref(), Some(future_annotation.as_slice()));
+    assert_eq!(retained.data(), Some(future_annotation.as_slice()));
     assert_valid(&result);
 }
 
@@ -1575,7 +1567,7 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     // The hatch loop curve is a real neutral carrier even though the fill is not.
     assert!(!result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.features.len(), 2);
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_valid(&result);
 }
 
@@ -1588,11 +1580,11 @@ fn user_table_records_are_retained_as_complete_opaque_source_records() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id.starts_with("rhino:opaque:record#"))
+        .find(|value| value.id().starts_with("rhino:opaque:record#"))
         .expect("user table record must be retained");
-    assert!(retained.id.contains("-70000042-"));
-    assert_eq!(retained.byte_len, expected.len() as u64);
-    assert_eq!(retained.data.as_deref(), Some(expected.as_slice()));
+    assert!(retained.id().contains("-70000042-"));
+    assert_eq!(retained.byte_len(), expected.len() as u64);
+    assert_eq!(retained.data(), Some(expected.as_slice()));
 }
 
 /// Object type for annotation records, per `docs/formats/rhino_3dm.md`.
@@ -1647,7 +1639,10 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
         .expect("required invariant")[0];
     assert_eq!(annotation.object, record.id.to_string());
     assert_eq!(annotation.native_ref, record.id.to_string());
-    assert!(record.links.contains(&annotation.id.0));
+    assert!(record
+        .links
+        .iter()
+        .any(|link| link == annotation.id.as_str()));
 
     // Constraint 2: `order` is a dense u32 arena index, not the byte offset.
     assert_eq!(annotation.order, 0);
@@ -1657,8 +1652,8 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
     for role in ["dimstyle_id", "detail_measured"] {
         let targets = &annotation.references[role];
         assert_eq!(targets.len(), 1);
-        assert!(targets[0].is_null);
-        assert!(targets[0].target.is_none());
+        assert!(targets[0].is_null());
+        assert!(targets[0].local_target().is_none());
     }
     assert!(annotation.assets.is_empty());
 
@@ -1968,18 +1963,15 @@ fn opennurbs_object_walk_and_transfer_floor() {
             80 => RhinoArchiveVersion::V8,
             _ => unreachable!("supported writer version table"),
         };
-        let mut point_ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut point_ir = cadmpeg_ir::CadIr::empty();
         point_ir.model.points.push(cadmpeg_ir::topology::Point {
-            id: cadmpeg_ir::ids::PointId("integration:writer-point#0".into()),
+            id: cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
+                .expect("identity grammar"),
             position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
             source_object: None,
         });
         let mut bytes = Vec::new();
-        RhinoEncoder::new(archive_version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &point_ir,
-                fidelity: None,
-            })
+        crate::test_support::plan_at(archive_version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("write codec point witness");
         let path = generated.join(format!("codec-writer-v{version}-point.3dm"));

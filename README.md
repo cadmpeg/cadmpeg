@@ -56,17 +56,23 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-- **FreeCAD `.FCStd`**: [L5](docs/format-support.md#support-ladder) (schema 4 / file 1)
-- **Autodesk Fusion `.f3d`**: [L4](docs/format-support.md#support-ladder)
-- **Autodesk Inventor `.ipt`/`.iam`**: [L1](docs/format-support.md#support-ladder)
-- **SolidWorks `.sldprt`**: [L4](docs/format-support.md#support-ladder)
-- **Rhino `.3dm`**: [L0](docs/format-support.md#support-ladder)
-- **Siemens NX `.prt`**: [L2](docs/format-support.md#support-ladder)
-- **CATIA V5 `.CATPart`**: [L1](docs/format-support.md#support-ladder)
-- **Creo `.prt`**: [L1](docs/format-support.md#support-ladder)
-- **STEP Part 21 AP203/AP214/AP242**: [L9](docs/format-support.md#support-ladder)
-- **IGES 5.1/5.2/5.3 Fixed ASCII**: [L8](docs/format-support.md#support-ladder)
-- **ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams**: [L3](docs/format-support.md#support-ladder) (admitted binary and text branches)
+Each format carries one support level from the ladder; `cadmpeg inspect <file>` answers for a specific file.
+
+<!-- generated: capability-lines -->
+
+- **Autodesk Inventor `.ipt` and `.iam`** — L1 ([profile](docs/format-support.md#autodesk-inventor-ipt-and-iam))
+- **ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams** — L1 ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
+- **FreeCAD `.FCStd`** — L5 ([profile](docs/format-support.md#freecad-fcstd))
+- **IGES** — L9 ([profile](docs/format-support.md#iges))
+- **Rhino `.3dm`** — L1 ([profile](docs/format-support.md#rhino-3dm))
+- **SolidWorks `.sldprt`** — L1 ([profile](docs/format-support.md#solidworks-sldprt))
+- **Fusion 360 `.f3d`** — L4 ([profile](docs/format-support.md#fusion-360-f3d))
+- **Siemens NX `.prt`** — L1 ([profile](docs/format-support.md#siemens-nx-prt))
+- **CATIA V5 `.CATPart`** — L1 ([profile](docs/format-support.md#catia-v5-catpart))
+- **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
+- **STEP Part 21** — L9 ([profile](docs/format-support.md#step-part-21))
+
+<!-- /generated: capability-lines -->
 
 [Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
 
@@ -76,7 +82,7 @@ wrote part.step (2125 entities)
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-- [CAD IR version 5](docs/cad-ir.md)
+- [CAD IR version 6](docs/cad-ir.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
 - [Roadmap](docs/roadmap.md)

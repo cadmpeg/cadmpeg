@@ -5,6 +5,7 @@
 //! result. The contract is that no input may panic.
 #![doc(hidden)]
 
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 /// Desktop salvage ceilings for fuzz wrappers.
@@ -80,7 +81,7 @@ pub fn nurbs_surfaces(data: &[u8]) {
 /// Exercise NX Parasolid topology parsing.
 pub fn topology(data: &[u8]) {
     let graph = crate::topology::Graph::parse(data);
-    for node in graph.of_kind(12) {
+    for node in graph.of_kind(NodeKind::Body) {
         let _ = node.byte_at(0);
         let _ = node.f64_at(0);
     }

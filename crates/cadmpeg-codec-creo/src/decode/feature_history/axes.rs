@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolution axes, section profile refs, and geometry-generator features.
 
-use super::super::analytic::{cross, dot};
 use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent, Termination,
+    Angle, AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
@@ -30,11 +30,11 @@ pub(in super::super) fn resolved_revolution_axis(
     let points = resolved_section_points(definition);
     let candidates = segments
         .rows
-        .iter()
-        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .ordinary()
+        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
         .filter_map(|segment| {
-            let start = points.get(&segment.point_ids[0])?;
-            let end = points.get(&segment.point_ids[1])?;
+            let start = points.get(&segment.point_ids()[0])?;
+            let end = points.get(&segment.point_ids()[1])?;
             if start[0] != 0.0 || end[0] != 0.0 || start == end {
                 return None;
             }
@@ -44,13 +44,14 @@ pub(in super::super) fn resolved_revolution_axis(
             Some(RevolutionAxis {
                 origin: Point3::new(start[0], start[1], start[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
+                reference: None,
             })
         })
         .collect::<Vec<_>>();
     let [axis] = candidates.as_slice() else {
         return None;
     };
-    Some(*axis)
+    Some(axis.clone())
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
@@ -60,7 +61,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
     let Some(RevolveExtent::OneSided {
-        termination: Termination::Angle {
+        termination: AngularTermination::Angle {
             angle: Angle(angle),
         },
     }) = extent
@@ -84,7 +85,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces
@@ -166,6 +168,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     Some(RevolutionAxis {
         origin: Point3::new(origin[0], origin[1], origin[2]),
         direction: Vector3::new(direction[0], direction[1], direction[2]),
+        reference: None,
     })
 }
 
@@ -316,12 +319,17 @@ pub(in super::super) fn model_feature_ids(scan: &ContainerScan) -> BTreeSet<IrFe
         .map(|operation| operation.feature_id)
         .chain(scan.features.rows.iter().map(|row| row.feature_id))
         .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
-        .map(|feature_id| IrFeatureId(format!("creo:model:feature#{feature_id}")))
+        .map(|feature_id| {
+            IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar")
+        })
         .collect::<BTreeSet<_>>();
     ids.extend(
         geometry_generator_features(scan)
             .into_iter()
-            .map(|generator| IrFeatureId(format!("creo:model:feature#{}", generator.feature_id))),
+            .map(|generator| {
+                IrFeatureId::mint(format!("creo:model:feature#{}", generator.feature_id))
+                    .expect("identity grammar")
+            }),
     );
     ids
 }

@@ -11,10 +11,10 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::export;
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn base_face_with_polygon_loop_gets_an_inferred_plane() {
@@ -143,7 +143,7 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.loops.len(), 1);
     assert_eq!(
-        decoded.ir().model.loops[0].boundary_role,
+        decoded.ir().model.loops[0].boundary_role_in(&decoded.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
@@ -166,7 +166,7 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     assert_eq!(reordered.ir().model.bodies.len(), 1);
     assert_eq!(reordered.ir().model.loops.len(), 1);
     assert_eq!(
-        reordered.ir().model.loops[0].boundary_role,
+        reordered.ir().model.loops[0].boundary_role_in(&reordered.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(reordered.ir().model.surfaces.iter().any(|surface| {
@@ -353,7 +353,7 @@ fn implicit_face_plane_rejects_non_coplanar_poly_loop_bounds_in_any_order() {
             .native_unknowns("step")
             .expect("STEP native namespace")
             .iter()
-            .map(|record| record.id.0.clone())
+            .map(|record| record.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         assert_eq!(
             unknown_ids,
@@ -574,17 +574,14 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     let mut ir = unit_cube();
     let face = ir.model.faces[0].id.clone();
     let vertex = ir.model.vertices[0].id.clone();
-    let inner = LoopId("zzzz:test:loop#inner".into());
+    let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
     ir.model.loops.push(Loop {
         id: inner.clone(),
         face: face.clone(),
-        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Inner,
-        coedges: Vec::new(),
-        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+        boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
             vertex,
-            after: None,
             pcurves: Vec::new(),
-        }],
+        },
     });
     ir.model.faces[0].loops.push(inner);
     let output = export(&ir);
@@ -594,7 +591,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .records
         .iter()
         .find_map(|(&face_step, record)| {
-            let partial = record.partials.first()?;
+            let partial = record.partials.first();
             if partial.name != "ADVANCED_FACE" {
                 return None;
             }
@@ -610,8 +607,8 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             let crate::parse::Value::Reference(second) = bounds[1] else {
                 return None;
             };
-            let first_record = exchange.records.get(&first)?.partials.first()?;
-            let second_record = exchange.records.get(&second)?.partials.first()?;
+            let first_record = exchange.records.get(&first)?.partials.first();
+            let second_record = exchange.records.get(&second)?.partials.first();
             let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
                 (first, second)
             } else if second_record.name == "FACE_OUTER_BOUND" {
@@ -641,66 +638,12 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.as_str() == StepIdentity::data("face", face_step))
+        .find(|face| face.id.as_str() == ids::data("face", face_step))
         .expect("decoded face");
     assert_eq!(
         face.loops[0].as_str(),
-        StepIdentity::data("loop", format!("{outer_loop}-face-{face_step}"))
+        ids::data("loop", format!("{outer_loop}-face-{face_step}"))
     );
-}
-
-#[test]
-fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
-    use cadmpeg_ir::ids::LoopId;
-    use cadmpeg_ir::topology::Loop;
-
-    for duplicate_first in [false, true] {
-        let mut ir = unit_cube();
-        let face = ir.model.faces[0].id.clone();
-        let duplicate = LoopId("synthetic:test:loop#duplicate-outer".into());
-        ir.model.loops.push(Loop {
-            id: duplicate.clone(),
-            face,
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-            coedges: Vec::new(),
-            vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
-                vertex: ir.model.vertices[0].id.clone(),
-                after: None,
-                pcurves: Vec::new(),
-            }],
-        });
-        if duplicate_first {
-            ir.model.faces[0].loops.insert(0, duplicate);
-        } else {
-            ir.model.faces[0].loops.push(duplicate);
-        }
-
-        let output = export(&ir);
-        let decoded = StepCodec::default()
-            .decode(&mut Cursor::new(output), &DecodeOptions::default())
-            .expect("decode duplicate outer bounds");
-        assert!(decoded.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::FaceMultipleOuterBounds.kind()
-                && loss.message.contains("violates the STEP face-bound rule")
-                && loss
-                    .message
-                    .contains("omitting the containing topology shell")
-        }));
-        assert!(decoded.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::TopologyRootRejected.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
-                && loss.message.contains("face with multiple outer bounds")
-        }));
-        assert!(decoded.ir().model.bodies.is_empty());
-        assert!(decoded.ir().model.faces.is_empty());
-        assert!(decoded
-            .ir()
-            .native_unknowns("step")
-            .expect("STEP unknown arena")
-            .iter()
-            .any(|record| record.id.0.contains("advanced_face")));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
-    }
 }
 
 #[test]
@@ -734,7 +677,7 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
             .expect("STEP native namespace");
         let ids = unknowns
             .iter()
-            .map(|record| record.id.0.clone())
+            .map(|record| record.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         assert_eq!(
             ids,
@@ -751,7 +694,7 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
         );
         let links = unknowns
             .iter()
-            .map(|record| (record.id.0.clone(), record.links.clone()))
+            .map(|record| (record.id.as_str().to_owned(), record.links.clone()))
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
             links,
@@ -833,7 +776,13 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
     );
 
     let mut output = Vec::new();
-    write_step(decoded.ir(), &mut output, &StepWriteOptions::default()).expect("write named face");
+    write_step(
+        decoded.ir(),
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write named face");
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written named face");

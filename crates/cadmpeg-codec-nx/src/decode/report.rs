@@ -1,25 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report losses for NX decode.
 
+use super::feature_completeness::operands::{
+    body_selection_is_incomplete, body_selections_overlap, face_selection_is_incomplete,
+    path_ref_is_incomplete, pattern_feature_is_incomplete,
+};
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete, body_selection_is_incomplete,
-    body_selections_overlap, chamfer_definition_is_incomplete, combine_definition_is_incomplete,
-    datum_coordinate_system_is_incomplete, datum_plane_is_incomplete,
-    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
-    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
-    face_blend_definition_is_incomplete, face_selection_is_incomplete,
+    active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
+    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
+    datum_plane_is_incomplete, delete_body_definition_is_incomplete,
+    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
+    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
     fillet_definition_is_incomplete, finite_feature_point, hole_definition_is_incomplete,
     incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
-    output_free_trim_surface_construction, path_ref_is_incomplete, pattern_feature_is_incomplete,
-    positive_feature_length, projected_curve_direction_is_incomplete,
-    replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
-    rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
-    shell_definition_is_incomplete, sphere_definition_is_incomplete,
-    sweep_definition_is_incomplete, thicken_definition_is_incomplete,
-    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
-    valid_feature_direction,
+    output_free_trim_surface_construction, positive_feature_length,
+    projected_curve_direction_is_incomplete, replace_face_definition_is_incomplete,
+    revolve_definition_is_incomplete, rib_definition_is_incomplete,
+    sew_bodies_definition_is_incomplete, shell_definition_is_incomplete,
+    sphere_definition_is_incomplete, sweep_definition_is_incomplete,
+    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
+    trim_surface_definition_is_incomplete, valid_feature_direction,
 };
 use super::geometry_work::{
     MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -28,14 +30,15 @@ use super::geometry_work::{
 };
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
 use super::support_uv::pcurve_requires_completion;
-use super::{summary_notes, Counts, Scan};
+use super::{Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, SketchSpace,
+    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, UnresolvedFamily,
 };
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -54,9 +57,7 @@ pub(crate) struct CompletionBudgetStatus {
     pub(crate) coupled_support_uv_geometry_exhausted: bool,
     pub(crate) support_uv_lane_geometry_exhausted: bool,
     pub(crate) transfer_limit: usize,
-    pub(crate) support_uv_validation_limit: usize,
     pub(crate) support_uv_limit: usize,
-    pub(crate) coupled_support_uv_limit: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
@@ -72,7 +73,9 @@ pub(crate) fn build_geometry_report(
     model: &crate::native::NativeModel,
     completion_budget: CompletionBudgetStatus,
     adaptive_geometry_exhausted: bool,
-) -> DecodeReport {
+    dialect_losses: &[LossNote],
+    notes: &[String],
+) -> DecodeBody {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
@@ -133,7 +136,7 @@ pub(crate) fn build_geometry_report(
         .iter()
         .filter_map(|procedural| {
             let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-                &procedural.definition
+                procedural.definition()
             else {
                 return None;
             };
@@ -141,7 +144,11 @@ pub(crate) fn build_geometry_report(
                 context
                     .sides
                     .iter()
-                    .filter(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+                    .filter(|side| {
+                        pcurve_requires_completion(
+                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+                        )
+                    })
                     .count(),
             )
         })
@@ -194,9 +201,9 @@ pub(crate) fn build_geometry_report(
             bounded_phases.join(" and "),
             MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
             completion_budget.transfer_limit,
-            completion_budget.support_uv_validation_limit,
             completion_budget.support_uv_limit,
-            completion_budget.coupled_support_uv_limit,
+            completion_budget.support_uv_limit,
+            completion_budget.support_uv_limit,
             MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
             MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
             MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
@@ -275,14 +282,13 @@ pub(crate) fn build_geometry_report(
         ));
     }
 
-    DecodeReport {
-        format: "nx".to_string(),
-        container_only: false,
+    losses.extend_from_slice(dialect_losses);
+    DecodeBody {
         geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
-        notes: summary_notes(scan),
+        notes: notes.to_vec(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
 
@@ -341,7 +347,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active.is_active())
+        .filter(|configuration| configuration.active)
         .count();
     let current_bodies = ir
         .model
@@ -356,12 +362,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|configuration| {
             configuration.bodies.is_unresolved()
                 || active_configuration_count != 1
-                || (configuration.active.is_active()
+                || (configuration.active
                     && configuration.bodies.resolved().is_none_or(|bodies| {
                         bodies.len() != current_bodies.len()
                             || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
                     }))
-                || (configuration.active.is_active()
+                || (configuration.active
                     && active_configuration_state_is_incomplete(ir, configuration))
         })
         .count();
@@ -408,31 +414,37 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             continue;
         }
         let family = match feature.definition {
-            FeatureDefinition::BrepUnresolved => "brep",
-            FeatureDefinition::DatumPlaneUnresolved => "datum plane",
-            FeatureDefinition::DatumAxisUnresolved => "datum axis",
-            FeatureDefinition::DatumPointUnresolved => "datum point",
-            FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
-            FeatureDefinition::BridgeCurveUnresolved => "bridge curve",
-            FeatureDefinition::LoftUnresolved => "loft",
-            FeatureDefinition::ThroughCurveMeshUnresolved => "through curve mesh",
-            FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
-            FeatureDefinition::ExtractFaceUnresolved => "extract face",
-            FeatureDefinition::CopyFaceUnresolved => "copy face",
-            FeatureDefinition::LinkedFaceUnresolved => "linked face",
-            FeatureDefinition::FillHoleUnresolved => "fill hole",
-            FeatureDefinition::MoveFaceUnresolved => "move face",
-            FeatureDefinition::MoveObjectUnresolved => "move object",
-            FeatureDefinition::CylinderUnresolved => "cylinder",
-            FeatureDefinition::ConeUnresolved => "cone",
-            FeatureDefinition::SphereUnresolved => "sphere",
-            FeatureDefinition::ThreadUnresolved => "thread",
-            FeatureDefinition::DetailedThreadUnresolved => "detailed thread",
-            FeatureDefinition::DraftUnresolved => "draft",
-            FeatureDefinition::DeleteFaceUnresolved => "delete face",
-            FeatureDefinition::MirrorFaceUnresolved => "mirror face",
-            FeatureDefinition::SubdivisionBodyUnresolved => "subdivision body",
-            FeatureDefinition::TopologyOptimizationUnresolved => "topology optimization",
+            FeatureDefinition::Unresolved { family } => match family {
+                UnresolvedFamily::Brep => "brep",
+                UnresolvedFamily::DatumPlane => "datum plane",
+                UnresolvedFamily::DatumAxis => "datum axis",
+                UnresolvedFamily::DatumPoint => "datum point",
+                UnresolvedFamily::DatumCoordinateSystem => "datum coordinate system",
+                UnresolvedFamily::BridgeCurve => "bridge curve",
+                UnresolvedFamily::Loft => "loft",
+                UnresolvedFamily::ThroughCurveMesh => "through curve mesh",
+                UnresolvedFamily::FreeformSurface => "freeform surface",
+                UnresolvedFamily::ExtractFace => "extract face",
+                UnresolvedFamily::CopyFace => "copy face",
+                UnresolvedFamily::LinkedFace => "linked face",
+                UnresolvedFamily::FillHole => "fill hole",
+                UnresolvedFamily::MoveFace => "move face",
+                UnresolvedFamily::MoveObject => "move object",
+                UnresolvedFamily::Cylinder => "cylinder",
+                UnresolvedFamily::Cone => "cone",
+                UnresolvedFamily::Sphere => "sphere",
+                UnresolvedFamily::Thread => "thread",
+                UnresolvedFamily::DetailedThread => "detailed thread",
+                UnresolvedFamily::Draft => "draft",
+                UnresolvedFamily::DeleteFace => "delete face",
+                UnresolvedFamily::MirrorFace => "mirror face",
+                UnresolvedFamily::SubdivisionBody => "subdivision body",
+                UnresolvedFamily::TopologyOptimization => "topology optimization",
+                UnresolvedFamily::Extrude
+                | UnresolvedFamily::Revolve
+                | UnresolvedFamily::Fillet
+                | UnresolvedFamily::BoundarySurface => continue,
+            },
             _ => continue,
         };
         *unresolved_feature_families.entry(family).or_default() += 1;
@@ -531,7 +543,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                             .is_none_or(|source| source.ordinal >= feature.ordinal)
                             || !feature.dependencies.contains(reference)
                     }
-                    DatumPlaneReference::Face { face, .. } => face_selection_is_incomplete(face),
+                    DatumPlaneReference::Face(face) => face_selection_is_incomplete(face),
+                    DatumPlaneReference::ResolvedPlane { .. } => false,
                 }) =>
             {
                 "datum plane"
@@ -560,20 +573,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
                 "extract body"
             }
-            FeatureDefinition::Sketch { space, sketch }
-                if !matches!(space, SketchSpace::Planar)
-                    || sketch.as_ref().is_none_or(|sketch| {
-                        ir.model
-                            .sketches
-                            .iter()
-                            .find(|candidate| candidate.id == *sketch)
-                            .is_none_or(|sketch| {
-                                matches!(
-                                    sketch.placement,
-                                    cadmpeg_ir::sketches::SketchPlacement::Unresolved
-                                )
-                            })
-                    }) =>
+            FeatureDefinition::Sketch { sketch }
+                if sketch.id().is_none_or(|sketch| {
+                    ir.model
+                        .sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .is_none_or(|sketch| {
+                            matches!(
+                                sketch.placement,
+                                cadmpeg_ir::sketches::SketchPlacement::Unresolved
+                            )
+                        })
+                }) =>
             {
                 "sketch"
             }
@@ -720,7 +732,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| {
             matches!(
                 feature.definition,
-                FeatureDefinition::Sketch { sketch: None, .. }
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    ..
+                }
             )
         })
         .count();
@@ -739,7 +755,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| feature_in_active_scope(feature))
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                sketch: Some(sketch),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
             } => Some(sketch.clone()),
             _ => None,

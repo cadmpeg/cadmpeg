@@ -14,7 +14,7 @@ use cadmpeg_ir::subd::{
 use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::objects::UserdataDescriptor;
+use crate::objects::ClassUserdata;
 
 /// Canonical `ON_SubD` class UUID.
 pub(crate) const ON_SUBD: crate::wire::Uuid = crate::wire::Uuid::from_canonical([
@@ -36,22 +36,17 @@ const MAX_COMPONENTS_PER_LEVEL: usize = 4_000_000;
 const MAX_INCIDENT_COMPONENTS: usize = 65_535;
 const MAX_SAVED_LIMIT_POINTS: usize = 65_535;
 
-/// A completely decoded `SubD` payload.
+/// A validated level-zero Catmull-Clark control cage and its decode metadata.
 #[derive(Debug, Clone)]
-pub(crate) enum DecodedSubd {
-    /// The outer object explicitly contains no `SubDimple`.
-    Empty,
-    /// A validated level-zero Catmull-Clark control cage.
-    Surface {
-        /// Materialized level-zero cage.
-        surface: Box<SubdSurface>,
-        /// Whether valid non-cage metadata was retained without neutral-IR mapping.
-        neutral_metadata: bool,
-        /// Unknown symmetry enumeration values mapped to their neutral values.
-        enum_diagnostics: Vec<SubdEnumDiagnostic>,
-        /// Recoverable nested checksum warnings.
-        warnings: Vec<String>,
-    },
+pub(crate) struct DecodedSubd {
+    /// Materialized level-zero cage.
+    pub(crate) surface: SubdSurface,
+    /// Whether valid non-cage metadata was retained without neutral-IR mapping.
+    pub(crate) neutral_metadata: bool,
+    /// Unknown symmetry enumeration values mapped to their neutral values.
+    pub(crate) enum_diagnostics: Vec<SubdEnumDiagnostic>,
+    /// Recoverable nested checksum warnings.
+    pub(crate) warnings: Vec<String>,
 }
 
 /// Native mesh-array identity saved beside a `SubD` proxy.
@@ -151,7 +146,7 @@ struct ComponentBase {
 struct RawVertex {
     base: ComponentBase,
     point: Point3,
-    tag: u8,
+    tag: Option<SubdVertexTag>,
     edges: Vec<ComponentPointer>,
     faces: Vec<ComponentPointer>,
 }
@@ -159,7 +154,7 @@ struct RawVertex {
 #[derive(Debug, Clone)]
 struct RawEdge {
     base: ComponentBase,
-    tag: u8,
+    tag: Option<SubdEdgeTag>,
     sector_coefficients: [f64; 2],
     sharpness: [f64; 2],
     vertices: [ComponentPointer; 2],
@@ -198,7 +193,7 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
-) -> Result<DecodedSubd, SubdError> {
+) -> Result<Option<DecodedSubd>, SubdError> {
     if !scale.is_finite() || scale <= 0.0 {
         return Err(malformed(range.start, "invalid SubD unit scale"));
     }
@@ -208,16 +203,16 @@ pub(crate) fn decode(
     match has_subdimple {
         0 => {
             finish_payload(&mut reader)?;
-            Ok(DecodedSubd::Empty)
+            Ok(None)
         }
         1 => {
             let chunk = anonymous_chunk(&reader, archive, "SubDimple")?;
-            let mut child = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+            let mut child = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
             let major = child.i32()?;
             let minor = child.i32()?;
             if major != 1 || minor < 0 {
                 return Err(SubdError::UnsupportedVersion {
-                    offset: chunk.body.start,
+                    offset: chunk.body().start,
                     message: format!("unsupported SubDimple version {major}.{minor}"),
                 });
             }
@@ -233,12 +228,12 @@ pub(crate) fn decode(
             )?;
             finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
             finish_payload(&mut reader)?;
-            Ok(DecodedSubd::Surface {
-                surface: Box::new(surface),
+            Ok(Some(DecodedSubd {
+                surface,
                 neutral_metadata: minor > 0 || level_count > 1,
                 enum_diagnostics,
                 warnings,
-            })
+            }))
         }
         value => Err(malformed(
             range.start,
@@ -250,7 +245,7 @@ pub(crate) fn decode(
 /// Decodes and admits one `ON_SubDMeshProxyUserData` payload.
 pub(crate) fn decode_mesh_proxy(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
@@ -263,18 +258,18 @@ pub(crate) fn decode_mesh_proxy(
         archive,
         false,
     )?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(malformed(
             outer.header_start,
             "SubD mesh proxy payload is not anonymous",
         ));
     }
-    let mut reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let major = reader.i32()?;
     let version = reader.i32()?;
     if major != 1 || version <= 0 {
         return Err(SubdError::UnsupportedVersion {
-            offset: outer.body.start,
+            offset: outer.body().start,
             message: format!("unsupported SubD mesh proxy version {major}.{version}"),
         });
     }
@@ -307,10 +302,7 @@ pub(crate) fn decode_mesh_proxy(
     {
         return Ok(None);
     }
-    match decoded {
-        DecodedSubd::Surface { .. } => Ok(Some(decoded)),
-        DecodedSubd::Empty => Ok(None),
-    }
+    Ok(decoded)
 }
 
 fn embedded_subd_end(
@@ -320,7 +312,7 @@ fn embedded_subd_end(
     let mut probe = *reader;
     match probe.u8()? {
         0 => Ok(probe.position()),
-        1 => Ok(anonymous_chunk(&probe, archive, "SubD proxy payload")?.next_offset),
+        1 => Ok(anonymous_chunk(&probe, archive, "SubD proxy payload")?.next_offset()),
         value => Err(malformed(
             reader.position(),
             format!("invalid SubD proxy has_subdimple value {value}"),
@@ -333,18 +325,19 @@ fn read_proxy_sha1(
     archive: ArchiveVersion,
 ) -> Result<[u8; 20], SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD mesh proxy SHA-1")?;
-    let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut reader =
+        BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(SubdError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported SubD mesh proxy SHA-1 version {major}.{minor}"),
         });
     }
     let mut digest = [0_u8; 20];
     digest.copy_from_slice(reader.take(20)?);
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(digest)
 }
 
@@ -421,12 +414,13 @@ fn read_level(
     warnings: &mut Vec<String>,
 ) -> Result<RawLevel, SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD level")?;
-    let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut reader =
+        BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 1 {
         return Err(SubdError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported SubD level version {major}.{minor}"),
         });
     }
@@ -525,10 +519,14 @@ fn read_vertex(
     warnings: &mut Vec<String>,
 ) -> Result<RawVertex, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
-    let tag = reader.u8()?;
-    if tag > 4 {
-        return Err(malformed(reader.position() - 1, "invalid SubD vertex tag"));
-    }
+    let tag = match reader.u8()? {
+        0 => None,
+        1 => Some(SubdVertexTag::Smooth),
+        2 => Some(SubdVertexTag::Crease),
+        3 => Some(SubdVertexTag::Corner),
+        4 => Some(SubdVertexTag::Dart),
+        _ => return Err(malformed(reader.position() - 1, "invalid SubD vertex tag")),
+    };
     let point = point(reader, "SubD control point")?;
     let edge_count = usize::from(reader.u16()?);
     let face_count = usize::from(reader.u16()?);
@@ -590,10 +588,13 @@ fn read_edge(
     warnings: &mut Vec<String>,
 ) -> Result<RawEdge, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
-    let tag = reader.u8()?;
-    if !matches!(tag, 0 | 1 | 2 | 4) {
-        return Err(malformed(reader.position() - 1, "invalid SubD edge tag"));
-    }
+    let tag = match reader.u8()? {
+        0 => None,
+        1 => Some(SubdEdgeTag::Smooth),
+        2 => Some(SubdEdgeTag::Crease),
+        4 => Some(SubdEdgeTag::SmoothX),
+        _ => return Err(malformed(reader.position() - 1, "invalid SubD edge tag")),
+    };
     let face_count = usize::from(reader.u16()?);
     let sector_coefficients = [reader.f64()?, reader.f64()?];
     if sector_coefficients.iter().any(|value| !value.is_finite()) {
@@ -984,10 +985,10 @@ fn validate_level(level: &RawLevel, expected_level: usize) -> Result<(), SubdErr
         )?;
     }
     if expected_level == 0 {
-        if level.vertices.iter().any(|vertex| vertex.tag == 0) {
+        if level.vertices.iter().any(|vertex| vertex.tag.is_none()) {
             return Err(malformed(0, "level-zero SubD vertex has unset tag"));
         }
-        if level.edges.iter().any(|edge| edge.tag == 0) {
+        if level.edges.iter().any(|edge| edge.tag.is_none()) {
             return Err(malformed(0, "level-zero SubD edge has unset tag"));
         }
     }
@@ -1125,13 +1126,9 @@ fn materialize(
         .vertices
         .into_iter()
         .map(|vertex| {
-            let tag = match vertex.tag {
-                1 => SubdVertexTag::Smooth,
-                2 => SubdVertexTag::Crease,
-                3 => SubdVertexTag::Corner,
-                4 => SubdVertexTag::Dart,
-                _ => return Err(malformed(0, "invalid materialized SubD vertex tag")),
-            };
+            let tag = vertex
+                .tag
+                .ok_or_else(|| malformed(0, "invalid materialized SubD vertex tag"))?;
             Ok(SubdVertex {
                 point: Point3::new(
                     crate::wire::scaled_coordinate(vertex.point.x, scale)
@@ -1150,12 +1147,9 @@ fn materialize(
         .edges
         .into_iter()
         .map(|edge| {
-            let tag = match edge.tag {
-                1 => SubdEdgeTag::Smooth,
-                2 => SubdEdgeTag::Crease,
-                4 => SubdEdgeTag::SmoothX,
-                _ => return Err(malformed(0, "invalid materialized SubD edge tag")),
-            };
+            let tag = edge
+                .tag
+                .ok_or_else(|| malformed(0, "invalid materialized SubD edge tag"))?;
             Ok(SubdEdge {
                 vertices: [
                     *vertex_indices
@@ -1281,12 +1275,13 @@ fn read_mapping_tag(
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD texture mapping tag")?;
-    let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut reader =
+        BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(SubdError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported SubD mapping-tag version {major}.{minor}"),
         });
     }
@@ -1306,12 +1301,13 @@ fn read_symmetry(
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD symmetry")?;
-    let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut reader =
+        BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let version = reader.i32()?;
     if major != 1 || version < 1 {
         return Err(SubdError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported SubD symmetry version {major}.{version}"),
         });
     }
@@ -1333,12 +1329,12 @@ fn read_symmetry(
     reader.take(16)?;
     let inner = anonymous_chunk(&reader, archive, "SubD symmetry transform")?;
     let mut transform =
-        BoundedReader::new(reader.backing_bytes(), inner.body.start, inner.body.end)?;
+        BoundedReader::new(reader.backing_bytes(), inner.body().start, inner.body().end)?;
     let inner_major = transform.i32()?;
     let inner_version = transform.i32()?;
     if inner_major != 1 || inner_version < 0 {
         return Err(SubdError::UnsupportedVersion {
-            offset: inner.body.start,
+            offset: inner.body().start,
             message: format!(
                 "unsupported SubD symmetry transform version {inner_major}.{inner_version}"
             ),
@@ -1389,12 +1385,13 @@ fn read_subd_hash(
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD topology hash")?;
-    let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut reader =
+        BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 1 {
         return Err(SubdError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported SubD topology-hash version {major}.{minor}"),
         });
     }
@@ -1416,12 +1413,13 @@ fn read_sha1(
     warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SHA-1 hash")?;
-    let mut reader = BoundedReader::new(parent.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut reader =
+        BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(SubdError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported SHA-1 record version {major}.{minor}"),
         });
     }
@@ -1452,7 +1450,7 @@ fn anonymous_chunk(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(malformed(
             chunk.header_start,
             format!("expected bounded anonymous {label} chunk"),
@@ -1468,7 +1466,7 @@ fn consume_anonymous(
     _warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(reader, archive, label)?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -1484,7 +1482,7 @@ fn finish_chunk(
             "SubD anonymous chunk skipped {skipped} trailing bytes"
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
@@ -1509,7 +1507,7 @@ fn finish_direct_chunk(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
@@ -1526,7 +1524,7 @@ fn finish_chunk_children(
             "SubD anonymous chunk skipped {skipped} trailing bytes"
         ));
     }
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1536,7 +1534,7 @@ fn finish_chunk_children(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 

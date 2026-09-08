@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
@@ -24,7 +23,6 @@ fn global_defaults_apply_only_to_omitted_fields() {
     let context = parsed.length_context().unwrap();
 
     assert_eq!(context.length_factor_mm(), 25.4);
-    assert_eq!(parsed.units_flag(), Some(1));
     assert_eq!(parsed.declared_version_flag(), 3);
     assert_eq!(context.minimum_resolution_mm(), 0.0);
     assert_eq!(parsed.real_precision().single_significance, 6);
@@ -43,10 +41,8 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
     let (parsed, losses) = resolve_global_fields(&fields);
     let context = parsed.length_context().unwrap();
     assert_eq!(context.length_factor_mm(), 25.4);
-    assert_eq!(parsed.units_flag(), Some(1));
     assert_eq!(parsed.declared_version_flag(), 3);
     assert!((context.minimum_resolution_mm() - 0.0254).abs() <= f64::EPSILON * 64.0);
-    assert_eq!(parsed.maximum_coordinate_mm(), Some(0.0));
     assert!(losses.is_empty(), "{losses:#?}");
 
     for (index, expected) in [
@@ -199,7 +195,6 @@ fn malformed_global_integer_does_not_select_its_default() {
         crate::global::parse(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
             .unwrap();
 
-    assert_eq!(parsed.units_flag(), None);
     assert!(parsed.length_context().is_none());
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
@@ -323,11 +318,11 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
             .decode(&mut Cursor::new(bytes), &strict_options(false))
             .unwrap_err();
         match error {
-            CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
-                loss_code,
+            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+                rejection.loss().code.to_string(),
                 IgesLossCode::GlobalSemanticContextSubstituted
                     .kind()
-                    .as_str()
+                    .to_string()
             ),
             other => panic!("expected a shared-gate strict refusal, got {other:?}"),
         }

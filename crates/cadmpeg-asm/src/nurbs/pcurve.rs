@@ -1,62 +1,75 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cached parameter-space curve (pcurve) block decoding, patch layouts, and cache entry points.
 
-use crate::nurbs::core::KnotPatchLayout;
+use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions, read_knots,
-    take_tagged_int, INT_WIDTHS,
+    take_tagged_int, KnotLayout, INT_WIDTHS,
 };
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::geometry::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
-
-/// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
-#[derive(Clone)]
-pub struct NurbsPcurve {
-    /// Curve degree.
-    pub degree: u32,
-    /// Full clamped knot vector.
-    pub knots: Vec<f64>,
-    /// UV control points in surface-parameter space, without length scaling.
-    pub control_points: Vec<Point2>,
-    /// Per-pole homogeneous weights; absent for a `nubs` block.
-    pub weights: Option<Vec<f64>>,
-    /// Whether the parameter curve is periodic.
-    pub periodic: bool,
-}
 
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
     /// Payload width of integer and enum fields.
-    pub int_width: usize,
+    pub int_width: RefWidth,
     /// Tagged-integer payload offset for the curve degree.
     pub degree_value_offset: usize,
-    /// Tagged-double payload offsets in `(u, v)` pole order.
-    pub control_value_offsets: Vec<usize>,
-    /// Tagged-double payload offsets for homogeneous weights.
-    pub weight_value_offsets: Vec<usize>,
+    control_start: usize,
+    rational: bool,
     /// Number of UV control points.
     pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub knots: KnotPatchLayout,
+    pub knots: KnotLayout,
     /// Payload offset for the closure enum.
     pub periodic_value_offset: usize,
-    /// Offset immediately after the final UV control component.
-    pub control_end: usize,
+}
+
+impl PcurvePatchLayout {
+    fn control_stride(&self) -> usize {
+        if self.rational {
+            27
+        } else {
+            18
+        }
+    }
+
+    /// Whether each native pole carries a homogeneous weight.
+    pub fn rational(&self) -> bool {
+        self.rational
+    }
+
+    /// Tagged-double payload offsets in `(u, v)` pole order.
+    pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = [usize; 2]> + '_ {
+        (0..self.control_count).map(|ordinal| {
+            let u = self.control_start + ordinal * self.control_stride() + 1;
+            [u, u + 9]
+        })
+    }
+
+    /// Tagged-double payload offsets for homogeneous weights.
+    pub fn weight_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        (0..if self.rational { self.control_count } else { 0 })
+            .map(|ordinal| self.control_start + ordinal * 27 + 19)
+    }
+
+    /// Offset immediately after the final control component.
+    pub fn control_end(&self) -> usize {
+        self.control_start + self.control_count * self.control_stride()
+    }
 }
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
-pub fn final_pcurve_patch_layout(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
-    final_pcurve_patch_layout_at(record, int_width)
-}
-
-fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
+pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|marker_pos| {
-            let (_cp_dims, marker_len, rational) = marker_at(record, marker_pos)?;
-            let mut pos = marker_pos + marker_len;
+            let marker = marker_at(record, marker_pos)?;
+            let rational = marker.rational();
+            let mut pos = marker_pos + marker.byte_len();
             let degree_value_offset = pos + 1;
             let degree = take_tagged_int(record, &mut pos, 0x04, int_width)?;
             if !(1..=20).contains(&degree) {
@@ -70,47 +83,39 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
             }
             let (_knots, control_count, knot_layout) =
                 read_knots(record, &mut pos, unique as usize, degree, int_width)?;
-            let mut offsets = Vec::with_capacity(control_count * 2);
-            let mut weight_offsets = Vec::with_capacity(control_count * usize::from(rational));
-            for _ in 0..control_count * 2 {
+            let control_start = pos;
+            let components = if rational { 3 } else { 2 };
+            for _ in 0..control_count * components {
                 if record.get(pos) != Some(&0x06) {
                     return None;
                 }
-                offsets.push(pos + 1);
                 pos += 9;
-                if rational && offsets.len() % 2 == 0 {
-                    if record.get(pos) != Some(&0x06) {
-                        return None;
-                    }
-                    weight_offsets.push(pos + 1);
-                    pos += 9;
-                }
             }
             Some(PcurvePatchLayout {
                 int_width,
                 degree_value_offset,
-                control_value_offsets: offsets,
-                weight_value_offsets: weight_offsets,
+                control_start,
+                rational,
                 control_count,
-                knots: knot_layout.into(),
+                knots: knot_layout,
                 periodic_value_offset,
-                control_end: pos,
             })
         })
         .next_back()
 }
 
-fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
+fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Option<PcurveNurbs> {
     decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
 }
 
 pub(crate) fn decode_pcurve_block_with_end(
     b: &[u8],
     marker_pos: usize,
-    int_width: usize,
-) -> Option<(NurbsPcurve, usize)> {
-    let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
-    let mut pos = marker_pos + marker_len;
+    int_width: RefWidth,
+) -> Option<(PcurveNurbs, usize)> {
+    let marker = marker_at(b, marker_pos)?;
+    let rational = marker.rational();
+    let mut pos = marker_pos + marker.byte_len();
     let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=20).contains(&degree) {
         return None;
@@ -145,13 +150,14 @@ pub(crate) fn decode_pcurve_block_with_end(
         }
     }
     Some((
-        NurbsPcurve {
-            degree: degree as u32,
+        PcurveNurbs::new(
+            degree as u32,
             knots,
             control_points,
             weights,
-            periodic: is_periodic(closure),
-        },
+            is_periodic(closure),
+        )
+        .ok()?,
         pos,
     ))
 }
@@ -160,7 +166,7 @@ pub(crate) fn decode_pcurve_block_with_end(
 ///
 /// This generic entry point has no stream-width or owning-scope witness. It
 /// therefore withholds when more than one `(width, marker)` candidate decodes.
-pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
+pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<PcurveNurbs> {
     let mut decoded = None;
     for int_width in INT_WIDTHS {
         for position in marker_positions(record_bytes) {
@@ -181,7 +187,7 @@ pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
 pub(crate) fn pcurve_block_with_end(
     toks: &[Token],
     marker_pos: usize,
-) -> Option<(NurbsPcurve, usize)> {
+) -> Option<(PcurveNurbs, usize)> {
     let rational = toks::marker_at(toks, marker_pos)?.rational();
     let mut cur = Cur::at(toks, marker_pos + 1);
     let degree = cur.take_long()?;
@@ -205,18 +211,19 @@ pub(crate) fn pcurve_block_with_end(
         }
     }
     Some((
-        NurbsPcurve {
-            degree: degree as u32,
+        PcurveNurbs::new(
+            degree as u32,
             knots,
             control_points,
             weights,
-            periodic: is_periodic(closure),
-        },
+            is_periodic(closure),
+        )
+        .ok()?,
         cur.pos(),
     ))
 }
 
-fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
+fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
     pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
 }
 
@@ -224,7 +231,7 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
 ///
 /// The scope grammar makes its first owned B-spline block the pcurve. Nested
 /// support references are not searched because they belong to other fields.
-pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
+pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<PcurveNurbs> {
     let position = toks::owned_marker_positions(toks).into_iter().next()?;
     pcurve_block(toks, position)
 }
@@ -233,7 +240,7 @@ pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
 pub fn explicit_pcurve_cache_from_subtype_ref(
     index: i64,
     table: &toks::SubtypeTable,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     let index = usize::try_from(index).ok()?;
     explicit_pcurve_cache(table.span(index)?)
 }

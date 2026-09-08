@@ -4,7 +4,7 @@
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point2;
 
-use super::equations::{cross, dot};
+use crate::vecmath::{cross, dot};
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;

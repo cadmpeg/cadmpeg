@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -93,7 +93,7 @@ fn inspect_reports_sections_and_physical_line_endings() {
         )
         .unwrap();
 
-    assert_eq!(summary.format, "iges");
+    assert_eq!(summary.format(), "iges");
     assert_eq!(summary.container_kind, "fixed-ascii");
     assert_eq!(summary.entries.len(), 3);
     assert_eq!(summary.entries[0].name, "start");
@@ -188,7 +188,7 @@ fn decode_retains_post_terminate_physical_record() {
         .unwrap();
 
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["cards"].len(),
         8
     );
 }
@@ -210,7 +210,7 @@ fn terminate_card_remainder_is_retained_after_terminate() {
         .iter()
         .find(|entry| entry.name == "post-terminate")
         .unwrap();
-    assert_eq!(post_terminate.role, "retained-trailing-records");
+    assert_eq!(post_terminate.role.as_str(), "retained-trailing-records");
     assert_eq!(post_terminate.attributes["records"], "1");
 
     let result = IgesCodec
@@ -221,7 +221,7 @@ fn terminate_card_remainder_is_retained_after_terminate() {
         .unwrap();
 
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["cards"].len(),
         8
     );
 }

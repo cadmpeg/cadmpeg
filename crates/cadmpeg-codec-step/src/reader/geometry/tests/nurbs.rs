@@ -6,7 +6,6 @@
 
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
@@ -35,24 +34,29 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(|curve| match &curve.geometry {
-                CurveGeometry::Nurbs(nurbs) => Some(nurbs),
-                _ => None,
-            })
+            .and_then(
+                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                    CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                    _ => None,
+                },
+            )
             .unwrap_or_else(|| panic!("missing NURBS curve {id}"))
     };
     assert_eq!(
-        nurbs("step:data:curve#4").knots,
+        nurbs("step:data:curve#4").knots(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
-    assert_eq!(nurbs("step:data:curve#5").knots, [-1.0, 0.0, 1.0, 2.0, 3.0]);
     assert_eq!(
-        nurbs("step:data:curve#6").knots,
+        nurbs("step:data:curve#5").knots(),
+        [-1.0, 0.0, 1.0, 2.0, 3.0]
+    );
+    assert_eq!(
+        nurbs("step:data:curve#6").knots(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     let rational = nurbs("step:data:curve#7");
-    assert_eq!(rational.knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(rational.weights.as_deref(), Some(&[1.0, 0.5, 1.0][..]));
+    assert_eq!(rational.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(rational.weights(), Some(&[1.0, 0.5, 1.0][..]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -81,25 +85,36 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == id)
-            .and_then(|surface| match &surface.geometry {
-                SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
-                _ => None,
+            .and_then(|surface| {
+                match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
+                    SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+                    _ => None,
+                }
             })
             .unwrap_or_else(|| panic!("missing NURBS surface {id}"))
     };
-    assert_eq!(nurbs("step:data:surface#10").u_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        nurbs("step:data:surface#10").v_knots,
+        nurbs("step:data:surface#10").u_knots(),
+        [0.0, 0.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        nurbs("step:data:surface#10").v_knots(),
         [0.0, 0.0, 1.0, 2.0, 2.0]
     );
-    assert_eq!(nurbs("step:data:surface#11").u_knots, [-1.0, 0.0, 1.0, 2.0]);
     assert_eq!(
-        nurbs("step:data:surface#11").v_knots,
+        nurbs("step:data:surface#11").u_knots(),
+        [-1.0, 0.0, 1.0, 2.0]
+    );
+    assert_eq!(
+        nurbs("step:data:surface#11").v_knots(),
         [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
     );
-    assert_eq!(nurbs("step:data:surface#12").u_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        nurbs("step:data:surface#12").v_knots,
+        nurbs("step:data:surface#12").u_knots(),
+        [0.0, 0.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        nurbs("step:data:surface#12").v_knots(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -127,15 +142,14 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#7")
         .expect("complex rational surface");
-    let SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
+    let SurfaceGeometry::Nurbs(nurbs) =
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+    else {
         panic!("complex rational surface is not NURBS")
     };
-    assert_eq!(nurbs.u_knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.v_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(
-        nurbs.weights.as_deref(),
-        Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..])
-    );
+    assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.weights(), Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -221,17 +235,17 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
         CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     };
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("unknown".into()),
+        id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId("composite".into()),
+        id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
         geometry: CurveGeometry::Composite {
             segments: vec![CompositeCurveSegment {
-                curve: CurveId("unknown".into()),
+                curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
                 same_sense: true,
                 transition: CompositeCurveTransition::Continuous,
             }],

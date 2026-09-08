@@ -6,12 +6,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Stable semantic-annotation identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct SemanticAnnotationId(
-    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+crate::ids::reference_id_type!(
+    /// Stable semantic-annotation identity.
+    SemanticAnnotationId
 );
 
 /// Semantic role of an annotation independent of its drawing presentation.
@@ -37,27 +34,6 @@ pub enum SemanticAnnotationKind {
     Other,
 }
 
-/// One model, drawing, or external reference used by an annotation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SemanticAnnotationTarget {
-    /// Resolved local model, drawing, or application-object identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    /// External document token, when applicable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_document: Option<String>,
-    /// Stable source object token within an external document.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_object: Option<String>,
-    /// Whether the persisted reference is an explicit null target.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
-    /// Ordered model subelement selectors.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub subelements: Vec<String>,
-}
-
 /// Semantic content of a persisted annotation, separate from drawing appearance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -77,7 +53,7 @@ pub struct SemanticAnnotation {
     pub text: Vec<String>,
     /// Ordered references grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub references: BTreeMap<String, Vec<SemanticAnnotationTarget>>,
+    pub references: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Persisted numeric measurement, when explicitly carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<f64>,

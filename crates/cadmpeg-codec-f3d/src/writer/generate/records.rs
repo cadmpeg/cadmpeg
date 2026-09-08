@@ -2,14 +2,13 @@
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
 use crate::records::{
-    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
-    SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
+    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchPointRecordForm,
+    SketchText,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
-use cadmpeg_ir::math::Point3;
 
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{native_f64, native_i64, native_ref};
@@ -68,16 +67,16 @@ pub(crate) fn native_tolerant_coedge_extension(
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
                 .ok_or_else(|| CodecError::malformed(format_args!("missing coedge {coedge}")))?;
-            let curve_id = model_coedge.use_curve.as_ref().ok_or_else(|| {
+            let use_curve = model_coedge.use_curve.as_ref().ok_or_else(|| {
                 CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
             })?;
             let curve = target
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *curve_id)
+                .find(|curve| curve.id == use_curve.curve)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("missing use curve {curve_id}"))
+                    CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
                 })?;
             let CurveGeometry::Nurbs(curve) = &curve.geometry else {
                 return Err(CodecError::NotImplemented(format!(
@@ -86,7 +85,7 @@ pub(crate) fn native_tolerant_coedge_extension(
             };
             let mut native_curve = curve.clone();
             if *curve_reversed {
-                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                native_curve.reverse_parameterization();
             }
             native_ref(records, -1);
             native_i64(records, 1);
@@ -115,6 +114,7 @@ pub(crate) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
+    parameter_bytes: Vec<u8>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -158,7 +158,7 @@ pub(crate) fn encode_design_bulkstream(
         || native
             .design_entity_headers
             .iter()
-            .any(|header| !header.member_indices.is_empty())
+            .any(|header| header.member_values().next().is_some())
     {
         return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),
@@ -187,26 +187,19 @@ pub(crate) fn encode_design_bulkstream(
         return Ok(None);
     }
 
-    let mut out = Vec::new();
+    let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
-    for parameter in &native.design_parameters {
-        encode_document_parameter(&mut out, parameter)?;
-    }
-    if !registry.body_map.is_empty() {
-        let class_tag = registry.body_map_class_tag.as_deref().ok_or_else(|| {
-            CodecError::Malformed("generated F3D body map has no registered type".into())
-        })?;
-        let record_index = registry.body_map_record_index.ok_or_else(|| {
-            CodecError::Malformed("generated F3D body map has no record identity".into())
-        })?;
+    if let Some(body_map) = &registry.body_map {
+        let class_tag = body_map.class_tag.as_str();
+        let record_index = body_map.record_index;
         primary_records.push(primary_record(record_index, out.len())?);
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(registry.body_map.len())
+        let count = u32::try_from(body_map.entries.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in &registry.body_map {
+        for (&body_key, &entity_suffix) in &body_map.entries {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -218,7 +211,8 @@ pub(crate) fn encode_design_bulkstream(
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
-        if let Some(design_id) = &recipe.design_id {
+        if let Some(design) = &recipe.design {
+            let design_id = &design.id.value;
             if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(CodecError::malformed(format_args!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
@@ -256,22 +250,24 @@ pub(crate) fn encode_design_bulkstream(
         out.push(0);
     }
     for header in &native.design_entity_headers {
-        validate_dynamic_class_tag(&header.class_tag, "Design entity header")?;
-        primary_records.push(primary_record_u64(header.entity_suffix, out.len())?);
+        primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(header.class_tag.as_bytes());
-        out.extend_from_slice(&header.entity_suffix.to_le_bytes());
+        out.extend_from_slice(&header.entity_id.suffix().to_le_bytes());
         out.extend_from_slice(&[0; 5]);
         out.push(u8::from(header.optional_slot_present));
         if header.optional_slot_present {
             out.extend_from_slice(&[0; 4]);
         }
-        native_lp_utf16(&mut out, &header.entity_id)?;
+        native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
-            let count = u32::try_from(header.reference_indices.len()).map_err(|_| {
+            let count = u32::try_from(header.reference_values().count()).map_err(|_| {
                 CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())
             })?;
-            match header.record_reference {
+            match header
+                .sketch_references()
+                .and_then(|list| list.record_reference)
+            {
                 Some(record_reference) => {
                     out.extend_from_slice(&record_reference.to_le_bytes());
                     out.extend_from_slice(&[0; 4]);
@@ -281,7 +277,7 @@ pub(crate) fn encode_design_bulkstream(
             }
             out.push(1);
             out.extend_from_slice(&count.to_le_bytes());
-            for reference in &header.reference_indices {
+            for reference in header.reference_values() {
                 out.push(1);
                 out.extend_from_slice(&reference.to_le_bytes());
                 out.extend_from_slice(&[0; 6]);
@@ -289,8 +285,7 @@ pub(crate) fn encode_design_bulkstream(
         }
     }
     for header in &native.design_record_headers {
-        validate_dynamic_class_tag(&header.class_tag, "Design record header")?;
-        native_lp_ascii(&mut out, &header.class_tag)?;
+        native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
@@ -331,7 +326,7 @@ pub(crate) fn encode_design_bulkstream(
             &companion_class_tag,
             point.paired_reference,
             point.record_index,
-            point.companion.as_ref(),
+            point.companion(),
         )?;
     }
     for curve in &native.sketch_curve_identities {
@@ -356,8 +351,6 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&reference.value.to_le_bytes());
     }
     for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
-        validate_dynamic_class_tag(&reference.class_tag, "lost-edge reference")?;
-        validate_dynamic_class_tag(&reference.next_class_tag, "lost-edge next record")?;
         if let Some(previous) = ordinal
             .checked_sub(1)
             .and_then(|ordinal| native.lost_edge_references.get(ordinal))
@@ -371,13 +364,13 @@ pub(crate) fn encode_design_bulkstream(
                 )));
             }
         } else {
-            native_lp_ascii(&mut out, &reference.class_tag)?;
+            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        native_lp_ascii(&mut out, &reference.next_class_tag)?;
+        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
     Ok(Some(EncodedDesignBulkStream {
@@ -405,49 +398,88 @@ fn primary_record_u64(
     })
 }
 
-fn encode_document_parameter(
-    out: &mut Vec<u8>,
-    parameter: &crate::records::DesignParameter,
-) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
-    native_lp_ascii(out, &parameter.class_tag)?;
-    out.extend_from_slice(&parameter.record_index.to_le_bytes());
-    out.extend_from_slice(&[0; 11]);
-    out.extend_from_slice(
-        &parameter
-            .family_discriminator
-            .expect("source-less parameter preconditions require a discriminator")
-            .to_le_bytes(),
-    );
-    out.push(0);
-    out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
-    out.push(0);
-    native_lp_utf16(out, &parameter.expression)?;
-    out.extend_from_slice(&[0; 8]);
-    out.push(1);
-    native_lp_utf16(out, &parameter.source_kind)?;
-    out.extend_from_slice(&0u32.to_le_bytes());
-    if let Some(unit) = &parameter.unit {
-        native_lp_utf16(out, unit)?;
-    } else {
+pub(super) fn encode_document_parameters(
+    parameters: &[crate::records::DesignParameter],
+) -> Result<Vec<u8>, CodecError> {
+    let mut out = Vec::new();
+    let mut parameter_indices = std::collections::BTreeSet::new();
+    let mut parameter_ordinals = std::collections::BTreeSet::new();
+    for parameter in parameters {
+        let expected_discriminator =
+            crate::design::decode::parameters::design_parameter_discriminator(
+                parameter.source_kind(),
+            );
+        if parameter
+            .family_discriminator()
+            .map(|value| value.value.code())
+            != Some(expected_discriminator)
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
+                parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
+            )));
+        }
+        let crate::records::DesignParameterSource::User {
+            family_discriminator,
+        } = &parameter.source
+        else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D owned Design parameter records are not writable".into(),
+            ));
+        };
+        if parameter.expression.is_empty()
+            || parameter.name.is_empty()
+            || parameter
+                .unit
+                .as_ref()
+                .is_some_and(|field| field.value.is_empty())
+            || !parameter.evaluated_value.is_finite()
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D Design parameter {} has an invalid document parameter value",
+                parameter.id
+            )));
+        }
+        if !parameter_indices.insert(parameter.record_index)
+            || !parameter_ordinals.insert(parameter.source_ordinal)
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D Design parameter {} duplicates a record index or source ordinal",
+                parameter.id
+            )));
+        }
+        native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
+        out.extend_from_slice(&parameter.record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 11]);
+        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
+        out.push(0);
+        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+        out.push(0);
+        native_lp_utf16(&mut out, &parameter.expression)?;
+        out.extend_from_slice(&[0; 8]);
+        out.push(1);
+        native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
+        if let Some(unit) = &parameter.unit {
+            native_lp_utf16(&mut out, &unit.value)?;
+        } else {
+            out.extend_from_slice(&0u32.to_le_bytes());
+        }
+        native_lp_utf16(&mut out, &parameter.name)?;
+        out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
+        out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
-    native_lp_utf16(out, &parameter.name)?;
-    out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
-    out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    Ok(())
+    Ok(out)
 }
 
 fn encode_sketch_record_header(
     out: &mut [u8],
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
-) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(class_tag, "sketch record")?;
+) {
     out[0..4].copy_from_slice(&3u32.to_le_bytes());
     out[4..7].copy_from_slice(class_tag.as_bytes());
     out[7..11].copy_from_slice(&record_index.to_le_bytes());
-    Ok(())
 }
 
 fn encode_sketch_point(
@@ -456,7 +488,7 @@ fn encode_sketch_point(
 ) -> Result<(), CodecError> {
     if !point.coordinates.u.is_finite()
         || !point.coordinates.v.is_finite()
-        || !point.depth.is_finite()
+        || !point.depth().is_finite()
     {
         return Err(CodecError::Malformed(
             "source-less sketch point coordinates must be finite".into(),
@@ -468,9 +500,14 @@ fn encode_sketch_point(
             point.id
         ))
     })?;
-    let shift = usize::from(point.entity_genesis.is_some()) * 52;
-    let &SketchPointRecordForm::Version11 {
+    let SketchPointRecordForm::Version11 {
         padded_paired_reference,
+        companion: _,
+        entity_genesis,
+        depth,
+        persistent_id,
+        flags,
+        closure,
     } = &point.record_form
     else {
         return Err(CodecError::NotImplemented(format!(
@@ -478,18 +515,13 @@ fn encode_sketch_point(
             point.id
         )));
     };
-    let persistent_id = point.persistent_id.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {} has no persistent identity",
-            point.id
-        ))
-    })?;
+    let shift = usize::from(entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
+    encode_sketch_record_header(&mut record, &point.class_tag, point.record_index);
     record[20] = 1;
-    record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
-    if let Some(entity_genesis) = point.entity_genesis {
-        encode_entity_genesis(&mut record, entity_genesis);
+    record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
+    if let Some(entity_genesis) = entity_genesis {
+        encode_entity_genesis(&mut record, *entity_genesis);
     }
     record[25 + shift..29 + shift].copy_from_slice(&6u32.to_le_bytes());
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
@@ -498,38 +530,20 @@ fn encode_sketch_point(
     record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
-    if point.flags.iter().any(|flag| *flag > 1) {
-        return Err(CodecError::malformed(format_args!(
-            "source-less sketch point {} has a flag outside zero or one",
-            point.id
-        )));
-    }
-    record[81 + shift..89 + shift].copy_from_slice(&point.flags);
+    record[81 + shift..89 + shift].copy_from_slice(&flags.map(u8::from));
     record[89 + shift..97 + shift]
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
-    let closure = point.closure.as_ref().ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {} has no version-11 closure",
-            point.id
-        ))
-    })?;
-    if !point.record_form.closure_is_valid(Some(closure)) {
-        return Err(CodecError::malformed(format_args!(
-            "source-less sketch point {} has an invalid closure selector or state",
-            point.id
-        )));
-    }
-    record.extend_from_slice(&(point.depth / LEN_TO_MM).to_le_bytes());
-    record.extend_from_slice(&closure.selector.to_le_bytes());
-    record.push(closure.state);
+    record.extend_from_slice(&(depth / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&closure.selector().to_le_bytes());
+    record.push(closure.state());
     record.extend_from_slice(&[0; 12]);
     record.extend_from_slice(&1.0f32.to_le_bytes());
     record.extend_from_slice(&1.0f32.to_le_bytes());
     record.extend_from_slice(&[0, 1, 0, 0, 0]);
     write_reference(&mut record, point.paired_reference);
-    if padded_paired_reference {
+    if *padded_paired_reference {
         record.extend_from_slice(&[0; 4]);
     }
     write_reference(&mut record, owner_reference);
@@ -539,10 +553,10 @@ fn encode_sketch_point(
 
 fn encode_sketch_point_companion(
     out: &mut Vec<u8>,
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
-    companion: Option<&crate::records::SketchPointCompanion>,
+    companion: Option<crate::records::SketchPointCompanionRef<'_>>,
 ) -> Result<(), CodecError> {
     let companion = companion.ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -550,18 +564,13 @@ fn encode_sketch_point_companion(
         ))
     })?;
     let prefix_present_zero = companion.prefix_present_zero;
-    if companion.reference_encoding != SketchPointCompanionReferenceEncoding::SameSegment {
-        return Err(CodecError::NotImplemented(
-            "source-less sketch point companions require same-segment references".into(),
-        ));
-    }
-    let incident_curves = companion.incident_curves.as_slice();
+    let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {
         CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
     let mut record = std::iter::repeat_n(0u8, prefix_len).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, class_tag, record_index)?;
+    encode_sketch_record_header(&mut record, class_tag, record_index);
     if prefix_present_zero {
         record[20] = 1;
     }
@@ -587,7 +596,7 @@ fn encode_sketch_curve_identity(
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
+    encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = curve.entity_genesis {
@@ -658,8 +667,7 @@ fn encode_sketch_curve_identity(
             fit_tolerance,
             scalar_width,
             knots,
-            weights,
-            control_points,
+            poles,
         }) => encode_sketch_nurbs(
             &mut record,
             *carrier_reference,
@@ -669,8 +677,7 @@ fn encode_sketch_curve_identity(
             *fit_tolerance,
             *scalar_width,
             knots,
-            weights,
-            control_points,
+            poles,
         )?,
         None => {
             return Err(CodecError::NotImplemented(format!(
@@ -708,23 +715,21 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecErr
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
-    subtype_class_tag: &str,
+    subtype_class_tag: &crate::records::DesignClassTag,
     subtype_record_index: u32,
     degree: u32,
     fit_tolerance: f64,
     scalar_width: u32,
     knots: &[f64],
-    weights: &[f64],
-    control_points: &[Point3],
+    poles: &crate::records::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(subtype_class_tag, "sketch NURBS subtype")?;
-    if scalar_width != 8 || (!weights.is_empty() && weights.len() != control_points.len()) {
+    if scalar_width != 8 {
         return Err(CodecError::Malformed(
             "source-less sketch NURBS requires scalar width 8 and parallel weights".into(),
         ));
     }
-    let expected_knots = control_points
-        .len()
+    let expected_knots = poles
+        .point_count()
         .checked_add(usize::try_from(degree).unwrap_or(usize::MAX))
         .and_then(|count| count.checked_add(1));
     if expected_knots != Some(knots.len()) {
@@ -747,19 +752,19 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
     encode_f64_sequence(record, knots)?;
-    let weight_count = u32::try_from(weights.len())
+    let weight_count = u32::try_from(poles.weights().len())
         .map_err(|_| CodecError::Malformed("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, weights)?;
-    let point_count = u32::try_from(control_points.len())
+    encode_f64_sequence(record, &poles.weights().copied().collect::<Vec<_>>())?;
+    let point_count = u32::try_from(poles.point_count())
         .map_err(|_| CodecError::Malformed("sketch NURBS has too many control points".into()))?;
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    let coordinates = control_points
-        .iter()
+    let coordinates = poles
+        .points()
         .flat_map(|point| {
             [
                 point.x / LEN_TO_MM,
@@ -772,7 +777,6 @@ fn encode_sketch_nurbs(
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(&text.class_tag, "sketch text")?;
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
         &text.raw_bytes,
         "Design/BulkStream.dat",
@@ -798,14 +802,8 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
         && decoded.text == text.text
         && decoded.font_family == text.font_family
         && decoded.height == text.height
-        && decoded.width_factor == text.width_factor
         && decoded.color == text.color
-        && decoded.anchor == text.anchor
-        && decoded.rotation == text.rotation
-        && decoded.horizontal_alignment == text.horizontal_alignment
-        && decoded.vertical_alignment == text.vertical_alignment
-        && decoded.first_reference == text.first_reference
-        && decoded.second_reference == text.second_reference;
+        && decoded.layout == text.layout;
     if !header_matches || !fields_match {
         return Err(CodecError::malformed(format_args!(
             "sketch-text record {} fields disagree with its raw bytes",
@@ -820,40 +818,15 @@ fn encode_sketch_relation(
     out: &mut Vec<u8>,
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
-    let (constraint_kinds, unknown_constraint_bits) =
-        crate::design::decode::sketch::decode_constraint_kinds(relation.state);
-    if constraint_kinds != relation.constraint_kinds
-        || unknown_constraint_bits != relation.unknown_constraint_bits
-    {
-        return Err(CodecError::malformed(format_args!(
-            "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
-            relation.id
-        )));
-    }
-    // An authored relation may omit the ordinals; a decoded one always pairs
-    // them with its members.
-    if !relation.member_relation_ordinals.is_empty()
-        && relation.member_relation_ordinals.len() != relation.members.len()
-    {
-        return Err(CodecError::malformed(format_args!(
-            "F3D sketch relation {} has a relation-ordinal run that does not pair with its members",
-            relation.id
-        )));
-    }
     let mut record = vec![0u8; 19];
-    encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
+    encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
     record.extend_from_slice(&member_count.to_le_bytes());
-    for (ordinal, member) in relation.members.iter().enumerate() {
-        write_reference(&mut record, *member);
-        let relation_ordinal = relation
-            .member_relation_ordinals
-            .get(ordinal)
-            .copied()
-            .unwrap_or(0);
-        record.extend_from_slice(&relation_ordinal.to_le_bytes());
+    for member in relation.members.iter() {
+        write_reference(&mut record, member.reference.record_index());
+        record.extend_from_slice(&member.relation_ordinal.unwrap_or(0).to_le_bytes());
     }
     // The base level's property-block presence byte, then the block when the
     // relation carries an `EntityGenesis` origin.
@@ -869,17 +842,17 @@ fn encode_sketch_relation(
     }
     for reference in relation
         .auxiliary_references
-        .iter()
+        .values()
         .chain(std::iter::once(&relation.owner_reference))
     {
         write_reference(&mut record, *reference);
     }
-    record.extend_from_slice(&relation.state.to_le_bytes());
+    record.extend_from_slice(&relation.definition.state().to_le_bytes());
     let return_count = u32::try_from(relation.return_members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
     record.extend_from_slice(&return_count.to_le_bytes());
-    for reference in &relation.return_members {
-        write_reference(&mut record, *reference);
+    for member in relation.return_members.iter() {
+        write_reference(&mut record, member.reference.record_index());
     }
     record.push(0);
     record.resize(record.len().max(101), 0);
@@ -910,16 +883,6 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
         PersistentReferenceKind::Point => b"pt_tag",
         PersistentReferenceKind::CurvePrimary => b"crv_primary_id",
         PersistentReferenceKind::CurveSecondary => b"crv_secondary_id",
-    }
-}
-
-pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(), CodecError> {
-    if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "{field} class tag must be three ASCII digits: {value}"
-        )))
     }
 }
 
@@ -1022,13 +985,11 @@ fn encode_browser_nodes(
     primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
 ) -> Result<(), CodecError> {
-    if registry.browser_nodes.is_empty() {
+    let Some(browser_nodes) = &registry.browser_nodes else {
         return Ok(());
-    }
-    let node_class_tag = registry.browser_node_class_tag.as_deref().ok_or_else(|| {
-        CodecError::Malformed("generated F3D browser nodes have no registered type".into())
-    })?;
-    for node in &registry.browser_nodes {
+    };
+    let node_class_tag = browser_nodes.class_tag.as_str();
+    for node in &browser_nodes.nodes {
         primary_records.push(primary_record(node.record_index, out.len())?);
         native_lp_ascii(out, node_class_tag)?;
         out.extend_from_slice(&node.record_index.to_le_bytes());
@@ -1070,16 +1031,7 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
 }
 
 fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
-    let bytes = value.as_bytes();
-    let valid = bytes.len() == 36
-        && [8, 13, 18, 23]
-            .into_iter()
-            .all(|index| bytes.get(index) == Some(&b'-'))
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit());
-    if valid {
+    if crate::bytes::is_guid_hyphenated(value) {
         Ok(())
     } else {
         Err(CodecError::malformed(format_args!(

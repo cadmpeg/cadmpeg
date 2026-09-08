@@ -6,6 +6,7 @@
 //! `0x07`-tagged strings, and three `0x06`-tagged tolerance doubles. The SAB
 //! record stream begins immediately after the doubles.
 
+use crate::kernel_header::RefWidth;
 use cadmpeg_core::decode::View;
 
 use crate::kernel_header::{read_string_region, KernelHeader};
@@ -26,9 +27,8 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
         return None;
     }
     let mut header = KernelHeader {
-        width: 4,
+        width: RefWidth::Four,
         save_format_version: View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION),
-        record_count: View::u32_le_at(bytes, acis_bf4::RECORD_COUNT),
         entity_count: View::u32_le_at(bytes, acis_bf4::ENTITY_COUNT).map(u64::from),
         flags: View::u32_le_at(bytes, acis_bf4::FLAGS).map(u64::from),
         product_family: None,
@@ -52,7 +52,16 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
 
 /// Byte offset immediately after the three strings and three doubles.
 pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
-    parse(bytes)?;
+    let header = parse(bytes)?;
+    record_stream_start_with_header(bytes, &header)
+}
+
+/// Byte offset immediately after the three strings and three doubles, using
+/// an already-parsed ACIS header.
+pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
+    if header.width != RefWidth::Four {
+        return None;
+    }
     let (strings, doubles, position) = read_string_region(bytes, acis_bf4::LEN);
     (strings.len() == 3 && doubles.len() == 3).then_some(position)
 }
@@ -61,11 +70,16 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
 /// partition.
 pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
     let header = parse(bytes)?;
+    solved_record_limit_with_header(bytes, &header)
+}
+
+/// Exact solved-record boundary, using an already-parsed ACIS header.
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
     if !header.has_history_partition() {
         return None;
     }
-    let start = record_stream_start(bytes)?;
-    let records = crate::sab::frame(bytes, start, bytes.len(), 4).ok()?;
+    let start = record_stream_start_with_header(bytes, header)?;
+    let records = crate::sab::frame(bytes, start, bytes.len(), RefWidth::Four).ok()?;
     let mut next = match records.last() {
         Some(record) => record.offset.checked_add(record.len)?,
         None => start,
@@ -73,18 +87,7 @@ pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
     while bytes.get(next) == Some(&0x11) {
         next += 1;
     }
-    exact_identifier_at(bytes, next, "delta_state").then_some(next)
-}
-
-fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bool {
-    let Some((&0x0d, rest)) = bytes.get(at..).and_then(|tail| tail.split_first()) else {
-        return false;
-    };
-    let Some((&length, payload)) = rest.split_first() else {
-        return false;
-    };
-    usize::from(length) == expected.len()
-        && payload.get(..usize::from(length)) == Some(expected.as_bytes())
+    crate::sab::exact_identifier_at(bytes, next, "delta_state").then_some(next)
 }
 
 #[cfg(test)]
@@ -115,7 +118,7 @@ mod tests {
         bytes.extend_from_slice(b"delta_state");
 
         let header = parse(&bytes).expect("ACIS header");
-        assert_eq!(header.width, 4);
+        assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.save_format_version, Some(21_800));
         assert_eq!(header.entity_count, Some(2));
         assert_eq!(header.format_revision(), Some(6));

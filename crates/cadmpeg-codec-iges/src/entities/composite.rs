@@ -3,8 +3,8 @@
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
-use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
@@ -27,16 +27,16 @@ const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
-fn composite_minimum_child_count(dialect: Dialect) -> usize {
-    if matches!(dialect, Dialect::V4_0) {
+fn composite_minimum_child_count(global_table: GlobalTable) -> usize {
+    if matches!(global_table, GlobalTable::V4_0) {
         2
     } else {
         1
     }
 }
 
-fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
-    if matches!(dialect, Dialect::V4_0) {
+fn composite_child_type_allowed(entity_type: i64, form: i64, global_table: GlobalTable) -> bool {
+    if matches!(global_table, GlobalTable::V4_0) {
         return matches!(
             (entity_type, form),
             (100 | 110 | 112 | 116 | 132, 0) | (104, 0..=3) | (126, 0..=5)
@@ -48,28 +48,28 @@ fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -
     )
 }
 
-fn composite_use_flag_valid(use_flag: u8, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::V4_0 => use_flag == 0,
-        _ => use_flag <= 6,
-    }
+fn composite_use_flag_valid(use_flag: UseFlag, global_table: GlobalTable) -> bool {
+    !matches!(global_table, GlobalTable::V4_0) || use_flag == UseFlag::Geometry
 }
 
-fn composite_line_font_valid(line_font: i64, hierarchy: u8, dialect: Dialect) -> bool {
-    !matches!(dialect, Dialect::V4_0) || hierarchy == 1 || line_font != 0
+fn composite_line_font_valid(
+    line_font: i64,
+    hierarchy: Option<Hierarchy>,
+    global_table: GlobalTable,
+) -> bool {
+    !matches!(global_table, GlobalTable::V4_0)
+        || hierarchy == Some(Hierarchy::GlobalDefer)
+        || line_font != 0
 }
 
 fn composite_logical_connector_use_valid(
-    use_flag: u8,
+    use_flag: UseFlag,
     is_logical_connector: bool,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     !is_logical_connector
-        || !matches!(
-            dialect,
-            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
-        )
-        || use_flag == 4
+        || !matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
+        || use_flag == UseFlag::LogicalPositional
 }
 
 fn composite_point_member(entry: &DirectoryEntry) -> bool {
@@ -190,7 +190,7 @@ pub(super) fn curve_carrier_id(
     } else {
         sequence
     };
-    Some(CurveId(format!("iges:model:curve#D{carrier_sequence}")))
+    Some(CurveId::mint(format!("iges:model:curve#D{carrier_sequence}")).expect("identity grammar"))
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
@@ -362,24 +362,16 @@ fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
 }
 
 fn homogeneous_control_points(curve: &NurbsCurve) -> Option<Vec<[f64; 4]>> {
-    let control_count = curve.control_points.len();
-    if curve
-        .weights
-        .as_ref()
-        .is_some_and(|weights| weights.len() != control_count)
-    {
-        return None;
-    }
+    let control_count = curve.control_points().len();
     let mut homogeneous = alloc_filled(
         control_count,
         [0.0; 4],
         "iges composite homogeneous control points",
     )
     .ok()?;
-    for (index, point) in curve.control_points.iter().enumerate() {
+    for (index, point) in curve.control_points().iter().enumerate() {
         let weight = curve
-            .weights
-            .as_ref()
+            .weights()
             .map_or(Some(1.0), |weights| weights.get(index).copied())?;
         let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
         if !homogeneous_point_is_valid(&homogeneous_point) {
@@ -455,34 +447,48 @@ fn elevate_bezier_homogeneous(
 }
 
 #[derive(Debug)]
-struct ConcatenatedNurbs {
+struct ConcatenatedNurbs<T> {
     nurbs: NurbsCurve,
-    boundaries: Vec<f64>,
-    child_starts: Vec<f64>,
+    segments: ConcatenatedSegments<T>,
 }
 
+#[derive(Debug)]
+struct ConcatenatedSegment<T> {
+    child_start: f64,
+    end: f64,
+    child: T,
+}
+
+#[derive(Debug)]
+struct ConcatenatedSegments<T> {
+    preceding: Vec<ConcatenatedSegment<T>>,
+    last: ConcatenatedSegment<T>,
+}
+
+impl<T> ConcatenatedSegments<T> {
+    fn end(&self) -> f64 {
+        self.last.end
+    }
+
+    fn into_iter(self) -> impl Iterator<Item = ConcatenatedSegment<T>> {
+        self.preceding.into_iter().chain(std::iter::once(self.last))
+    }
+}
+
+// This conversion consumes the input carrier at the typed construction boundary.
+#[allow(clippy::needless_pass_by_value)]
 fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [f64; 2])> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let control_count = curve.control_points.len();
-    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
-    if control_count == 0
-        || degree >= control_count
-        || curve.knots.len() != expected_knot_count
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != control_count)
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-    {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let control_count = curve.control_points().len();
+    if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
         return None;
     }
     let [start, end] = interval;
     if !start.is_finite() || !end.is_finite() || start > end {
         return None;
     }
-    let domain_start = curve.knots[degree];
-    let domain_end = curve.knots[control_count];
+    let domain_start = curve.knots()[degree];
+    let domain_end = curve.knots()[control_count];
     if !domain_start.is_finite()
         || !domain_end.is_finite()
         || domain_start >= domain_end
@@ -501,7 +507,7 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
         return None;
     }
     let knots = curve
-        .knots
+        .knots()
         .iter()
         .rev()
         .map(|knot| sum - knot)
@@ -509,18 +515,17 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
     if knots.iter().any(|knot| !knot.is_finite()) {
         return None;
     }
-    Some((
-        NurbsCurve {
-            degree: curve.degree,
-            knots,
-            control_points: curve.control_points.into_iter().rev().collect(),
-            weights: curve
-                .weights
-                .map(|weights| weights.into_iter().rev().collect()),
-            periodic: curve.periodic,
-        },
-        reversed_range,
-    ))
+    let reversed = NurbsCurve::new(
+        curve.degree(),
+        knots,
+        curve.control_points().iter().rev().copied().collect(),
+        curve
+            .weights()
+            .map(|weights| weights.iter().rev().copied().collect()),
+        curve.periodic(),
+    )
+    .ok()?;
+    Some((reversed, reversed_range))
 }
 
 fn insert_homogeneous_knot(
@@ -595,27 +600,17 @@ fn insert_homogeneous_knot(
 }
 
 fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<NurbsCurve> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let control_count = curve.control_points.len();
-    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
-    if curve.periodic
-        || control_count == 0
-        || curve.knots.len() != expected_knot_count
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != control_count)
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-    {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let control_count = curve.control_points().len();
+    if curve.periodic() {
         return None;
     }
     let [start, end] = interval;
     if !start.is_finite() || !end.is_finite() || start >= end {
         return None;
     }
-    let domain_start = *curve.knots.get(degree)?;
-    let domain_end = *curve.knots.get(control_count)?;
+    let domain_start = *curve.knots().get(degree)?;
+    let domain_end = *curve.knots().get(control_count)?;
     if !domain_start.is_finite()
         || !domain_end.is_finite()
         || domain_start >= domain_end
@@ -625,7 +620,7 @@ fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<Nurb
         return None;
     }
     let mut homogeneous = homogeneous_control_points(curve)?;
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     for value in [start, end] {
         let target_multiplicity = degree.checked_add(1)?;
         while knots.iter().filter(|knot| **knot == value).count() < target_multiplicity {
@@ -652,14 +647,15 @@ fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<Nurb
         return None;
     }
     let (control_points, weights) =
-        euclidean_control_points(trimmed_homogeneous, curve.weights.is_some())?;
-    Some(NurbsCurve {
-        degree: curve.degree,
-        knots: trimmed_knots,
+        euclidean_control_points(trimmed_homogeneous, curve.weights().is_some())?;
+    NurbsCurve::new(
+        curve.degree(),
+        trimmed_knots,
         control_points,
         weights,
-        periodic: false,
-    })
+        false,
+    )
+    .ok()
 }
 
 fn elevate_nurbs_to_degree(
@@ -668,7 +664,7 @@ fn elevate_nurbs_to_degree(
     target_degree: u32,
     join_tolerance: Option<f64>,
 ) -> bool {
-    let Ok(source_degree) = usize::try_from(curve.degree) else {
+    let Ok(source_degree) = usize::try_from(curve.degree()) else {
         return false;
     };
     let target_degree = match usize::try_from(target_degree) {
@@ -681,32 +677,19 @@ fn elevate_nurbs_to_degree(
     if target_degree == source_degree {
         return true;
     }
-    let control_count = curve.control_points.len();
-    let Some(expected_knot_count) = control_count
-        .checked_add(source_degree)
-        .and_then(|value| value.checked_add(1))
-    else {
-        return false;
-    };
-    if curve.periodic
-        || control_count <= source_degree
-        || curve.knots.len() != expected_knot_count
-        || curve.knots.first() != Some(&interval[0])
-        || curve.knots.last() != Some(&interval[1])
+    if curve.periodic()
+        || curve.knots().first() != Some(&interval[0])
+        || curve.knots().last() != Some(&interval[1])
         || !interval[0].is_finite()
         || !interval[1].is_finite()
         || interval[0] >= interval[1]
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != control_count)
+        || curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
     {
         return false;
     }
     let boundary_multiplicity =
-        |value: f64| curve.knots.iter().filter(|knot| **knot == value).count();
+        |value: f64| curve.knots().iter().filter(|knot| **knot == value).count();
     if boundary_multiplicity(interval[0]) != source_degree + 1
         || boundary_multiplicity(interval[1]) != source_degree + 1
     {
@@ -718,7 +701,7 @@ fn elevate_nurbs_to_degree(
             .all(homogeneous_point_is_valid)
             .then_some(points)
     });
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     let mut internal_values = Vec::new();
     for &knot in &knots {
         if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
@@ -762,7 +745,7 @@ fn elevate_nurbs_to_degree(
     {
         return false;
     }
-    let rational = curve.weights.is_some();
+    let rational = curve.weights().is_some();
     let mut pieces = Vec::new();
     for span in source_degree..=refined_count {
         let start = knots[span];
@@ -794,95 +777,91 @@ fn elevate_nurbs_to_degree(
             return false;
         };
         piece_knots.extend(end_knots);
-        let piece = NurbsCurve {
-            degree: target_degree as u32,
-            knots: piece_knots,
+        let Ok(piece) = NurbsCurve::new(
+            target_degree as u32,
+            piece_knots,
             control_points,
             weights,
-            periodic: false,
+            false,
+        ) else {
+            return false;
         };
-        pieces.push((piece, [start, end]));
+        pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(pieces, join_tolerance) else {
         return false;
     };
-    curve.degree = concatenated.nurbs.degree;
+    let elevated_degree = concatenated.nurbs.degree();
     let mut elevated_knots: Vec<f64> = concatenated
         .nurbs
-        .knots
-        .into_iter()
+        .knots()
+        .iter()
         .map(|knot| knot + interval[0])
         .collect();
-    if let Some(first) = elevated_knots.first_mut() {
-        *first = interval[0];
-    }
-    if let Some(last) = elevated_knots.last_mut() {
-        *last = interval[1];
-    }
-    curve.knots = elevated_knots;
-    curve.control_points = concatenated.nurbs.control_points;
-    curve.weights = concatenated.nurbs.weights;
-    curve.periodic = false;
+    // Translation must preserve every copy of each clamped source endpoint.
+    // Adding the origin back can round past the declared endpoint.
+    elevated_knots[..=target_degree].fill(interval[0]);
+    let end_start = elevated_knots.len() - target_degree - 1;
+    elevated_knots[end_start..].fill(interval[1]);
+    let Ok(elevated) = NurbsCurve::new(
+        elevated_degree,
+        elevated_knots,
+        concatenated.nurbs.control_points().to_vec(),
+        concatenated.nurbs.weights().map(<[f64]>::to_vec),
+        false,
+    ) else {
+        return false;
+    };
+    *curve = elevated;
     true
 }
 
-fn concatenate_nurbs(
-    mut children: Vec<(NurbsCurve, [f64; 2])>,
+fn concatenate_nurbs<T>(
+    children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
-) -> Option<ConcatenatedNurbs> {
-    if children.is_empty() {
-        return None;
-    }
+) -> Option<ConcatenatedNurbs<T>> {
+    let mut children = children.into_iter();
+    let mut first = children.next()?;
     let degree = children
+        .as_slice()
         .iter()
-        .map(|(curve, _)| curve.degree)
-        .max()
-        .unwrap_or_default();
-    for (curve, interval) in &mut children {
-        if curve.degree < degree
+        .map(|(curve, _, _)| curve.degree())
+        .fold(first.0.degree(), u32::max);
+    for (curve, interval, _) in std::iter::once(&mut first).chain(children.as_mut_slice()) {
+        if curve.degree() < degree
             && !elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)
         {
             return None;
         }
     }
-    if children.iter().any(|(curve, interval)| {
-        let Some(first) = curve.knots.first() else {
-            return true;
-        };
-        let Some(last) = curve.knots.last() else {
-            return true;
-        };
-        curve.degree != degree
-            || interval != &[*first, *last]
-            || interval[0] >= interval[1]
-            || curve.control_points.is_empty()
-            || curve.knots.len() != curve.control_points.len() + degree as usize + 1
-            || curve
-                .weights
-                .as_ref()
-                .is_some_and(|weights| weights.len() != curve.control_points.len())
-    }) {
+    if std::iter::once(&first)
+        .chain(children.as_slice())
+        .any(|(curve, interval, _)| {
+            let Some(first) = curve.knots().first() else {
+                return true;
+            };
+            let Some(last) = curve.knots().last() else {
+                return true;
+            };
+            curve.degree() != degree || interval != &[*first, *last] || interval[0] >= interval[1]
+        })
+    {
         return None;
     }
     let degree_usize = degree as usize;
-    let mut knots = Vec::new();
-    let mut control_points = Vec::new();
-    let mut weights = Vec::new();
-    let mut boundaries = vec![0.0];
-    let mut child_starts = Vec::with_capacity(children.len());
-    let mut cursor = 0.0;
-    for (child_index, (curve, interval)) in children.into_iter().enumerate() {
+    let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T), cursor: f64| {
         let child_start = interval[0];
         let child_end = interval[1];
         let shifted_knots = curve
-            .knots
+            .knots()
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let mut child_weights = match curve.weights {
-            Some(weights) => weights,
+        let child_control_points = curve.control_points().to_vec();
+        let child_weights = match curve.weights() {
+            Some(weights) => weights.to_vec(),
             None => alloc_filled(
-                curve.control_points.len(),
+                child_control_points.len(),
                 1.0,
                 "iges composite child weights",
             )
@@ -894,75 +873,83 @@ fn concatenate_nurbs(
         {
             return None;
         }
-        if child_index == 0 {
-            knots = shifted_knots;
-            control_points = curve.control_points;
-            weights = child_weights;
-        } else {
-            if !close_with_tolerance(
-                control_points[control_points.len() - 1],
-                curve.control_points[0],
-                join_tolerance,
-            ) {
-                return None;
-            }
-            let scale = weights[weights.len() - 1] / child_weights[0];
-            if !scale.is_finite() || scale <= 0.0 {
-                return None;
-            }
-            for weight in &mut child_weights {
-                *weight *= scale;
-            }
-            if degree_usize == 0 {
-                knots.extend_from_slice(&shifted_knots[1..]);
-                control_points.extend_from_slice(&curve.control_points);
-                weights.extend_from_slice(&child_weights);
-            } else {
-                knots.pop();
-                knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
-                control_points.extend_from_slice(&curve.control_points[1..]);
-                weights.extend_from_slice(&child_weights[1..]);
-            }
-        }
-        child_starts.push(child_start);
-        cursor += child_end - child_start;
-        if !cursor.is_finite() {
+        let end = cursor + (child_end - child_start);
+        if !end.is_finite() {
             return None;
         }
-        boundaries.push(cursor);
+        Some((
+            shifted_knots,
+            child_control_points,
+            child_weights,
+            ConcatenatedSegment {
+                child_start,
+                end,
+                child,
+            },
+        ))
+    };
+    let (mut knots, mut control_points, mut weights, last) = prepare_child(first, 0.0)?;
+    let mut segments = ConcatenatedSegments {
+        preceding: Vec::with_capacity(children.len()),
+        last,
+    };
+    for child in children {
+        let (shifted_knots, child_control_points, mut child_weights, next) =
+            prepare_child(child, segments.end())?;
+        if !close_with_tolerance(
+            control_points[control_points.len() - 1],
+            child_control_points[0],
+            join_tolerance,
+        ) {
+            return None;
+        }
+        let scale = weights[weights.len() - 1] / child_weights[0];
+        if !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
+        for weight in &mut child_weights {
+            *weight *= scale;
+        }
+        if degree_usize == 0 {
+            knots.extend_from_slice(&shifted_knots[1..]);
+            control_points.extend_from_slice(&child_control_points);
+            weights.extend_from_slice(&child_weights);
+        } else {
+            knots.pop();
+            knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
+            control_points.extend_from_slice(&child_control_points[1..]);
+            weights.extend_from_slice(&child_weights[1..]);
+        }
+        let preceding = std::mem::replace(&mut segments.last, next);
+        segments.preceding.push(preceding);
     }
-    if knots.len() != control_points.len() + degree_usize + 1 {
-        return None;
-    }
+    let cursor = segments.end();
     let rational = weights
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
-    let nurbs = NurbsCurve {
+    let nurbs = NurbsCurve::new(
         degree,
         knots,
         control_points,
-        weights: rational.then_some(weights),
-        periodic: false,
-    };
+        rational.then_some(weights),
+        false,
+    )
+    .ok()?;
     cadmpeg_ir::eval::nurbs_curve_point(
         degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         0.0,
     )?;
     cadmpeg_ir::eval::nurbs_curve_point(
         degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         cursor,
     )?;
-    Some(ConcatenatedNurbs {
-        nurbs,
-        boundaries,
-        child_starts,
-    })
+    Some(ConcatenatedNurbs { nurbs, segments })
 }
 
 fn bounded_edge_for_curve(
@@ -993,7 +980,13 @@ fn bounded_edge_for_curve(
                 .collect(),
         ),
     };
-    select_composite_edge(ir, index, &curve.geometry, &edge_candidates, tolerance)
+    select_composite_edge(
+        ir,
+        index,
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        &edge_candidates,
+        tolerance,
+    )
 }
 
 fn bounded_nurbs_for_id(
@@ -1031,7 +1024,8 @@ fn bounded_nurbs_for_id(
             .and_then(|position| ir.model.curves.get(*position))?,
         None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
     };
-    if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
+    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
+    if let CurveGeometry::Composite { segments, .. } = geometry {
         let children = segments
             .iter()
             .map(|segment| {
@@ -1050,25 +1044,30 @@ fn bounded_nurbs_for_id(
                 }
             })
             .collect::<Option<Vec<_>>>()?;
+        let children = children
+            .into_iter()
+            .map(|(curve, range)| (curve, range, ()))
+            .collect();
         let concatenated = concatenate_nurbs(children, join_tolerance)?;
-        let range = [0.0, *concatenated.boundaries.last()?];
+        let range = [0.0, concatenated.segments.end()];
         return Some((concatenated.nurbs, range));
     }
     let edge = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?;
     let interval = edge.param_range?;
-    match &curve.geometry {
+    match geometry {
         CurveGeometry::Nurbs(nurbs) => Some((trim_nurbs_to_interval(nurbs, interval)?, interval)),
         CurveGeometry::Line { .. } => Some((
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
                     point_for_vertex(ir, &edge.start, index)?,
                     point_for_vertex(ir, &edge.end, index)?,
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .ok()?,
             [0.0, 1.0],
         )),
         CurveGeometry::Circle {
@@ -1219,7 +1218,13 @@ fn curve_endpoints(
     let curve_position = index.curve_positions.get(curve_id)?;
     let curve = ir.model.curves.get(*curve_position)?;
     let candidates = index.edges.get(curve_id)?;
-    let edge = select_composite_edge(ir, Some(index), &curve.geometry, candidates, tolerance)?;
+    let edge = select_composite_edge(
+        ir,
+        Some(index),
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        candidates,
+        tolerance,
+    )?;
     Some((
         point_for_vertex(ir, &edge.start, Some(index))?,
         point_for_vertex(ir, &edge.end, Some(index))?,
@@ -1240,17 +1245,17 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let start = point_for_vertex(ir, &edge.start, index)?;
     let end = point_for_vertex(ir, &edge.end, index)?;
     let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         interval[0],
     )?;
     let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         interval[1],
     )?;
     if !close_with_tolerance(evaluated_start, start, Some(tolerance))
@@ -1258,8 +1263,13 @@ fn anchor_analytic_nurbs_endpoint_poles(
     {
         return None;
     }
-    *nurbs.control_points.first_mut()? = start;
-    *nurbs.control_points.last_mut()? = end;
+    nurbs
+        .edit_control_points(|points| {
+            points[0] = start;
+            let last = points.len() - 1;
+            points[last] = end;
+        })
+        .ok()?;
     Some(())
 }
 
@@ -1301,12 +1311,16 @@ fn project_native_composite(
         })
         .collect();
     let stem = format!("D{}", entry.sequence);
-    let start_point = PointId(format!("iges:model:point#{stem}-start"));
-    let end_point = PointId(format!("iges:model:point#{stem}-end"));
-    let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-    let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-    let curve_id = CurveId(format!("iges:model:curve#{stem}"));
-    let edge_id = EdgeId(format!("iges:model:edge#{stem}"));
+    let start_point =
+        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+    let end_point =
+        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+    let start_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+    let end_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+    let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+    let edge_id = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -1405,7 +1419,7 @@ fn has_type_130_child(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     let Some(record) = records.get(&sequence).copied() else {
         return false;
@@ -1425,7 +1439,7 @@ fn has_type_130_child(
             .is_some_and(|child| {
                 child.entity_type == 130
                     && child.form == 0
-                    && composite_child_type_allowed(child.entity_type, child.form, dialect)
+                    && composite_child_type_allowed(child.entity_type, child.form, global_table)
             })
     })
 }
@@ -1456,19 +1470,27 @@ fn project_with_type_130_policy(
         .iter()
         .filter(|entry| entry.entity_type == 102 && entry.form == 0)
     {
-        if has_type_130_child(entry.sequence, &entries, &records, global.dialect())
+        if has_type_130_child(entry.sequence, &entries, &records, global.global_table())
             != only_type_130_children
         {
             continue;
         }
-        if !composite_use_flag_valid(entry.status.use_flag, global.dialect()) {
+        let Some(use_flag) = entry
+            .status
+            .use_flag()
+            .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
+        else {
             losses.push(entity_loss(
                 entry,
                 "Type 102 Entity Use Flag must be 00 in IGES 4.0",
             ));
             continue;
-        }
-        if !composite_line_font_valid(entry.line_font, entry.status.hierarchy, global.dialect()) {
+        };
+        if !composite_line_font_valid(
+            entry.line_font,
+            entry.status.hierarchy(),
+            global.global_table(),
+        ) {
             losses.push(entity_loss(
                 entry,
                 "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01",
@@ -1491,7 +1513,7 @@ fn project_with_type_130_policy(
                 None,
             ));
         }
-        let minimum_child_count = composite_minimum_child_count(global.dialect());
+        let minimum_child_count = composite_minimum_child_count(global.global_table());
         let Some(child_count) = usize::try_from(raw_child_count)
             .ok()
             .filter(|count| *count >= minimum_child_count)
@@ -1520,9 +1542,9 @@ fn project_with_type_130_policy(
                     .is_some_and(|child| child.entity_type == 132 && child.form == 0)
             });
         if !composite_logical_connector_use_valid(
-            entry.status.use_flag,
+            use_flag,
             is_logical_connector,
-            global.dialect(),
+            global.global_table(),
         ) {
             losses.push(entity_loss(
                 entry,
@@ -1539,13 +1561,13 @@ fn project_with_type_130_policy(
         }
         if child_sequences.iter().any(|sequence| {
             entries.get(sequence).is_none_or(|child| {
-                !composite_child_type_allowed(child.entity_type, child.form, global.dialect())
+                !composite_child_type_allowed(child.entity_type, child.form, global.global_table())
                     || !child.status.is_physically_dependent()
             })
         }) {
             losses.push(entity_loss(
                 entry,
-                "composite child is missing, outside the declared dialect, or is not physically dependent",
+                "composite child is missing, outside the effective specification family, or is not physically dependent",
             ));
             continue;
         }
@@ -1610,7 +1632,10 @@ fn project_with_type_130_policy(
         };
         let Some(children) = curve_ids
             .iter()
-            .map(|curve_id| bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx))
+            .map(|curve_id| {
+                let (curve, range) = bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx)?;
+                Some((curve, range, curve_id.clone()))
+            })
             .collect::<Option<Vec<_>>>()
         else {
             if let Some(edge) = project_degraded_composite(
@@ -1628,11 +1653,8 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Some(ConcatenatedNurbs {
-            nurbs,
-            boundaries,
-            child_starts,
-        }) = concatenate_nurbs(children, Some(join_tolerance))
+        let Some(ConcatenatedNurbs { nurbs, segments }) =
+            concatenate_nurbs(children, Some(join_tolerance))
         else {
             if let Some(edge) = project_degraded_composite(
                 ir,
@@ -1649,28 +1671,13 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let degree = nurbs.degree;
-        let Some(cursor) = boundaries.last().copied() else {
-            if let Some(edge) = project_degraded_composite(
-                ir,
-                &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
-                "its parameter range is empty",
-                &mut losses,
-            ) {
-                wire_edges.push(edge);
-                decoded.insert(entry.sequence);
-                continue;
-            }
-            continue;
-        };
+        let degree = nurbs.degree();
+        let cursor = segments.end();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.0,
         ) else {
             if let Some(edge) = project_degraded_composite(
@@ -1690,9 +1697,9 @@ fn project_with_type_130_policy(
         };
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             cursor,
         ) else {
             if let Some(edge) = project_degraded_composite(
@@ -1711,12 +1718,16 @@ fn project_with_type_130_policy(
             continue;
         };
         let stem = format!("D{}", entry.sequence);
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-        let curve_id = CurveId(format!("iges:model:curve#{stem}"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+        let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1764,16 +1775,26 @@ fn project_with_type_130_policy(
             },
             [(start_vertex, start), (end_vertex, end)],
         );
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId(format!("iges:model:procedural-curve#{stem}")),
-            curve: curve_id,
-            definition: ProceduralCurveDefinition::Compound {
-                parameters: boundaries,
-                component_parameters: child_starts,
-                components: curve_ids,
-            },
-            cache_fit_tolerance: None,
-        });
+        let mut boundaries = vec![0.0];
+        let mut components = Vec::new();
+        for segment in segments.into_iter() {
+            boundaries.push(segment.end);
+            components.push(cadmpeg_ir::geometry::CompoundComponent {
+                parameter: segment.child_start,
+                component: segment.child,
+            });
+        }
+        let _attached = ir.model.add_procedural_curve(
+            curve_id,
+            ProceduralCurve::new(
+                ProceduralCurveId::mint(format!("iges:model:procedural-curve#{stem}"))
+                    .expect("identity grammar"),
+                ProceduralCurveDefinition::Compound {
+                    parameters: boundaries,
+                    components,
+                },
+            ),
+        );
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

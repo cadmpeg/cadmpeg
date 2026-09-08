@@ -7,7 +7,6 @@ fn row_feature_ids_preserve_first_source_order() {
     let rows = [
         crate::feature::FeatureRow {
             feature_id: 40,
-            header: [0; 2],
             root_schema_class: None,
             stream_offset: 0,
             body: Vec::new(),
@@ -16,7 +15,6 @@ fn row_feature_ids_preserve_first_source_order() {
         },
         crate::feature::FeatureRow {
             feature_id: 12,
-            header: [0; 2],
             root_schema_class: None,
             stream_offset: 0,
             body: Vec::new(),
@@ -25,7 +23,6 @@ fn row_feature_ids_preserve_first_source_order() {
         },
         crate::feature::FeatureRow {
             feature_id: 40,
-            header: [0; 2],
             root_schema_class: None,
             stream_offset: 0,
             body: Vec::new(),

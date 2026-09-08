@@ -11,13 +11,14 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
 };
-use crate::records::{
+use crate::records::topology::DesignOperandRole;
+use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignSketchPlacement, DesignSketchProfileOperand, DesignSketchProfileRegion,
-    DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection, SketchCurveIdentity,
-    SketchRelationOperand,
+    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
+    DesignSketchProfileRegionSelection,
 };
+use crate::records::{DesignSketchPlacement, SketchCurveIdentity, SketchRelationOperand};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -34,17 +35,23 @@ fn group() -> DesignConstructionOperandGroup {
         scope_reference_ordinal: 0,
         record_index: 9,
         byte_offset: 0,
-        class_tag: "277".into(),
-        members: vec![10, 11],
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        members: vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 0,
+            },
+        ],
         lost_edge_references: Vec::new(),
-        member_offsets: vec![0, 0],
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            auxiliary_record_indices: Vec::new(),
-            auxiliary_record_offsets: Vec::new(),
+            auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_record_indices: Vec::new(),
-            trailing_record_offsets: Vec::new(),
+            trailing_records: Vec::new(),
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -54,11 +61,11 @@ fn group() -> DesignConstructionOperandGroup {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x5_0000_0000,
-        extrude_role: None,
-        extrude_face_role: None,
+        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        ),
         role_offset: 0,
-        paired_class_tag: "277".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }
@@ -75,19 +82,28 @@ fn operand(
         group_member_ordinal: ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "277".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         identity_record_index: record_index + 1,
         identity_record_offset: 0,
         primary_identity: 42,
         primary_identity_offset: 0,
-        secondary_identity: Some(secondary_identity),
-        secondary_identity_offset: Some(0),
-        curve_secondary_identity: None,
-        curve_secondary_identity_offset: None,
+        secondary: Some(crate::records::DesignSecondaryIdentity {
+            identity: crate::records::Located {
+                value: secondary_identity,
+                offset: 0,
+            },
+            curve_identity: None,
+        }),
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -98,25 +114,22 @@ fn operand(
 
 fn placement() -> DesignSketchPlacement {
     DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: "stream:placement".into(),
         scope_record_index: Some(7),
-        entity_id: "Sketch:42".into(),
-        entity_suffix: 42,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
+
         visibility: None,
-        byte_offset: 0,
-        class_tag: "277".into(),
+
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 20,
-        frame_length: 0,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
-        paired_class_tag: "277".into(),
-        paired_byte_offset: 0,
-        member_run_head: false,
+
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
     }
 }
 
@@ -125,7 +138,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         id: format!("stream:curve-{record_index}"),
         record_index,
         owner_reference: Some(42),
-        class_tag: "450".into(),
+        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -156,13 +169,13 @@ fn planar_resolution<'a>(
     }
 }
 
-fn profile_region_member(curve_primary_id: u64) -> DesignSketchProfileRegionMember {
+fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMember {
     DesignSketchProfileRegionMember {
-        kind: 3,
         kind_offset: 0,
-        curve_primary_id,
+        curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
-        incidence_words: [0, 0, 0, 0, 1, 1, 0, 0],
+        incidence_flag: false,
+        incidence_values: [crate::records::topology::DesignRegionIncidence::One; 2],
         incidence_words_offset: 0,
     }
 }
@@ -173,15 +186,11 @@ fn spatial_line(
     start: Point3,
     end: Point3,
 ) -> SpatialSketchEntity {
-    SpatialSketchEntity {
-        id: neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line { start, end },
-    }
+    SpatialSketchEntity::new(
+        neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
+        sketch.clone(),
+        SpatialSketchGeometry::Line { start, end },
+    )
 }
 
 fn spatial_profile(
@@ -223,16 +232,18 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         scope_reference_ordinal: 0,
         record_index: 9,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         member_count_offset: 0,
-        members: vec![10],
-        member_offsets: vec![0],
+        members: vec![crate::records::Located {
+            value: 10,
+            offset: 0,
+        }],
         opaque_index: 1,
         opaque_index_offset: 0,
         opaque_scalar: 0.0,
         opaque_scalar_offset: 0,
         variant: false,
-        paired_class_tag: "277".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let mut member = DesignExtrudeSelectionMember {
@@ -241,12 +252,18 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         group_member_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "278".into(),
+        class_tag: crate::records::DesignClassTag::try_from("278".to_owned()).unwrap(),
         local_id: 200,
         local_id_offset: 0,
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         tail_slot_present: false,
         tail_slot_offset: 0,
@@ -256,9 +273,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             secondary_id: 0,
         }),
         operand_identity_ids: Vec::new(),
-        historical_entity_kind: None,
-        historical_entity_ref: None,
-        historical_state_ids: Vec::new(),
+        historical: None,
         next_record_index: 11,
         next_byte_offset: 0,
     };
@@ -290,8 +305,10 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     );
 
     let mut conflicting_group = group.clone();
-    conflicting_group.members.push(11);
-    conflicting_group.member_offsets.push(0);
+    conflicting_group.members.push(crate::records::Located {
+        value: 11,
+        offset: 0,
+    });
     let mut conflicting_member = member.clone();
     conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
     conflicting_member.group_member_ordinal = 1;
@@ -462,15 +479,13 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![
@@ -524,14 +539,10 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         ),
     ];
     let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0);
-    entities.push(SpatialSketchEntity {
-        id: arc_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Arc {
+    entities.push(SpatialSketchEntity::new(
+        arc_id.clone(),
+        sketch_id.clone(),
+        SpatialSketchGeometry::Arc {
             center: Point3::new(10.0, 10.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
@@ -539,7 +550,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
         },
-    });
+    ));
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
         name: None,
@@ -585,19 +596,17 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let sketch_id = neutral_spatial_sketch_id(&placement);
     let curves = [curve(30, 100, 0), curve(31, 200, 0), curve(32, 201, 0)];
     let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0);
-    let circle = |primary, radius, normal| SpatialSketchEntity {
-        id: entity_id(primary),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            normal,
-            reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: Length(radius),
-        },
+    let circle = |primary, radius, normal| {
+        SpatialSketchEntity::new(
+            entity_id(primary),
+            sketch_id.clone(),
+            SpatialSketchGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal,
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: Length(radius),
+            },
+        )
     };
     let spatial_entities = [
         circle(100, 2.0, Vector3::new(0.0, 0.0, 1.0)),
@@ -625,16 +634,18 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         scope_reference_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "300".into(),
-        asset_id: "asset".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
         entity_id: placement.entity_id.clone(),
-        entity_suffix: placement.entity_suffix,
         entity_reference_offset: 0,
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 13,
             byte_offset: 0,
-            class_tag: "303".into(),
+            class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
             region_count_offset: 0,
             regions: vec![
                 DesignSketchProfileRegion {
@@ -650,10 +661,11 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     ],
                 },
             ],
-            companion_class_tag: "304".into(),
+            companion_class_tag: crate::records::DesignClassTag::try_from("304".to_owned())
+                .unwrap(),
             companion_byte_offset: 0,
         }),
-        paired_class_tag: "301".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let placements = [placement];
@@ -733,30 +745,22 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
     let sketch = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let sketch_entities = [
-        SketchEntity {
-            id: neutral_sketch_curve_id(&sketch, 100, 101),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch, 100, 101),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: neutral_sketch_curve_id(&sketch, 200, 201),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch, 200, 201),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(1.0, 0.0),
                 end: Point2::new(1.0, 1.0),
             },
-        },
+        ),
     ];
     let sketches = [Sketch {
         id: sketch.clone(),
@@ -816,21 +820,20 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let spatial_entities = curves
         .iter()
-        .map(|curve| SpatialSketchEntity {
-            id: neutral_spatial_sketch_curve_id(
-                &spatial_sketch,
-                curve.primary_id,
-                curve.secondary_id,
-            ),
-            sketch: spatial_sketch.clone(),
-            construction: false,
-            native_ref: Some(curve.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::Line {
-                start: Point3::new(0.0, 0.0, 0.0),
-                end: Point3::new(1.0, 0.0, 0.0),
-            },
+        .map(|curve| {
+            SpatialSketchEntity::new(
+                neutral_spatial_sketch_curve_id(
+                    &spatial_sketch,
+                    curve.primary_id,
+                    curve.secondary_id,
+                ),
+                spatial_sketch.clone(),
+                SpatialSketchGeometry::Line {
+                    start: Point3::new(0.0, 0.0, 0.0),
+                    end: Point3::new(1.0, 0.0, 0.0),
+                },
+            )
+            .with_native_ref(Some(curve.id.clone()))
         })
         .collect::<Vec<_>>();
     let group = group();
@@ -882,30 +885,22 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id))
         .collect::<Vec<_>>();
     let sketch_entities = [
-        SketchEntity {
-            id: curve_ids[0].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            curve_ids[0].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: curve_ids[1].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            curve_ids[1].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(1.0, 0.0),
                 end: Point2::new(0.0, 0.0),
             },
-        },
+        ),
     ];
     let mut sketches = [Sketch {
         id: sketch.clone(),
@@ -927,7 +922,8 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = 0x41_0000_0000;
+    group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -986,8 +982,12 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = 0x41_0000_0000;
-    group.members = vec![10];
+    group.operand_role =
+        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+    group.members = vec![10]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -1055,16 +1055,18 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         scope_reference_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "300".into(),
-        asset_id: placement.entity_id.clone(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
         entity_id: placement.entity_id,
-        entity_suffix: 42,
         entity_reference_offset: 0,
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 11,
             byte_offset: 0,
-            class_tag: "301".into(),
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
             region_count_offset: 0,
             regions: vec![
                 DesignSketchProfileRegion {
@@ -1076,10 +1078,11 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                     members: vec![profile_region_member(100)],
                 },
             ],
-            companion_class_tag: "302".into(),
+            companion_class_tag: crate::records::DesignClassTag::try_from("302".to_owned())
+                .unwrap(),
             companion_byte_offset: 0,
         }),
-        paired_class_tag: "303".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
 
@@ -1139,18 +1142,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         }]],
         native_ref: None,
     };
-    let entity = SketchEntity {
-        id: entity_id,
-        sketch: sketch_id,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let entity = SketchEntity::new(
+        entity_id,
+        sketch_id,
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
         },
-    };
+    );
     let point = Point3::new(11.0, 20.0, 9.0);
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert_eq!(
@@ -1181,14 +1180,12 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             reversed: false,
         }],
     ]);
-    let branch_entity = |id, start, end| SketchEntity {
-        id,
-        sketch: branched_sketch.id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let branch_entity = |id, start, end| {
+        SketchEntity::new(
+            id,
+            branched_sketch.id.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let branched_entities = [
         entity.clone(),
@@ -1340,7 +1337,7 @@ fn historical_profile_members_resolve_through_topology_ownership() {
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalOptionalCarrierBinding,
         AsmHistoricalRelation, AsmHistoricalTopology,
     };
-    use crate::records::AsmHistoricalEntityKind;
+    use crate::records::topology::AsmHistoricalEntityKind;
 
     let topology = AsmHistoricalTopology {
         faces: vec![10, 20],
@@ -1517,18 +1514,14 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
 
     let sketch_id = SketchId("sketch".into());
     let circle_id = SketchEntityId("circle".into());
-    let circle = SketchEntity {
-        id: circle_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let circle = SketchEntity::new(
+        circle_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    };
+    );
     let sketch = Sketch {
         id: sketch_id,
         name: None,
@@ -1764,18 +1757,14 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
             });
             let [start_u, start_v] = corners[edge_index];
             let [end_u, end_v] = corners[(edge_index + 1) % corners.len()];
-            entities.push(SketchEntity {
+            entities.push(SketchEntity::new(
                 id,
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line {
+                sketch_id.clone(),
+                SketchGeometry::Line {
                     start: Point2::new(start_u, start_v),
                     end: Point2::new(end_u, end_v),
                 },
-            });
+            ));
         }
         profiles.push(profile);
     }

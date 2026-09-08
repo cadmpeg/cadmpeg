@@ -134,7 +134,7 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let sketch_id = SpatialSketchId(feature.id.0.replacen(
+            let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
                 1,
@@ -198,14 +198,13 @@ pub(crate) fn spatial_sketches(
                 native_ref: Some(lane.id.clone()),
             });
             entities.extend(projected.into_iter().enumerate().map(
-                |(index, (_, native_ref, geometry))| SpatialSketchEntity {
-                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref,
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry,
+                |(index, (_, native_ref, geometry))| {
+                    SpatialSketchEntity::new(
+                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                        sketch_id.clone(),
+                        geometry,
+                    )
+                    .with_native_ref(native_ref)
                 },
             ));
             feature.definition = FeatureDefinition::SpatialSketch {
@@ -250,7 +249,7 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let sketch_id = SpatialSketchId(feature.id.0.replacen(
+        let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
             ":model:feature#",
             ":model:spatial-sketch#",
             1,
@@ -267,17 +266,15 @@ pub(crate) fn spatial_sketches(
             vertices
                 .chunks_exact(2)
                 .enumerate()
-                .map(|(index, vertices)| SpatialSketchEntity {
-                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: None,
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SpatialSketchGeometry::Line {
-                        start: vertices[0],
-                        end: vertices[1],
-                    },
+                .map(|(index, vertices)| {
+                    SpatialSketchEntity::new(
+                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                        sketch_id.clone(),
+                        SpatialSketchGeometry::Line {
+                            start: vertices[0],
+                            end: vertices[1],
+                        },
+                    )
                 }),
         );
         feature.definition = FeatureDefinition::SpatialSketch {
@@ -754,7 +751,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 .or_else(|| inline_arc.map(|[center, _, _]| center))
                 .or_else(|| marker_coordinates(payload, offset));
             let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
-                SketchInputKind::Native(code)
+                SketchInputKind::from_handle_code(code)
             } else if inline_arc.is_some() {
                 SketchInputKind::Arc
             } else if marker_spatial_coordinates(payload, offset).is_some()
@@ -850,8 +847,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 kind,
                 state_value: marker_state_value(payload, offset),
                 coordinates_m,
-                links: Vec::new(),
-                link_selector: None,
+                links: None,
             }
         })
         .collect()
@@ -2351,6 +2347,12 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
 }
 
 fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    #[derive(Clone, Copy)]
+    enum HandleState {
+        Two,
+        Three,
+    }
+
     let code = marker_native_code(payload, offset)?;
     let extended_prefix = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -2359,19 +2361,22 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
     let profile_locus = payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
     let geometry_locus = payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00]);
     let handle_state = match payload.get(offset + 74..offset + 78) {
-        Some([0x00, 0x00, state @ (0x02 | 0x03), 0x00]) => *state,
+        Some([0x00, 0x00, 0x02, 0x00]) => HandleState::Two,
+        Some([0x00, 0x00, 0x03, 0x00]) => HandleState::Three,
         _ => return None,
     };
-    if !matches!((code, handle_state), (1 | 2, 2) | (0 | 2, 3)) {
+    if !matches!(
+        (code, handle_state),
+        (1 | 2, HandleState::Two) | (0 | 2, HandleState::Three)
+    ) {
         return None;
     }
     let declaration_tag = match handle_state {
-        2 => payload.get(offset + 96..offset + 98) == Some(&[0x00, 0x00]),
-        3 => matches!(
+        HandleState::Two => payload.get(offset + 96..offset + 98) == Some(&[0x00, 0x00]),
+        HandleState::Three => matches!(
             payload.get(offset + 96..offset + 98),
             Some([0x01 | 0x03, 0x00])
         ),
-        _ => unreachable!(),
     };
     if (!extended_prefix && !legacy_prefix)
         || (!profile_locus && !geometry_locus)
@@ -2410,10 +2415,10 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
             handle_state,
             compact_declaration_tag,
         ),
-        (true, false, true, false, 2, 2, 0 | 1)
-            | (true, false, true, false, 2, 3, 3)
-            | (false, true, false, true, 2, 2, 0)
-            | (true, false, false, true, 1, 2, 12)
+        (true, false, true, false, 2, HandleState::Two, 0 | 1)
+            | (true, false, true, false, 2, HandleState::Three, 3)
+            | (false, true, false, true, 2, HandleState::Two, 0)
+            | (true, false, false, true, 1, HandleState::Two, 12)
     );
     let compact_declaration = compact_declaration_variant
         && payload.get(offset + 78..offset + 84) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])

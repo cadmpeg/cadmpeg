@@ -103,6 +103,23 @@ pub enum SldprtLossCode {
     ContainerNoParasolidStream,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
+    /// The document carries no usable `swVersion`, so no declared identity was
+    /// verified.
+    ///
+    /// Charged exactly when the primary-layer [`crate::dialect`] match is
+    /// `Admission::Residual`, from the same predicate that decides the
+    /// admission. A residual `unknown` row is the absence of a declared
+    /// identity, and admission verifies a declared identity, so the pair
+    /// (`sldprt:unknown`, `Admitted`) is unreachable: a part that declares
+    /// nothing must be distinguishable from one whose declaration was
+    /// verified.
+    SourceDialectUnverified,
+    /// An embedded Parasolid schema has no declared grammar and was recovered as residual.
+    KernelDialectUnverified,
+    /// Two embedded kernel carriers resolved to one dialect-layer identity.
+    DialectLayerCollision,
+    /// The selected write target differs from the same-format source dialect.
+    SourceDialectDisplaced,
 }
 
 impl SldprtLossCode {
@@ -149,6 +166,10 @@ impl SldprtLossCode {
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
         Self::SourcePreservedImageUnavailable,
+        Self::SourceDialectUnverified,
+        Self::KernelDialectUnverified,
+        Self::DialectLayerCollision,
+        Self::SourceDialectDisplaced,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -196,6 +217,10 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
+            Self::DialectLayerCollision => "source.dialect-layer-collision",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
         }
     }
 
@@ -215,6 +240,11 @@ impl SldprtLossCode {
         match self {
             Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
+            Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
+            Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
@@ -305,6 +335,10 @@ mod tests {
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
                 "source.preserved-image-unavailable",
+                "source.dialect-unverified",
+                "source.kernel-dialect-unverified",
+                "source.dialect-layer-collision",
+                "target.source-dialect-displaced",
             ]
         );
     }

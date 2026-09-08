@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+use crate::decode::blend::{
+    bezier_spans, closest_nurbs_curve_parameter, closest_pcurve_parameters,
+    homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
+    surface_offset_lineage,
+};
+use crate::decode::build::{
+    rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
+};
+use crate::decode::emit::orient_edge_range;
+use crate::decode::offset::{
+    certified_offset_cache_fit, point_distance, subdivide_offset_rectangle, translation_net_normal,
+};
+use crate::decode::pcurves::{
+    coincident_pcurve_pair, complete_tolerant_intersection_pcurves_from_serialized_branches,
+    exact_boundary_pcurve, orient_tolerant_intersection_pcurve, pcurve_matches_edge,
+};
+
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -21,9 +38,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn active_body_selection_accepts_a_complete_singleton_membership() {
-    let first = BodyId("nx:test:body#first".into());
-    let second = BodyId("nx:test:body#second".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let first = BodyId::mint("nx:test:body#first").expect("identity grammar");
+    let second = BodyId::mint("nx:test:body#second").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.bodies.extend([
         Body {
             id: first.clone(),
@@ -44,13 +61,18 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
             visible: None,
         },
     ]);
-    ir.source = Some(cadmpeg_ir::document::SourceMeta::default());
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            crate::dialect::NxDialect::Splmsstr.id(),
+        )),
+        BTreeMap::new(),
+    ));
     let body_node_ids = BTreeMap::from([
         (first.clone(), BTreeSet::from([7])),
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(super::select_active_body(&mut ir, &body_node_ids, &[7]));
+    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -64,27 +86,27 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
 
 #[test]
 fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
-    let first = BodyId("nx:s3:body#first".into());
-    let second = BodyId("nx:s8:body#second".into());
+    let first = BodyId::mint("nx:s3:body#first").expect("identity grammar");
+    let second = BodyId::mint("nx:s8:body#second").expect("identity grammar");
     let body_node_ids = BTreeMap::from([
         (first.clone(), BTreeSet::from([7, 8])),
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    let selected = super::rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
+    let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
     assert_eq!(selected, BTreeSet::from([first]));
     assert_eq!(
-        super::rmfastload_stream_indices(&selected),
+        rmfastload_stream_indices(&selected),
         Some(BTreeSet::from([3]))
     );
 }
 
 #[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let cone = SurfaceId("nx:test:cone".into());
-    let sphere = SurfaceId("nx:test:sphere".into());
-    let torus = SurfaceId("nx:test:torus".into());
+    let mut ir = CadIr::empty();
+    let cone = SurfaceId::mint("test:model:entity#nx:test:cone").expect("identity grammar");
+    let sphere = SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
+    let torus = SurfaceId::mint("test:model:entity#nx:test:torus").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: cone.clone(),
@@ -120,7 +142,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             source_object: None,
         },
     ]);
-    let plane = SurfaceId("nx:test:plane".into());
+    let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: plane.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -130,9 +152,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         },
         source_object: None,
     });
-    let cone_ellipse = CurveId("nx:test:cone-ellipse".into());
-    let sphere_circle = CurveId("nx:test:sphere-circle".into());
-    let torus_circle = CurveId("nx:test:torus-circle".into());
+    let cone_ellipse =
+        CurveId::mint("test:model:entity#nx:test:cone-ellipse").expect("identity grammar");
+    let sphere_circle =
+        CurveId::mint("test:model:entity#nx:test:sphere-circle").expect("identity grammar");
+    let torus_circle =
+        CurveId::mint("test:model:entity#nx:test:torus-circle").expect("identity grammar");
     ir.model.curves.extend([
         Curve {
             id: cone_ellipse.clone(),
@@ -234,27 +259,30 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 uv.v,
             )
             .unwrap();
-            assert!(super::point_distance(expected, actual) < 1.0e-12);
+            assert!(point_distance(expected, actual) < 1.0e-12);
         }
     }
 
-    let construction = ProceduralCurveId("nx:test:closed-intersection".into());
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: construction,
-        curve: sphere_circle.clone(),
-        definition: ProceduralCurveDefinition::TolerantIntersection {
-            supports: [sphere, plane],
-            endpoints: [
-                Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-            ],
-            tolerance: 1.0e-8,
-            parameterization: None,
-        },
-        cache_fit_tolerance: None,
-    });
-    let point = PointId("nx:test:closed-point".into());
-    let vertex = VertexId("nx:test:closed-vertex".into());
+    let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
+        .expect("identity grammar");
+    let _attached = ir.model.add_procedural_curve(
+        sphere_circle.clone(),
+        ProceduralCurve::new(
+            construction,
+            ProceduralCurveDefinition::TolerantIntersection {
+                supports: [sphere, plane],
+                endpoints: [
+                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                ],
+                tolerance: 1.0e-8,
+                parameterization: None,
+            },
+        ),
+    );
+    let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
+    let vertex =
+        VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
     ir.model.points.push(Point {
         id: point.clone(),
         position: Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
@@ -266,7 +294,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         tolerance: Some(1.0e-8),
     });
     ir.model.edges.push(Edge {
-        id: EdgeId("nx:test:closed-edge".into()),
+        id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
         curve: Some(sphere_circle),
         start: vertex.clone(),
         end: vertex,
@@ -287,7 +315,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     );
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization, ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("closed intersection construction");
     };
@@ -303,7 +331,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         supports,
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("closed intersection parameterization");
     };
@@ -333,7 +361,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             true
         }));
     for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-        let curve = &ir.model.procedural_curves[0].curve;
+        let curve = ir
+            .model
+            .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+            .expect("closed intersection owner");
         let point = cadmpeg_ir::eval::model_curve_point_by_id(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
             curve,
@@ -349,22 +380,27 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
 #[test]
 fn boundary_pcurve_requires_an_affine_carrier_witness() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let curve = CurveId("nx:test:bowed-boundary-curve".into());
-    let surface = SurfaceId("nx:test:boundary-plane".into());
+    let mut ir = CadIr::empty();
+    let curve =
+        CurveId::mint("test:model:entity#nx:test:bowed-boundary-curve").expect("identity grammar");
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:boundary-plane").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(5.0, 5.0, 0.0),
-                Point3::new(10.0, 0.0, 0.0),
-            ],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(5.0, 5.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -377,7 +413,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         source_object: None,
     });
 
-    assert!(super::exact_boundary_pcurve(
+    assert!(exact_boundary_pcurve(
         &ir,
         &curve,
         &surface,
@@ -392,7 +428,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         direction: Vector3::new(10.0, 0.0, 0.0),
     };
     assert!(matches!(
-        super::exact_boundary_pcurve(
+        exact_boundary_pcurve(
             &ir,
             &curve,
             &surface,
@@ -406,9 +442,11 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
 
 #[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let curve = CurveId("nx:test:affine-nurbs-boundary-curve".into());
-    let surface = SurfaceId("nx:test:affine-nurbs-boundary-surface".into());
+    let mut ir = CadIr::empty();
+    let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
+        .expect("identity grammar");
+    let surface = SurfaceId::mint("test:model:entity#nx:test:affine-nurbs-boundary-surface")
+        .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Line {
@@ -424,7 +462,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     });
 
     assert!(matches!(
-        super::exact_boundary_pcurve(
+        exact_boundary_pcurve(
             &ir,
             &curve,
             &surface,
@@ -438,98 +476,110 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, z),
-            Point3::new(0.0, 2.0, z),
-            Point3::new(3.0, 0.0, z),
-            Point3::new(3.0, 2.0, z),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
+                Point3::new(0.0, 0.0, z),
+                Point3::new(0.0, 2.0, z),
+                Point3::new(3.0, 0.0, z),
+                Point3::new(3.0, 2.0, z),
+            ],
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: [0.0, 1.0, 3.0]
-            .into_iter()
-            .flat_map(|x| {
-                [0.0, 2.0, 5.0]
-                    .into_iter()
-                    .map(move |y| Point3::new(x, y, z))
-            })
-            .collect(),
-        weights: Some(vec![2.0; 9]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            [0.0, 1.0, 3.0]
+                .into_iter()
+                .flat_map(|x| {
+                    [0.0, 2.0, 5.0]
+                        .into_iter()
+                        .map(move |y| Point3::new(x, y, z))
+                })
+                .collect(),
+            Some(vec![2.0; 9]),
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: [0.0, 1.5, 3.0]
-            .into_iter()
-            .flat_map(|x| {
-                [0.0, 1.0, 2.0]
-                    .into_iter()
-                    .map(move |y| Point3::new(x, y, z))
-            })
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            [0.0, 1.5, 3.0]
+                .into_iter()
+                .flat_map(|x| {
+                    [0.0, 1.0, 2.0]
+                        .into_iter()
+                        .map(move |y| Point3::new(x, y, z))
+                })
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 fn quadratic_paraboloid_surface() -> SurfaceGeometry {
     let coordinates = [0.0, 0.5, 1.0];
     let square_controls = [0.0, 0.0, 1.0];
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: (0..3)
-            .flat_map(|u| {
-                (0..3).map(move |v| {
-                    Point3::new(
-                        coordinates[u],
-                        coordinates[v],
-                        square_controls[u] + square_controls[v],
-                    )
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            (0..3)
+                .flat_map(|u| {
+                    (0..3).map(move |v| {
+                        Point3::new(
+                            coordinates[u],
+                            coordinates[v],
+                            square_controls[u] + square_controls[v],
+                        )
+                    })
                 })
-            })
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 #[test]
@@ -539,9 +589,11 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let SurfaceGeometry::Nurbs(candidate) = &mut candidate else {
         unreachable!();
     };
-    candidate.control_points[3].z += 0.000_5;
+    candidate
+        .edit_control_points(|points| points[3].z += 0.000_5)
+        .unwrap();
 
-    let fit = super::certified_offset_cache_fit(
+    let fit = certified_offset_cache_fit(
         &support,
         &SurfaceGeometry::Nurbs(candidate.clone()),
         4.0,
@@ -549,7 +601,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     )
     .expect("whole-patch fit");
     assert!((fit - 0.000_5).abs() < 1.0e-12);
-    assert!(super::certified_offset_cache_fit(
+    assert!(certified_offset_cache_fit(
         &support,
         &SurfaceGeometry::Nurbs(candidate.clone()),
         4.0,
@@ -589,13 +641,18 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
 
 #[test]
 fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
-    let surface = SurfaceId("nx:test:budget-plane".into());
-    let start_point = PointId("nx:test:budget-start-point".into());
-    let end_point = PointId("nx:test:budget-end-point".into());
-    let start_vertex = VertexId("nx:test:budget-start-vertex".into());
-    let end_vertex = VertexId("nx:test:budget-end-vertex".into());
-    let edge = EdgeId("nx:test:budget-edge".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:budget-plane").expect("identity grammar");
+    let start_point =
+        PointId::mint("test:model:entity#nx:test:budget-start-point").expect("identity grammar");
+    let end_point =
+        PointId::mint("test:model:entity#nx:test:budget-end-point").expect("identity grammar");
+    let start_vertex =
+        VertexId::mint("test:model:entity#nx:test:budget-start-vertex").expect("identity grammar");
+    let end_vertex =
+        VertexId::mint("test:model:entity#nx:test:budget-end-vertex").expect("identity grammar");
+    let edge = EdgeId::mint("test:model:entity#nx:test:budget-edge").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -661,7 +718,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
 #[test]
 fn offset_cache_fit_accepts_higher_degree_translation_nets() {
     assert_eq!(
-        super::certified_offset_cache_fit(
+        certified_offset_cache_fit(
             &quadratic_translation_surface(0.0),
             &quadratic_translation_surface(4.0),
             4.0,
@@ -681,18 +738,18 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     let SurfaceGeometry::Nurbs(candidate_surface) = &mut candidate else {
         unreachable!();
     };
-    support_surface.u_periodic = true;
-    candidate_surface.u_periodic = true;
+    support_surface.set_u_periodic(true);
+    candidate_surface.set_u_periodic(true);
 
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
         Some(0.0)
     );
 }
 
 #[test]
 fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
-    let bound = super::certified_offset_cache_fit(
+    let bound = certified_offset_cache_fit(
         &affine_nurbs_surface(0.0),
         &degree_elevated_affine_surface(4.0),
         4.0,
@@ -706,10 +763,10 @@ fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
 fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
     let support = quadratic_paraboloid_surface();
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("nonzero curved offset certified");
     assert!((0.01..=0.02).contains(&bound));
 }
@@ -718,23 +775,26 @@ fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
 fn offset_cache_fit_decouples_distant_knot_span_scale() {
     let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
     let z = [0.0, 0.0, 0.1, 0.2];
-    let support = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: (0..4)
-            .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let support = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            4,
+            2,
+            (0..4)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
 
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("each regular knot span certifies independently");
     assert!((0.01..=0.02).contains(&bound));
 }
@@ -743,23 +803,26 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
 fn offset_cache_fit_certifies_regular_c0_knot_spans() {
     let x = [0.0, 0.25, 0.5, 1.0, 1.5];
     let z = [0.0, 0.0, 0.1, 0.1, 0.2];
-    let support = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 5,
-        v_count: 2,
-        control_points: (0..5)
-            .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let support = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            5,
+            2,
+            (0..5)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
 
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("regular spans certify across the C0 knot break");
     assert!((0.01..=0.02).contains(&bound));
 }
@@ -770,10 +833,15 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for v in 0..3 {
-        surface.control_points[2 * 3 + v] = surface.control_points[3 + v];
-    }
-    assert!(super::certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
+    let replacement = (0..3)
+        .map(|v| surface.control_points()[3 + v])
+        .collect::<Vec<_>>();
+    surface
+        .edit_control_points(|points| {
+            points[6..9].copy_from_slice(&replacement);
+        })
+        .unwrap();
+    assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
 }
 
 #[test]
@@ -782,11 +850,15 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for v in 0..3 {
-        surface.control_points[2 * 3 + v].x = 0.0;
-    }
+    surface
+        .edit_control_points(|points| {
+            for v in 0..3 {
+                points[6 + v].x = 0.0;
+            }
+        })
+        .unwrap();
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
 }
@@ -796,28 +868,31 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
     let epsilon = 2.0_f64.powi(-100);
     let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
     let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
-    let support = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 3,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: (0..4)
-            .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let support = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            3,
+            1,
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            4,
+            2,
+            (0..4)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
     let SurfaceGeometry::Nurbs(surface) = &support else {
         unreachable!();
     };
 
-    assert!(super::translation_net_normal(surface).is_none());
+    assert!(translation_net_normal(surface).is_none());
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
 }
@@ -829,7 +904,7 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
 
-    assert!(super::subdivide_offset_rectangle(
+    assert!(subdivide_offset_rectangle(
         &mut rectangles,
         [u0, u1, 0.0, 1.0],
         [u, 0.5],
@@ -845,17 +920,19 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         unreachable!();
     };
     let axis_weights = [1.0, 1.01, 1.02];
-    surface.weights = Some(
-        (0..3)
-            .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
-            .collect(),
-    );
+    surface
+        .set_weights(Some(
+            (0..3)
+                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .collect(),
+        ))
+        .unwrap();
 
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
-    assert!(super::certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
+    assert!(certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
 }
 
 #[test]
@@ -864,19 +941,25 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for point in &mut surface.control_points {
-        point.x += 1.0e12;
-        point.y -= 2.0e12;
-        point.z += 3.0e12;
-    }
+    surface
+        .edit_control_points(|points| {
+            for point in points {
+                point.x += 1.0e12;
+                point.y -= 2.0e12;
+                point.z += 3.0e12;
+            }
+        })
+        .unwrap();
     let axis_weights = [1.0, 1.01, 1.02];
-    surface.weights = Some(
-        (0..3)
-            .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
-            .collect(),
-    );
+    surface
+        .set_weights(Some(
+            (0..3)
+                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .collect(),
+        ))
+        .unwrap();
 
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("absolute placement does not widen rational derivative bounds");
     assert!(bound <= 0.02);
 }
@@ -895,13 +978,14 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     let mapped =
         cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
-    assert!(super::point_distance(mapped, point) <= 0.01);
+    assert!(point_distance(mapped, point) <= 0.01);
 }
 
 #[test]
 fn nurbs_blend_contact_requires_the_declared_radius_shell() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let surface = SurfaceId("nx:test:contact-support".into());
+    let mut ir = CadIr::empty();
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:contact-support").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: affine_nurbs_surface(0.0),
@@ -909,17 +993,17 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
     });
     let center = Point3::new(1.2, 0.7, 2.0);
 
-    let direction = super::surface_contact_direction(&ir, &surface, center, 2.0, 0)
+    let direction = surface_contact_direction(&ir, &surface, center, 2.0, 0)
         .expect("the support contains one contact at the blend radius");
     assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
-    assert!(super::surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
+    assert!(surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
 }
 
 #[test]
 fn saved_offset_cache_retains_its_procedural_lineage() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let support = SurfaceId("nx:test:support".into());
-    let cache = SurfaceId("nx:test:cache".into());
+    let mut ir = CadIr::empty();
+    let support = SurfaceId::mint("test:model:entity#nx:test:support").expect("identity grammar");
+    let cache = SurfaceId::mint("test:model:entity#nx:test:cache").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
@@ -932,34 +1016,35 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("nx:test:offset".into()),
-        surface: cache.clone(),
-        definition: ProceduralSurfaceDefinition::Offset {
+    let procedural = ProceduralSurface::try_new(
+        ProceduralSurfaceId::mint("test:model:entity#nx:test:offset").expect("identity grammar"),
+        ProceduralSurfaceDefinition::Offset {
             support: support.clone(),
             distance: 4.0,
             u_sense: Some(0),
             v_sense: Some(0),
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
-        cache_fit_tolerance: Some(0.0),
-        record_bounds: None,
-    });
+        Some(0.0),
+        None,
+    )
+    .unwrap();
+    ir.model
+        .add_procedural_surface(cache.clone(), procedural)
+        .unwrap();
 
-    assert_eq!(
-        super::surface_offset_lineage(&ir, &cache, 0),
-        Some((support, 4.0))
-    );
+    assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
 }
 
 #[test]
 fn serialized_surface_curves_select_a_terminal_intersection_branch() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let surfaces = [
-        SurfaceId("nx:test:surface#0".into()),
-        SurfaceId("nx:test:surface#1".into()),
+        SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
+        SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
     ];
     for surface in &surfaces {
         ir.model.surfaces.push(Surface {
@@ -972,33 +1057,33 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             source_object: None,
         });
     }
-    let curve = CurveId("nx:test:curve".into());
-    let procedural = ProceduralCurveId("nx:test:intersection".into());
+    let curve = CurveId::mint("test:model:entity#nx:test:curve").expect("identity grammar");
+    let procedural = ProceduralCurveId::mint("test:model:entity#nx:test:intersection")
+        .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction: procedural.clone(),
+            cache: None,
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: procedural,
-        curve: curve.clone(),
-        definition: ProceduralCurveDefinition::TolerantIntersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        procedural,
+        ProceduralCurveDefinition::TolerantIntersection {
             supports: surfaces.clone(),
             endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             tolerance: 0.01,
             parameterization: None,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
     let points = [
-        PointId("nx:test:point#0".into()),
-        PointId("nx:test:point#1".into()),
+        PointId::mint("nx:test:point#0").expect("identity grammar"),
+        PointId::mint("nx:test:point#1").expect("identity grammar"),
     ];
     let vertices = [
-        VertexId("nx:test:vertex#0".into()),
-        VertexId("nx:test:vertex#1".into()),
+        VertexId::mint("nx:test:vertex#0").expect("identity grammar"),
+        VertexId::mint("nx:test:vertex#1").expect("identity grammar"),
     ];
     for index in 0..2 {
         ir.model.points.push(Point {
@@ -1012,7 +1097,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             tolerance: None,
         });
     }
-    let edge = EdgeId("nx:test:edge".into());
+    let edge = EdgeId::mint("test:model:entity#nx:test:edge").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
         curve: Some(curve),
@@ -1022,20 +1107,20 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         tolerance: Some(0.03),
     });
     let pcurves = [
-        PcurveId("nx:test:pcurve#0".into()),
-        PcurveId("nx:test:pcurve#1".into()),
+        PcurveId::mint("nx:test:pcurve#0").expect("identity grammar"),
+        PcurveId::mint("nx:test:pcurve#1").expect("identity grammar"),
     ];
     let faces = [
-        FaceId("nx:test:face#0".into()),
-        FaceId("nx:test:face#1".into()),
+        FaceId::mint("nx:test:face#0").expect("identity grammar"),
+        FaceId::mint("nx:test:face#1").expect("identity grammar"),
     ];
     let loops = [
-        LoopId("nx:test:loop#0".into()),
-        LoopId("nx:test:loop#1".into()),
+        LoopId::mint("nx:test:loop#0").expect("identity grammar"),
+        LoopId::mint("nx:test:loop#1").expect("identity grammar"),
     ];
     let coedges = [
-        CoedgeId("nx:test:coedge#0".into()),
-        CoedgeId("nx:test:coedge#1".into()),
+        CoedgeId::mint("nx:test:coedge#0").expect("identity grammar"),
+        CoedgeId::mint("nx:test:coedge#1").expect("identity grammar"),
     ];
     for index in 0..2 {
         ir.model.pcurves.push(Pcurve {
@@ -1044,17 +1129,18 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 origin: Point2::new(0.0, 0.0),
                 direction: Point2::new(1.0, 0.0),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, 10.0]),
-            fit_tolerance: Some(0.02),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some([0.0, 10.0]),
+                Some(0.02),
+            ),
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
-            shell: ShellId("nx:test:shell".into()),
+            shell: ShellId::mint("test:model:entity#nx:test:shell").expect("identity grammar"),
             surface: surfaces[index].clone(),
             sense: Sense::Forward,
-            loops: vec![loops[index].clone()],
+            loops: vec![loops[index].clone()].into(),
             name: None,
             color: None,
             tolerance: Some(0.03),
@@ -1062,16 +1148,15 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ir.model.loops.push(Loop {
             id: loops[index].clone(),
             face: faces[index].clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: vec![coedges[index].clone()],
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
+                    .expect("valid loop ring"),
+            ),
         });
         ir.model.coedges.push(Coedge {
             id: coedges[index].clone(),
             owner_loop: loops[index].clone(),
             edge: edge.clone(),
-            next: coedges[index].clone(),
-            previous: coedges[index].clone(),
             radial_next: coedges[1 - index].clone(),
             sense: Sense::Forward,
             pcurves: vec![PcurveUse {
@@ -1080,35 +1165,40 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 parameter_range: Some([0.0, 10.0]),
             }],
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     let serialized = [0, 1]
         .map(|index| {
             (
-                ir.model.procedural_curves[0].curve.clone(),
+                ir.model
+                    .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+                    .expect("intersection owner")
+                    .clone(),
                 surfaces[index].clone(),
                 pcurves[index].clone(),
             )
         })
         .into_iter()
         .collect();
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
     );
     assert!(matches!(
-        ir.model.procedural_curves[0].definition,
+        ir.model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
         }
     ));
     for pcurve in &mut ir.model.pcurves {
-        pcurve.fit_tolerance = Some(0.01);
+        let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+            panic!("fixture uses general pcurve metadata")
+        };
+        metadata.fit_tolerance = Some(0.01);
     }
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1117,7 +1207,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("serialized branch transferred");
     };
@@ -1138,13 +1228,15 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         )
     );
 
-    let ProceduralCurveDefinition::TolerantIntersection {
-        parameterization, ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!();
-    };
-    *parameterization = None;
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization, ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *parameterization = None;
+    });
     let edge = &mut ir.model.edges[0];
     edge.param_range = None;
     std::mem::swap(&mut edge.start, &mut edge.end);
@@ -1154,7 +1246,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             direction: Point2::new(-1.0, 0.0),
         };
     }
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1162,7 +1254,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("reversed serialized branch transferred");
     };
@@ -1189,22 +1281,27 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
         point.position = position;
     }
-    let ProceduralCurveDefinition::TolerantIntersection {
-        endpoints: stored_endpoints,
-        parameterization,
-        ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!();
-    };
-    *stored_endpoints = endpoints;
-    *parameterization = None;
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            endpoints: stored_endpoints,
+            parameterization,
+            ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *stored_endpoints = endpoints;
+        *parameterization = None;
+    });
     ir.model.edges[0].param_range = None;
     for coedge in &mut ir.model.coedges {
         coedge.pcurves[0].parameter_range = Some(range);
     }
     for pcurve in &mut ir.model.pcurves {
-        pcurve.parameter_range = Some(range);
+        let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+            panic!("fixture uses general pcurve metadata")
+        };
+        metadata.parameter_range = Some(range);
         pcurve.geometry = PcurveGeometry::Ellipse {
             center: Point2::new(5.0, 0.0),
             x_axis: Point2::new(1.0, 0.0),
@@ -1213,7 +1310,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             minor_radius: 2.0,
         };
     }
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1221,7 +1318,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("reversed symmetric conic branches transferred");
     };
@@ -1231,24 +1328,26 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         PcurveGeometry::Ellipse { y_axis, .. } if y_axis.v == 1.0
     )));
 
-    let ProceduralCurveDefinition::TolerantIntersection {
-        tolerance,
-        parameterization,
-        ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!();
-    };
-    *tolerance = 10.0;
-    *parameterization = None;
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            tolerance,
+            parameterization,
+            ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *tolerance = 10.0;
+        *parameterization = None;
+    });
     ir.model.edges[0].param_range = None;
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
     );
     assert!(matches!(
-        ir.model.procedural_curves[0].definition,
+        ir.model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::TolerantIntersection {
             parameterization: Some(_),
             ..
@@ -1257,237 +1356,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
 }
 
 #[test]
-fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
-    let pcurve = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 2.0),
-            Point2::new(3.0, 1.0),
-        ],
-        weights: Some(vec![1.0, 2.0, 1.5]),
-        periodic: false,
-    };
-    let range = [0.25, 1.75];
-    let reversed =
-        super::reverse_pcurve_over_range(&pcurve, range).expect("reversible NURBS pcurve");
-    for parameter in [range[0], 0.5, 1.0, 1.5, range[1]] {
-        let expected =
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1.0e-12);
-        assert!((actual.v - expected.v).abs() < 1.0e-12);
-    }
-}
-
-#[test]
-fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
-    let carriers = [
-        PcurveGeometry::Ellipse {
-            center: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        PcurveGeometry::Parabola {
-            vertex: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            focal_distance: 0.75,
-        },
-        PcurveGeometry::Hyperbola {
-            center: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-    ];
-    let range = [-1.5, 1.5];
-    for carrier in carriers {
-        let reversed = super::reverse_pcurve_over_range(&carrier, range)
-            .expect("symmetric analytic pcurve is exactly reversible");
-        for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
-            let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, -parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-            assert!((actual.u - expected.u).abs() < 1.0e-12);
-            assert!((actual.v - expected.v).abs() < 1.0e-12);
-        }
-    }
-}
-
-#[test]
-fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
-    let carriers = [
-        PcurveGeometry::Ellipse {
-            center: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(0.6, 0.8),
-            y_axis: Point2::new(-0.8, 0.6),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        PcurveGeometry::Hyperbola {
-            center: Point2::new(-3.0, 5.0),
-            x_axis: Point2::new(0.8, -0.6),
-            y_axis: Point2::new(0.6, 0.8),
-            major_radius: 2.5,
-            minor_radius: 1.25,
-        },
-    ];
-    let range = [0.25, 1.75];
-    for carrier in carriers {
-        let reversed = super::reverse_pcurve_over_range(&carrier, range)
-            .expect("a finite conic interval has an exact coefficient reflection");
-        assert!(matches!(
-            (&carrier, &reversed),
-            (
-                PcurveGeometry::Ellipse { .. },
-                PcurveGeometry::Harmonic { .. }
-            ) | (
-                PcurveGeometry::Hyperbola { .. },
-                PcurveGeometry::Hyperbolic { .. }
-            )
-        ));
-        for parameter in [0.25, 0.5, 1.0, 1.5, 1.75] {
-            let expected =
-                cadmpeg_ir::eval::pcurve_uv(&carrier, range[0] + range[1] - parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-            assert!((actual.u - expected.u).abs() < 1.0e-12);
-            assert!((actual.v - expected.v).abs() < 1.0e-12);
-        }
-
-        let reflected_twice = super::reverse_pcurve_over_range(&reversed, range)
-            .expect("general conic coefficients remain exactly reversible");
-        for parameter in [0.25, 0.75, 1.25, 1.75] {
-            let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reflected_twice, parameter).unwrap();
-            assert!((actual.u - expected.u).abs() < 1.0e-12);
-            assert!((actual.v - expected.v).abs() < 1.0e-12);
-        }
-    }
-}
-
-#[test]
-fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
-    let pcurve = PcurveGeometry::Parabola {
-        vertex: Point2::new(2.0, 3.0),
-        x_axis: Point2::new(0.6, 0.8),
-        y_axis: Point2::new(-0.8, 0.6),
-        focal_distance: 0.75,
-    };
-    let range = [0.25, 2.75];
-    let reversed = super::reverse_pcurve_over_range(&pcurve, range)
-        .expect("a finite parabola interval has an exact quadratic reflection");
-    assert!(matches!(
-        &reversed,
-        PcurveGeometry::Nurbs {
-            degree: 2,
-            weights: None,
-            periodic: false,
-            ..
-        }
-    ));
-    for parameter in [0.25, 0.5, 1.0, 1.75, 2.5, 2.75] {
-        let expected =
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1.0e-12);
-        assert!((actual.v - expected.v).abs() < 1.0e-12);
-    }
-
-    let offset = PcurveGeometry::Offset {
-        distance: 1.25,
-        basis: Box::new(pcurve.clone()),
-    };
-    let PcurveGeometry::Offset { distance, basis } =
-        super::reverse_pcurve_over_range(&offset, range)
-            .expect("offset parabola reflection closes recursively")
-    else {
-        panic!("reversed offset parabola");
-    };
-    assert_eq!(distance, -1.25);
-    for parameter in [0.25, 1.0, 2.0, 2.75] {
-        let expected =
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1.0e-12);
-        assert!((actual.v - expected.v).abs() < 1.0e-12);
-    }
-}
-
-#[test]
-fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
-    let pcurve = PcurveGeometry::Offset {
-        distance: 2.5,
-        basis: Box::new(PcurveGeometry::Line {
-            origin: Point2::new(1.0, 3.0),
-            direction: Point2::new(2.0, -1.0),
-        }),
-    };
-    let reversed = super::reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
-        .expect("offset construction is exactly reversible");
-    let PcurveGeometry::Offset { distance, basis } = &reversed else {
-        panic!("reversed offset");
-    };
-    assert_eq!(*distance, -2.5);
-    for parameter in [2.0, 3.0, 5.0, 6.0] {
-        let expected_basis = cadmpeg_ir::eval::pcurve_uv(
-            match &pcurve {
-                PcurveGeometry::Offset { basis, .. } => basis,
-                _ => unreachable!(),
-            },
-            8.0 - parameter,
-        )
-        .unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(basis, parameter).unwrap();
-        assert_eq!(actual, expected_basis);
-        let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1.0e-12);
-        assert!((actual.v - expected.v).abs() < 1.0e-12);
-    }
-
-    let support = SurfaceId("nx:test:offset-orientation-support".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.surfaces.push(Surface {
-        id: support.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        source_object: None,
-    });
-    let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();
-    let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
-    let oriented = super::orient_tolerant_intersection_pcurve(
-        &ir,
-        &CurveId("nx:test:unused-orientation-curve".into()),
-        &support,
-        &pcurve,
-        [2.0, 6.0],
-        [
-            Point3::new(second.u, second.v, 0.0),
-            Point3::new(first.u, first.v, 0.0),
-        ],
-        1.0e-12,
-    )
-    .expect("offset endpoints select the reversed terminal branch");
-    for parameter in [2.0, 3.0, 5.0, 6.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&oriented, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1.0e-12);
-        assert!((actual.v - expected.v).abs() < 1.0e-12);
-    }
-}
-
-#[test]
 fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let curve = CurveId("nx:test:closed-orientation-curve".into());
-    let support = SurfaceId("nx:test:closed-orientation-support".into());
+    let mut ir = CadIr::empty();
+    let curve = CurveId::mint("test:model:entity#nx:test:closed-orientation-curve")
+        .expect("identity grammar");
+    let support = SurfaceId::mint("test:model:entity#nx:test:closed-orientation-support")
+        .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Circle {
@@ -1515,7 +1389,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
     };
     let endpoint = Point3::new(2.0, 0.0, 0.0);
 
-    let oriented = super::orient_tolerant_intersection_pcurve(
+    let oriented = orient_tolerant_intersection_pcurve(
         &ir,
         &curve,
         &support,
@@ -1532,34 +1406,34 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
 
 #[test]
 fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let curve_id = CurveId("nx:test:curve#0".into());
+    let mut ir = CadIr::empty();
+    let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: ProceduralCurveId("nx:test:intersection#0".into()),
-        curve: curve_id.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
+    let procedural = ProceduralCurve::try_new(
+        ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
+        ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
-                        pcurve_parameter_range: None,
                     },
                 ],
                 parameter_range: [0.0, 1.0],
@@ -1567,11 +1441,15 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             },
             discontinuity_flag: false,
         },
-        cache_fit_tolerance: Some(2.0),
-    });
+        Some(2.0),
+    )
+    .unwrap();
+    ir.model
+        .add_procedural_curve(curve_id.clone(), procedural)
+        .unwrap();
 
-    let start_point = PointId("nx:test:point#0".into());
-    let end_point = PointId("nx:test:point#1".into());
+    let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
+    let end_point = PointId::mint("nx:test:point#1").expect("identity grammar");
     ir.model.points.extend([
         Point {
             id: start_point.clone(),
@@ -1584,8 +1462,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             source_object: None,
         },
     ]);
-    let start = VertexId("nx:test:vertex#0".into());
-    let end = VertexId("nx:test:vertex#1".into());
+    let start = VertexId::mint("nx:test:vertex#0").expect("identity grammar");
+    let end = VertexId::mint("nx:test:vertex#1").expect("identity grammar");
     ir.model.vertices.extend([
         Vertex {
             id: start.clone(),
@@ -1598,7 +1476,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             tolerance: None,
         },
     ]);
-    let edge = EdgeId("nx:test:edge#0".into());
+    let edge = EdgeId::mint("nx:test:edge#0").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
         curve: Some(curve_id.clone()),
@@ -1607,9 +1485,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         param_range: None,
         tolerance: None,
     });
-    let support = SurfaceId("nx:test:surface-support#0".into());
-    let surface = SurfaceId("nx:test:surface#0".into());
-    let construction = ProceduralSurfaceId("nx:test:surface-offset#0".into());
+    let support = SurfaceId::mint("nx:test:surface-support#0").expect("identity grammar");
+    let surface = SurfaceId::mint("nx:test:surface#0").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("nx:test:surface-offset#0").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
@@ -1624,45 +1503,46 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: construction,
-        surface: surface.clone(),
-        definition: ProceduralSurfaceDefinition::Offset {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Offset {
             support,
             distance: 1.0,
             u_sense: Some(0),
             v_sense: Some(0),
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap(),
     };
 
-    assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
-    assert!(!super::pcurve_matches_edge(
-        &ir, &edge, &surface, &pcurve, None,
-    ));
-    assert!(super::pcurve_matches_edge(
+    assert!(orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
+    assert!(!pcurve_matches_edge(&ir, &edge, &surface, &pcurve, None,));
+    assert!(pcurve_matches_edge(
         &ir,
         &edge,
         &surface,
         &pcurve,
         Some(0.01),
     ));
-    let large_distance = super::point_distance(
+    let large_distance = point_distance(
         Point3::new(1.0e200, 1.0e200, 1.0e200),
         Point3::new(0.0, 0.0, 0.0),
     );
@@ -1672,30 +1552,33 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
 
 #[test]
 fn boundary_coincidence_is_certified_between_uniform_samples() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let surfaces = [
-        SurfaceId("nx:test:surface#0".into()),
-        SurfaceId("nx:test:surface#1".into()),
+        SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
+        SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
     ];
-    let surface = || NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
-        u_count: 2,
-        v_count: 4,
-        control_points: [0.0, 1.0]
-            .into_iter()
-            .flat_map(|y| {
-                [0.0, 0.1, 0.2, 10.0]
-                    .into_iter()
-                    .map(move |x| Point3::new(x, y, 0.0))
-            })
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
+    let surface = || {
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
+            2,
+            4,
+            [0.0, 1.0]
+                .into_iter()
+                .flat_map(|y| {
+                    [0.0, 0.1, 0.2, 10.0]
+                        .into_iter()
+                        .map(move |x| Point3::new(x, y, 0.0))
+                })
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap()
     };
     ir.model.surfaces.extend([
         Surface {
@@ -1713,7 +1596,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         origin: Point2::new(0.0, 0.0),
         direction: Point2::new(0.0, 1.0),
     };
-    assert!(super::coincident_pcurve_pair(
+    assert!(coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
@@ -1724,8 +1607,10 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     let SurfaceGeometry::Nurbs(second) = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
-    second.control_points[1].z = 1.0;
-    assert!(!super::coincident_pcurve_pair(
+    second
+        .edit_control_points(|points| points[1].z = 1.0)
+        .unwrap();
+    assert!(!coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
@@ -1749,13 +1634,16 @@ fn rational_pcurve_incidence_isolates_close_branches() {
     .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
     .collect::<Vec<_>>();
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 4,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points: controls,
-        weights: Some(weights.to_vec()),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            controls,
+            Some(weights.to_vec()),
+            false,
+        )
+        .unwrap(),
     };
-    let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
+    let roots = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
         .expect("complete homogeneous root isolation");
 
     assert_eq!(roots.len(), 4);
@@ -1779,15 +1667,17 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
     .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
     .collect();
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 4,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points,
-        weights: Some(weights.to_vec()),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            control_points,
+            Some(weights.to_vec()),
+            false,
+        )
+        .unwrap(),
     };
-    let parameters =
-        super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
-            .expect("complete global closest-point search");
+    let parameters = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+        .expect("complete global closest-point search");
 
     assert_eq!(parameters.len(), 4, "{parameters:?}");
     for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
@@ -1809,21 +1699,22 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     .zip(weights)
     .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
     .collect();
-    let curve = NurbsCurve {
-        degree: 4,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    let curve = NurbsCurve::new(
+        4,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         control_points,
-        weights: Some(weights.to_vec()),
-        periodic: false,
-    };
+        Some(weights.to_vec()),
+        false,
+    )
+    .unwrap();
     let point = Point3::new(0.0, 1.0e-4, 0.0);
 
-    let first = super::closest_nurbs_curve_parameter(&curve, point, Some(0.099))
-        .expect("first close branch");
-    let second = super::closest_nurbs_curve_parameter(&curve, point, Some(0.101))
-        .expect("second close branch");
-    let remote = super::closest_nurbs_curve_parameter(&curve, point, Some(0.69))
-        .expect("remote global branch");
+    let first =
+        closest_nurbs_curve_parameter(&curve, point, Some(0.099)).expect("first close branch");
+    let second =
+        closest_nurbs_curve_parameter(&curve, point, Some(0.101)).expect("second close branch");
+    let remote =
+        closest_nurbs_curve_parameter(&curve, point, Some(0.69)).expect("remote global branch");
 
     assert!((first - 0.1).abs() < 1.0e-8);
     assert!((second - 0.1001).abs() < 1.0e-8);
@@ -1834,35 +1725,39 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
 fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: knots.clone(),
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-            Point2::new(0.0, 0.0),
-        ],
-        weights: None,
-        periodic: true,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            knots.clone(),
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 0.0),
+            ],
+            None,
+            true,
+        )
+        .unwrap(),
     };
-    let curve = NurbsCurve {
-        degree: 1,
+    let curve = NurbsCurve::new(
+        1,
         knots,
-        control_points: vec![
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: true,
-    };
+        None,
+        true,
+    )
+    .unwrap();
 
     assert_eq!(
-        super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
+        closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
             .expect("periodic pcurve phase"),
         [4.0]
     );
     assert_eq!(
-        super::closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
+        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
             .expect("periodic curve phase"),
         4.0
     );
@@ -1870,8 +1765,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots =
-        super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
+    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
 
     assert_eq!(roots.len(), 3);
     for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
@@ -1882,13 +1776,16 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 #[test]
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![Point2::new(2.0, -3.0); 3],
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![Point2::new(2.0, -3.0); 3],
+            None,
+            false,
+        )
+        .unwrap(),
     };
-    let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
+    let roots = closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
         .expect("coincident interval");
 
     assert_eq!(roots, [0.3, 0.0, 1.0]);
@@ -1910,7 +1807,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         .zip(weights)
         .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
         .collect();
-    let spans = super::bezier_spans(2, &knots, controls).expect("valid Bézier extraction");
+    let spans = bezier_spans(2, &knots, controls).expect("valid Bézier extraction");
 
     assert_eq!(spans.len(), 3);
     for span in spans {
@@ -1919,9 +1816,10 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             let expected =
                 cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
                     .expect("source NURBS evaluation");
-            let actual =
-                super::homogeneous_residual_distance(&span.controls, parameter, span.domain);
+            let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
             assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
         }
     }
 }
+
+mod reversal;

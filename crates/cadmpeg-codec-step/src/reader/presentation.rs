@@ -14,7 +14,7 @@ use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -38,54 +38,59 @@ pub(super) fn decode(
         .faces
         .iter()
         .enumerate()
-        .map(|(index, face)| (face.id.0.clone(), index))
+        .map(|(index, face)| (face.id.as_str().to_owned(), index))
         .collect::<BTreeMap<_, _>>();
     let body_indices = ir
         .model
         .bodies
         .iter()
         .enumerate()
-        .map(|(index, body)| (body.id.0.clone(), index))
+        .map(|(index, body)| (body.id.as_str().to_owned(), index))
         .collect::<BTreeMap<_, _>>();
     let entity_ids = EntityIds {
         edges: ir
             .model
             .edges
             .iter()
-            .map(|item| item.id.0.clone())
+            .map(|item| item.id.as_str().to_owned())
             .collect(),
         vertices: ir
             .model
             .vertices
             .iter()
-            .map(|item| item.id.0.clone())
+            .map(|item| item.id.as_str().to_owned())
             .collect(),
         points: ir
             .model
             .points
             .iter()
-            .map(|item| item.id.0.clone())
+            .map(|item| item.id.as_str().to_owned())
             .collect(),
         curves: ir
             .model
             .curves
             .iter()
-            .map(|item| item.id.0.clone())
+            .map(|item| item.id.as_str().to_owned())
             .collect(),
         surfaces: ir
             .model
             .surfaces
             .iter()
-            .map(|item| item.id.0.clone())
+            .map(|item| item.id.as_str().to_owned())
             .collect(),
         products: product_definition_ids_by_source.clone(),
         occurrences: ir
             .model
             .occurrences
             .iter()
-            .map(|item| item.id.0.clone())
+            .map(|item| item.id.as_str().to_owned())
             .collect(),
-        pmi: ir.model.pmi.iter().map(|item| item.id.0.clone()).collect(),
+        pmi: ir
+            .model
+            .pmi
+            .iter()
+            .map(|item| item.id.as_str().to_owned())
+            .collect(),
         tessellations: ir
             .model
             .tessellations
@@ -146,7 +151,7 @@ pub(super) fn decode(
                 invisible_body_ids(target, exchange, topology, &body_indices);
             let mut hidden = false;
             for body_id in body_ids {
-                if let Some(index) = body_indices.get(&body_id.0) {
+                if let Some(index) = body_indices.get(body_id.as_str()) {
                     ir.model.bodies[*index].visible = Some(false);
                     hidden = true;
                 }
@@ -226,7 +231,7 @@ pub(super) fn decode(
             })
             .collect();
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId(StepIdentity::presentation("layer", layer_id)),
+            id: LayerId::mint(ids::presentation("layer", layer_id)).expect("identity grammar"),
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
@@ -367,7 +372,8 @@ pub(super) fn decode(
                 } else {
                     format!("{color_id}-alpha-{}", color.a.to_bits())
                 };
-                let id = AppearanceId(StepIdentity::presentation("appearance", key));
+                let id = AppearanceId::mint(ids::presentation("appearance", key))
+                    .expect("identity grammar");
                 ir.model.appearances.push(Appearance {
                     id: id.clone(),
                     name,
@@ -418,10 +424,12 @@ pub(super) fn decode(
                     _ => {}
                 }
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: StepIdentity::presentation(
+                    id: ids::presentation(
                         "binding",
                         format!("{style_id}:{ordinal}-{target_ordinal}"),
-                    ),
+                    )
+                    .try_into()
+                    .expect("STEP identity builder validates the grammar"),
                     target,
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
@@ -474,10 +482,10 @@ pub(super) fn decode(
             }
         }
         for layer_id in layer_targets {
-            let expected_id = StepIdentity::presentation("layer", layer_id);
+            let expected_id = ids::presentation("layer", layer_id);
             let mut matched = false;
             for layer in &mut ir.model.presentation_layers {
-                if layer.id.0 == expected_id {
+                if layer.id.as_str() == expected_id {
                     layer.visible = Some(false);
                     matched = true;
                     break;
@@ -510,12 +518,12 @@ pub(super) fn decode(
         if let [color] = colors.as_slice() {
             match target {
                 AppearanceTarget::Face(face) => {
-                    if let Some(&index) = face_indices.get(&face.0) {
+                    if let Some(&index) = face_indices.get(face.as_str()) {
                         ir.model.faces[index].color = Some(*color);
                     }
                 }
                 AppearanceTarget::Body(body) => {
-                    if let Some(&index) = body_indices.get(&body.0) {
+                    if let Some(&index) = body_indices.get(body.as_str()) {
                         ir.model.bodies[index].color = Some(*color);
                     }
                 }
@@ -577,8 +585,8 @@ fn collect_invisible_body_ids(
         active.remove(&id);
         return !ids.is_empty();
     }
-    let fallback = BodyId(StepIdentity::data("body", id));
-    if body_indices.contains_key(&fallback.0) {
+    let fallback = BodyId::mint(ids::data("body", id)).expect("identity grammar");
+    if body_indices.contains_key(fallback.as_str()) {
         body_ids.insert(fallback);
         active.remove(&id);
         return true;
@@ -679,7 +687,7 @@ fn appearance_targets(
     if let Some(bodies) = topology.body_by_root.get(&id) {
         return bodies
             .iter()
-            .filter(|body| body_indices.contains_key(body.0.as_str()))
+            .filter(|body| body_indices.contains_key(body.as_str()))
             .cloned()
             .map(AppearanceTarget::Body)
             .collect();
@@ -687,7 +695,7 @@ fn appearance_targets(
     if let Some(faces) = topology.faces_by_source.get(&id) {
         return faces
             .iter()
-            .filter(|face| face_indices.contains_key(face.0.as_str()))
+            .filter(|face| face_indices.contains_key(face.as_str()))
             .cloned()
             .map(AppearanceTarget::Face)
             .collect();
@@ -695,7 +703,7 @@ fn appearance_targets(
     if let Some(edges) = topology.edges_by_source.get(&id) {
         return edges
             .iter()
-            .filter(|edge| entity_ids.edges.contains(edge.0.as_str()))
+            .filter(|edge| entity_ids.edges.contains(edge.as_str()))
             .cloned()
             .map(AppearanceTarget::Edge)
             .collect();
@@ -703,35 +711,47 @@ fn appearance_targets(
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
         return vertices
             .iter()
-            .filter(|vertex| entity_ids.vertices.contains(vertex.0.as_str()))
+            .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
             .cloned()
             .map(AppearanceTarget::Vertex)
             .collect();
     }
-    let face_id = StepIdentity::data("face", id);
-    let body_id = StepIdentity::data("body", id);
-    let edge_id = StepIdentity::data("edge", id);
-    let surface_id = StepIdentity::data("surface", id);
-    let curve_id = StepIdentity::data("curve", id);
-    let point_id = StepIdentity::data("point", id);
-    let tessellation_id = StepIdentity::tessellation("mesh", id);
+    let face_id = ids::data("face", id);
+    let body_id = ids::data("body", id);
+    let edge_id = ids::data("edge", id);
+    let surface_id = ids::data("surface", id);
+    let curve_id = ids::data("curve", id);
+    let point_id = ids::data("point", id);
+    let tessellation_id = ids::tessellation("mesh", id);
     if face_indices.contains_key(&face_id) {
-        return vec![AppearanceTarget::Face(FaceId(face_id))];
+        return vec![AppearanceTarget::Face(
+            FaceId::mint(face_id).expect("identity grammar"),
+        )];
     }
     if body_indices.contains_key(&body_id) {
-        return vec![AppearanceTarget::Body(BodyId(body_id))];
+        return vec![AppearanceTarget::Body(
+            BodyId::mint(body_id).expect("identity grammar"),
+        )];
     }
     if entity_ids.edges.contains(&edge_id) {
-        return vec![AppearanceTarget::Edge(EdgeId(edge_id))];
+        return vec![AppearanceTarget::Edge(
+            EdgeId::mint(edge_id).expect("identity grammar"),
+        )];
     }
     if entity_ids.surfaces.contains(&surface_id) {
-        return vec![AppearanceTarget::Surface(SurfaceId(surface_id))];
+        return vec![AppearanceTarget::Surface(
+            SurfaceId::mint(surface_id).expect("identity grammar"),
+        )];
     }
     if entity_ids.curves.contains(&curve_id) {
-        return vec![AppearanceTarget::Curve(CurveId(curve_id))];
+        return vec![AppearanceTarget::Curve(
+            CurveId::mint(curve_id).expect("identity grammar"),
+        )];
     }
     if entity_ids.points.contains(&point_id) {
-        return vec![AppearanceTarget::Point(PointId(point_id))];
+        return vec![AppearanceTarget::Point(
+            PointId::mint(point_id).expect("identity grammar"),
+        )];
     }
     if entity_ids.tessellations.contains(&tessellation_id) {
         return vec![AppearanceTarget::Tessellation(tessellation_id)];
@@ -755,7 +775,7 @@ fn presentation_item(
     if let Some(bodies) = topology.body_by_root.get(&id) {
         return bodies
             .iter()
-            .filter(|body| body_indices.contains_key(body.0.as_str()))
+            .filter(|body| body_indices.contains_key(body.as_str()))
             .cloned()
             .map(|body| PresentationItem::Body { body })
             .collect();
@@ -763,7 +783,7 @@ fn presentation_item(
     if let Some(faces) = topology.faces_by_source.get(&id) {
         return faces
             .iter()
-            .filter(|face| face_indices.contains_key(face.0.as_str()))
+            .filter(|face| face_indices.contains_key(face.as_str()))
             .cloned()
             .map(|face| PresentationItem::Face { face })
             .collect();
@@ -771,7 +791,7 @@ fn presentation_item(
     if let Some(edges) = topology.edges_by_source.get(&id) {
         return edges
             .iter()
-            .filter(|edge| entity_ids.edges.contains(edge.0.as_str()))
+            .filter(|edge| entity_ids.edges.contains(edge.as_str()))
             .cloned()
             .map(|edge| PresentationItem::Edge { edge })
             .collect();
@@ -779,7 +799,7 @@ fn presentation_item(
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
         return vertices
             .iter()
-            .filter(|vertex| entity_ids.vertices.contains(vertex.0.as_str()))
+            .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
             .cloned()
             .map(|vertex| PresentationItem::Vertex { vertex })
             .collect();
@@ -807,41 +827,47 @@ fn presentation_item_one(
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> PresentationItem {
-    let candidate = |kind: &str| StepIdentity::data(kind, id);
+    let candidate = |kind: &str| ids::data(kind, id);
     let body = candidate("body");
     if body_indices.contains_key(&body) {
-        return PresentationItem::Body { body: BodyId(body) };
+        return PresentationItem::Body {
+            body: BodyId::mint(body).expect("identity grammar"),
+        };
     }
     let face = candidate("face");
     if face_indices.contains_key(&face) {
-        return PresentationItem::Face { face: FaceId(face) };
+        return PresentationItem::Face {
+            face: FaceId::mint(face).expect("identity grammar"),
+        };
     }
     let edge = candidate("edge");
     if entity_ids.edges.contains(&edge) {
-        return PresentationItem::Edge { edge: EdgeId(edge) };
+        return PresentationItem::Edge {
+            edge: EdgeId::mint(edge).expect("identity grammar"),
+        };
     }
     let vertex = candidate("vertex");
     if entity_ids.vertices.contains(&vertex) {
         return PresentationItem::Vertex {
-            vertex: VertexId(vertex),
+            vertex: VertexId::mint(vertex).expect("identity grammar"),
         };
     }
     let point = candidate("point");
     if entity_ids.points.contains(&point) {
         return PresentationItem::Point {
-            point: PointId(point),
+            point: PointId::mint(point).expect("identity grammar"),
         };
     }
     let curve = candidate("curve");
     if entity_ids.curves.contains(&curve) {
         return PresentationItem::Curve {
-            curve: CurveId(curve),
+            curve: CurveId::mint(curve).expect("identity grammar"),
         };
     }
     let surface = candidate("surface");
     if entity_ids.surfaces.contains(&surface) {
         return PresentationItem::Surface {
-            surface: SurfaceId(surface),
+            surface: SurfaceId::mint(surface).expect("identity grammar"),
         };
     }
     let Some(record) = exchange.records.get(&id) else {
@@ -853,10 +879,11 @@ fn presentation_item_one(
     if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
-            .contains(&StepIdentity::product("occurrence", id))
+            .contains(&ids::product("occurrence", id))
     {
         PresentationItem::Occurrence {
-            occurrence: OccurrenceId(StepIdentity::product("occurrence", id)),
+            occurrence: OccurrenceId::mint(ids::product("occurrence", id))
+                .expect("identity grammar"),
         }
     } else if record.partials.iter().any(|partial| {
         (partial.name == "DATUM"
@@ -864,12 +891,10 @@ fn presentation_item_one(
             || partial.name.starts_with("DIMENSIONAL_")
             || partial.name.ends_with("_TOLERANCE")
             || super::pmi::is_presentation_annotation(&partial.name))
-            && entity_ids
-                .pmi
-                .contains(&StepIdentity::presentation("pmi", id))
+            && entity_ids.pmi.contains(&ids::presentation("pmi", id))
     }) {
         PresentationItem::Pmi {
-            annotation: PmiId(StepIdentity::presentation("pmi", id)),
+            annotation: PmiId::mint(ids::presentation("pmi", id)).expect("identity grammar"),
         }
     } else if (has("TRIANGULATED_FACE")
         || has("COMPLEX_TRIANGULATED_FACE")
@@ -877,10 +902,10 @@ fn presentation_item_one(
         || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
         && entity_ids
             .tessellations
-            .contains(&StepIdentity::tessellation("mesh", id))
+            .contains(&ids::tessellation("mesh", id))
     {
         PresentationItem::Tessellation {
-            tessellation: StepIdentity::tessellation("mesh", id),
+            tessellation: ids::tessellation("mesh", id),
         }
     } else {
         PresentationItem::Source {
@@ -1531,10 +1556,7 @@ impl RecordExt for RawRecord {
         (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
     }
     fn parameters(&self) -> &[Value] {
-        self.partials
-            .first()
-            .map(|partial| partial.parameters.as_slice())
-            .unwrap_or_default()
+        self.partials.first().parameters.as_slice()
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.parameters().get(index)

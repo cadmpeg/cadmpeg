@@ -2,9 +2,12 @@
 //! Analytic pcurve carrier transfer and native pcurve helpers.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -20,9 +23,10 @@ use super::edges::{
     nurbs_control_extent, nurbs_intrinsic_parameter_range, periodic_conic_edge_parameter_range,
     point_pair_alignments,
 };
-use super::equations::{cross, dot, CarrierEquation, PlaneEquation};
+use super::equations::{CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
 use super::vertices::model_points_agree;
+use crate::vecmath::{cross, dot};
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
@@ -32,9 +36,12 @@ const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
-    let visible_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
-    let nonvisible_id = SurfaceId(format!("creo:novisgeom:surface#{face_id}"));
-    let active_datum_id = SurfaceId(format!("creo:actdatums:surface#{face_id}"));
+    let visible_id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}")).expect("identity grammar");
+    let nonvisible_id =
+        SurfaceId::mint(format!("creo:novisgeom:surface#{face_id}")).expect("identity grammar");
+    let active_datum_id =
+        SurfaceId::mint(format!("creo:actdatums:surface#{face_id}")).expect("identity grammar");
     for id in [visible_id, nonvisible_id, active_datum_id] {
         if !surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -47,13 +54,13 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
 }
 
 fn topology_ignored_surface_ids(
-    layout: crate::container::Layout,
+    layout: &crate::container::Layout,
     rows: &[crate::surface::SurfaceRow],
 ) -> BTreeSet<u32> {
     // The interpolation carrier makes a legacy spline surface evaluable, but
     // its trim/intersection join is still unresolved. Keep that surface from
     // vetoing endpoint evidence supplied by a proven adjacent analytic face.
-    if layout != crate::container::Layout::LegacyAscii {
+    if !matches!(layout, crate::container::Layout::LegacyAscii(_)) {
         return BTreeSet::new();
     }
     rows.iter()
@@ -64,28 +71,42 @@ fn topology_ignored_surface_ids(
 
 pub fn canonicalized_pcurve_endpoints(
     scan: &ContainerScan,
-    faces: [u32; 2],
+    faces: [Option<NonZeroU32>; 2],
     face_0_endpoints: [[f64; 2]; 2],
     face_1_endpoints: [[f64; 2]; 2],
 ) -> [[[f64; 2]; 2]; 2] {
-    [
-        crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
-            &scan.surfaces.legacy_carriers,
-            faces[0],
-            face_0_endpoints,
-        ),
-        crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
-            &scan.surfaces.legacy_carriers,
-            faces[1],
-            face_1_endpoints,
-        ),
-    ]
+    let endpoint_sets = [face_0_endpoints, face_1_endpoints];
+    std::array::from_fn(|side| {
+        faces[side].map_or(endpoint_sets[side], |face| {
+            crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
+                &scan.surfaces.legacy_carriers,
+                face.get(),
+                endpoint_sets[side],
+            )
+        })
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct TwoChartEndpointSets {
-    pub paths: [Option<[[f64; 2]; 2]>; 2],
-    pub complete: bool,
+pub(crate) enum TwoChartEndpointSets {
+    Both([[[f64; 2]; 2]; 2]),
+    First([[f64; 2]; 2]),
+    Second([[f64; 2]; 2]),
+}
+
+impl TwoChartEndpointSets {
+    /// The endpoint path for each face.
+    pub(crate) fn paths(self) -> [Option<[[f64; 2]; 2]>; 2] {
+        match self {
+            Self::Both(paths) => paths.map(Some),
+            Self::First(path) => [Some(path), None],
+            Self::Second(path) => [None, Some(path)],
+        }
+    }
+
+    fn complete(self) -> bool {
+        matches!(self, Self::Both(_))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -144,20 +165,18 @@ fn map_two_chart_endpoint_sets(
     });
     let canonical = canonicalized_pcurve_endpoints(
         scan,
-        pcurve.faces,
+        pcurve.faces.map(NonZeroU32::new),
         [first[0], last[0]],
         [first[1], last[1]],
     );
     let endpoint_sets =
         std::array::from_fn(|index| mapped_samples[index].as_ref().map(|_| canonical[index]));
-    let complete = endpoint_sets.iter().all(Option::is_some);
-    let endpoint_sets = endpoint_sets
-        .iter()
-        .any(Option::is_some)
-        .then_some(TwoChartEndpointSets {
-            paths: endpoint_sets,
-            complete,
-        });
+    let endpoint_sets = match endpoint_sets {
+        [Some(first), Some(second)] => Some(TwoChartEndpointSets::Both([first, second])),
+        [Some(first), None] => Some(TwoChartEndpointSets::First(first)),
+        [None, Some(second)] => Some(TwoChartEndpointSets::Second(second)),
+        [None, None] => None,
+    };
     let surface_mismatch =
         if let (Some(first_path), Some(second_path)) = (&mapped_samples[0], &mapped_samples[1]) {
             !first_path
@@ -187,13 +206,17 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
         .flatten()
 }
 
-#[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
+#[cfg(test)]
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
 ) -> Option<[[f64; 3]; 2]> {
-    mapped_pcurve_endpoint_evidence(ir, faces, endpoint_sets).map(|evidence| evidence.points)
+    let mapped = map_pcurve_paths(
+        ir,
+        faces.into_iter().map(NonZeroU32::new).zip(endpoint_sets),
+    );
+    pcurve_endpoint_evidence_from_mapped(&mapped.mapped, false).map(|evidence| evidence.points)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -254,9 +277,9 @@ pub struct PcurveEndpointDiagnostics {
 
 #[derive(Debug, Default)]
 struct PcurvePathActivity {
-    active_paths: BTreeSet<(u32, u32)>,
-    topology_faces: BTreeMap<u32, [u32; 2]>,
-    prototype_faces: BTreeMap<u32, [u32; 2]>,
+    active_paths: BTreeSet<(Option<std::num::NonZeroU32>, u32)>,
+    topology_faces: BTreeMap<u32, [Option<std::num::NonZeroU32>; 2]>,
+    prototype_faces: BTreeMap<u32, [Option<std::num::NonZeroU32>; 2]>,
 }
 
 impl PcurvePathActivity {
@@ -294,7 +317,12 @@ impl PcurvePathActivity {
         }
     }
 
-    fn selected_paths(&self, curve_id: u32, faces: [u32; 2], prototype: bool) -> Option<[bool; 2]> {
+    fn selected_paths(
+        &self,
+        curve_id: u32,
+        faces: [Option<NonZeroU32>; 2],
+        prototype: bool,
+    ) -> Option<[bool; 2]> {
         let topology_faces = if prototype {
             &self.prototype_faces
         } else {
@@ -313,7 +341,7 @@ struct MappedPcurvePath {
     endpoints: [[f64; 3]; 2],
 }
 
-type IndexedPcurvePath = (usize, (u32, [[f64; 2]; 2]));
+type IndexedPcurvePath = (usize, (Option<NonZeroU32>, [[f64; 2]; 2]));
 type SupportConePlaneWitness = ([[f64; 2]; 2], PlaneEquation);
 
 struct MappedPcurvePaths {
@@ -385,19 +413,20 @@ fn pcurve_plane_carrier_status(
 fn pcurve_path_carrier_status(
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
-    faces: [u32; 2],
+    faces: [Option<NonZeroU32>; 2],
     face_index: usize,
     endpoints: [[f64; 2]; 2],
 ) -> PcurveCarrierStatus {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+    let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
+    else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface);
     };
-    let Some(face_carrier) = carriers.get(&face_id).copied() else {
+    let Some(face_carrier) = face_id.and_then(|id| carriers.get(&id.get())).copied() else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
-    let Some(other_carrier) = carriers.get(&other_id).copied() else {
+    let Some(other_carrier) = other_id.and_then(|id| carriers.get(&id.get())).copied() else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
     pcurve_plane_carrier_status(&surface.geometry, face_carrier, other_carrier, endpoints)
@@ -406,19 +435,20 @@ fn pcurve_path_carrier_status(
 fn pcurve_endpoint_carrier_status(
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
-    faces: [u32; 2],
+    faces: [Option<NonZeroU32>; 2],
     face_index: usize,
     endpoints: [[f64; 2]; 2],
 ) -> PcurveCarrierStatus {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+    let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
+    else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface);
     };
-    let Some(face_carrier) = carriers.get(&face_id).copied() else {
+    let Some(face_carrier) = face_id.and_then(|id| carriers.get(&id.get())).copied() else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
-    let Some(other_carrier) = carriers.get(&other_id).copied() else {
+    let Some(other_carrier) = other_id.and_then(|id| carriers.get(&id.get())).copied() else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
     let valid = endpoints.into_iter().all(|uv| {
@@ -493,9 +523,13 @@ fn support_cone_witness_matches(
 fn collect_support_cone_plane_witness(
     witnesses: &mut BTreeMap<u32, Vec<SupportConePlaneWitness>>,
     planes: &BTreeMap<u32, PlaneEquation>,
-    faces: [u32; 2],
+    faces: [Option<NonZeroU32>; 2],
     endpoint_sets: [Option<[[f64; 2]; 2]>; 2],
 ) {
+    let [Some(first), Some(second)] = faces else {
+        return;
+    };
+    let faces = [first.get(), second.get()];
     for face_index in 0..2 {
         let Some(endpoints) = endpoint_sets[face_index] else {
             continue;
@@ -512,9 +546,9 @@ fn collect_support_cone_plane_witness(
 
 fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
     let ids = [
-        SurfaceId(format!("creo:visibgeom:surface#{face_id}")),
-        SurfaceId(format!("creo:novisgeom:surface#{face_id}")),
-        SurfaceId(format!("creo:actdatums:surface#{face_id}")),
+        SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}")).expect("identity grammar"),
+        SurfaceId::mint(format!("creo:novisgeom:surface#{face_id}")).expect("identity grammar"),
+        SurfaceId::mint(format!("creo:actdatums:surface#{face_id}")).expect("identity grammar"),
     ];
     for id in ids {
         let matches = surfaces
@@ -574,16 +608,12 @@ pub fn reconcile_support_apex_cone_parameter_branches(
         );
     }
     for pcurve in &scan.curves.two_chart_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
         let Some(endpoint_sets) = mapping.endpoint_sets else {
             continue;
         };
-        collect_support_cone_plane_witness(
-            &mut witnesses,
-            &planes,
-            pcurve.faces,
-            endpoint_sets.paths,
-        );
+        collect_support_cone_plane_witness(&mut witnesses, &planes, faces, endpoint_sets.paths());
     }
 
     let mut reconciled = 0;
@@ -621,7 +651,7 @@ pub fn reconcile_support_apex_cone_parameter_branches(
 
 fn map_pcurve_paths(
     ir: &CadIr,
-    paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
+    paths: impl IntoIterator<Item = (Option<NonZeroU32>, [[f64; 2]; 2])>,
 ) -> MappedPcurvePaths {
     let mut result = MappedPcurvePaths {
         mapped: Vec::new(),
@@ -631,6 +661,11 @@ fn map_pcurve_paths(
     };
     for (face_id, endpoints) in paths {
         result.paths += 1;
+        let Some(face_id) = face_id else {
+            result.missing_surfaces += 1;
+            continue;
+        };
+        let face_id = face_id.get();
         let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
             result.missing_surfaces += 1;
             continue;
@@ -653,6 +688,7 @@ fn map_pcurve_paths(
 
 fn pcurve_endpoint_evidence_from_mapped(
     mapped: &[MappedPcurvePath],
+    authoritative: bool,
 ) -> Option<PcurveEndpointEvidence> {
     let first = mapped.first()?.endpoints;
     mapped
@@ -664,7 +700,7 @@ fn pcurve_endpoint_evidence_from_mapped(
         .then_some(PcurveEndpointEvidence {
             points: first,
             complete: mapped.len() == 2,
-            authoritative: false,
+            authoritative,
         })
 }
 
@@ -713,22 +749,6 @@ fn pcurve_mismatch_detail(
     })
 }
 
-fn mapped_pcurve_endpoint_evidence(
-    ir: &CadIr,
-    faces: [u32; 2],
-    endpoint_sets: [[[f64; 2]; 2]; 2],
-) -> Option<PcurveEndpointEvidence> {
-    mapped_pcurve_endpoint_evidence_for_paths(ir, faces.into_iter().zip(endpoint_sets))
-}
-
-fn mapped_pcurve_endpoint_evidence_for_paths(
-    ir: &CadIr,
-    paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
-) -> Option<PcurveEndpointEvidence> {
-    let mapped = map_pcurve_paths(ir, paths);
-    pcurve_endpoint_evidence_from_mapped(&mapped.mapped)
-}
-
 pub fn pcurve_edge_endpoint_evidence(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -756,12 +776,12 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     PcurveEndpointDiagnostics,
 ) {
     let ignored_surface_ids =
-        topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
+        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let path_activity = PcurvePathActivity::from_scan(scan);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
     let mut process_paths = |curve_id: u32,
-                             faces: [u32; 2],
+                             faces: [Option<NonZeroU32>; 2],
                              paths: Vec<IndexedPcurvePath>,
                              authoritative: bool,
                              endpoint_carrier_proof: bool| {
@@ -820,9 +840,8 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         if carrier_proof_available && selected_paths.is_empty() {
             diagnostics.carrier_rejected_records += 1;
         }
-        match pcurve_endpoint_evidence_from_mapped(&selected_paths) {
-            Some(mut evidence) => {
-                evidence.authoritative = authoritative;
+        match pcurve_endpoint_evidence_from_mapped(&selected_paths, authoritative) {
+            Some(evidence) => {
                 diagnostics.accepted_records += 1;
                 diagnostics.complete_records += usize::from(evidence.complete);
                 candidates.entry(curve_id).or_default().push(evidence);
@@ -879,11 +898,14 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             .into_iter()
             .zip([first, second])
             .enumerate()
-            .filter(|(_, (face_id, _))| !ignored_surface_ids.contains(face_id))
+            .filter(|(_, (face_id, _))| {
+                face_id.is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
+            })
             .collect::<Vec<_>>();
         process_paths(curve_id, faces, paths, false, false);
     }
     for pcurve in &scan.curves.two_chart_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
         diagnostics.two_chart_records += 1;
         let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
@@ -893,16 +915,16 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         diagnostics.two_chart_no_sample_records += usize::from(mapping.no_samples);
         let Some(endpoint_sets) = mapping.endpoint_sets else {
             diagnostics.two_chart_unmapped_records += 1;
-            process_paths(pcurve.curve_id, pcurve.faces, Vec::new(), true, false);
+            process_paths(pcurve.curve_id, faces, Vec::new(), true, false);
             continue;
         };
         diagnostics.two_chart_mapped_records += 1;
-        if endpoint_sets.complete {
+        if endpoint_sets.complete() {
             diagnostics.two_chart_complete_records += 1;
         } else {
             diagnostics.two_chart_partial_records += 1;
         }
-        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, pcurve.faces, false) {
+        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, faces, false) {
             let active_count = active.into_iter().filter(|is_active| *is_active).count();
             diagnostics.inactive_paths += 2 - active_count;
             match active_count {
@@ -913,20 +935,21 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         } else {
             diagnostics.topology_mismatch_records += 1;
         }
-        let paths = pcurve
-            .faces
+        let paths = faces
             .into_iter()
-            .zip(endpoint_sets.paths)
+            .zip(endpoint_sets.paths())
             .enumerate()
             .filter_map(|(index, (face_id, endpoints))| {
-                (!ignored_surface_ids.contains(&face_id)).then_some((index, (face_id, endpoints?)))
+                face_id
+                    .is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
+                    .then_some((index, (face_id, endpoints?)))
             })
             .collect::<Vec<_>>();
         process_paths(
             pcurve.curve_id,
-            pcurve.faces,
+            faces,
             paths,
-            endpoint_sets.complete,
+            endpoint_sets.complete(),
             mapping.surface_mismatch,
         );
     }
@@ -935,8 +958,9 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         &scan.curves.topology_rows,
     );
     for pcurve in short_pcurves {
+        let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
-        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, pcurve.faces, false) {
+        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, faces, false) {
             diagnostics.inactive_paths += usize::from(!active[0]);
             diagnostics.inactive_records += usize::from(!active[0]);
         } else {
@@ -944,14 +968,15 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         }
         let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
             scan,
-            pcurve.faces,
+            faces,
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
         );
-        let paths = (!ignored_surface_ids.contains(&pcurve.faces[0]))
-            .then_some(vec![(0, (pcurve.faces[0], face_0_endpoints))])
+        let paths = faces[0]
+            .is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
+            .then_some(vec![(0, (faces[0], face_0_endpoints))])
             .unwrap_or_default();
-        process_paths(pcurve.curve_id, pcurve.faces, paths, true, false);
+        process_paths(pcurve.curve_id, faces, paths, true, false);
     }
     let mut evidence = BTreeMap::new();
     for (curve_id, candidates) in candidates {
@@ -1223,30 +1248,35 @@ pub fn transfer_analytic_pcurve_carriers(
 ) -> BTreeSet<CurveId> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
     let ignored_surface_ids =
-        topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
+        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     {
-        let mut retain_path =
-            |curve_id: u32, face_id: u32, endpoints: [[f64; 2]; 2], offset: usize| {
-                if ignored_surface_ids.contains(&face_id) {
-                    return;
-                }
-                let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
-                    return;
-                };
-                if endpoints.iter().all(|uv| {
-                    cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
-                }) {
-                    *evaluable_path_counts.entry(curve_id).or_default() += 1;
-                }
-                if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
-                    candidates
-                        .entry(curve_id)
-                        .or_default()
-                        .push((carrier, offset));
-                }
+        let mut retain_path = |curve_id: u32,
+                               face_id: Option<NonZeroU32>,
+                               endpoints: [[f64; 2]; 2],
+                               offset: usize| {
+            let Some(face_id) = face_id.map(NonZeroU32::get) else {
+                return;
             };
+            if ignored_surface_ids.contains(&face_id) {
+                return;
+            }
+            let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+                return;
+            };
+            if endpoints.iter().all(|uv| {
+                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
+            }) {
+                *evaluable_path_counts.entry(curve_id).or_default() += 1;
+            }
+            if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
+                candidates
+                    .entry(curve_id)
+                    .or_default()
+                    .push((carrier, offset));
+            }
+        };
         for pcurve in &scan.curves.pcurves {
             let endpoint_sets = canonicalized_pcurve_endpoints(
                 scan,
@@ -1270,10 +1300,11 @@ pub fn transfer_analytic_pcurve_carriers(
             }
         }
         for pcurve in &scan.curves.two_chart_pcurves {
+            let faces = pcurve.faces.map(NonZeroU32::new);
             let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(scan, ir, pcurve) else {
                 continue;
             };
-            for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+            for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets.paths()) {
                 if let Some(endpoints) = endpoints {
                     retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
                 }
@@ -1283,18 +1314,14 @@ pub fn transfer_analytic_pcurve_carriers(
             &scan.curves.parameters,
             &scan.curves.topology_rows,
         ) {
+            let faces = pcurve.faces.map(NonZeroU32::new);
             let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
                 scan,
-                pcurve.faces,
+                faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_0_endpoints,
             );
-            retain_path(
-                pcurve.curve_id,
-                pcurve.faces[0],
-                face_0_endpoints,
-                pcurve.offset,
-            );
+            retain_path(pcurve.curve_id, faces[0], face_0_endpoints, pcurve.offset);
         }
     }
     let mut transferred = BTreeSet::new();
@@ -1326,7 +1353,8 @@ pub fn transfer_analytic_pcurve_carriers(
             .map(|(_, offset)| *offset)
             .min()
             .unwrap_or(*offset);
-        let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{curve_id}")).expect("identity grammar");
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -1342,7 +1370,7 @@ pub fn transfer_analytic_pcurve_carriers(
             id: id.clone(),
             geometry: geometry.clone(),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{curve_id}"),
                 name: None,
                 color: None,
@@ -1759,22 +1787,24 @@ pub fn planar_curve_pcurve(
         CurveGeometry::Nurbs(nurbs) => {
             nurbs_intrinsic_parameter_range(nurbs)?;
             nurbs
-                .weights
-                .as_ref()
+                .weights()
                 .is_none_or(|weights| weights.iter().all(|weight| weight.is_finite()))
                 .then_some(())?;
             let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
             let control_points = nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .map(|point| project_point([point.x, point.y, point.z], tolerance))
                 .collect::<Option<Vec<_>>>()?;
             Some(PcurveGeometry::Nurbs {
-                degree: nurbs.degree,
-                knots: nurbs.knots.clone(),
-                control_points,
-                weights: nurbs.weights.clone(),
-                periodic: nurbs.periodic,
+                nurbs: PcurveNurbs::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
+                    control_points,
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                )
+                .ok()?,
             })
         }
         _ => None,
@@ -1786,7 +1816,6 @@ mod tests {
     use super::super::equations::PlaneEquation;
     use super::*;
     use cadmpeg_ir::geometry::NurbsSurface;
-    use cadmpeg_ir::units::Units;
     use std::collections::BTreeSet;
 
     #[test]
@@ -1794,39 +1823,38 @@ mod tests {
         let rows = vec![
             crate::surface::SurfaceRow {
                 id: 7,
-                type_byte: crate::surface::SurfaceKind::Spline.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Spline,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },
             crate::surface::SurfaceRow {
                 id: 8,
-                type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Plane,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },
         ];
 
         assert_eq!(
-            topology_ignored_surface_ids(crate::container::Layout::LegacyAscii, &rows),
+            topology_ignored_surface_ids(&crate::test_support::legacy_layout(), &rows),
             BTreeSet::from([7]),
         );
-        assert!(topology_ignored_surface_ids(crate::container::Layout::Nd, &rows).is_empty());
+        assert!(topology_ignored_surface_ids(&crate::container::Layout::Nd, &rows).is_empty());
     }
 
     #[test]
     fn mapped_pcurve_endpoints_reject_duplicate_face_surfaces() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1835,7 +1863,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 1.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1856,32 +1885,37 @@ mod tests {
     #[test]
     fn two_chart_samples_validate_every_point_and_extend_a_nurbs_boundary_span() {
         let scan = crate::container::scan_bytes(Vec::new());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
-                geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                    u_degree: 1,
-                    v_degree: 1,
-                    u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                    v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                    u_count: 2,
-                    v_count: 2,
-                    control_points: vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(0.0, 1.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(1.0, 1.0, 0.0),
-                    ],
-                    weights: None,
-                    normal_reversed: false,
-                    u_periodic: false,
-                    v_periodic: false,
-                }),
+                id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Nurbs(
+                    NurbsSurface::new(
+                        1,
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        2,
+                        2,
+                        vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(0.0, 1.0, 0.0),
+                            Point3::new(1.0, 0.0, 0.0),
+                            Point3::new(1.0, 1.0, 0.0),
+                        ],
+                        None,
+                        false,
+                        false,
+                        false,
+                    )
+                    .expect("valid test surface"),
+                ),
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#8".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#8".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1903,13 +1937,10 @@ mod tests {
 
         assert_eq!(
             mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
-            Some(TwoChartEndpointSets {
-                paths: [
-                    Some([[-0.01, 0.25], [1.01, 0.75]]),
-                    Some([[-0.01, 0.25], [1.01, 0.75]]),
-                ],
-                complete: true,
-            })
+            Some(TwoChartEndpointSets::Both([
+                [[-0.01, 0.25], [1.01, 0.75]],
+                [[-0.01, 0.25], [1.01, 0.75]],
+            ]))
         );
 
         pcurve.samples[1][1][0] = 0.6;
@@ -1919,17 +1950,6 @@ mod tests {
         assert!(mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve).is_none());
 
         pcurve.samples[1][1][0] = 0.5;
-        let SurfaceGeometry::Nurbs(nurbs) = &mut ir.model.surfaces[0].geometry else {
-            panic!("first test surface must remain NURBS");
-        };
-        nurbs.u_knots.clear();
-        assert_eq!(
-            mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
-            Some(TwoChartEndpointSets {
-                paths: [None, Some([[-0.01, 0.25], [1.01, 0.75]])],
-                complete: false,
-            })
-        );
     }
 
     #[test]
@@ -1948,10 +1968,11 @@ mod tests {
                 ],
                 offset: 0,
             });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Cone {
                     origin: Point3::new(-1.0, 0.0, 0.0),
                     axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1963,7 +1984,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(-0.5, 0.0, 0.0),
                     normal: Vector3::new(1.0, 0.0, 0.0),
@@ -1975,14 +1997,17 @@ mod tests {
         let carriers = BTreeMap::from([
             (
                 1,
-                CarrierEquation::Cone(super::super::equations::ConeEquation {
-                    origin: [-1.0, 0.0, 0.0],
-                    axis: [1.0, 0.0, 0.0],
-                    ref_direction: [0.0, 0.0, -1.0],
-                    radius: 0.0,
-                    ratio: 1.0,
-                    half_angle: std::f64::consts::FRAC_PI_4,
-                }),
+                CarrierEquation::Cone(
+                    super::super::equations::ConeEquation::new(
+                        [-1.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [0.0, 0.0, -1.0],
+                        0.0,
+                        1.0,
+                        std::f64::consts::FRAC_PI_4,
+                    )
+                    .expect("valid test cone"),
+                ),
             ),
             (
                 2,
@@ -2037,28 +2062,29 @@ mod tests {
                 type_byte: 0,
                 feature_id: 0,
                 directions: [0x01, 0xf6],
-                faces: [10, 11],
+                faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
                 next_edges: [7, 7],
                 offset: 0,
             });
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
-            faces: [10, 11],
+            faces: [10, 11].map(std::num::NonZeroU32::new),
             face_0_endpoints: [[1.0, 2.0], [3.0, 4.0]],
             face_1_endpoints: [[1.0, 2.0], [3.0, 4.0]],
             offset: 0,
         });
         scan.topology.loops.push(crate::topology::Loop {
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             half_edges: vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
-                side: 0,
+                side: crate::topology::Side::Zero,
             }],
         });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#10".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2067,7 +2093,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2122,7 +2149,6 @@ mod tests {
         let record = crate::curve::CurveParameterRecord {
             curve_id: 846,
             type_byte: 0,
-            scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
             scalar_tokens,
             reference_geometry: [0, 0],
             opaque_spans: vec![
@@ -2138,9 +2164,7 @@ mod tests {
                 },
             ],
             body,
-            skipped_references: Vec::new(),
             references: Vec::new(),
-            suffix: crate::curve::CurveSuffixStatus::Unique,
             offset: 100,
             body_offset: 100,
             suffix_offset: 122,
@@ -2154,13 +2178,16 @@ mod tests {
                 type_byte: 0,
                 feature_id: 57,
                 directions: [0x01, 0xf6],
-                faces: [43, 163],
+                faces: [
+                    std::num::NonZeroU32::new(43),
+                    std::num::NonZeroU32::new(163),
+                ],
                 next_edges: [841, 164],
                 offset: 100,
             });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("creo:visibgeom:surface#43".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#43".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
@@ -2187,10 +2214,13 @@ mod tests {
         let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations);
         assert_eq!(
             transferred,
-            BTreeSet::from([CurveId("creo:visibgeom:curve#846".to_string())])
+            BTreeSet::from([
+                CurveId::mint("creo:visibgeom:curve#846".to_string()).expect("identity grammar")
+            ])
         );
         assert!(ir.model.curves.iter().any(|curve| {
-            curve.id == CurveId("creo:visibgeom:curve#846".to_string())
+            curve.id
+                == CurveId::mint("creo:visibgeom:curve#846".to_string()).expect("identity grammar")
                 && matches!(curve.geometry, CurveGeometry::Line { .. })
         }));
     }
@@ -2252,21 +2282,22 @@ mod tests {
                 type_byte: 0,
                 feature_id: 0,
                 directions: [0x01, 0xf6],
-                faces: [10, 11],
+                faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
                 next_edges: [7, 7],
                 offset: 0,
             });
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
-            faces: [10, 11],
+            faces: [10, 11].map(std::num::NonZeroU32::new),
             face_0_endpoints: [[0.0, 0.0], [0.0, 1.0]],
             face_1_endpoints: [[0.0, 0.0], [0.0, 1.0]],
             offset: 0,
         });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#10".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2275,7 +2306,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(1.0, 0.0, 0.0),

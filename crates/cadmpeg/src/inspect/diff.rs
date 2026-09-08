@@ -27,20 +27,46 @@ impl DiffRun {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffSummary {
     /// Length of the first input.
-    pub len_a: u64,
+    len_a: u64,
     /// Length of the second input.
-    pub len_b: u64,
-    /// Number of bytes compared, that is the shorter of the two lengths.
-    pub compared: u64,
+    len_b: u64,
     /// Count of differing bytes inside the compared prefix.
-    pub differing: u64,
-    /// Offset of the first differing byte, if any.
-    pub first: Option<u64>,
+    differing: u64,
     /// Differing spans after coalescing, in offset order.
-    pub runs: Vec<DiffRun>,
+    runs: Vec<DiffRun>,
 }
 
 impl DiffSummary {
+    /// Returns the first differing offset.
+    pub fn first(&self) -> Option<u64> {
+        self.runs.first().map(|run| run.start)
+    }
+
+    /// Returns `len_a` for the compared inputs.
+    pub const fn len_a(&self) -> u64 {
+        self.len_a
+    }
+
+    /// Returns `len_b` for the compared inputs.
+    pub const fn len_b(&self) -> u64 {
+        self.len_b
+    }
+
+    /// Returns `compared` for the compared inputs.
+    pub fn compared(&self) -> u64 {
+        self.len_a.min(self.len_b)
+    }
+
+    /// Returns `differing` for the compared inputs.
+    pub const fn differing(&self) -> u64 {
+        self.differing
+    }
+
+    /// Returns the coalesced differing spans.
+    pub fn runs(&self) -> &[DiffRun] {
+        &self.runs
+    }
+
     /// Returns true when the inputs are byte identical.
     pub const fn identical(&self) -> bool {
         self.len_a == self.len_b && self.differing == 0
@@ -75,9 +101,7 @@ pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
     DiffSummary {
         len_a: a.len() as u64,
         len_b: b.len() as u64,
-        compared: compared as u64,
         differing,
-        first: runs.first().map(|run| run.start),
         runs,
     }
 }
@@ -91,7 +115,7 @@ mod tests {
         let summary = compare(b"abcd", b"abcd", 0);
         assert!(summary.identical());
         assert_eq!(summary.differing, 0);
-        assert_eq!(summary.first, None);
+        assert_eq!(summary.first(), None);
         assert!(summary.runs.is_empty());
     }
 
@@ -99,9 +123,9 @@ mod tests {
     fn a_length_difference_alone_is_not_identical() {
         let summary = compare(b"abcd", b"abcdef", 0);
         assert!(!summary.identical());
-        assert_eq!(summary.compared, 4);
+        assert_eq!(summary.compared(), 4);
         assert_eq!(summary.differing, 0);
-        assert_eq!(summary.first, None);
+        assert_eq!(summary.first(), None);
         assert_eq!((summary.len_a, summary.len_b), (4, 6));
     }
 
@@ -109,7 +133,7 @@ mod tests {
     fn reports_the_first_difference_and_each_byte_at_gap_zero() {
         // Differ at offsets 1 and 3 only.
         let summary = compare(b"abcde", b"aXcYe", 0);
-        assert_eq!(summary.first, Some(1));
+        assert_eq!(summary.first(), Some(1));
         assert_eq!(summary.differing, 2);
         assert_eq!(
             summary.runs,
@@ -144,7 +168,7 @@ mod tests {
     #[test]
     fn only_the_common_prefix_is_compared() {
         let summary = compare(b"abc", b"abcZZZZ", 0);
-        assert_eq!(summary.compared, 3);
+        assert_eq!(summary.compared(), 3);
         assert_eq!(summary.differing, 0);
         assert_eq!(summary.runs, []);
     }
@@ -153,6 +177,6 @@ mod tests {
     fn empty_inputs_compare_cleanly() {
         let summary = compare(&[], &[], 0);
         assert!(summary.identical());
-        assert_eq!(summary.compared, 0);
+        assert_eq!(summary.compared(), 0);
     }
 }

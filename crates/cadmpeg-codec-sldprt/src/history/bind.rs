@@ -2,9 +2,7 @@
 //! Sketch binding, regeneration order, and feature-output derivation.
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, PathRef, ProfileRef, SketchSpace, SplitFaceTool,
-};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PathRef, ProfileRef, SplitFaceTool};
 use cadmpeg_ir::topology::Face;
 use std::collections::HashMap;
 
@@ -71,13 +69,18 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch, _) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: Some(sketch.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         };
     }
     let mut aliases = Vec::new();
     for index in &feature_indices {
-        let FeatureDefinition::Sketch { sketch: None, .. } = &features[*index].definition else {
+        let FeatureDefinition::Sketch {
+            sketch:
+                cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        } = &features[*index].definition
+        else {
             continue;
         };
         let Some(base_name) = features[*index]
@@ -166,6 +169,22 @@ pub(crate) fn sketch_alias_base_name(name: &str) -> Option<&str> {
 /// explicit dependency before its consumer. Native history ordinals retain the
 /// independent Keywords serialization order.
 pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Feature]) -> bool {
+    let tree_parent_by_child = features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } =
+                &feature.definition
+            else {
+                return None;
+            };
+            Some(
+                children
+                    .iter()
+                    .map(|child| (child.clone(), feature.id.clone())),
+            )
+        })
+        .flatten()
+        .collect::<HashMap<_, _>>();
     let by_id = features
         .iter()
         .enumerate()
@@ -190,7 +209,7 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
             .dependencies
             .iter()
             .collect::<std::collections::HashSet<_>>();
-        if let Some(parent) = &feature.parent {
+        if let Some(parent) = tree_parent_by_child.get(&feature.id) {
             predecessors.insert(parent);
         }
         for predecessor in predecessors {
@@ -237,6 +256,15 @@ pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool
         .enumerate()
         .map(|(index, feature)| (feature.id.clone(), index))
         .collect::<HashMap<_, _>>();
+    for feature in &ir.model.features {
+        let Some(parent) = ir.model.feature_parent(&feature.id) else {
+            continue;
+        };
+        let target = &mut ordering_graph[by_id[&feature.id]];
+        if !target.dependencies.contains(parent) {
+            target.dependencies.push(parent.clone());
+        }
+    }
     for configuration in &ir.model.configurations {
         for (feature_id, state) in &configuration.feature_states {
             let Some(&index) = by_id.get(feature_id) else {
@@ -271,22 +299,22 @@ pub(crate) fn face_owner_bodies(
 ) -> HashMap<String, cadmpeg_ir::ids::BodyId> {
     let region_bodies = regions
         .iter()
-        .map(|region| (region.id.0.as_str(), &region.body))
+        .map(|region| (region.id.as_str(), &region.body))
         .collect::<HashMap<_, _>>();
     let shell_bodies = shells
         .iter()
         .filter_map(|shell| {
             region_bodies
-                .get(shell.region.0.as_str())
-                .map(|body| (shell.id.0.as_str(), (*body).clone()))
+                .get(shell.region.as_str())
+                .map(|body| (shell.id.as_str(), (*body).clone()))
         })
         .collect::<HashMap<_, _>>();
     faces
         .iter()
         .filter_map(|face| {
             shell_bodies
-                .get(face.shell.0.as_str())
-                .map(|body| (face.id.0.clone(), body.clone()))
+                .get(face.shell.as_str())
+                .map(|body| (face.id.as_str().to_owned(), body.clone()))
         })
         .collect()
 }
@@ -339,7 +367,7 @@ pub fn derive_feature_outputs(
             .iter_mut()
             .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
         {
-            let body = cadmpeg_ir::ids::BodyId(body.clone());
+            let body = cadmpeg_ir::ids::BodyId::mint(body.clone()).expect("identity grammar");
             if !feature.outputs.contains(&body) {
                 feature.outputs.push(body);
             }
@@ -418,7 +446,7 @@ pub(crate) fn bind_definition_sketch(
             construction.profile.as_mut().is_some_and(bind_profile)
         }
         FeatureDefinition::Revolve { construction, .. } => {
-            construction.profile.as_mut().is_some_and(bind_profile)
+            construction.profile_mut().is_some_and(bind_profile)
         }
         FeatureDefinition::Sweep { section, path, .. } => {
             section.referenced_profile_mut().is_some_and(bind_profile)
@@ -432,7 +460,7 @@ pub(crate) fn bind_definition_sketch(
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
         FeatureDefinition::Loft {
-            sections, guides, ..
+            sections, guidance, ..
         } => {
             let mut profile_bound = false;
             for section in sections {
@@ -441,8 +469,15 @@ pub(crate) fn bind_definition_sketch(
                 }
             }
             let mut guide_bound = false;
-            for path in guides {
-                guide_bound |= bind_path(path);
+            match guidance {
+                cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                    for path in guides {
+                        guide_bound |= bind_path(path);
+                    }
+                }
+                cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                    guide_bound = bind_path(centerline);
+                }
             }
             profile_bound || guide_bound
         }

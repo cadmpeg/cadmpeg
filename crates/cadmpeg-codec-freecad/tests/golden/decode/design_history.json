@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -6038,7 +6038,6 @@
               "extent": {
                 "kind": "one_sided",
                 "side": {
-                  "offset": 0.0,
                   "termination": {
                     "kind": "blind",
                     "length": 10.0
@@ -6122,7 +6121,6 @@
               "extent": {
                 "kind": "one_sided",
                 "side": {
-                  "offset": 0.0,
                   "termination": {
                     "kind": "blind",
                     "length": 6.0
@@ -10297,7 +10295,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "b2940602317613f7f33ea937e8cc656713f488763486576dec81fb590c7fff00"
+      "__shape_sha256": "39c0bf6a8a5d1e128d429f42e5cfdd512aedd4bdcfdefe023a71726da97821b8"
     },
     "source": {
       "attributes": {
@@ -10305,12 +10303,23 @@
         "archive_entry_count": "24",
         "document_kind": "part-design",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "15",
         "physical_archive_bytes": "15197",
         "physical_ledger_spans": "169",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R20260414 (Git shallow)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4",
+          "format": "fcstd"
+        }
       },
       "format": "fcstd"
     },
@@ -10324,6 +10333,19 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260414 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4",
+        "format": "fcstd"
+      }
+    },
     "format": "fcstd",
     "geometry_transferred": true,
     "losses": [],
@@ -10338,7 +10360,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

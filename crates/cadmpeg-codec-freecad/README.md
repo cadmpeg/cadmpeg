@@ -3,9 +3,14 @@
 `cadmpeg-codec-freecad` decodes FreeCAD `.FCStd` archives into `CadIr` and
 encodes supported `CadIr` documents back to `.FCStd`.
 
-Support level: [L5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-for the schema-4/file-1 envelope. Deterministic retained writes, checked edits,
-and source-less typed application graphs are extras above L5.
+<!-- generated: capability fcstd -->
+
+Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
+
+<!-- /generated: capability fcstd -->
+
+Deterministic retained writes, checked edits, and source-less typed application
+graphs are extras above the schema-4/file-1 envelope.
 
 ## Install
 
@@ -44,7 +49,8 @@ Semantic decode accepts `SchemaVersion=2`, `3`, and `4`. Schema 2 uses the
 
 ```rust,no_run
 use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -55,10 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &result.ir(),
-            fidelity: None,
-        })?
+        .plan(EncodeInput::new(result.ir(), None), TargetRequest::Inherit)?
         .write_to(&mut output)?;
     Ok(())
 }

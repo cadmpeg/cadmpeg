@@ -1,3 +1,5 @@
+use crate::om::reference_value::{DirectReference, Tagged28};
+
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
     for name in ["p12foo", "p12_", "p4294967296_radius"] {
@@ -9,9 +11,9 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
 
         let expressions = super::super::numeric_expressions(&bytes);
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].name, name);
-        assert_eq!(expressions[0].parameter_index, None);
-        assert_eq!(expressions[0].qualifier, None);
+        assert_eq!(expressions[0].name.as_str(), name);
+        assert_eq!(expressions[0].name.index(), None);
+        assert_eq!(expressions[0].name.qualifier(), None);
     }
     assert!(super::super::expression_declaration_name(b"\x04\x08p12foo\0").is_none());
     assert!(super::super::expression_declaration_name(b"\x04\x06p12_\0").is_none());
@@ -28,7 +30,7 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     let expressions = super::super::numeric_expressions(&bytes);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
-    assert_eq!(expressions[0].value, Some(108.97));
+    assert_eq!(expressions[0].constant_value(), Some(108.97));
 }
 
 #[test]
@@ -50,14 +52,14 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
     assert_eq!(expressions.len(), 3);
     assert_eq!(expressions[0].unit, super::super::ExpressionUnit::Inch);
     assert_eq!(expressions[0].expression, "0.5");
-    assert_eq!(expressions[0].value, Some(0.5));
+    assert_eq!(expressions[0].constant_value(), Some(0.5));
     assert_eq!(expressions[1].expression, "p1 * 2");
-    assert_eq!(expressions[1].value, None);
+    assert_eq!(expressions[1].constant_value(), None);
     assert_eq!(
         expressions[2].unit,
         super::super::ExpressionUnit::Native("custom/unit".into())
     );
-    assert_eq!(expressions[2].value, Some(4.0));
+    assert_eq!(expressions[2].constant_value(), Some(4.0));
 }
 
 #[test]
@@ -102,8 +104,8 @@ fn om_string_value_requires_marker_length_printability_and_terminator() {
     let values = super::super::string_values(bytes, 100);
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].offset, 100);
-    assert_eq!(values[0].value, "SKETCH_001");
-    assert_eq!(values[1].value, "A");
+    assert_eq!(values[0].value.as_str(), "SKETCH_001");
+    assert_eq!(values[1].value.as_str(), "A");
 }
 
 #[test]
@@ -113,13 +115,14 @@ fn om_tagged_references_preserve_family_value_order_and_bounds() {
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 20);
     assert_eq!(
-        references[0].kind,
-        super::super::ReferenceKind::PersistentHandle
+        references[0].value,
+        DirectReference::PersistentHandle(0x1234_5678)
     );
-    assert_eq!(references[0].value, 0x1234_5678);
     assert_eq!(references[1].offset, 25);
-    assert_eq!(references[1].kind, super::super::ReferenceKind::Tagged28);
-    assert_eq!(references[1].value, 0x0abc_def0);
+    assert_eq!(
+        references[1].value,
+        DirectReference::Tagged28(Tagged28::try_from(0x0abc_def0).unwrap())
+    );
 }
 
 #[test]
@@ -128,10 +131,6 @@ fn om_counted_record_references_require_a_complete_in_bounds_run() {
     let references = super::super::counted_record_references(bytes, 100, 5);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 103);
-    assert_eq!(
-        references[0].kind,
-        super::super::ReferenceKind::RecordOrdinal16
-    );
     assert_eq!(references[0].value, 2);
     assert_eq!(references[1].value, 4);
 }
@@ -153,7 +152,7 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     assert_eq!(
         super::super::record_references(&unpaired, 0)
             .into_iter()
-            .filter(|reference| reference.kind == super::super::ReferenceKind::Tagged28)
+            .filter(|reference| matches!(reference.value, DirectReference::Tagged28(_)))
             .count(),
         8
     );
@@ -161,7 +160,7 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     let lone_tagged = [0xc0, 0, 0, 1];
     assert!(super::super::record_references(&lone_tagged, 0)
         .into_iter()
-        .all(|reference| reference.kind != super::super::ReferenceKind::Tagged28));
+        .all(|reference| !matches!(reference.value, DirectReference::Tagged28(_))));
 }
 
 #[test]
@@ -171,13 +170,13 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, None);
     assert_eq!(
-        expressions[0].name,
+        expressions[0].name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
-    assert_eq!(expressions[0].parameter_index, Some(8));
+    assert_eq!(expressions[0].name.index(), Some(8));
     assert_eq!(
-        expressions[0].qualifier,
+        expressions[0].name.qualifier(),
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
-    assert_eq!(expressions[0].value, Some(120.0));
+    assert_eq!(expressions[0].constant_value(), Some(120.0));
 }

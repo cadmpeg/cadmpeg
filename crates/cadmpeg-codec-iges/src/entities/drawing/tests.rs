@@ -2,12 +2,12 @@
 
 #![allow(clippy::unwrap_used)]
 
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 
-use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
+use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -31,12 +31,7 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 1,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 1, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -50,23 +45,29 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 #[test]
 fn drawing_presentation_directory_rules_match_the_iges_tables() {
     let mut drawing = directory_entry(404, 0);
-    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(drawing_directory_valid(&drawing, Dialect::V5_0));
-    drawing.status.subordinate = 1;
-    assert!(!drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
-    drawing.status.subordinate = 0;
-    drawing.status.use_flag = 2;
-    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
-    drawing.status.use_flag = 0;
-    assert!(!drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
-    drawing.status.use_flag = 1;
-    drawing.status.blank = 1;
-    drawing.status.hierarchy = 3;
-    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
-    assert!(drawing_directory_valid(&drawing, Dialect::V5_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V5_0));
+    drawing.status.set_subordinate(1);
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
+    drawing.status.set_subordinate(0);
+    drawing
+        .status
+        .set_use_flag(2, crate::global::GlobalTable::V5Later);
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
+    drawing
+        .status
+        .set_use_flag(0, crate::global::GlobalTable::V5Later);
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
+    drawing
+        .status
+        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    drawing.status.set_blank(1);
+    drawing.status.set_hierarchy(3);
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
+    assert!(drawing_directory_valid(&drawing, GlobalTable::V5_0));
 
     for field in 0..4 {
         let mut candidate = directory_entry(404, 0);
@@ -76,25 +77,27 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(drawing_directory_valid(&candidate, Dialect::V4_0));
-        assert!(!drawing_directory_valid(&candidate, Dialect::V5_0));
+        assert!(drawing_directory_valid(&candidate, GlobalTable::V4_0));
+        assert!(!drawing_directory_valid(&candidate, GlobalTable::V5_0));
     }
 
     let mut view = directory_entry(410, 0);
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    view.status.subordinate = 2;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    view.status.subordinate = 0;
-    view.status.use_flag = 2;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    assert!(!view_directory_valid(&view, Dialect::V5_0));
-    assert!(!view_directory_valid(&view, Dialect::V5_3));
-    view.status.use_flag = 1;
-    view.status.blank = 1;
-    view.status.hierarchy = 3;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    assert!(view_directory_valid(&view, Dialect::V5_0));
-    assert!(view_directory_valid(&view, Dialect::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    view.status.set_subordinate(2);
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    view.status.set_subordinate(0);
+    view.status
+        .set_use_flag(2, crate::global::GlobalTable::V5Later);
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    assert!(!view_directory_valid(&view, GlobalTable::V5_0));
+    assert!(!view_directory_valid(&view, GlobalTable::V5Later));
+    view.status
+        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    view.status.set_blank(1);
+    view.status.set_hierarchy(3);
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    assert!(view_directory_valid(&view, GlobalTable::V5_0));
+    assert!(view_directory_valid(&view, GlobalTable::V5Later));
     for field in 0..4 {
         let mut candidate = directory_entry(410, 1);
         match field {
@@ -103,34 +106,40 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(view_directory_valid(&candidate, Dialect::V4_0));
-        assert!(view_directory_valid(&candidate, Dialect::V5_3));
+        assert!(view_directory_valid(&candidate, GlobalTable::V4_0));
+        assert!(view_directory_valid(&candidate, GlobalTable::V5Later));
     }
     view.level = 2;
     view.view = 3;
     view.label_display = 5;
-    assert!(view_directory_valid(&view, Dialect::V4_0));
-    assert!(view_directory_valid(&view, Dialect::V5_3));
+    assert!(view_directory_valid(&view, GlobalTable::V4_0));
+    assert!(view_directory_valid(&view, GlobalTable::V5Later));
 
     for form in [3, 4] {
         let mut visible = directory_entry(402, form);
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
-        visible.status.subordinate = 1;
-        assert!(!views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
-        visible.status.subordinate = 0;
-        visible.status.use_flag = 0;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
-        visible.status.use_flag = 2;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
-        visible.status.use_flag = 1;
-        visible.status.blank = 1;
-        visible.status.hierarchy = 3;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
+        visible.status.set_subordinate(1);
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
+        visible.status.set_subordinate(0);
+        visible
+            .status
+            .set_use_flag(0, crate::global::GlobalTable::V5Later);
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
+        visible
+            .status
+            .set_use_flag(2, crate::global::GlobalTable::V5Later);
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
+        visible
+            .status
+            .set_use_flag(1, crate::global::GlobalTable::V5Later);
+        visible.status.set_blank(1);
+        visible.status.set_hierarchy(3);
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
         for field in 0..4 {
             let mut candidate = directory_entry(402, form);
             match field {
@@ -139,30 +148,37 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
                 2 => candidate.line_weight = 1,
                 _ => candidate.color = 1,
             }
-            assert!(views_visible_directory_valid(&candidate, Dialect::V4_0));
-            assert!(views_visible_directory_valid(&candidate, Dialect::V5_0));
+            assert!(views_visible_directory_valid(&candidate, GlobalTable::V4_0));
+            assert!(views_visible_directory_valid(&candidate, GlobalTable::V5_0));
         }
         visible.level = 2;
         visible.view = 3;
         visible.transform = 5;
         visible.label_display = 7;
-        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
-        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
+        assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
     }
 
     let segmented = directory_entry(402, 19);
-    assert!(!views_visible_directory_valid(&segmented, Dialect::V4_0));
-    assert!(views_visible_directory_valid(&segmented, Dialect::V5_0));
-    assert!(views_visible_directory_valid(&segmented, Dialect::V5_3));
+    assert!(!views_visible_directory_valid(
+        &segmented,
+        GlobalTable::V4_0
+    ));
+    assert!(views_visible_directory_valid(&segmented, GlobalTable::V5_0));
+    assert!(views_visible_directory_valid(
+        &segmented,
+        GlobalTable::V5Later
+    ));
 }
 
 #[test]
 fn drawing_size_accepts_finite_zero_extents() {
-    let record = ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens: vec![
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        4,
+        vec![
             Token {
                 value: TokenValue::Integer(406),
                 span: 0..0,
@@ -180,9 +196,8 @@ fn drawing_size_accepts_finite_zero_extents() {
                 span: 0..0,
             },
         ],
-        parameter_end: 4,
-        comment: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     assert_eq!(
         drawing_property_value(16, &record),
@@ -246,7 +261,7 @@ fn decode_drawing_directory_contract_follows_the_declared_dialect() {
     const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
 
     let v4 = decode_drawing_directory_case(GLOBAL_V4, "00000200", true);
-    let v4_drawings = &v4.ir().native.namespace("iges").unwrap().arenas["drawings"];
+    let v4_drawings = &v4.ir().native.namespace("iges").unwrap().arenas()["drawings"];
     assert_eq!(v4_drawings.len(), 1);
     assert!(!v4.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
@@ -279,7 +294,7 @@ fn decode_drawing_directory_contract_follows_the_declared_dialect() {
 
     let v5_valid = decode_drawing_directory_case(GLOBAL_V5_0, "00000100", false);
     assert_eq!(
-        v5_valid.ir().native.namespace("iges").unwrap().arenas["drawings"].len(),
+        v5_valid.ir().native.namespace("iges").unwrap().arenas()["drawings"].len(),
         1
     );
     assert!(!v5_valid.report().losses.iter().any(|loss| {
@@ -333,7 +348,7 @@ fn decode_view_visibility_use_flag_follows_v4_and_v5_rules() {
                 != Some("directory_entry:D3")
     }));
     assert_eq!(
-        v4.ir().native.namespace("iges").unwrap().arenas["view_visibility"].len(),
+        v4.ir().native.namespace("iges").unwrap().arenas()["view_visibility"].len(),
         1
     );
 
@@ -501,12 +516,7 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -516,16 +526,28 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         subscript: 0,
     };
     for use_flag in [0, 1, 2, 5] {
-        target.status.use_flag = use_flag;
-        assert!(clipping_plane_valid(&target, Dialect::V4_0), "{use_flag}");
+        target
+            .status
+            .set_use_flag(use_flag, crate::global::GlobalTable::V4_0);
+        assert!(
+            clipping_plane_valid(&target, GlobalTable::V4_0),
+            "{use_flag}"
+        );
     }
     for use_flag in [3, 4] {
-        target.status.use_flag = use_flag;
-        assert!(!clipping_plane_valid(&target, Dialect::V4_0), "{use_flag}");
+        target
+            .status
+            .set_use_flag(use_flag, crate::global::GlobalTable::V4_0);
+        assert!(
+            !clipping_plane_valid(&target, GlobalTable::V4_0),
+            "{use_flag}"
+        );
     }
-    assert!(!clipping_plane_valid(&target, Dialect::V5_0));
-    target.status.use_flag = 1;
-    assert!(clipping_plane_valid(&target, Dialect::V5_0));
+    assert!(!clipping_plane_valid(&target, GlobalTable::V5_0));
+    target
+        .status
+        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    assert!(clipping_plane_valid(&target, GlobalTable::V5_0));
 }
 
 #[test]
@@ -602,7 +624,7 @@ fn decode_types_orthographic_and_perspective_views() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let views = &result.ir().native.namespace("iges").unwrap().arenas["views"];
+    let views = &result.ir().native.namespace("iges").unwrap().arenas()["views"];
     assert_eq!(views.len(), 3);
     assert_eq!(views[0].fields()["projection"], "orthographic_parallel");
     assert!(views[0].fields()["scale"].is_null());
@@ -699,7 +721,7 @@ fn decode_types_view_visibility_and_display_overrides() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let visibility = &result.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+    let visibility = &result.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 2);
     assert_eq!(visibility[0].fields()["form"], 3);
     assert_eq!(
@@ -740,7 +762,7 @@ fn decode_view_visibility_defaults_omitted_entity_count_and_color() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        let visibility = &result.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+        let visibility = &result.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
         let fields = visibility[0].fields();
         assert_eq!(fields["declared_view_count"], 1, "form={form}");
         assert!(fields["declared_entity_count"].is_null(), "form={form}");
@@ -817,7 +839,7 @@ fn decode_view_visibility_entity_count_requirement_follows_dialect() {
         "{:#?}",
         v5.report().losses
     );
-    let visibility = &v5.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+    let visibility = &v5.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 1);
     assert_eq!(
         visibility[0].fields()["displays"].as_array().unwrap().len(),
@@ -838,7 +860,7 @@ fn decode_preserves_ordered_segmented_view_display() {
         )
         .unwrap();
     let segmented =
-        &result.ir().native.namespace("iges").unwrap().arenas["segmented_visibility"][0];
+        &result.ir().native.namespace("iges").unwrap().arenas()["segmented_visibility"][0];
     assert_eq!(segmented.fields()["blocks"].as_array().unwrap().len(), 2);
     assert_eq!(segmented.fields()["blocks"][0]["breakpoint"], 0.5);
     assert_eq!(segmented.fields()["blocks"][0]["color"]["kind"], "omitted");
@@ -860,7 +882,7 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let drawing = &result.ir().native.namespace("iges").unwrap().arenas["drawings"][0];
+    let drawing = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"][0];
     assert_eq!(drawing.fields()["form"], 1);
     assert_eq!(
         drawing.fields()["views"][0]["view"],
@@ -892,7 +914,7 @@ fn decode_reports_conflicting_drawing_property_values() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let drawing = &result.ir().native.namespace("iges").unwrap().arenas["drawings"][0];
+    let drawing = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"][0];
 
     assert!(drawing.fields()["size"].is_null());
     assert_eq!(drawing.fields()["ambiguous_property_forms"][0], 16);
@@ -918,7 +940,7 @@ fn decode_types_view_list_with_required_back_pointers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let view_list = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+    let view_list = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
         .find(|value| value.fields()["kind"] == "view_list")
         .unwrap();
@@ -955,7 +977,7 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let view_list = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+    let view_list = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
         .find(|value| value.fields()["kind"] == "view_list")
         .unwrap();

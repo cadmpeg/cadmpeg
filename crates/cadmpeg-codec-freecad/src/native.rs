@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned FCStd-native records.
 
+pub(crate) mod joint;
+
+use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::products::NonEmptyString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -59,9 +63,6 @@ mod tests {
     }
 }
 
-/// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 22;
-
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesignCensusRecord {
@@ -81,6 +82,16 @@ pub struct DesignCensusRecord {
     pub post_processed: bool,
 }
 
+/// Carrier grammar counted by a census record. Empty payloads have no census.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CarrierCensusForm {
+    /// Compact text shape-set grammar.
+    Text,
+    /// Binary shape-set grammar.
+    Binary,
+}
+
 /// Machine-derived carrier and topology-family census for one exact shape payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CarrierCensusRecord {
@@ -89,7 +100,7 @@ pub struct CarrierCensusRecord {
     /// Shape payload being counted.
     pub payload: String,
     /// `text` or `binary` carrier grammar.
-    pub form: String,
+    pub form: CarrierCensusForm,
     /// Grammar version declared by the shape-set header.
     pub topology_version: u8,
     /// Recursive 2D-curve family counts.
@@ -110,6 +121,7 @@ pub struct CarrierCensusRecord {
 
 /// One support attachment and its distinct persisted frames.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "AttachmentRecordWire", into = "AttachmentRecordWire")]
 pub struct AttachmentRecord {
     /// Stable attachment identity.
     pub id: String,
@@ -123,8 +135,60 @@ pub struct AttachmentRecord {
     pub placement: Option<[[f64; 4]; 4]>,
     /// Persisted attachment-local offset.
     pub offset: Option<[[f64; 4]; 4]>,
+}
+
+impl AttachmentRecord {
     /// Effective frame used for neutral geometry.
-    pub effective_frame: [[f64; 4]; 4],
+    pub fn effective_frame(&self) -> [[f64; 4]; 4] {
+        crate::attachment::effective_frame(self.placement, self.offset)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct AttachmentRecordWire {
+    id: String,
+    object: String,
+    supports: Vec<LinkTarget>,
+    map_mode: Option<String>,
+    placement: Option<[[f64; 4]; 4]>,
+    offset: Option<[[f64; 4]; 4]>,
+    effective_frame: [[f64; 4]; 4],
+}
+
+impl From<AttachmentRecord> for AttachmentRecordWire {
+    fn from(value: AttachmentRecord) -> Self {
+        let effective_frame = value.effective_frame();
+        Self {
+            id: value.id,
+            object: value.object,
+            supports: value.supports,
+            map_mode: value.map_mode,
+            placement: value.placement,
+            offset: value.offset,
+            effective_frame,
+        }
+    }
+}
+
+impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
+    type Error = String;
+
+    fn try_from(wire: AttachmentRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            supports: wire.supports,
+            map_mode: wire.map_mode,
+            placement: wire.placement,
+            offset: wire.offset,
+        };
+        if wire.effective_frame != record.effective_frame() {
+            return Err(
+                "attachment effective_frame disagrees with placement and offset".to_owned(),
+            );
+        }
+        Ok(record)
+    }
 }
 
 /// Document-level GUI state outside application-object view providers.
@@ -132,8 +196,8 @@ pub struct AttachmentRecord {
 pub struct GuiDocumentRecord {
     /// Stable GUI document identity.
     pub id: String,
-    /// Persisted GUI schema version when declared.
-    pub schema_version: Option<u32>,
+    /// Exact persisted GUI schema declaration when present.
+    pub schema_version: Option<String>,
     /// Exact root attributes.
     pub attributes: BTreeMap<String, String>,
     /// Ordered camera, active-view, clipping, and other document state.
@@ -163,6 +227,106 @@ pub struct GuiStateRecord {
     pub byte_end: u64,
 }
 
+/// A supported semantic annotation runtime type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnotationRuntimeType {
+    /// The `App::Annotation` runtime type.
+    Annotation,
+    /// The `App::AnnotationLabel` runtime type.
+    AnnotationLabel,
+    /// The `TechDraw::DrawViewAnnotation` runtime type.
+    DrawViewAnnotation,
+    /// The `TechDraw::DrawViewAnnotationPython` runtime type.
+    DrawViewAnnotationPython,
+    /// The `TechDraw::DrawRichAnno` runtime type.
+    DrawRichAnno,
+    /// The `TechDraw::DrawRichAnnoPython` runtime type.
+    DrawRichAnnoPython,
+    /// The `TechDraw::DrawViewDimension` runtime type.
+    DrawViewDimension,
+    /// The `TechDraw::DrawViewDimExtent` runtime type.
+    DrawViewDimExtent,
+    /// The `TechDraw::LandmarkDimension` runtime type.
+    LandmarkDimension,
+    /// The `TechDraw::DrawViewBalloon` runtime type.
+    DrawViewBalloon,
+    /// The `TechDraw::DrawLeaderLine` runtime type.
+    DrawLeaderLine,
+    /// The `TechDraw::DrawLeaderLinePython` runtime type.
+    DrawLeaderLinePython,
+    /// The `TechDraw::DrawViewSymbol` runtime type.
+    DrawViewSymbol,
+    /// The `TechDraw::DrawViewSymbolPython` runtime type.
+    DrawViewSymbolPython,
+    /// The `TechDraw::DrawWeldSymbol` runtime type.
+    DrawWeldSymbol,
+    /// The `TechDraw::DrawWeldSymbolPython` runtime type.
+    DrawWeldSymbolPython,
+}
+
+impl AnnotationRuntimeType {
+    /// Returns the persisted runtime type name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Annotation => "App::Annotation",
+            Self::AnnotationLabel => "App::AnnotationLabel",
+            Self::DrawViewAnnotation => "TechDraw::DrawViewAnnotation",
+            Self::DrawViewAnnotationPython => "TechDraw::DrawViewAnnotationPython",
+            Self::DrawRichAnno => "TechDraw::DrawRichAnno",
+            Self::DrawRichAnnoPython => "TechDraw::DrawRichAnnoPython",
+            Self::DrawViewDimension => "TechDraw::DrawViewDimension",
+            Self::DrawViewDimExtent => "TechDraw::DrawViewDimExtent",
+            Self::LandmarkDimension => "TechDraw::LandmarkDimension",
+            Self::DrawViewBalloon => "TechDraw::DrawViewBalloon",
+            Self::DrawLeaderLine => "TechDraw::DrawLeaderLine",
+            Self::DrawLeaderLinePython => "TechDraw::DrawLeaderLinePython",
+            Self::DrawViewSymbol => "TechDraw::DrawViewSymbol",
+            Self::DrawViewSymbolPython => "TechDraw::DrawViewSymbolPython",
+            Self::DrawWeldSymbol => "TechDraw::DrawWeldSymbol",
+            Self::DrawWeldSymbolPython => "TechDraw::DrawWeldSymbolPython",
+        }
+    }
+
+    pub(crate) fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "App::Annotation" => Some(Self::Annotation),
+            "App::AnnotationLabel" => Some(Self::AnnotationLabel),
+            "TechDraw::DrawViewAnnotation" => Some(Self::DrawViewAnnotation),
+            "TechDraw::DrawViewAnnotationPython" => Some(Self::DrawViewAnnotationPython),
+            "TechDraw::DrawRichAnno" => Some(Self::DrawRichAnno),
+            "TechDraw::DrawRichAnnoPython" => Some(Self::DrawRichAnnoPython),
+            "TechDraw::DrawViewDimension" => Some(Self::DrawViewDimension),
+            "TechDraw::DrawViewDimExtent" => Some(Self::DrawViewDimExtent),
+            "TechDraw::LandmarkDimension" => Some(Self::LandmarkDimension),
+            "TechDraw::DrawViewBalloon" => Some(Self::DrawViewBalloon),
+            "TechDraw::DrawLeaderLine" => Some(Self::DrawLeaderLine),
+            "TechDraw::DrawLeaderLinePython" => Some(Self::DrawLeaderLinePython),
+            "TechDraw::DrawViewSymbol" => Some(Self::DrawViewSymbol),
+            "TechDraw::DrawViewSymbolPython" => Some(Self::DrawViewSymbolPython),
+            "TechDraw::DrawWeldSymbol" => Some(Self::DrawWeldSymbol),
+            "TechDraw::DrawWeldSymbolPython" => Some(Self::DrawWeldSymbolPython),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for AnnotationRuntimeType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AnnotationRuntimeType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let label = String::deserialize(deserializer)?;
+        Self::from_label(&label).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "semantic annotation kind: unsupported runtime type {label}"
+            ))
+        })
+    }
+}
+
 /// One semantic annotation object kept distinct from drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticAnnotationRecord {
@@ -171,7 +335,7 @@ pub struct SemanticAnnotationRecord {
     /// Owning application object.
     pub object: String,
     /// Persisted annotation runtime type.
-    pub kind: String,
+    pub kind: AnnotationRuntimeType,
     /// Ordered user-visible text fragments.
     pub text: Vec<String>,
     /// Object and subelement references grouped by source property.
@@ -182,91 +346,23 @@ pub struct SemanticAnnotationRecord {
     pub side_entries: Vec<String>,
 }
 
-/// One application-domain object projected into the L8 census.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ApplicationRecord {
-    /// Stable census identity.
-    pub id: String,
-    /// Owning native application object.
-    pub object: String,
-    /// Runtime type retained exactly.
-    pub type_name: String,
-    /// Application domain derived from the runtime type prefix.
-    pub domain: String,
-    /// Ordered owned native property identities.
-    pub properties: Vec<String>,
-    /// Ordered application-object dependencies.
-    pub dependencies: Vec<String>,
-    /// Ordered referenced archive assets.
-    pub side_entries: Vec<String>,
-    /// Whether the object owns serialized code-backed data that must remain inert.
-    pub inert_payload: bool,
-    /// Source order among application objects.
-    pub order: usize,
-    /// Inclusive `Document.xml` byte offset of the object-data record.
-    pub byte_start: u64,
-    /// Exclusive `Document.xml` byte offset of the object-data record.
-    pub byte_end: u64,
-    /// Exact object-data byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of exact object-data bytes.
-    pub sha256: String,
-    /// Exact retained object-data bytes.
-    pub data: Vec<u8>,
-    /// Auditable preservation records for every owned property.
-    pub property_records: Vec<ApplicationPropertyRecord>,
-}
-
-/// Exact application-property preservation record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ApplicationPropertyRecord {
-    /// Stable preservation identity.
-    pub id: String,
-    /// Owning application object.
-    pub object: String,
-    /// Authoritative native property identity.
-    pub property: String,
-    /// Exact property runtime type.
-    pub type_name: String,
-    /// Typed persistence family.
-    pub family: PropertyFamily,
-    /// Source order within the object.
-    pub order: usize,
-    /// Ordered object and subelement links.
-    pub links: Vec<LinkTarget>,
-    /// Inclusive `Document.xml` byte offset.
-    pub byte_start: u64,
-    /// Exclusive `Document.xml` byte offset.
-    pub byte_end: u64,
-    /// Exact property byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of exact property bytes.
-    pub sha256: String,
-    /// Exact retained property bytes.
-    pub data: Vec<u8>,
-    /// Complete retained referenced payloads.
-    pub payloads: Vec<ApplicationPayloadRecord>,
-    /// Whether the property carries inert serialized code-backed data.
-    pub inert: bool,
-}
-
-/// Complete named payload retained for an application property.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ApplicationPayloadRecord {
-    /// Global native entry identity.
-    pub entry: String,
-    /// Exact archive entry name.
-    pub name: String,
-    /// Logical byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of complete logical bytes.
-    pub sha256: String,
-    /// Complete retained logical bytes.
-    pub data: Vec<u8>,
+/// Page-only vs other `TechDraw` drawing payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrawingRole {
+    /// `TechDraw::DrawPage` or `TechDraw::DrawPagePython`.
+    Page {
+        /// Ordered page views.
+        views: Vec<String>,
+        /// Page template object, when linked.
+        template: Option<String>,
+    },
+    /// Template, view, dimension, annotation, or other drawing object.
+    Other,
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DrawingRecordWire", into = "DrawingRecordWire")]
 pub struct DrawingRecord {
     /// Stable drawing-record identity.
     pub id: String,
@@ -274,10 +370,8 @@ pub struct DrawingRecord {
     pub object: String,
     /// Persisted `TechDraw` runtime type.
     pub kind: String,
-    /// Ordered page views for a page record.
-    pub views: Vec<String>,
-    /// Page template object, when linked.
-    pub template: Option<String>,
+    /// Page views and template, or a non-page payload.
+    pub role: DrawingRole,
     /// Ordered source object and subelement references for a view or dimension.
     pub sources: Vec<LinkTarget>,
     /// All drawing relationships grouped by their persisted property name.
@@ -288,42 +382,122 @@ pub struct DrawingRecord {
     pub side_entries: Vec<String>,
 }
 
-/// One assembly joint or grounded-object constraint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct JointRecord {
-    /// Stable joint identity.
-    pub id: String,
-    /// Owning application object.
-    pub object: String,
-    /// Persisted joint family code, or `grounded`.
-    pub kind: String,
-    /// Ordered connector references with their subelement paths.
-    pub references: Vec<LinkTarget>,
-    /// Connector-local coordinate frames in connector order.
-    pub placements: Vec<[[f64; 4]; 4]>,
-    /// Connector attachment-offset frames in connector order.
-    pub offsets: Vec<[[f64; 4]; 4]>,
-    /// Joint scalar, limit, detach, enable, and suppression properties.
-    pub parameters: BTreeMap<String, String>,
+fn is_page_kind(kind: &str) -> bool {
+    matches!(kind, "TechDraw::DrawPage" | "TechDraw::DrawPagePython")
+}
+
+#[derive(Serialize, Deserialize)]
+struct DrawingRecordWire {
+    id: String,
+    object: String,
+    kind: String,
+    views: Vec<String>,
+    template: Option<String>,
+    sources: Vec<LinkTarget>,
+    relationships: BTreeMap<String, Vec<LinkTarget>>,
+    parameters: BTreeMap<String, String>,
+    side_entries: Vec<String>,
+}
+
+impl From<DrawingRecord> for DrawingRecordWire {
+    fn from(value: DrawingRecord) -> Self {
+        let (views, template) = match value.role {
+            DrawingRole::Page { views, template } => (views, template),
+            DrawingRole::Other => (Vec::new(), None),
+        };
+        Self {
+            id: value.id,
+            object: value.object,
+            kind: value.kind,
+            views,
+            template,
+            sources: value.sources,
+            relationships: value.relationships,
+            parameters: value.parameters,
+            side_entries: value.side_entries,
+        }
+    }
+}
+
+impl TryFrom<DrawingRecordWire> for DrawingRecord {
+    type Error = String;
+
+    fn try_from(wire: DrawingRecordWire) -> Result<Self, Self::Error> {
+        let role = if is_page_kind(&wire.kind) {
+            DrawingRole::Page {
+                views: wire.views,
+                template: wire.template,
+            }
+        } else if wire.views.is_empty() && wire.template.is_none() {
+            DrawingRole::Other
+        } else {
+            return Err("non-page drawing record cannot carry views or a template".to_owned());
+        };
+        Ok(Self {
+            id: wire.id,
+            object: wire.object,
+            kind: wire.kind,
+            role,
+            sources: wire.sources,
+            relationships: wire.relationships,
+            parameters: wire.parameters,
+            side_entries: wire.side_entries,
+        })
+    }
 }
 
 /// One product container, prototype, or placed link occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ProductNodeRecordWire", into = "ProductNodeRecordWire")]
 pub struct ProductNodeRecord {
     /// Stable record identity.
     pub id: String,
     /// Owning application object.
     pub object: String,
-    /// Structural family: `group`, `part`, `link_group`, or `occurrence`.
-    pub kind: String,
+    /// Structural family and family-specific payload.
+    pub node: ProductNode,
+}
+
+/// Structural family of a product node.
+#[derive(Debug, Clone, PartialEq)]
+// Keep each native node payload inline; occurrence fields are read together during projection.
+#[allow(clippy::large_enum_variant)]
+pub enum ProductNode {
+    /// `App::DocumentObjectGroup`.
+    Group(ContainerNode),
+    /// `App::Part` or assembly container.
+    Part(ContainerNode),
+    /// `App::LinkGroup`.
+    LinkGroup {
+        /// Group placement and any explicit `Group` membership.
+        container: ContainerNode,
+        /// Ordered `ElementList` application objects.
+        element_objects: Vec<String>,
+    },
+    /// `App::Link` or `App::LinkElement`.
+    Occurrence(LinkOccurrence),
+}
+
+/// Shared payload of a non-occurrence product container.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContainerNode {
     /// Ordered contained application objects.
     pub members: Vec<String>,
-    /// Linked prototype object for an occurrence.
+    /// Local placement as a row-major affine matrix.
+    pub local_transform: Option<[[f64; 4]; 4]>,
+    /// Property supplying the placement.
+    pub placement_property: Option<String>,
+}
+
+/// Link occurrence payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkOccurrence {
+    /// Ordered contained application objects.
+    pub members: Vec<String>,
+    /// Linked prototype object.
     pub prototype: Option<String>,
     /// External document token when the prototype is not local.
-    pub external_document: Option<String>,
-    /// Exact attribute spelling that carried the external document reference.
-    pub external_document_attribute: Option<String>,
+    pub external_document: Option<ExternalDocument>,
     /// Local occurrence placement as a row-major affine matrix.
     pub local_transform: Option<[[f64; 4]; 4]>,
     /// Property supplying the placement.
@@ -350,10 +524,289 @@ pub struct ProductNodeRecord {
     pub copy_on_change_touched: Option<bool>,
     /// Base scale vector applied to every occurrence element.
     pub scale: Option<[f64; 3]>,
-    /// Per-element visibility overrides in array order.
-    pub element_visibility: Vec<bool>,
     /// Explicit per-element application objects in array order.
     pub element_objects: Vec<String>,
+}
+
+impl ProductNodeRecord {
+    /// Structural family string retained on the CADIR wire.
+    pub fn kind(&self) -> &'static str {
+        match self.node {
+            ProductNode::Group(_) => "group",
+            ProductNode::Part(_) => "part",
+            ProductNode::LinkGroup { .. } => "link_group",
+            ProductNode::Occurrence(_) => "occurrence",
+        }
+    }
+
+    /// Ordered contained application objects.
+    pub fn members(&self) -> &[String] {
+        match &self.node {
+            ProductNode::Group(node)
+            | ProductNode::Part(node)
+            | ProductNode::LinkGroup {
+                container: node, ..
+            } => &node.members,
+            ProductNode::Occurrence(node) => &node.members,
+        }
+    }
+
+    /// Local placement matrix when stored on the node.
+    pub fn local_transform(&self) -> Option<[[f64; 4]; 4]> {
+        match &self.node {
+            ProductNode::Group(node)
+            | ProductNode::Part(node)
+            | ProductNode::LinkGroup {
+                container: node, ..
+            } => node.local_transform,
+            ProductNode::Occurrence(node) => node.local_transform,
+        }
+    }
+
+    /// Property supplying the placement.
+    pub fn placement_property(&self) -> Option<&str> {
+        match &self.node {
+            ProductNode::Group(node)
+            | ProductNode::Part(node)
+            | ProductNode::LinkGroup {
+                container: node, ..
+            } => node.placement_property.as_deref(),
+            ProductNode::Occurrence(node) => node.placement_property.as_deref(),
+        }
+    }
+
+    /// Occurrence payload when this node is a link.
+    pub fn occurrence(&self) -> Option<&LinkOccurrence> {
+        match &self.node {
+            ProductNode::Occurrence(node) => Some(node),
+            _ => None,
+        }
+    }
+
+    /// Linked prototype object for an occurrence.
+    pub fn prototype(&self) -> Option<&str> {
+        self.occurrence().and_then(|node| node.prototype.as_deref())
+    }
+
+    /// External document token when the prototype is not local.
+    pub fn external_document(&self) -> Option<&ExternalDocument> {
+        self.occurrence()
+            .and_then(|node| node.external_document.as_ref())
+    }
+
+    /// Number of array elements requested by the link.
+    pub fn element_count(&self) -> Option<i64> {
+        self.occurrence().and_then(|node| node.element_count)
+    }
+
+    /// Whether the prototype transform participates in occurrence placement.
+    pub fn link_transform(&self) -> Option<bool> {
+        self.occurrence().and_then(|node| node.link_transform)
+    }
+
+    /// Ordered per-element placements for a link array.
+    pub fn element_transforms(&self) -> &[[[f64; 4]; 4]] {
+        self.occurrence()
+            .map_or(&[], |node| node.element_transforms.as_slice())
+    }
+
+    /// Ordered per-element scale vectors for a link array.
+    pub fn element_scales(&self) -> &[[f64; 3]] {
+        self.occurrence()
+            .map_or(&[], |node| node.element_scales.as_slice())
+    }
+
+    /// Subelement paths selected on the linked prototype.
+    pub fn linked_subelements(&self) -> &[String] {
+        self.occurrence()
+            .map_or(&[], |node| node.linked_subelements.as_slice())
+    }
+
+    /// Whether the link claims its prototype as a tree child.
+    pub fn claim_child(&self) -> Option<bool> {
+        self.occurrence().and_then(|node| node.claim_child)
+    }
+
+    /// Persisted copy-on-change policy name or numeric code.
+    pub fn copy_on_change(&self) -> Option<&str> {
+        self.occurrence()
+            .and_then(|node| node.copy_on_change.as_deref())
+    }
+
+    /// Original object tracked by copy-on-change.
+    pub fn copy_on_change_source(&self) -> Option<&str> {
+        self.occurrence()
+            .and_then(|node| node.copy_on_change_source.as_deref())
+    }
+
+    /// Internal ownership group for copy-on-change copies.
+    pub fn copy_on_change_group(&self) -> Option<&str> {
+        self.occurrence()
+            .and_then(|node| node.copy_on_change_group.as_deref())
+    }
+
+    /// Whether the tracked source has changed.
+    pub fn copy_on_change_touched(&self) -> Option<bool> {
+        self.occurrence()
+            .and_then(|node| node.copy_on_change_touched)
+    }
+
+    /// Base scale vector applied to every occurrence element.
+    pub fn scale(&self) -> Option<[f64; 3]> {
+        self.occurrence().and_then(|node| node.scale)
+    }
+
+    /// Explicit per-element application objects in array order.
+    pub fn element_objects(&self) -> &[String] {
+        match &self.node {
+            ProductNode::LinkGroup {
+                element_objects, ..
+            } => element_objects,
+            ProductNode::Occurrence(node) => &node.element_objects,
+            ProductNode::Group(_) | ProductNode::Part(_) => &[],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProductNodeRecordWire {
+    id: String,
+    object: String,
+    kind: String,
+    members: Vec<String>,
+    prototype: Option<String>,
+    external_document: Option<String>,
+    external_document_attribute: Option<String>,
+    local_transform: Option<[[f64; 4]; 4]>,
+    placement_property: Option<String>,
+    element_count: Option<i64>,
+    link_transform: Option<bool>,
+    element_transforms: Vec<[[f64; 4]; 4]>,
+    element_scales: Vec<[f64; 3]>,
+    linked_subelements: Vec<String>,
+    claim_child: Option<bool>,
+    copy_on_change: Option<String>,
+    copy_on_change_source: Option<String>,
+    copy_on_change_group: Option<String>,
+    copy_on_change_touched: Option<bool>,
+    scale: Option<[f64; 3]>,
+    element_visibility: Vec<bool>,
+    element_objects: Vec<String>,
+}
+
+impl From<ProductNodeRecord> for ProductNodeRecordWire {
+    fn from(value: ProductNodeRecord) -> Self {
+        Self {
+            kind: value.kind().to_owned(),
+            members: value.members().to_vec(),
+            prototype: value.prototype().map(str::to_owned),
+            external_document: value
+                .external_document()
+                .map(ExternalDocument::as_str)
+                .map(str::to_owned),
+            external_document_attribute: value
+                .external_document()
+                .and_then(ExternalDocument::attribute)
+                .map(str::to_owned),
+            local_transform: value.local_transform(),
+            placement_property: value.placement_property().map(str::to_owned),
+            element_count: value.element_count(),
+            link_transform: value.link_transform(),
+            element_transforms: value.element_transforms().to_vec(),
+            element_scales: value.element_scales().to_vec(),
+            linked_subelements: value.linked_subelements().to_vec(),
+            claim_child: value.claim_child(),
+            copy_on_change: value.copy_on_change().map(str::to_owned),
+            copy_on_change_source: value.copy_on_change_source().map(str::to_owned),
+            copy_on_change_group: value.copy_on_change_group().map(str::to_owned),
+            copy_on_change_touched: value.copy_on_change_touched(),
+            scale: value.scale(),
+            element_visibility: Vec::new(),
+            element_objects: value.element_objects().to_vec(),
+            id: value.id,
+            object: value.object,
+        }
+    }
+}
+
+impl ProductNodeRecordWire {
+    fn has_occurrence_fields(&self) -> bool {
+        self.prototype.is_some()
+            || self.external_document.is_some()
+            || self.external_document_attribute.is_some()
+            || self.element_count.is_some()
+            || self.link_transform.is_some()
+            || !self.element_transforms.is_empty()
+            || !self.element_scales.is_empty()
+            || !self.linked_subelements.is_empty()
+            || self.claim_child.is_some()
+            || self.copy_on_change.is_some()
+            || self.copy_on_change_source.is_some()
+            || self.copy_on_change_group.is_some()
+            || self.copy_on_change_touched.is_some()
+            || self.scale.is_some()
+    }
+}
+
+impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
+    type Error = String;
+
+    fn try_from(wire: ProductNodeRecordWire) -> Result<Self, Self::Error> {
+        if !wire.element_visibility.is_empty() {
+            return Err("product node element_visibility is unused and must be empty".to_owned());
+        }
+        if wire.kind != "occurrence" && wire.has_occurrence_fields() {
+            return Err("container product node carries occurrence-only link fields".to_owned());
+        }
+        if matches!(wire.kind.as_str(), "group" | "part") && !wire.element_objects.is_empty() {
+            return Err("non-link container product node carries element_objects".to_owned());
+        }
+        let node = match wire.kind.as_str() {
+            "group" | "part" | "link_group" => {
+                let container = ContainerNode {
+                    members: wire.members,
+                    local_transform: wire.local_transform,
+                    placement_property: wire.placement_property,
+                };
+                match wire.kind.as_str() {
+                    "group" => ProductNode::Group(container),
+                    "part" => ProductNode::Part(container),
+                    _ => ProductNode::LinkGroup {
+                        container,
+                        element_objects: wire.element_objects,
+                    },
+                }
+            }
+            "occurrence" => ProductNode::Occurrence(LinkOccurrence {
+                members: wire.members,
+                prototype: wire.prototype,
+                external_document: ExternalDocument::from_wire(
+                    wire.external_document,
+                    wire.external_document_attribute.as_deref(),
+                )?,
+                local_transform: wire.local_transform,
+                placement_property: wire.placement_property,
+                element_count: wire.element_count,
+                link_transform: wire.link_transform,
+                element_transforms: wire.element_transforms,
+                element_scales: wire.element_scales,
+                linked_subelements: wire.linked_subelements,
+                claim_child: wire.claim_child,
+                copy_on_change: wire.copy_on_change,
+                copy_on_change_source: wire.copy_on_change_source,
+                copy_on_change_group: wire.copy_on_change_group,
+                copy_on_change_touched: wire.copy_on_change_touched,
+                scale: wire.scale,
+                element_objects: wire.element_objects,
+            }),
+            _ => return Err("unknown product node kind".to_owned()),
+        };
+        Ok(Self {
+            id: wire.id,
+            object: wire.object,
+            node,
+        })
+    }
 }
 
 /// One persisted GUI view provider linked to an application object when available.
@@ -400,8 +853,129 @@ pub struct GuiPropertyRecord {
     pub byte_end: u64,
 }
 
+/// ZIP physical-ledger role stored on one archive span.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArchiveSpanRole {
+    /// ZIP local-header signature for the named entry.
+    LocalSignature(String),
+    /// ZIP local-header fields for the named entry.
+    LocalFields(String),
+    /// ZIP local-header name for the named entry.
+    LocalName(String),
+    /// ZIP local-header extra data for the named entry.
+    LocalExtra(String),
+    /// ZIP compressed payload for the named entry.
+    CompressedPayload(String),
+    /// ZIP data descriptor for the named entry.
+    DataDescriptor(String),
+    /// ZIP padding following the named entry.
+    EntryArchivePadding(String),
+    /// ZIP central-header signature for the named entry.
+    CentralSignature(String),
+    /// ZIP central-header fields for the named entry.
+    CentralFields(String),
+    /// ZIP central-header name for the named entry.
+    CentralName(String),
+    /// ZIP central-header extra data for the named entry.
+    CentralExtra(String),
+    /// ZIP central-header comment for the named entry.
+    CentralComment(String),
+    /// ZIP64 end-of-central-directory record.
+    Zip64EndRecord,
+    /// ZIP64 end-of-central-directory locator.
+    Zip64EndLocator,
+    /// ZIP end-of-central-directory record.
+    EndRecord,
+    /// ZIP padding not owned by an entry.
+    ArchivePadding,
+}
+
+impl ArchiveSpanRole {
+    /// Stable physical-ledger label retained on the CADIR wire.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::LocalSignature(_) => "local-signature",
+            Self::LocalFields(_) => "local-fields",
+            Self::LocalName(_) => "local-name",
+            Self::LocalExtra(_) => "local-extra",
+            Self::CompressedPayload(_) => "compressed-payload",
+            Self::DataDescriptor(_) => "data-descriptor",
+            Self::EntryArchivePadding(_) | Self::ArchivePadding => "archive-padding",
+            Self::CentralSignature(_) => "central-signature",
+            Self::CentralFields(_) => "central-fields",
+            Self::CentralName(_) => "central-name",
+            Self::CentralExtra(_) => "central-extra",
+            Self::CentralComment(_) => "central-comment",
+            Self::Zip64EndRecord => "zip64-end-record",
+            Self::Zip64EndLocator => "zip64-end-locator",
+            Self::EndRecord => "end-record",
+        }
+    }
+
+    /// Owning entry, when the role is entry-owned.
+    pub fn entry(&self) -> Option<&str> {
+        match self {
+            Self::LocalSignature(entry)
+            | Self::LocalFields(entry)
+            | Self::LocalName(entry)
+            | Self::LocalExtra(entry)
+            | Self::CompressedPayload(entry)
+            | Self::DataDescriptor(entry)
+            | Self::EntryArchivePadding(entry)
+            | Self::CentralSignature(entry)
+            | Self::CentralFields(entry)
+            | Self::CentralName(entry)
+            | Self::CentralExtra(entry)
+            | Self::CentralComment(entry) => Some(entry),
+            Self::Zip64EndRecord
+            | Self::Zip64EndLocator
+            | Self::EndRecord
+            | Self::ArchivePadding => None,
+        }
+    }
+
+    pub(crate) fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
+        let named = |entry: Option<String>, ctor: fn(String) -> Self| {
+            entry
+                .map(ctor)
+                .ok_or_else(|| format!("archive span role {label} requires an owning entry"))
+        };
+        let unit = |entry: Option<String>, role: Self| {
+            if entry.is_some() {
+                Err(format!(
+                    "archive span role {label} cannot carry an owning entry"
+                ))
+            } else {
+                Ok(role)
+            }
+        };
+        match label {
+            "local-signature" => named(entry, Self::LocalSignature),
+            "local-fields" => named(entry, Self::LocalFields),
+            "local-name" => named(entry, Self::LocalName),
+            "local-extra" => named(entry, Self::LocalExtra),
+            "compressed-payload" => named(entry, Self::CompressedPayload),
+            "data-descriptor" => named(entry, Self::DataDescriptor),
+            "archive-padding" => match entry {
+                Some(entry) => Ok(Self::EntryArchivePadding(entry)),
+                None => Ok(Self::ArchivePadding),
+            },
+            "central-signature" => named(entry, Self::CentralSignature),
+            "central-fields" => named(entry, Self::CentralFields),
+            "central-name" => named(entry, Self::CentralName),
+            "central-extra" => named(entry, Self::CentralExtra),
+            "central-comment" => named(entry, Self::CentralComment),
+            "zip64-end-record" => unit(entry, Self::Zip64EndRecord),
+            "zip64-end-locator" => unit(entry, Self::Zip64EndLocator),
+            "end-record" => unit(entry, Self::EndRecord),
+            _ => Err(format!("unknown archive span role {label}")),
+        }
+    }
+}
+
 /// One physical archive span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ArchiveSpanWire", into = "ArchiveSpanWire")]
 pub struct ArchiveSpan {
     /// Stable span identity.
     pub id: String,
@@ -410,9 +984,73 @@ pub struct ArchiveSpan {
     /// Exclusive byte offset.
     pub end: u64,
     /// Structural role.
-    pub role: String,
-    /// Owning entry, when applicable.
-    pub entry: Option<String>,
+    pub role: ArchiveSpanRole,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ArchiveSpanWire {
+    id: String,
+    start: u64,
+    end: u64,
+    role: String,
+    entry: Option<String>,
+}
+
+impl From<ArchiveSpan> for ArchiveSpanWire {
+    fn from(value: ArchiveSpan) -> Self {
+        Self {
+            id: value.id,
+            start: value.start,
+            end: value.end,
+            role: value.role.as_str().to_owned(),
+            entry: value.role.entry().map(str::to_owned),
+        }
+    }
+}
+
+impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
+    type Error = String;
+
+    fn try_from(wire: ArchiveSpanWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            start: wire.start,
+            end: wire.end,
+            role: ArchiveSpanRole::from_label(&wire.role, wire.entry)?,
+        })
+    }
+}
+
+/// Structural document-kind classification from declared object domains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentKind {
+    /// At least one `Assembly::` object.
+    Assembly,
+    /// At least one `TechDraw::` object and no assembly objects.
+    Drawing,
+    /// At least one `PartDesign::` object and no assembly or drawing objects.
+    PartDesign,
+    /// At least one `Part::` object and no assembly, drawing, or part-design objects.
+    Part,
+    /// No declared application objects.
+    Empty,
+    /// Declared objects with none of the classified domains.
+    ApplicationDocument,
+}
+
+impl DocumentKind {
+    /// Stable document-kind label retained on the CADIR wire.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Assembly => "assembly",
+            Self::Drawing => "drawing",
+            Self::PartDesign => "part-design",
+            Self::Part => "part",
+            Self::Empty => "empty",
+            Self::ApplicationDocument => "application-document",
+        }
+    }
 }
 
 /// Metadata read from the persistence document.
@@ -431,13 +1069,14 @@ pub struct DocumentFacts {
     /// Number of declared application objects.
     pub object_count: usize,
     /// Structural document-kind classification.
-    pub document_kind: String,
+    pub document_kind: DocumentKind,
     /// Application domains present in object declarations.
     pub domains: Vec<String>,
 }
 
 /// One declared application object and its persistence state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
 pub struct ObjectRecord {
     /// Stable native identity.
     pub id: String,
@@ -457,12 +1096,94 @@ pub struct ObjectRecord {
     pub dependency_allow_partial: Option<i64>,
     /// Source-order index.
     pub order: usize,
-    /// Exact object-data XML, when present.
-    pub raw_xml: Option<String>,
+    /// Exact object-data XML and its source span, when present.
+    pub data: Option<ObjectData>,
+}
+
+/// Object-data XML and the source span that produced it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectData {
+    /// Exact object-data XML.
+    pub raw_xml: String,
     /// Inclusive byte offset of object-data XML.
-    pub byte_start: Option<u64>,
+    pub byte_start: u64,
     /// Exclusive byte offset of object-data XML.
-    pub byte_end: Option<u64>,
+    pub byte_end: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ObjectRecordWire {
+    id: String,
+    name: String,
+    type_name: String,
+    persistent_id: Option<i64>,
+    view_type: Option<String>,
+    attributes: BTreeMap<String, String>,
+    dependencies: Vec<String>,
+    dependency_allow_partial: Option<i64>,
+    order: usize,
+    raw_xml: Option<String>,
+    byte_start: Option<u64>,
+    byte_end: Option<u64>,
+}
+
+impl From<ObjectRecord> for ObjectRecordWire {
+    fn from(value: ObjectRecord) -> Self {
+        let (raw_xml, byte_start, byte_end) = match value.data {
+            Some(data) => (
+                Some(data.raw_xml),
+                Some(data.byte_start),
+                Some(data.byte_end),
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: value.id,
+            name: value.name,
+            type_name: value.type_name,
+            persistent_id: value.persistent_id,
+            view_type: value.view_type,
+            attributes: value.attributes,
+            dependencies: value.dependencies,
+            dependency_allow_partial: value.dependency_allow_partial,
+            order: value.order,
+            raw_xml,
+            byte_start,
+            byte_end,
+        }
+    }
+}
+
+impl TryFrom<ObjectRecordWire> for ObjectRecord {
+    type Error = String;
+
+    fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
+            (Some(raw_xml), Some(byte_start), Some(byte_end)) => Some(ObjectData {
+                raw_xml,
+                byte_start,
+                byte_end,
+            }),
+            (None, None, None) => None,
+            _ => {
+                return Err(
+                    "object data raw_xml, byte_start, and byte_end must be set together".to_owned(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            name: wire.name,
+            type_name: wire.type_name,
+            persistent_id: wire.persistent_id,
+            view_type: wire.view_type,
+            attributes: wire.attributes,
+            dependencies: wire.dependencies,
+            dependency_allow_partial: wire.dependency_allow_partial,
+            order: wire.order,
+            data,
+        })
+    }
 }
 
 /// One dynamic object extension.
@@ -497,17 +1218,133 @@ pub struct DynamicPropertyMeta {
     pub hidden: Option<bool>,
 }
 
-/// One generically recovered ordered link target.
+/// External document named by a file path or a document identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExternalDocument {
+    /// Path carried by a `file` attribute.
+    File(NonEmptyString),
+    /// Document identity carried without a `file` attribute.
+    Name(NonEmptyString),
+}
+
+impl ExternalDocument {
+    /// Document token retained on the CADIR wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::File(value) | Self::Name(value) => value.as_str(),
+        }
+    }
+
+    /// Attribute spelling retained on the CADIR wire.
+    pub fn attribute(&self) -> Option<&'static str> {
+        match self {
+            Self::File(_) => Some("file"),
+            Self::Name(_) => None,
+        }
+    }
+
+    pub(crate) fn from_file_attr(file: Option<String>) -> Option<Self> {
+        file.and_then(NonEmptyString::new).map(Self::File)
+    }
+
+    fn from_wire(
+        document: Option<String>,
+        attribute: Option<&str>,
+    ) -> Result<Option<Self>, String> {
+        match (document, attribute) {
+            (None, None | Some("file")) => Ok(None),
+            (Some(path), Some("file")) => NonEmptyString::new(path)
+                .map(Self::File)
+                .map(Some)
+                .ok_or_else(|| "external document file path must not be empty".to_owned()),
+            (Some(name), None) => NonEmptyString::new(name)
+                .map(Self::Name)
+                .map(Some)
+                .ok_or_else(|| "external document name must not be empty".to_owned()),
+            (_, Some(attribute)) => Err(format!(
+                "external document attribute must be \"file\", not {attribute}"
+            )),
+        }
+    }
+}
+
+/// One `XLink`, `PropertyLink`, or `PropertyLinkSub` target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
 pub struct LinkTarget {
-    /// Target document identity, when external.
-    pub document: Option<String>,
-    /// Exact attribute spelling that carried the document reference.
-    pub document_attribute: Option<String>,
-    /// Target object identity, including an explicit empty/null target.
-    pub object: Option<String>,
+    /// External document, when the target is not local.
+    pub document: Option<ExternalDocument>,
+    /// Target object identity. Empty source names are absent.
+    pub object: Option<NonEmptyString>,
     /// Ordered subelement selectors.
     pub subelements: Vec<String>,
+}
+
+impl LinkTarget {
+    /// Document token retained on the CADIR wire.
+    pub fn document_name(&self) -> Option<&str> {
+        self.document.as_ref().map(ExternalDocument::as_str)
+    }
+
+    /// Attribute spelling retained on the CADIR wire.
+    pub fn document_attribute(&self) -> Option<&'static str> {
+        self.document.as_ref().and_then(ExternalDocument::attribute)
+    }
+
+    /// Target object identity, omitting empty source names.
+    pub fn object(&self) -> Option<&str> {
+        self.object.as_ref().map(NonEmptyString::as_str)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct LinkTargetWire {
+    document: Option<String>,
+    document_attribute: Option<String>,
+    object: Option<String>,
+    subelements: Vec<String>,
+}
+
+impl From<LinkTarget> for LinkTargetWire {
+    fn from(value: LinkTarget) -> Self {
+        let document_attribute = value
+            .document
+            .as_ref()
+            .and_then(ExternalDocument::attribute)
+            .map(str::to_owned);
+        let document = value
+            .document
+            .as_ref()
+            .map(ExternalDocument::as_str)
+            .map(str::to_owned);
+        Self {
+            document,
+            document_attribute,
+            object: Some(
+                value
+                    .object
+                    .as_ref()
+                    .map_or("", NonEmptyString::as_str)
+                    .to_owned(),
+            ),
+            subelements: value.subelements,
+        }
+    }
+}
+
+impl TryFrom<LinkTargetWire> for LinkTarget {
+    type Error = String;
+
+    fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            document: ExternalDocument::from_wire(
+                wire.document,
+                wire.document_attribute.as_deref(),
+            )?,
+            object: wire.object.and_then(NonEmptyString::new),
+            subelements: wire.subelements,
+        })
+    }
 }
 
 /// One property value element retained in source order.
@@ -525,8 +1362,27 @@ pub struct ValueRecord {
     pub raw_xml: String,
 }
 
+/// Persisted values of a property, or a status-only transient declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyBody {
+    /// Status-only transient property declaration.
+    Transient,
+    /// Persisted property payload.
+    Persisted {
+        /// Ordered value elements.
+        values: Vec<ValueRecord>,
+        /// Generically recovered ordered link targets.
+        links: Vec<LinkTarget>,
+        /// Referenced archive entries.
+        side_entries: Vec<String>,
+        /// Dynamic-property metadata, when carried.
+        dynamic: Option<DynamicPropertyMeta>,
+    },
+}
+
 /// One persisted property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
 pub struct PropertyRecord {
     /// Stable native identity.
     pub id: String,
@@ -540,24 +1396,144 @@ pub struct PropertyRecord {
     pub family: PropertyFamily,
     /// Native status bits.
     pub status: Option<u64>,
-    /// Whether this is a status-only transient property declaration.
-    pub transient: bool,
-    /// Dynamic-property metadata, when carried.
-    pub dynamic: Option<DynamicPropertyMeta>,
+    /// Transient declaration or persisted payload.
+    pub body: PropertyBody,
     /// Source-order index within the owner.
     pub order: usize,
-    /// Ordered value elements.
-    pub values: Vec<ValueRecord>,
-    /// Generically recovered ordered link targets.
-    pub links: Vec<LinkTarget>,
-    /// Referenced archive entries.
-    pub side_entries: Vec<String>,
     /// Exact property XML.
     pub raw_xml: String,
     /// Inclusive byte offset in `Document.xml`.
     pub byte_start: u64,
     /// Exclusive byte offset in `Document.xml`.
     pub byte_end: u64,
+}
+
+impl PropertyRecord {
+    /// Whether this is a status-only transient property declaration.
+    pub fn is_transient(&self) -> bool {
+        matches!(self.body, PropertyBody::Transient)
+    }
+
+    /// Ordered value elements; empty for a transient declaration.
+    pub fn values(&self) -> &[ValueRecord] {
+        match &self.body {
+            PropertyBody::Persisted { values, .. } => values,
+            PropertyBody::Transient => &[],
+        }
+    }
+
+    /// Recovered link targets; empty for a transient declaration.
+    pub fn links(&self) -> &[LinkTarget] {
+        match &self.body {
+            PropertyBody::Persisted { links, .. } => links,
+            PropertyBody::Transient => &[],
+        }
+    }
+
+    /// Referenced archive entries; empty for a transient declaration.
+    pub fn side_entries(&self) -> &[String] {
+        match &self.body {
+            PropertyBody::Persisted { side_entries, .. } => side_entries,
+            PropertyBody::Transient => &[],
+        }
+    }
+
+    pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
+        match &mut self.body {
+            PropertyBody::Persisted { values, .. } => Some(values),
+            PropertyBody::Transient => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct PropertyRecordWire {
+    id: String,
+    owner: String,
+    name: String,
+    type_name: String,
+    family: PropertyFamily,
+    status: Option<u64>,
+    transient: bool,
+    dynamic: Option<DynamicPropertyMeta>,
+    order: usize,
+    values: Vec<ValueRecord>,
+    links: Vec<LinkTarget>,
+    side_entries: Vec<String>,
+    raw_xml: String,
+    byte_start: u64,
+    byte_end: u64,
+}
+
+impl From<PropertyRecord> for PropertyRecordWire {
+    fn from(value: PropertyRecord) -> Self {
+        let (transient, values, links, side_entries, dynamic) = match value.body {
+            PropertyBody::Transient => (true, Vec::new(), Vec::new(), Vec::new(), None),
+            PropertyBody::Persisted {
+                values,
+                links,
+                side_entries,
+                dynamic,
+            } => (false, values, links, side_entries, dynamic),
+        };
+        Self {
+            id: value.id,
+            owner: value.owner,
+            name: value.name,
+            type_name: value.type_name,
+            family: value.family,
+            status: value.status,
+            transient,
+            dynamic,
+            order: value.order,
+            values,
+            links,
+            side_entries,
+            raw_xml: value.raw_xml,
+            byte_start: value.byte_start,
+            byte_end: value.byte_end,
+        }
+    }
+}
+
+impl TryFrom<PropertyRecordWire> for PropertyRecord {
+    type Error = String;
+
+    fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
+        let body = if wire.transient {
+            if !wire.values.is_empty()
+                || !wire.links.is_empty()
+                || !wire.side_entries.is_empty()
+                || wire.dynamic.is_some()
+            {
+                return Err(
+                    "transient property cannot carry values, links, side entries, or dynamic metadata"
+                        .to_owned(),
+                );
+            }
+            PropertyBody::Transient
+        } else {
+            PropertyBody::Persisted {
+                values: wire.values,
+                links: wire.links,
+                side_entries: wire.side_entries,
+                dynamic: wire.dynamic,
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            owner: wire.owner,
+            name: wire.name,
+            type_name: wire.type_name,
+            family: wire.family,
+            status: wire.status,
+            body,
+            order: wire.order,
+            raw_xml: wire.raw_xml,
+            byte_start: wire.byte_start,
+            byte_end: wire.byte_end,
+        })
+    }
 }
 
 /// Format-level property value families.
@@ -598,25 +1574,81 @@ pub enum PropertyFamily {
 
 /// One logical archive entry and its graph ownership.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "EntryRecordWire", into = "EntryRecordWire")]
 pub struct EntryRecord {
     /// Stable entry identity.
     pub id: String,
     /// Exact archive entry name.
     pub name: String,
     /// Classified entry role.
-    pub role: String,
-    /// Logical byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of logical bytes.
-    pub sha256: String,
+    pub role: cadmpeg_core::container::ContainerRole,
     /// Application property, GUI property, and GUI state identities that reference this entry.
     pub referenced_by: Vec<String>,
     /// Complete logical bytes.
     pub data: Vec<u8>,
 }
 
+impl EntryRecord {
+    /// Logical byte length.
+    pub fn byte_len(&self) -> u64 {
+        self.data.len() as u64
+    }
+
+    /// Lowercase SHA-256 of logical bytes.
+    pub fn sha256(&self) -> String {
+        sha256_hex(&self.data)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct EntryRecordWire {
+    id: String,
+    name: String,
+    role: String,
+    byte_len: u64,
+    sha256: String,
+    referenced_by: Vec<String>,
+    data: Vec<u8>,
+}
+
+impl From<EntryRecord> for EntryRecordWire {
+    fn from(value: EntryRecord) -> Self {
+        let byte_len = value.byte_len();
+        let sha256 = value.sha256();
+        Self {
+            id: value.id,
+            name: value.name,
+            role: value.role.as_str().to_owned(),
+            byte_len,
+            sha256,
+            referenced_by: value.referenced_by,
+            data: value.data,
+        }
+    }
+}
+
+impl TryFrom<EntryRecordWire> for EntryRecord {
+    type Error = String;
+
+    fn try_from(wire: EntryRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            name: wire.name,
+            role: serde_json::from_value(serde_json::Value::String(wire.role))
+                .map_err(|error| format!("entry role: {error}"))?,
+            referenced_by: wire.referenced_by,
+            data: wire.data,
+        };
+        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+            return Err("entry byte_len/sha256 disagrees with data".to_owned());
+        }
+        Ok(record)
+    }
+}
+
 /// One non-overlapping logical-entry byte span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "LogicalSpanWire", into = "LogicalSpanWire")]
 pub struct LogicalSpan {
     /// Stable span identity.
     pub id: String,
@@ -626,10 +1658,95 @@ pub struct LogicalSpan {
     pub start: u64,
     /// Exclusive logical byte offset.
     pub end: u64,
-    /// `structural`, `typed`, or `named_opaque`.
-    pub classification: String,
+    /// Span family and owner.
+    pub classification: LogicalClassification,
+}
+
+/// Logical-entry family. Typed and named-opaque spans own a native record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogicalClassification {
+    /// Framing bytes with no native owner.
+    Structural,
+    /// Typed native record bytes.
+    Typed {
+        /// Native record that owns the bytes.
+        owner: String,
+    },
+    /// Named opaque payload bytes.
+    NamedOpaque {
+        /// Native record that owns the bytes.
+        owner: String,
+    },
+}
+
+impl LogicalClassification {
+    /// Classification string retained on the CADIR wire.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Structural => "structural",
+            Self::Typed { .. } => "typed",
+            Self::NamedOpaque { .. } => "named_opaque",
+        }
+    }
+
     /// Native record that owns typed or opaque bytes.
-    pub owner: Option<String>,
+    pub fn owner(&self) -> Option<&str> {
+        match self {
+            Self::Structural => None,
+            Self::Typed { owner } | Self::NamedOpaque { owner } => Some(owner.as_str()),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct LogicalSpanWire {
+    id: String,
+    entry: String,
+    start: u64,
+    end: u64,
+    classification: String,
+    owner: Option<String>,
+}
+
+impl From<LogicalSpan> for LogicalSpanWire {
+    fn from(value: LogicalSpan) -> Self {
+        let classification = value.classification.as_str().to_owned();
+        let owner = value.classification.owner().map(str::to_owned);
+        Self {
+            id: value.id,
+            entry: value.entry,
+            start: value.start,
+            end: value.end,
+            classification,
+            owner,
+        }
+    }
+}
+
+impl TryFrom<LogicalSpanWire> for LogicalSpan {
+    type Error = String;
+
+    fn try_from(wire: LogicalSpanWire) -> Result<Self, Self::Error> {
+        let classification = match (wire.classification.as_str(), wire.owner) {
+            ("structural", None) => LogicalClassification::Structural,
+            ("typed", Some(owner)) => LogicalClassification::Typed { owner },
+            ("named_opaque", Some(owner)) => LogicalClassification::NamedOpaque { owner },
+            ("structural", Some(_)) => {
+                return Err("structural logical span cannot carry an owner".to_owned());
+            }
+            ("typed" | "named_opaque", None) => {
+                return Err("typed and named_opaque logical spans require an owner".to_owned());
+            }
+            _ => return Err("unknown logical classification".to_owned()),
+        };
+        Ok(Self {
+            id: wire.id,
+            entry: wire.entry,
+            start: wire.start,
+            end: wire.end,
+            classification,
+        })
+    }
 }
 
 /// Deterministic whole-archive byte-accounting summary.
@@ -657,6 +1774,7 @@ pub struct ByteCoverageRecord {
 
 /// One document-wide persistent string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "StringTableRecordWire", into = "StringTableRecordWire")]
 pub struct StringTableRecord {
     /// Stable table identity; the suffix is the zero-based `HasherIndex`.
     pub id: String,
@@ -668,12 +1786,64 @@ pub struct StringTableRecord {
     pub save_all: bool,
     /// Native hashing threshold.
     pub threshold: i64,
-    /// Declared number of serialized entries.
-    pub declared_count: usize,
     /// Referenced side entry, or `None` for inline data.
     pub source_entry: Option<String>,
     /// Parsed records in serialized order.
     pub entries: Vec<StringTableEntry>,
+}
+
+impl StringTableRecord {
+    /// Declared number of serialized entries, equal to `entries.len()`.
+    pub fn declared_count(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct StringTableRecordWire {
+    id: String,
+    index: usize,
+    owner_property: Option<String>,
+    save_all: bool,
+    threshold: i64,
+    declared_count: usize,
+    source_entry: Option<String>,
+    entries: Vec<StringTableEntry>,
+}
+
+impl From<StringTableRecord> for StringTableRecordWire {
+    fn from(value: StringTableRecord) -> Self {
+        let declared_count = value.declared_count();
+        Self {
+            id: value.id,
+            index: value.index,
+            owner_property: value.owner_property,
+            save_all: value.save_all,
+            threshold: value.threshold,
+            declared_count,
+            source_entry: value.source_entry,
+            entries: value.entries,
+        }
+    }
+}
+
+impl TryFrom<StringTableRecordWire> for StringTableRecord {
+    type Error = String;
+
+    fn try_from(wire: StringTableRecordWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.entries.len() {
+            return Err("string table declared_count must equal entries.len()".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            index: wire.index,
+            owner_property: wire.owner_property,
+            save_all: wire.save_all,
+            threshold: wire.threshold,
+            source_entry: wire.source_entry,
+            entries: wire.entries,
+        })
+    }
 }
 
 /// One relative-coded record in a persistent string table.

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -8,15 +7,8 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
-use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
-use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
-use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
-use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
-use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
-use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 
 #[test]
 fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
@@ -84,8 +76,12 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         bytes.extend_from_slice(paired_class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
 
-        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
-        scope.reference_members = vec![record_index];
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:scope#1",
+            crate::records::feature::DesignFeatureKind::WorkPlane,
+            1,
+        );
+        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("325-byte WorkPlane frame");
         for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {

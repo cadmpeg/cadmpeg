@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
 use crate::native::{Native, NativeNamespace, NativeRecord};
-use crate::units::{Tolerances, Units};
+use crate::units::{CanonicalUnitsWire, Tolerances};
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -58,7 +58,29 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
-    document_local_sha256_with_charge(ir, format, source_image_id, |_| {
+    document_local_sha256_with_source_and_charge(
+        ir,
+        ir.source.as_ref(),
+        format,
+        source_image_id,
+        |_| Ok::<(), std::convert::Infallible>(()),
+    )
+    .expect("canonical JSON serialization")
+}
+
+/// Returns the machine-local content digest of `ir` with source metadata that
+/// its producer has not assigned to the document yet.
+///
+/// The digest covers `source` without its own `document_local_sha256`
+/// attribute. All other normalization is identical to
+/// [`document_local_sha256`].
+pub fn document_local_sha256_with_source(
+    ir: &CadIr,
+    source: &SourceMeta,
+    format: &str,
+    source_image_id: &str,
+) -> String {
+    document_local_sha256_with_source_and_charge(ir, Some(source), format, source_image_id, |_| {
         Ok::<(), std::convert::Infallible>(())
     })
     .expect("canonical JSON serialization")
@@ -77,15 +99,31 @@ pub fn document_local_sha256_with_charge<E>(
     source_image_id: &str,
     charge: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<String, E> {
+    document_local_sha256_with_source_and_charge(
+        ir,
+        ir.source.as_ref(),
+        format,
+        source_image_id,
+        charge,
+    )
+}
+
+fn document_local_sha256_with_source_and_charge<E>(
+    ir: &CadIr,
+    source: Option<&SourceMeta>,
+    format: &str,
+    source_image_id: &str,
+    charge: impl FnMut(u64) -> Result<(), E>,
+) -> Result<String, E> {
     let unknowns = reduced_unknowns(ir, format, source_image_id);
     let document = NormalizedDocument {
         ir_version: ir.ir_version(),
-        source: ir.source.as_ref().map(|source| {
+        source: source.map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("document_local_sha256");
+            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         }),
-        units: &ir.units,
+        units: CanonicalUnitsWire::default(),
         tolerances: &ir.tolerances,
         model: ir.model.sorted(),
         native: normalized_native(&ir.native, format, &unknowns),
@@ -128,7 +166,7 @@ fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<Nati
             "unknowns",
             ir.native_unknowns_iter(format)
                 .map_while(|record| record.inspect_err(|_| unreadable = true).ok())
-                .filter(|record| record.id.0 != source_image_id),
+                .filter(|record| record.id.as_str() != source_image_id),
         )
         .expect("unknown records serialize");
     if unreadable {
@@ -136,7 +174,7 @@ fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<Nati
         return Vec::new();
     }
     projected
-        .arenas
+        .arenas_mut()
         .remove("unknowns")
         .expect("the unknown arena was just set")
 }
@@ -149,24 +187,10 @@ struct NormalizedDocument<'a> {
     ir_version: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<SourceMeta>,
-    units: &'a Units,
+    units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
     model: SortedModel<'a>,
-    native: NormalizedNative<'a>,
-}
-
-/// Native namespaces in canonical order, with one arena substituted.
-#[derive(Serialize)]
-#[serde(transparent)]
-struct NormalizedNative<'a> {
-    namespaces: BTreeMap<&'a str, NormalizedNamespace<'a>>,
-}
-
-/// One native namespace whose arenas are borrowed in canonical record order.
-#[derive(Serialize)]
-struct NormalizedNamespace<'a> {
-    version: u32,
-    arenas: BTreeMap<&'a str, Vec<&'a NativeRecord>>,
+    native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
 }
 
 /// Borrow every native namespace in canonical order, replacing the `format`
@@ -176,38 +200,24 @@ fn normalized_native<'a>(
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
-) -> NormalizedNative<'a> {
+) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>> {
     let mut namespaces = native
         .0
         .iter()
         .map(|(name, namespace)| {
             let arenas = namespace
-                .arenas
+                .arenas()
                 .iter()
                 .map(|(arena, records)| (arena.as_str(), sorted_records(records)))
                 .collect();
-            (
-                name.as_str(),
-                NormalizedNamespace {
-                    version: namespace.version,
-                    arenas,
-                },
-            )
+            (name.as_str(), arenas)
         })
-        .collect::<BTreeMap<_, _>>();
-    let namespace = namespaces
+        .collect::<BTreeMap<_, BTreeMap<_, _>>>();
+    namespaces
         .entry(format)
-        .or_insert_with(|| NormalizedNamespace {
-            version: 0,
-            arenas: BTreeMap::new(),
-        });
-    if namespace.version == 0 {
-        namespace.version = 1;
-    }
-    namespace
-        .arenas
+        .or_default()
         .insert("unknowns", unknowns.iter().collect());
-    NormalizedNative { namespaces }
+    namespaces
 }
 
 /// Borrow `records` in canonical identity order.
@@ -269,13 +279,13 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::{
-        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge, sha256_hex,
+        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
+        sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
     };
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
     use crate::native::{Native, NativeRecord};
-    use crate::units::Units;
     use crate::unknown::UnknownRecord;
 
     #[test]
@@ -302,15 +312,14 @@ mod tests {
         }) else {
             panic!("the pinned record literal is a JSON object");
         };
-        NativeRecord::new("pin:record#0", fields)
+        NativeRecord::new("pin:test:record#0", fields).expect("valid native identity")
     }
 
     fn pinned_native() -> Native {
         let mut native = Native::default();
         let namespace = native.namespace_mut("pin");
-        namespace.version = 3;
         namespace
-            .arenas
+            .arenas_mut()
             .insert("records".into(), vec![pinned_record()]);
         native
     }
@@ -319,7 +328,7 @@ mod tests {
     #[test]
     fn pins_pretty_printed_native_record_bytes() {
         let expected = r#"{
-  "id": "pin:record#0",
+  "id": "pin:test:record#0",
   "alpha": [
     -1,
     0,
@@ -354,36 +363,33 @@ mod tests {
     fn pins_pretty_printed_native_arena_bytes() {
         let expected = r#"{
   "pin": {
-    "version": 3,
-    "arenas": {
-      "records": [
-        {
-          "id": "pin:record#0",
-          "alpha": [
-            -1,
-            0,
-            1.5,
-            2.0,
-            10000000000.0,
-            1e-7
-          ],
-          "beta": {
-            "empty_array": [],
-            "empty_object": {},
-            "nested": {
-              "deep": [
-                true,
-                false
-              ]
-            }
-          },
-          "delta": -9007199254740993,
-          "escaped": "quote\" backslash\\ slash/ newline\n tab\t bell\u0007 accent é",
-          "gamma": 9007199254740993,
-          "zeta": null
-        }
-      ]
-    }
+    "records": [
+      {
+        "id": "pin:test:record#0",
+        "alpha": [
+          -1,
+          0,
+          1.5,
+          2.0,
+          10000000000.0,
+          1e-7
+        ],
+        "beta": {
+          "empty_array": [],
+          "empty_object": {},
+          "nested": {
+            "deep": [
+              true,
+              false
+            ]
+          }
+        },
+        "delta": -9007199254740993,
+        "escaped": "quote\" backslash\\ slash/ newline\n tab\t bell\u0007 accent é",
+        "gamma": 9007199254740993,
+        "zeta": null
+      }
+    ]
   }
 }"#;
         assert_eq!(
@@ -398,7 +404,7 @@ mod tests {
     fn pins_native_arena_digest() {
         assert_eq!(
             canonical_json_sha256(&pinned_native()),
-            "acc1d88751dcb143ca47618c3f7a8ce14865edff0a26ab95748d2a0314ee8df0"
+            "7249c236a39ac27b8614a9ef11d6b1e1c416e1242d909e6d0e94a96c1d6507d4"
         );
     }
 
@@ -414,18 +420,21 @@ mod tests {
         }) else {
             panic!("the pinned unknown literal is a JSON object");
         };
-        NativeRecord::new(id, fields)
+        NativeRecord::new(id, fields).expect("valid native identity")
     }
 
     fn pinned_document() -> CadIr {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.native = pinned_native();
         let namespace = ir.native.namespace_mut("pin");
-        namespace.arenas.insert(
+        namespace.arenas_mut().insert(
             "unknowns".into(),
             vec![
-                pinned_unknown("pin:source-image#0", &[]),
-                pinned_unknown("pin:unknown#0", &["pin:record#0", "pin:unknown#1"]),
+                pinned_unknown("pin:test:source-image#0", &[]),
+                pinned_unknown(
+                    "pin:test:unknown#0",
+                    &["pin:test:record#0", "pin:test:unknown#1"],
+                ),
             ],
         );
         ir.finalize();
@@ -439,24 +448,25 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "00ac254ce62cf446f1d1dcea56ded050bd9a1ef2a53c846a8e7c588cd99bb071"
+            "d1ba8ac967bf02f410e362b0ba5cdefaa410bbbab7c21d4180443b16906ff487"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "83fa753fb39360b9e51859c9c07ddac6ff23ec17b179fa548cf33c4331170180"
+            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
         );
     }
 
     #[test]
     fn charged_document_digest_preserves_the_uncharged_digest() {
         let ir = pinned_document();
-        let expected = document_local_sha256(&ir, "pin", "pin:source-image#0");
+        let expected = document_local_sha256(&ir, "pin", "pin:test:source-image#0");
         let mut charged = 0;
-        let actual = document_local_sha256_with_charge(&ir, "pin", "pin:source-image#0", |bytes| {
-            charged += bytes;
-            Ok::<(), ()>(())
-        })
-        .unwrap();
+        let actual =
+            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |bytes| {
+                charged += bytes;
+                Ok::<(), ()>(())
+            })
+            .unwrap();
 
         assert_eq!(actual, expected);
         assert!(charged > 0);
@@ -465,9 +475,10 @@ mod tests {
     #[test]
     fn charged_document_digest_propagates_a_work_refusal() {
         let ir = pinned_document();
-        let result = document_local_sha256_with_charge(&ir, "pin", "pin:source-image#0", |_| {
-            Err::<(), _>("work limit")
-        });
+        let result =
+            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |_| {
+                Err::<(), _>("work limit")
+            });
 
         assert!(matches!(result, Err("work limit")));
     }
@@ -477,26 +488,83 @@ mod tests {
     /// must keep.
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
-        ir.source = Some(crate::document::SourceMeta {
-            format: "pin".into(),
-            attributes: [
-                ("document_local_sha256".to_owned(), "stale".to_owned()),
+        ir.source = Some(crate::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::pinned("pin:test"),
+                ),
+            ),
+            [
+                (
+                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    "stale".to_owned(),
+                ),
                 ("file_size".to_owned(), "4096".to_owned()),
             ]
             .into_iter()
             .collect(),
-        });
+        ));
         ir
     }
 
     /// Pins normalization over source metadata: the recorded baseline attribute
     /// is dropped before hashing and every other attribute is kept.
+    ///
+    /// The pin covers the canonical JSON of the normalized document, in which
+    /// the source block reads
+    ///
+    /// ```text
+    ///   "source": {
+    ///     "format": "pin",
+    ///     "attributes": {
+    ///       "file_size": "4096"
+    ///     },
+    ///     "dialects": {
+    ///       "primary": {
+    ///         "format": "pin",
+    ///         "dialect": "pin:test",
+    ///         "admission": "admitted"
+    ///       },
+    ///       "extra": []
+    ///     }
+    ///   },
+    /// ```
+    ///
+    /// `dialects` is the member the wire format makes unconditional. This is the
+    /// only pin this shape change moves: the other pinned documents carry no
+    /// source metadata, so their normalized form still elides the whole
+    /// `source` member.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
+        let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "3750864814cc4d83c355df4e8c6942c3b7c682dc15c193b5c836540ad8c07d64"
+            independently_normalized,
+            "3c2f8334870f7c44b3de17bda445f4f56003a68e22f6078f11f96ed5109725a9"
+        );
+        assert_eq!(
+            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            independently_normalized
+        );
+    }
+
+    #[test]
+    fn local_source_digest_matches_an_assigned_source_without_cloning_the_document() {
+        let mut ir = pinned_document_with_source();
+        let source = ir.source.take().expect("fixture carries source metadata");
+
+        assert_eq!(
+            crate::hash::document_local_sha256_with_source(
+                &ir,
+                &source,
+                "pin",
+                "pin:test:source-image#0",
+            ),
+            document_local_sha256(
+                &pinned_document_with_source(),
+                "pin",
+                "pin:test:source-image#0"
+            )
         );
     }
 
@@ -520,14 +588,14 @@ mod tests {
         normalized.finalize();
         normalized.source = ir.source.as_ref().map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("document_local_sha256");
+            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         });
         let unknowns = ir
             .native_unknowns(format)
             .unwrap_or_default()
             .into_iter()
-            .filter(|record| record.id.0 != source_image_id)
+            .filter(|record| record.id.as_str() != source_image_id)
             .collect::<Vec<_>>();
         normalized.set_native_unknowns(format, &unknowns).unwrap();
         crate::hash::sha256_hex(normalized.to_canonical_json().unwrap().as_bytes())
@@ -535,52 +603,67 @@ mod tests {
 
     /// A document with an unordered model, a recorded digest, two native
     /// namespaces, and a retained source image among the unknown records.
-    fn local_digest_fixture() -> CadIr {
+    fn local_digest_fixture_with_source_image(
+        source_image: UnknownRecord,
+    ) -> (CadIr, crate::SourceFidelity) {
         let mut ir = unit_cube();
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
-        ir.source = Some(crate::SourceMeta {
-            format: "synthetic".into(),
-            attributes: [
-                ("document_local_sha256".to_owned(), "stale".to_owned()),
+        ir.source = Some(crate::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(
+                    cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
+                ),
+            ),
+            [
+                (
+                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    "stale".to_owned(),
+                ),
                 ("active_brep".to_owned(), "body#0".to_owned()),
             ]
             .into_iter()
             .collect(),
-        });
-        ir.set_native_unknowns_owned(
-            "synthetic",
+        ));
+        let mut source_fidelity = crate::SourceFidelity::default();
+        source_fidelity
+            .attach_native_unknown_records(
+                &mut ir,
+                "synthetic",
+                [
+                    source_image,
+                    UnknownRecord::retained(
+                        UnknownId::mint("synthetic:model:record#1").expect("valid identity"),
+                        8,
+                        vec![4, 5],
+                        vec!["cube:body#0".into()],
+                    ),
+                ],
+            )
+            .unwrap();
+        let namespace = ir.native.namespace_mut("other");
+        namespace.arenas_mut().insert(
+            "records".into(),
             vec![
-                UnknownRecord {
-                    id: UnknownId("synthetic:file:source-image#0".into()),
-                    offset: 0,
-                    byte_len: 3,
-                    sha256: "00".into(),
-                    data: Some(vec![1, 2, 3]),
-                    links: Vec::new(),
-                },
-                UnknownRecord {
-                    id: UnknownId("synthetic:record#1".into()),
-                    offset: 8,
-                    byte_len: 2,
-                    sha256: "11".into(),
-                    data: Some(vec![4, 5]),
-                    links: vec!["cube:body#0".into()],
-                },
+                NativeRecord::new("other:test:record#0", serde_json::Map::new())
+                    .expect("valid native identity"),
             ],
         );
-        let namespace = ir.native.namespace_mut("other");
-        namespace.version = 3;
-        namespace.arenas.insert(
-            "records".into(),
-            vec![NativeRecord::new("other:record#0", serde_json::Map::new())],
-        );
-        ir
+        (ir, source_fidelity)
+    }
+
+    fn local_digest_fixture() -> (CadIr, crate::SourceFidelity) {
+        local_digest_fixture_with_source_image(UnknownRecord::retained(
+            UnknownId::mint("synthetic:file:source-image#0").expect("valid identity"),
+            0,
+            vec![1, 2, 3],
+            Vec::new(),
+        ))
     }
 
     #[test]
     fn document_local_sha256_matches_the_cloned_normalization() {
-        let ir = local_digest_fixture();
+        let (ir, _source_fidelity) = local_digest_fixture();
         let source_image = "synthetic:file:source-image#0";
         assert_eq!(
             crate::hash::document_local_sha256(&ir, "synthetic", source_image),
@@ -595,47 +678,28 @@ mod tests {
     #[test]
     fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
-        let ir = local_digest_fixture();
+        let (ir, _source_fidelity) = local_digest_fixture();
         let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image);
 
-        let mut recorded = local_digest_fixture();
+        let (mut recorded, _source_fidelity) = local_digest_fixture();
         recorded
             .source
             .as_mut()
             .unwrap()
             .attributes
-            .insert("document_local_sha256".into(), hash.clone());
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), hash.clone());
         assert_eq!(
             crate::hash::document_local_sha256(&recorded, "synthetic", source_image),
             hash
         );
 
-        let mut repacked = local_digest_fixture();
-        let mut records = repacked
-            .native
-            .namespace("synthetic")
-            .unwrap()
-            .arenas
-            .get("unknowns")
-            .unwrap()
-            .clone();
-        records.retain(|record| record.id() != source_image);
-        records.push(
-            UnknownRecord {
-                id: UnknownId(source_image.into()),
-                offset: 4,
-                byte_len: 1,
-                sha256: "22".into(),
-                data: Some(vec![9]),
-                links: vec!["cube:body#0".into()],
-            }
-            .into_native_record(),
-        );
-        repacked
-            .native
-            .namespace_mut("synthetic")
-            .arenas
-            .insert("unknowns".into(), records);
+        let (repacked, _source_fidelity) =
+            local_digest_fixture_with_source_image(UnknownRecord::retained(
+                UnknownId::mint(source_image).expect("valid identity"),
+                4,
+                vec![9],
+                vec!["cube:body#0".into()],
+            ));
         assert_eq!(
             crate::hash::document_local_sha256(&repacked, "synthetic", source_image),
             hash

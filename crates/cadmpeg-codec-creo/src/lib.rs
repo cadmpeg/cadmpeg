@@ -8,8 +8,9 @@
 //! the geometry, topology, sketches, and design records supported for that
 //! layout.
 //!
-//! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! on the cadmpeg support ladder.
+//! <!-- generated: capability creo -->
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#creo-parametric-prt)).
+//! <!-- /generated: capability creo -->
 //!
 //! # Quick start
 //!
@@ -63,6 +64,7 @@ pub(crate) mod coverage;
 pub(crate) mod curve;
 pub(crate) mod datum;
 pub(crate) mod decode;
+pub(crate) mod dialect;
 pub(crate) mod feature;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
 pub(crate) mod layout;
@@ -86,19 +88,18 @@ pub(crate) mod vecmath;
 pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::ContainerSummary;
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CreoCodec;
 
 impl CodecBackend for CreoCodec {
-    fn id(&self) -> &'static str {
-        "creo"
-    }
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and
         // distinguishes it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {
@@ -114,14 +115,11 @@ impl CodecBackend for CreoCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(root.window());
-        Ok(container::summarize(&scan))
+        let classification = dialect::classify(&scan);
+        Ok(container::summarize(&scan, &classification))
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
 }

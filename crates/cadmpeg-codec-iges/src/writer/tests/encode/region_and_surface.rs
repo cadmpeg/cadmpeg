@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::codec::write::TargetRequest;
 
 #[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
@@ -26,11 +27,11 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
             .iter()
             .find(|face| face.id == *face_id)
             .is_some_and(|face| face.sense == Sense::Reversed)));
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -123,89 +124,94 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (
             "planar-open",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(2.0, 0.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid planar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "unique-planar-open",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(1.0, 1.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid unique-planar-open NURBS"),
             [1, 0, 1, 0],
         ),
         (
             "nonplanar-open",
-            NurbsCurve {
-                degree: 2,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 1.0),
                     Point3::new(2.0, 1.0, 0.0),
                     Point3::new(3.0, 0.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid nonplanar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "closed-planar",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(0.0, 0.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid closed-planar NURBS"),
             [0, 1, 1, 0],
         ),
         (
             "equal-weight-rational",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                weights: Some(vec![2.0, 2.0]),
-                periodic: false,
-            },
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                Some(vec![2.0, 2.0]),
+                false,
+            )
+            .expect("valid equal-weight rational NURBS"),
             [0, 0, 1, 0],
         ),
     ];
     for (name, nurbs, expected) in cases {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId(format!("curve#{name}")),
+            id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
             geometry: CurveGeometry::Nurbs(nurbs),
             source_object: None,
         });
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        let plan = IgesCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            )
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let mut written = Vec::new();
         plan.write_to(&mut written)
@@ -213,7 +219,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let entity = decoded.ir().native.namespace("iges").unwrap().arenas["entities"]
+        let entity = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|record| {
                 record.field("entity_type").and_then(|value| value.as_i64()) == Some(126)

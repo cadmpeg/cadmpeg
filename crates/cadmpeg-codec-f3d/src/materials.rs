@@ -8,6 +8,8 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
@@ -26,7 +28,7 @@ use cadmpeg_protein::{
 };
 
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::presentation::{
     visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
     MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
@@ -110,7 +112,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         _ => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less Protein schema {schema} is unsupported"
-            )))
+            )));
         }
     }
     let instance = page_logical(&logical)?;
@@ -309,7 +311,10 @@ fn patch_instance_colors(
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(&property.value, cadmpeg_protein::PropertyValue::Color(_))
+                        matches!(
+                            property.value(),
+                            Some(cadmpeg_protein::property::PropertyValue::Color(_))
+                        )
                     })
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -333,7 +338,7 @@ fn patch_instance_colors(
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} has no writable color carrier"
-                        )))
+                        )));
                     }
                 }
             };
@@ -357,14 +362,17 @@ fn patch_instance_colors(
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
-                        )))
+                        )));
                     }
                 };
                 decoded_record
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(&property.value, cadmpeg_protein::PropertyValue::Float(_))
+                        matches!(
+                            property.value(),
+                            Some(cadmpeg_protein::property::PropertyValue::Float(_))
+                        )
                     })
                     .map(|property| property.value_offset)
                     .ok_or_else(|| {
@@ -403,7 +411,7 @@ fn patch_instance_colors(
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
-                        )))
+                        )));
                     }
                 }
             };
@@ -504,7 +512,7 @@ pub fn decode_with_body_bindings<'a>(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, role::PROTEIN))
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
     {
         let protein = scan.entry_view(&entry.name).ok_or_else(|| {
             CodecError::Malformed("protein archive entry missing from scan".into())
@@ -556,7 +564,7 @@ pub fn decode_with_body_bindings<'a>(
         }
         out.extend(appearances);
     }
-    out.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    out.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     if let Some(pair) = out
         .windows(2)
         .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])
@@ -573,12 +581,19 @@ pub fn decode_with_body_bindings<'a>(
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             out.push(Appearance {
-                id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
-                name: assignment.visual_preset.clone(),
+                id: AppearanceId::mint(format!("f3d:design:appearance#{}", assignment.visual_guid))
+                    .expect("identity grammar"),
+                name: assignment
+                    .visual_preset
+                    .as_ref()
+                    .map(|field| field.value.clone()),
                 asset_guid: Some(assignment.visual_guid.clone()),
                 library_id: None,
                 visual_guid: Some(assignment.visual_guid.clone()),
-                physical_token: assignment.physical_token.clone(),
+                physical_token: assignment
+                    .physical_token
+                    .as_ref()
+                    .map(|field| field.value.clone()),
                 schema: None,
                 category: None,
                 base_color: None,
@@ -594,7 +609,10 @@ pub fn decode_with_body_bindings<'a>(
                 .as_deref()
                 .is_some_and(|guid| visual_tokens_match(guid, &assignment.visual_guid))
         }) {
-            appearance.physical_token = assignment.physical_token.clone();
+            appearance.physical_token = assignment
+                .physical_token
+                .as_ref()
+                .map(|field| field.value.clone());
         }
     }
     let mut bindings = bind_bodies(
@@ -619,7 +637,9 @@ pub fn decode_with_body_bindings<'a>(
             id: format!(
                 "f3d:appearance:body#{}:{}",
                 over.entity_suffix, over.visual_guid
-            ),
+            )
+            .try_into()
+            .expect("valid identity"),
             target: AppearanceTarget::Body(over.body.clone()),
             appearance: appearance.id.clone(),
             source_entity_id: None,
@@ -680,14 +700,14 @@ fn appearances_from_schema_records(
             let mut properties = BTreeMap::new();
             let mut connected = Vec::new();
             for (id, property) in &record.properties {
-                if let cadmpeg_protein::PropertyValue::Float(value) = property.value {
-                    properties.insert(neutral_property_name(id).to_owned(), value);
+                if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
+                    property.value()
+                {
+                    properties.insert(neutral_property_name(id).to_owned(), *value);
                 }
-                for guid in &property.connections {
+                for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
-                        let mut texture = texture.clone();
-                        texture.slot.clone_from(id);
-                        connected.push(texture);
+                        connected.push(texture.clone().into_ref(id.clone()));
                     }
                 }
             }
@@ -698,7 +718,8 @@ fn appearances_from_schema_records(
             });
             let base_color = appearance_base_color(record);
             Appearance {
-                id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
+                id: AppearanceId::mint(format!("f3d:design:appearance#{}", record.guid))
+                    .expect("identity grammar"),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),
@@ -730,8 +751,8 @@ fn appearance_base_color_property_id(
         record
             .properties
             .get("common_Tint_toggle")
-            .map(|property| &property.value),
-        Some(cadmpeg_protein::PropertyValue::Boolean(true))
+            .and_then(|property| property.value()),
+        Some(cadmpeg_protein::property::PropertyValue::Boolean(true))
     ) {
         return Some("common_Tint_color");
     }
@@ -754,8 +775,11 @@ fn appearance_base_color_property_id(
 }
 
 fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<Color> {
-    let cadmpeg_protein::PropertyValue::Color([r, g, b, a]) =
-        record.properties.get(id).map(|property| &property.value)?
+    let cadmpeg_protein::property::PropertyValue::Color([r, g, b, a]) =
+        record
+            .properties
+            .get(id)
+            .and_then(|property| property.value())?
     else {
         return None;
     };
@@ -774,7 +798,31 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         })
 }
 
-fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>, usize) {
+#[derive(Clone, PartialEq)]
+struct TextureAsset {
+    asset_guid: String,
+    schema: String,
+    paths: Vec<String>,
+    urn: Option<String>,
+    mapping: TextureMap2d,
+    bump: Option<BumpMap>,
+}
+
+impl TextureAsset {
+    fn into_ref(self, slot: String) -> TextureRef {
+        TextureRef {
+            asset_guid: self.asset_guid,
+            slot,
+            schema: self.schema,
+            paths: self.paths,
+            urn: self.urn,
+            mapping: self.mapping,
+            bump: self.bump,
+        }
+    }
+}
+
+fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureAsset>, usize) {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -786,18 +834,22 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>
         .iter()
         .find_map(|(id, property)| {
             (id.ends_with("_Bitmap"))
-                .then_some(&property.value)
+                .then(|| property.value())
+                .flatten()
                 .and_then(|value| match value {
-                    cadmpeg_protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
+                    cadmpeg_protein::property::PropertyValue::TextureUri(paths) => {
+                        Some(paths.clone())
+                    }
                     _ => None,
                 })
         })
         .unwrap_or_default();
     let urn = record.properties.iter().find_map(|(id, property)| {
         (id.ends_with("_Bitmap_urn"))
-            .then_some(&property.value)
+            .then(|| property.value())
+            .flatten()
             .and_then(|value| match value {
-                cadmpeg_protein::PropertyValue::String(value) if !value.is_empty() => {
+                cadmpeg_protein::property::PropertyValue::String(value) if !value.is_empty() => {
                     Some(value.clone())
                 }
                 _ => None,
@@ -832,9 +884,8 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>
         depth: distance("bumpmap_Depth", 0.0),
         normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
     });
-    let texture = TextureRef {
+    let texture = TextureAsset {
         asset_guid: record.guid.clone(),
-        slot: String::new(),
         schema: record.schema.clone(),
         paths,
         urn,
@@ -850,13 +901,13 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>
 fn property_with_suffix<'a>(
     record: &'a cadmpeg_protein::DecodedRecord,
     suffix: &str,
-) -> Option<&'a cadmpeg_protein::PropertyValue> {
+) -> Option<&'a cadmpeg_protein::property::PropertyValue> {
     let qualified_suffix = format!("_{suffix}");
     record
         .properties
         .iter()
         .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
-        .map(|(_, property)| &property.value)
+        .and_then(|(_, property)| property.value())
 }
 
 fn neutral_property_name(id: &str) -> &str {
@@ -873,21 +924,21 @@ fn is_physical_schema(schema: &str) -> bool {
 
 fn integer_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<u32> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Integer(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Integer(value) => Some(*value),
         _ => None,
     }
 }
 
 fn float_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Float(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Float(value) => Some(*value),
         _ => None,
     }
 }
 
 fn boolean_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<bool> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Boolean(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Boolean(value) => Some(*value),
         _ => None,
     }
 }
@@ -896,7 +947,7 @@ fn distance_property(
     record: &cadmpeg_protein::DecodedRecord,
     suffix: &str,
 ) -> Result<Option<f64>, u32> {
-    let Some(cadmpeg_protein::PropertyValue::Distance { unit, value }) =
+    let Some(cadmpeg_protein::property::PropertyValue::Distance { unit, value }) =
         property_with_suffix(record, suffix)
     else {
         return Ok(None);
@@ -916,7 +967,7 @@ pub(crate) fn decode_design_assignments(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -951,16 +1002,22 @@ pub(crate) fn decode_design_assignments(
                 ),
                 asm_body_key: body_binding.asm_key,
                 asm_body_key_offset: body_binding.asm_key_offset as u64,
-                entity_suffix: presentation.entity_suffix,
-                entity_suffix_offset: body_binding.entity_suffix_offset as u64,
+
+                entity_suffix_offset: body_binding.entity_suffix_offset() as u64,
                 entity_id,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
                 visual_guid_offset: material.visual_guid_offset,
-                physical_token: Some(material.physical_token),
-                physical_token_offset: Some(material.physical_token_offset),
-                visual_preset: material.visual_preset,
-                visual_preset_offset: material.visual_preset_offset,
+                physical_token: Some(crate::records::RecordedValue {
+                    value: material.physical_token,
+                    offset: Some(material.physical_token_offset),
+                }),
+                visual_preset: material
+                    .visual_preset
+                    .map(|field| crate::records::RecordedValue {
+                        value: field.value,
+                        offset: Some(field.offset),
+                    }),
             });
         }
     }
@@ -988,7 +1045,7 @@ fn decode_body_appearance_overrides(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1026,7 +1083,7 @@ fn decode_body_appearance_overrides(
                 map_pair.asm_key,
                 map_pair.asm_key_offset as u64,
                 map_pair.entity_suffix,
-                map_pair.entity_suffix_offset as u64,
+                map_pair.entity_suffix_offset() as u64,
             )?
             else {
                 continue;
@@ -1081,7 +1138,7 @@ fn decode_face_appearance_assignments(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1372,7 +1429,7 @@ fn is_lowercase_guid(value: &str) -> bool {
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    let nodes = crate::design::decode::body::browser_node_entities(bytes);
+    let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {
@@ -1431,7 +1488,7 @@ fn bind_bodies(
             &assignment.id,
             assignment.asm_body_key,
             assignment.asm_body_key_offset,
-            assignment.entity_suffix,
+            assignment.entity_id.suffix(),
             assignment.entity_suffix_offset,
         )?
         else {
@@ -1443,15 +1500,18 @@ fn bind_bodies(
         out.push(AppearanceBinding {
             id: format!(
                 "f3d:appearance:binding#{}:{}",
-                assignment.entity_id, assignment.visual_guid
-            ),
+                assignment.entity_id.as_str(),
+                assignment.visual_guid
+            )
+            .try_into()
+            .expect("valid identity"),
             target: AppearanceTarget::Body(body),
             appearance: appearance.id.clone(),
-            source_entity_id: Some(assignment.entity_id.clone()),
-            object_type: object_types.get(&assignment.entity_suffix).cloned(),
+            source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
+            object_type: object_types.get(&assignment.entity_id.suffix()).cloned(),
             visible: None,
             channels: act_channels
-                .get(&assignment.entity_suffix)
+                .get(&assignment.entity_id.suffix())
                 .cloned()
                 .unwrap_or_default(),
         });
@@ -1470,7 +1530,10 @@ pub(crate) fn appearance_for_assignment<'a>(
     appearance_for_visual_token(
         appearances,
         &assignment.visual_guid,
-        assignment.visual_preset.as_deref(),
+        assignment
+            .visual_preset
+            .as_ref()
+            .map(|field| field.value.as_str()),
     )
 }
 
@@ -1567,7 +1630,7 @@ fn decode_design_object_types(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
@@ -1807,21 +1870,15 @@ fn definition_catalog<'a>(
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct DefinitionCatalogRecord {
+struct DefinitionCatalog {
     schema: String,
     asset_id: String,
-    base_asset_id: String,
     category: Option<String>,
-    group: Option<String>,
-    subgroup: Option<String>,
-    description: String,
-    tags: Vec<String>,
-    preview_paths: Vec<String>,
 }
 
 fn merge_definition_catalog_record(
-    definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalogRecord>,
-    definition: DefinitionCatalogRecord,
+    definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalog>,
+    definition: DefinitionCatalog,
 ) {
     let key = (definition.asset_id.clone(), definition.schema.clone());
     match definitions.entry(key) {
@@ -1836,7 +1893,7 @@ fn merge_definition_catalog_record(
     }
 }
 
-fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {
+fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalog, CodecError> {
     let malformed = malformed_definition_catalog_record;
     if !record.starts_with(RECORD_MARKER) {
         return Err(malformed("marker", 0));
@@ -1853,7 +1910,7 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
     position += 1;
     let asset_id = take_lp_utf8(record, &mut position)
         .ok_or_else(|| malformed("asset identifier", position))?;
-    let base_asset_id = take_lp_utf8(record, &mut position)
+    take_lp_utf8(record, &mut position)
         .ok_or_else(|| malformed("base asset identifier", position))?;
     let version =
         View::u32_le_at(record, position).ok_or_else(|| malformed("format version", position))?;
@@ -1866,33 +1923,22 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
     } else {
         None
     };
-    let group = if version >= 1 {
-        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?)
-    } else {
-        None
-    };
-    let subgroup = if version == 3 {
-        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?)
-    } else {
-        None
-    };
-    let description =
-        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
-    let tags = take_catalog_strings(record, &mut position)?;
-    let preview_paths = take_catalog_strings(record, &mut position)?;
+    if version >= 1 {
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?;
+    }
+    if version == 3 {
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?;
+    }
+    take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
+    consume_catalog_strings(record, &mut position)?;
+    consume_catalog_strings(record, &mut position)?;
     if record[position..].iter().any(|byte| *byte != 0) {
         return Err(malformed("trailing padding", position));
     }
-    Ok(DefinitionCatalogRecord {
+    Ok(DefinitionCatalog {
         schema,
         asset_id,
-        base_asset_id,
         category,
-        group,
-        subgroup,
-        description,
-        tags,
-        preview_paths,
     })
 }
 
@@ -1900,23 +1946,17 @@ fn malformed_definition_catalog_record(_field: &str, _position: usize) -> CodecE
     CodecError::Malformed("Protein definition catalog record is malformed".into())
 }
 
-fn take_catalog_strings(record: &[u8], position: &mut usize) -> Result<Vec<String>, CodecError> {
+fn consume_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), CodecError> {
     let count = View::u32_le_at(record, *position)
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     *position += 4;
     let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
-    let mut values = Vec::new();
-    values
-        .try_reserve(count)
-        .map_err(|_| malformed_definition_catalog_record("string capacity", *position))?;
     for _ in 0..count {
-        values.push(
-            take_lp_utf8(record, position)
-                .ok_or_else(|| malformed_definition_catalog_record("string", *position))?,
-        );
+        take_lp_utf8(record, position)
+            .ok_or_else(|| malformed_definition_catalog_record("string", *position))?;
     }
-    Ok(values)
+    Ok(())
 }
 
 pub(crate) fn nested_entry<'a>(
@@ -1929,7 +1969,7 @@ pub(crate) fn nested_entry<'a>(
     };
     for entry in archive.entries() {
         if entry.name.ends_with(suffix) {
-            return Ok(Some(archive.open(ctx, entry)?));
+            return Ok(Some(archive.open(ctx, &entry.name)?));
         }
     }
     Ok(None)
@@ -1995,7 +2035,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
         fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
     Some(Appearance {
-        id: AppearanceId(format!("f3d:design:appearance#{guid}")),
+        id: AppearanceId::mint(format!("f3d:design:appearance#{guid}")).expect("identity grammar"),
         name: Some(base),
         asset_guid: Some(guid.clone()),
         library_id: library_id(&asset_lib_id),

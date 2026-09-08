@@ -8,14 +8,15 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "Assemble",
+        crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "283".into();
-    scope.paired_class_tag = "264".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
-    scope.reference_members = vec![200, 201, 202, 203, 108, 109, 110, 111, 204];
+    scope.reference_members =
+        crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
     let owners = (0_u32..12)
         .map(|local_ordinal| DesignParameterOwner {
             id: format!(
@@ -24,7 +25,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
             ),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "289".into(),
+            class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
             record_index: 100 + local_ordinal,
             scope_record_index,
             local_ordinal,
@@ -46,8 +47,15 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     .expect("variable-reference assembly alignment");
     assert_eq!(alignment.angle, 8.0);
     assert_eq!(alignment.offset, [9.0, 10.0, 11.0]);
-    assert_eq!(alignment.owner_record_indices, [108, 109, 110, 111]);
-    assert!(alignment.operand_frames.is_some());
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [108, 109, 110, 111]
+    );
+    assert!(alignment.operand_frames().is_some());
 
     let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {
         bytes[at] = 1;
@@ -130,12 +138,13 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         paths.each_ref().map(|path| path.class_tag.as_str()),
         ["330", "330"]
     );
-    assert_eq!(paths[0].link.locator_class_tag, "390");
-    assert_eq!(paths[0].link.wrapper_class_tag, "397");
+    assert_eq!(paths[0].link.locator_class_tag.as_str(), "390");
+    assert_eq!(paths[0].link.wrapper_class_tag.as_str(), "397");
     assert_eq!(paths[1].occurrence_guids.len(), 2);
 
     let mut wrong_generation = scope.clone();
-    wrong_generation.paired_class_tag = "260".into();
+    wrong_generation.paired_class_tag =
+        crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::native::om::{OmOperationStateJournalGroup, OmOperationStateJournalRow};
+use crate::native::features::operation_record::FeatureOperationRecord;
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
+use crate::om::state_journal::JournalRow;
 use crate::test_support::{
     composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
 };
@@ -13,8 +15,15 @@ fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabe
         section_link: "history#0".to_string(),
         ordinal,
         value: "EXTRUDE".to_string(),
-        object_indices,
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences(object_indices.map(|value| {
+            value.map(|value| {
+                crate::om::reference_index::FeatureReferenceToken::from_wire(
+                    value,
+                    &[u8::try_from(value).unwrap()],
+                )
+                .unwrap()
+            })
+        })),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     }
@@ -140,11 +149,11 @@ fn operation_header_identity_survives_offset_store_insertion() {
     let first_labels = super::feature_operation_labels(&first);
     let second_labels = super::feature_operation_labels(&second);
     assert_eq!(
-        first_labels[0].object_indices,
+        first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
     );
     assert_eq!(
-        second_labels[0].object_indices,
+        second_labels[0].objects.values(),
         [Some(2), Some(3), None, None]
     );
     assert_eq!(
@@ -184,14 +193,17 @@ fn operation_body_write_retains_identity_group_and_image() {
     let [first, second] = writes.as_slice() else {
         panic!("two body-write frames");
     };
-    assert_eq!(first.body_identity, 0x11);
-    assert_eq!(first.group_node, 0xa9);
-    assert_eq!(first.raw_group_node, [0x80, 0xa9]);
-    assert_eq!(first.body_image_object_index, 0x693);
-    assert_eq!(first.raw_body_image_object_index, [0x86, 0x93]);
-    assert_eq!(second.body_identity, 0x12);
-    assert_eq!(second.group_node, first.group_node);
-    assert_eq!(second.body_image_object_index, 0x694);
+    assert_eq!(first.frame.body_identity(), 0x11);
+    assert_eq!(first.frame.group_node().value(), 0xa9);
+    assert_eq!(first.frame.group_node().raw(), [0x80, 0xa9]);
+    assert_eq!(first.frame.body_image().value(), 0x693);
+    assert_eq!(first.frame.body_image().raw(), [0x86, 0x93]);
+    assert_eq!(second.frame.body_identity(), 0x12);
+    assert_eq!(
+        second.frame.group_node().value(),
+        first.frame.group_node().value()
+    );
+    assert_eq!(second.frame.body_image().value(), 0x694);
 }
 
 #[test]
@@ -211,7 +223,7 @@ fn operation_body_write_resolves_one_unique_image_block() {
     let writes = super::feature_operation_body_writes(&container);
 
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].body_image_object_index, 65);
+    assert_eq!(writes[0].frame.body_image().value(), 65);
     assert_eq!(
         writes[0].body_image_data_block.as_deref(),
         Some("nx:om-data-blocks-0:block#65")
@@ -232,11 +244,11 @@ fn body_image_segment_use_requires_one_plain_alias() {
     )]))
     .expect("synthetic body-image store");
     let writes = super::feature_operation_body_writes(&container);
-    let binding = |id: &str, stream_kind: &str| SegmentBodyBinding {
+    let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
         id: id.to_string(),
         stream_link: format!("{id}:link"),
         stream_ordinal: 0,
-        stream_kind: stream_kind.to_string(),
+        stream_kind,
         body_object_index: 42,
         body_alias_object_index: 11,
         stream_role: 10,
@@ -245,7 +257,10 @@ fn body_image_segment_use_requires_one_plain_alias() {
 
     let uses = super::feature_operation_body_image_segment_uses(
         &writes,
-        &[binding("plain", "plain"), binding("partition", "partition")],
+        &[
+            binding("plain", crate::parasolid::StreamKind::Plain),
+            binding("partition", crate::parasolid::StreamKind::Partition),
+        ],
     );
 
     assert_eq!(uses.len(), 1);
@@ -257,7 +272,10 @@ fn body_image_segment_use_requires_one_plain_alias() {
     assert_eq!(uses[0].segment_body_binding, "plain");
     assert!(super::feature_operation_body_image_segment_uses(
         &writes,
-        &[binding("first", "plain"), binding("second", "plain")],
+        &[
+            binding("first", crate::parasolid::StreamKind::Plain),
+            binding("second", crate::parasolid::StreamKind::Plain)
+        ],
     )
     .is_empty());
 }
@@ -266,26 +284,24 @@ fn body_image_segment_use_requires_one_plain_alias() {
 fn body_identity_segment_use_does_not_require_an_image_block() {
     let mut write = FeatureOperationBodyWrite {
         id: "nx:operation-body-write#0".into(),
-        operation_label: "operation".into(),
+        operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
-        body_identity: 11,
-        group_node: 1,
-        raw_group_node: vec![1],
-        group_node_source_offset: 0,
-        endpoint_tag: 0x12,
-        body_image_object_index: 1519,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(1519, &[0x85, 0xef]).unwrap(),
+            0,
+        )
+        .unwrap(),
         body_image_data_block: None,
-        raw_body_image_object_index: vec![0x95, 0xef],
-        body_image_object_index_source_offset: 0,
-        byte_len: 12,
-        source_offset: 0,
     };
-    let binding = |id: &str, stream_kind: &str| SegmentBodyBinding {
+    let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
         id: id.into(),
         stream_link: format!("{id}:link"),
         stream_ordinal: 1,
-        stream_kind: stream_kind.into(),
+        stream_kind,
         body_object_index: 42,
         body_alias_object_index: 11,
         stream_role: 10,
@@ -294,7 +310,10 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
 
     let uses = super::feature_operation_body_identity_segment_uses(
         std::slice::from_ref(&write),
-        &[binding("plain", "plain"), binding("partition", "partition")],
+        &[
+            binding("plain", crate::parasolid::StreamKind::Plain),
+            binding("partition", crate::parasolid::StreamKind::Partition),
+        ],
     );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].operation_body_write, write.id);
@@ -304,7 +323,10 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
     write.body_image_data_block = Some("irrelevant".into());
     assert!(super::feature_operation_body_identity_segment_uses(
         &[write],
-        &[binding("first", "plain"), binding("second", "plain")],
+        &[
+            binding("first", crate::parasolid::StreamKind::Plain),
+            binding("second", crate::parasolid::StreamKind::Plain)
+        ],
     )
     .is_empty());
 }
@@ -328,7 +350,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
             id: id.to_string(),
             stream_link: format!("{id}:link"),
             stream_ordinal,
-            stream_kind: "plain".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Plain,
             body_object_index: 42,
             body_alias_object_index,
             stream_role,
@@ -336,31 +358,34 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         };
     let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
     let image_uses = super::feature_operation_body_image_segment_uses(&writes, &bindings);
-    let stream = |kind| crate::parasolid::Stream {
+    let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
         inflated: Vec::new(),
-        kind,
-        schema: Some("SCH_TEST".into()),
+        body: crate::parasolid::StreamBody::Parasolid {
+            subtype,
+            schema: Some("SCH_TEST".into()),
+        },
     };
     let streams = [
-        stream(crate::parasolid::StreamKind::Plain),
-        stream(crate::parasolid::StreamKind::Plain),
-        stream(crate::parasolid::StreamKind::Partition),
-        stream(crate::parasolid::StreamKind::Deltas),
-        stream(crate::parasolid::StreamKind::Partition),
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
+        stream(crate::parasolid::ParasolidSubtype::Deltas),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
             id: id.into(),
-            stream_ordinal: partition_stream_ordinal + 1,
-            stream_kind: "deltas".into(),
-            partition_stream_ordinal: Some(partition_stream_ordinal),
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                stream_ordinal: partition_stream_ordinal + 1,
+                partition_stream_ordinal: Some(partition_stream_ordinal),
+            },
             xmt: 10,
-            node_id: writes[0].group_node,
-            references: vec![3, 4, 5, 6, 7],
-            selector: 4,
-            linked_reference_status: 0,
+            node_id: writes[0].frame.group_node().value(),
+            references: [3, 4, 5, 6, 7],
+            selector: crate::deltas::group::GroupSelector::Form4,
+            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -399,9 +424,9 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     .is_none());
 
     let interrupted_streams = [
-        stream(crate::parasolid::StreamKind::Plain),
-        stream(crate::parasolid::StreamKind::Deltas),
-        stream(crate::parasolid::StreamKind::Partition),
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Deltas),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
     assert!(super::feature_operation_body_partition_uses(
         &writes,
@@ -416,33 +441,33 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
 
 #[test]
 fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
-    let unlabeled = FeatureUnlabeledOperationBodyWrite {
+    let unlabeled = FeatureOperationBodyWrite {
+        operation_label: None,
         id: "unlabeled-body-write".into(),
         operation_record: "unlabeled-record".into(),
         ordinal: 0,
-        body_identity: 11,
-        group_node: 99,
-        raw_group_node: vec![99],
-        group_node_source_offset: 10,
-        endpoint_tag: 0x10,
-        body_image_object_index: 20,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).unwrap(),
+            crate::om::body_write::BodyImageTag::Form10,
+            crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).unwrap(),
+            9,
+        )
+        .unwrap(),
         body_image_data_block: Some("block".into()),
-        raw_body_image_object_index: vec![20],
-        body_image_object_index_source_offset: 11,
-        byte_len: 12,
-        source_offset: 9,
     };
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
             id: id.into(),
-            stream_ordinal: partition_stream_ordinal + 1,
-            stream_kind: "deltas".into(),
-            partition_stream_ordinal: Some(partition_stream_ordinal),
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                stream_ordinal: partition_stream_ordinal + 1,
+                partition_stream_ordinal: Some(partition_stream_ordinal),
+            },
             xmt: 10,
             node_id: 99,
-            references: vec![3, 4, 5, 6, 7],
-            selector: 4,
-            linked_reference_status: 0,
+            references: [3, 4, 5, 6, 7],
+            selector: crate::deltas::group::GroupSelector::Form4,
+            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -467,35 +492,33 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     .is_empty());
 }
 
-fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
-    OmOperationStateJournalRow {
-        timestamp: 1_700_000_000,
-        value_marker: 0xe0,
-        value: state_ordinal,
-        raw_value: vec![0xe0, 0, 0, 0, state_ordinal as u8],
-        schema_id: 12,
-        raw_schema_id: vec![12],
-        state_ordinal,
-        raw_state_ordinal: vec![state_ordinal as u8],
+fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
+    JournalRow::new(
         source_offset,
-        end_offset: source_offset + 16,
-    }
+        1_700_000_000,
+        crate::om::state_tagged_value::StateTaggedValue::read_at(
+            &[0xe0, 0, 0, 0, state_ordinal as u8],
+            0,
+        )
+        .unwrap(),
+        crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
+        crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0).unwrap(),
+    )
+    .unwrap()
 }
 
 fn journal_group(
     id: &str,
     section_link: &str,
-    rows: Vec<OmOperationStateJournalRow>,
+    rows: Vec<JournalRow>,
 ) -> OmOperationStateJournalGroup {
+    let source_offset = rows[0].offset() - 4;
     OmOperationStateJournalGroup {
         id: id.to_string(),
         section_link: section_link.to_string(),
         ordinal: 0,
-        selector: [4, 0],
-        rows,
+        frame: crate::om::journal_group::JournalGroup::new([4, 0], source_offset, rows).unwrap(),
         source_entry: "/Root/UG_PART/UG_PART".to_string(),
-        source_offset: 480,
-        end_offset: 560,
     }
 }
 
@@ -504,13 +527,11 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         ordinal: 0,
-        byte_len: 32,
         sha256: "record-sha256".to_string(),
-        payload_byte_len: 8,
         payload_sha256: "payload-sha256".to_string(),
         stable_identity: None,
-        payload_source_offset: 404,
-        source_offset: 400,
+        span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
+            .unwrap(),
     }
 }
 
@@ -519,13 +540,19 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
         id: "nx:feature-history:operation-terminal-frame#0000000000-0000000000".to_string(),
         operation_record: operation_record.to_string(),
         immediate_common_frame: None,
-        local_ordinal,
-        raw_local_ordinal: vec![local_ordinal as u8],
-        object_index: None,
-        raw_object_index: vec![0xff],
-        data_block: None,
-        source_offset: 420,
-        object_index_source_offset: 421,
+        frame: crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
+            crate::om::common_frame::CommonFrameSuffix::from_wire(
+                local_ordinal,
+                &[local_ordinal as u8],
+                None,
+                &[0xff],
+            )
+            .unwrap()
+            .with_target(None)
+            .unwrap(),
+            420,
+        )
+        .unwrap(),
     }
 }
 
@@ -539,7 +566,7 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     let group = journal_group(
         "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
         &label.section_link,
-        vec![journal_row(6, 500), journal_row(7, 520)],
+        vec![journal_row(6, 507), journal_row(7, 520)],
     );
     let frame = terminal_frame(&record.id, 7);
 

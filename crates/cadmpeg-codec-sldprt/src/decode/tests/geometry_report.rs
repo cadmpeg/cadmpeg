@@ -6,8 +6,8 @@ use super::super::*;
 use crate::container::ContainerScan;
 use crate::native::SldprtNative;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
@@ -15,49 +15,37 @@ use cadmpeg_ir::features::{
     DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, ParameterId,
     ParameterPmi, ParameterValue, PmiDimensionSubtype,
 };
-use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
 fn native_planar_and_spatial_sketch_geometry_is_reported() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("planar-entity".into()),
-        sketch: SketchId("planar-sketch".into()),
-        construction: false,
-        native_ref: Some("native:planar".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "SplineHandle".into(),
-        },
-    });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("spatial-entity".into()),
-        sketch: SpatialSketchId("spatial-sketch".into()),
-        construction: false,
-        native_ref: Some("native:spatial".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Native {
-            native_kind: "ReferenceCurve".into(),
-        },
-    });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut ir = CadIr::empty();
+    ir.model.sketch_entities.push(
+        SketchEntity::new(
+            SketchEntityId("planar-entity".into()),
+            SketchId("planar-sketch".into()),
+            SketchGeometry::Native {
+                native_kind: "SplineHandle".into(),
+            },
+        )
+        .with_native_ref(Some("native:planar".into())),
+    );
+    ir.model.spatial_sketch_entities.push(
+        SpatialSketchEntity::new(
+            SpatialSketchEntityId("spatial-entity".into()),
+            SpatialSketchId("spatial-sketch".into()),
+            SpatialSketchGeometry::Native {
+                native_kind: "ReferenceCurve".into(),
+            },
+        )
+        .with_native_ref(Some("native:spatial".into())),
+    );
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -69,13 +57,12 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
 
 #[test]
 fn only_sketch_owned_relation_records_without_constraints_are_counted() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("sketch-feature".into()),
+        id: FeatureId::mint("sketch-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -83,22 +70,22 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::default(),
-            sketch: Some(SketchId("sketch".into())),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                "sketch".into(),
+            ))),
         },
         native_ref: Some("feature".into()),
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("represented-geometry".into()),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: Some("geometry-marker".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "UnknownGeometry".into(),
-        },
-    });
+    ir.model.sketch_entities.push(
+        SketchEntity::new(
+            SketchEntityId("represented-geometry".into()),
+            SketchId("sketch".into()),
+            SketchGeometry::Native {
+                native_kind: "UnknownGeometry".into(),
+            },
+        )
+        .with_native_ref(Some("geometry-marker".into())),
+    );
     let marker = |id: &str, ordinal, kind| SketchInputEntity {
         id: id.into(),
         parent: "lane".into(),
@@ -110,8 +97,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         kind,
         state_value: None,
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let relation = FeatureInputRelationInstance {
         id: "relation-instance".into(),
@@ -121,9 +107,12 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
-        scalar_refs: vec!["scalar".into()],
-        parameter_scalar_ref: Some("scalar".into()),
-        display_scalar_ref: None,
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["scalar".into()],
+            Some("scalar".into()),
+            None,
+        )
+        .unwrap(),
         operands: Vec::new(),
     };
     let binding =
@@ -142,10 +131,18 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         0,
         SketchInputKind::Relation(SketchRelationKind::Horizontal),
     );
-    relation_marker.links.push(SketchInputLink {
-        local_id: 1,
-        entity_ref: "geometry-marker".into(),
-    });
+    relation_marker.links = crate::records::SketchInputLinks::new(
+        0,
+        relation_marker
+            .links()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(SketchInputLink {
+                local_id: 1,
+                entity_ref: "geometry-marker".into(),
+            }))
+            .collect(),
+    );
     let native = SldprtNative {
         feature_input_lanes: vec![FeatureInputLane {
             id: "lane".into(),
@@ -171,7 +168,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
                     1,
                     SketchInputKind::Relation(SketchRelationKind::Distance),
                 ),
-                marker("geometry-marker", 2, SketchInputKind::Native(99)),
+                marker("geometry-marker", 2, SketchInputKind::from_native_code(99)),
                 marker(
                     "operandless-relation-marker",
                     3,
@@ -194,17 +191,16 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
 
 #[test]
 fn native_relation_records_have_at_most_one_neutral_owner() {
-    let mut ir = CadIr::empty(Units::default());
-    let entity = |id: &str, native_ref: &str| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: Some(native_ref.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "UnknownGeometry".into(),
-        },
+    let mut ir = CadIr::empty();
+    let entity = |id: &str, native_ref: &str| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("sketch".into()),
+            SketchGeometry::Native {
+                native_kind: "UnknownGeometry".into(),
+            },
+        )
+        .with_native_ref(Some(native_ref.into()))
     };
     ir.model.sketch_entities = vec![
         entity("first", "relation-marker"),
@@ -238,11 +234,13 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                     kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
                     state_value: None,
                     coordinates_m: None,
-                    links: vec![SketchInputLink {
-                        local_id: 1,
-                        entity_ref: "geometry-marker".into(),
-                    }],
-                    link_selector: None,
+                    links: crate::records::SketchInputLinks::new(
+                        0,
+                        vec![SketchInputLink {
+                            local_id: 1,
+                            entity_ref: "geometry-marker".into(),
+                        }],
+                    ),
                 },
                 SketchInputEntity {
                     id: "geometry-marker".into(),
@@ -252,11 +250,10 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                     offset: 1,
                     object_index: None,
                     local_id: Some(1),
-                    kind: SketchInputKind::Native(99),
+                    kind: SketchInputKind::from_native_code(99),
                     state_value: None,
                     coordinates_m: None,
-                    links: Vec::new(),
-                    link_selector: None,
+                    links: None,
                 },
             ],
         }],
@@ -279,7 +276,6 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             ordinal: 0,
             offset: 10,
             name: class_name.into(),
-            role: FeatureInputClassRole::Feature,
         }],
         names: vec![FeatureInputName {
             id: "name".into(),
@@ -317,7 +313,6 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             xml_tag: "Extrusion".into(),
             tree_parent: None,
             source_id: Some("42".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Boss".into(),
             kind: "Extrusion".into(),
@@ -366,14 +361,13 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
 
 #[test]
 fn native_dimension_subtypes_are_reported() {
-    let mut ir = CadIr::empty(Units::default());
-    let owner = FeatureId("owner".into());
+    let mut ir = CadIr::empty();
+    let owner = FeatureId::mint("owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
         name: Some("Feature".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -388,7 +382,7 @@ fn native_dimension_subtypes_are_reported() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),
@@ -408,15 +402,7 @@ fn native_dimension_subtypes_are_reported() {
         }),
         native_ref: None,
     });
-    let mut report = DecodeReport {
-        format: "sldprt".into(),
-        container_only: false,
-        geometry_transferred: true,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    };
+    let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
 
@@ -435,11 +421,13 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();
     decoded.stats.ambiguous_pcurve_parameters = 2;
 
-    let report = super::super::build_geometry_report(&scan, &decoded);
+    let classification = crate::dialect::classify_layers(&scan);
+    let report = super::super::build_geometry_report(&scan, &decoded, &classification);
     assert!(report.losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::GeometryPcurveAmbiguous.kind()
             && loss.message.contains("2 pcurve(s)")

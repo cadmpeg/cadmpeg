@@ -29,10 +29,13 @@ use super::support_uv::{
     IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
+use crate::framing::node_kind::NodeKind;
 use crate::geometry;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -44,9 +47,8 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -60,7 +62,7 @@ pub(crate) fn ordered_point_candidates<'a>(
             .into_iter()
             .map(|point| (point.pos, point.position)),
         graph,
-        29..=29,
+        [NodeKind::Point],
         Node::point_position,
     )
 }
@@ -74,7 +76,13 @@ pub(crate) fn ordered_surface_candidates<'a>(
             .into_iter()
             .map(|surface| (surface.pos, surface.geometry)),
         graph,
-        50..=54,
+        [
+            NodeKind::Plane,
+            NodeKind::Cylinder,
+            NodeKind::Cone,
+            NodeKind::Sphere,
+            NodeKind::Torus,
+        ],
         Node::surface_geometry,
     )
 }
@@ -88,7 +96,7 @@ pub(crate) fn ordered_curve_candidates<'a>(
             .into_iter()
             .map(|curve| (curve.pos, curve.geometry)),
         graph,
-        30..=32,
+        [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
         Node::curve_geometry,
     )
 }
@@ -96,7 +104,7 @@ pub(crate) fn ordered_curve_candidates<'a>(
 pub(crate) fn ordered_fixed_candidates<T>(
     fallback: impl IntoIterator<Item = (usize, T)>,
     graph: &Graph,
-    kinds: std::ops::RangeInclusive<u8>,
+    kinds: impl IntoIterator<Item = NodeKind>,
     graph_value: impl Fn(&Node) -> Option<T>,
 ) -> Vec<(T, &Node)> {
     let mut candidates = BTreeMap::new();
@@ -109,7 +117,7 @@ pub(crate) fn ordered_fixed_candidates<T>(
         };
         candidates.insert(offset, (value, node));
     }
-    for node in kinds.flat_map(|kind| graph.of_kind(kind)) {
+    for node in kinds.into_iter().flat_map(|kind| graph.of_kind(kind)) {
         if let Some(value) = graph_value(node) {
             candidates.insert(node.pos, (value, node));
         }
@@ -121,7 +129,7 @@ pub(crate) fn ordered_fixed_candidates<T>(
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 pub(crate) type GeometryDecode = (
     CadIr,
-    DecodeReport,
+    DecodeBody,
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
 );
@@ -130,13 +138,15 @@ pub(crate) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &Scan,
+    dialects: &DialectLayers,
+    dialect_losses: &[LossNote],
+    notes: &[String],
     admitted_entities: &mut u64,
 ) -> Result<Option<GeometryDecode>, CodecError> {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     let mut stream_unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::ParsedStreams::parse(scan);
@@ -146,13 +156,14 @@ pub(crate) fn try_decode_geometry(
         .map(|(_, table)| {
             table
                 .object_ids
+                .into_vec()
                 .into_iter()
                 .map(|object_id| object_id.value)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             body_node_ids.extend(topology_body_node_ids(
                 si,
                 &parsed.stream(si).view_for_geometry().graph,
@@ -197,7 +208,7 @@ pub(crate) fn try_decode_geometry(
         .iter()
         .enumerate()
         .filter(|(si, stream)| {
-            stream.kind.is_parasolid()
+            stream.kind().is_parasolid()
                 && preselection
                     .as_ref()
                     .is_none_or(|(_, selected, _)| selected.contains(si))
@@ -238,7 +249,7 @@ pub(crate) fn try_decode_geometry(
     let mut completion_streams = Vec::new();
 
     for (si, stream) in scan.streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
+        if !stream.kind().is_parasolid() {
             continue;
         }
         adaptive_geometry_budget.clear_blend_frame_cache();
@@ -254,9 +265,9 @@ pub(crate) fn try_decode_geometry(
             let unknown = unknown_stream_metadata(si, stream);
             let container_stream = annotations.stream("nx:container");
             annotations
-                .note(&unknown.id, container_stream, stream.file_offset as u64)
-                .tag(stream.kind.label());
-            annotations.exactness(&unknown.id, Exactness::Derived);
+                .note(unknown.id(), container_stream, stream.file_offset as u64)
+                .tag(stream.kind().label());
+            annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -265,10 +276,10 @@ pub(crate) fn try_decode_geometry(
             surfaces: nurbs_surfaces,
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
-        } = parsed.take_nurbs(si);
+        } = parsed.parse_nurbs(si);
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
-        let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
+        let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
         completion_streams.push((si, source_stream));
         let graph = &view.graph;
@@ -294,8 +305,8 @@ pub(crate) fn try_decode_geometry(
             .into_iter()
             .enumerate()
         {
-            let pid = PointId(format!("nx:s{si}:pt#{pi}"));
-            let vid = VertexId(format!("nx:s{si}:v#{pi}"));
+            let pid = PointId::mint(format!("nx:s{si}:pt#{pi}")).expect("identity grammar");
+            let vid = VertexId::mint(format!("nx:s{si}:v#{pi}")).expect("identity grammar");
             annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
             annotations.derived(&pid, "position");
             ir.model.points.push(Point {
@@ -323,11 +334,11 @@ pub(crate) fn try_decode_geometry(
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
                 SurfaceGeometry::Nurbs(_)
                 | SurfaceGeometry::Procedural { .. }
-                | SurfaceGeometry::Polygonal { .. }
+                | SurfaceGeometry::Polygonal(_)
                 | SurfaceGeometry::Transformed { .. }
                 | SurfaceGeometry::Unknown { .. } => {}
             }
-            let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
+            let id = SurfaceId::mint(format!("nx:s{si}:surf#{fi}")).expect("identity grammar");
             annotate_node(
                 &mut annotations,
                 &id,
@@ -345,7 +356,8 @@ pub(crate) fn try_decode_geometry(
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
-            let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
+            let id =
+                SurfaceId::mint(format!("nx:s{si}:nurbs-surf#{fi}")).expect("identity grammar");
             annotations
                 .note(&id, source_stream, surf.pos as u64)
                 .tag("B_SPLINE_SURFACE");
@@ -368,15 +380,17 @@ pub(crate) fn try_decode_geometry(
             &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
-            let Some(support) = surfaces_by_xmt.get(&offset.support).cloned() else {
+            let Some(support) = surfaces_by_xmt.get(&offset.state.support()).cloned() else {
                 continue;
             };
-            let procedural_id = ProceduralSurfaceId(format!("nx:s{si}:offset#{oi}"));
+            let procedural_id = ProceduralSurfaceId::mint(format!("nx:s{si}:offset#{oi}"))
+                .expect("identity grammar");
             let (surface_id, cache_fit_tolerance) =
                 if let Some((surface, fit_tolerance)) = saved_offset_carriers.get(&offset.xmt) {
                     (surface.clone(), Some(*fit_tolerance))
                 } else {
-                    let surface_id = SurfaceId(format!("nx:s{si}:offset-surf#{oi}"));
+                    let surface_id = SurfaceId::mint(format!("nx:s{si}:offset-surf#{oi}"))
+                        .expect("identity grammar");
                     annotations
                         .note(&surface_id, source_stream, offset.pos as u64)
                         .tag("OFFSET_SURF");
@@ -385,9 +399,10 @@ pub(crate) fn try_decode_geometry(
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Procedural {
                             construction: procedural_id.clone(),
+                            cache: None,
                         },
                         source_object: Some(SourceObjectAssociation {
-                            format: "nx".into(),
+                            format: cadmpeg_ir::CodecFormat::Nx,
                             object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
                             name: None,
                             color: None,
@@ -402,29 +417,35 @@ pub(crate) fn try_decode_geometry(
                 .note(&procedural_id, source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
             annotations.derived(&procedural_id, "definition");
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id.clone(),
-                definition: ProceduralSurfaceDefinition::Offset {
+            if let Ok(procedural) = ProceduralSurface::try_new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Offset {
                     support,
-                    distance: offset.distance,
+                    distance: offset.state.distance(),
                     // OFFSET_SURF status fields do not select parameter direction.
                     u_sense: None,
                     v_sense: None,
                     support_extension: Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
-                    extension_flags: Vec::new(),
-                    revision_form: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 },
                 cache_fit_tolerance,
-                record_bounds: None,
-            });
+                None,
+            ) {
+                let _attached = ir
+                    .model
+                    .add_procedural_surface(surface_id.clone(), procedural);
+            }
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
         }
 
         for (bi, blend) in view.blend_surfaces.iter().copied().enumerate() {
-            let surface_id = SurfaceId(format!("nx:s{si}:blend-surf#{bi}"));
-            let procedural_id = ProceduralSurfaceId(format!("nx:s{si}:blend#{bi}"));
+            let surface_id =
+                SurfaceId::mint(format!("nx:s{si}:blend-surf#{bi}")).expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!("nx:s{si}:blend#{bi}"))
+                .expect("identity grammar");
             annotations
                 .note(&surface_id, source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
@@ -433,9 +454,10 @@ pub(crate) fn try_decode_geometry(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
+                    cache: None,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "nx".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: format!("nx:s{si}:blend-surface-record#{}", blend.xmt),
                     name: None,
                     color: None,
@@ -449,24 +471,31 @@ pub(crate) fn try_decode_geometry(
                 .tag("BLEND_SURF");
             annotations.derived(&procedural_id, "definition");
             let procedural_index = ir.model.procedural_surfaces.len();
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id.clone(),
-                definition: ProceduralSurfaceDefinition::Blend {
-                    supports: [None, None],
-                    spine: None,
-                    radius: BlendRadiusLaw::Constant {
-                        signed_radius: blend.offsets[0],
+            let attached = ir.model.add_procedural_surface(
+                surface_id.clone(),
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Blend {
+                        supports: [None, None],
+                        spine: None,
+                        radius: BlendRadiusLaw::Constant {
+                            signed_radius: blend.state.offsets()[0],
+                        },
+                        cross_section: BlendCrossSection::Circular,
+                        native: None,
                     },
-                    cross_section: BlendCrossSection::Circular,
-                    native: None,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
-            pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
-            if blend.spine > 1 {
-                pending_blend_spines.push((procedural_index, blend.spine));
+                    None,
+                ),
+            );
+            if attached.is_ok() {
+                pending_blend_supports.push((
+                    procedural_index,
+                    blend.state.support_xmts(),
+                    blend.state.offsets(),
+                ));
+                if blend.state.spine_xmt() > 1 {
+                    pending_blend_spines.push((procedural_index, blend.state.spine_xmt()));
+                }
             }
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
@@ -481,17 +510,17 @@ pub(crate) fn try_decode_geometry(
                         reversed: offsets[side].is_sign_negative(),
                     })
             });
-            let Some(ProceduralSurface {
-                definition:
-                    ProceduralSurfaceDefinition::Blend {
-                        supports: slots, ..
-                    },
-                ..
-            }) = ir.model.procedural_surfaces.get_mut(procedural_index)
-            else {
+            let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            *slots = supports;
+            procedural.edit_definition(|definition| {
+                if let ProceduralSurfaceDefinition::Blend {
+                    supports: slots, ..
+                } = definition
+                {
+                    *slots = supports;
+                }
+            });
         }
 
         for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
@@ -508,11 +537,11 @@ pub(crate) fn try_decode_geometry(
                 | CurveGeometry::Composite { .. }
                 | CurveGeometry::Nurbs(_)
                 | CurveGeometry::Procedural { .. }
-                | CurveGeometry::Polyline { .. }
+                | CurveGeometry::Polyline(_)
                 | CurveGeometry::Transformed { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }
-            let id = CurveId(format!("nx:s{si}:crv#{ci}"));
+            let id = CurveId::mint(format!("nx:s{si}:crv#{ci}")).expect("identity grammar");
             annotate_node(
                 &mut annotations,
                 &id,
@@ -530,7 +559,7 @@ pub(crate) fn try_decode_geometry(
         }
         for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
-            let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
+            let id = CurveId::mint(format!("nx:s{si}:nurbs-crv#{ci}")).expect("identity grammar");
             annotations
                 .note(&id, source_stream, crv.pos as u64)
                 .tag("B_SPLINE_CURVE");
@@ -546,7 +575,7 @@ pub(crate) fn try_decode_geometry(
         }
 
         for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
-            let id = PcurveId(format!("nx:s{si}:pcurve#{pi}"));
+            let id = PcurveId::mint(format!("nx:s{si}:pcurve#{pi}")).expect("identity grammar");
             annotations
                 .note(&id, source_stream, pcurve.pos as u64)
                 .tag("B_CURVE_2D");
@@ -554,10 +583,7 @@ pub(crate) fn try_decode_geometry(
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: None,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt, id);
@@ -587,8 +613,8 @@ pub(crate) fn try_decode_geometry(
                     let mut support_uv = validate_serialized_support_uv_with_index(
                         &model_index,
                         &surfaces_by_xmt,
-                        charted.supports,
-                        &charted.points,
+                        [Some(charted.primary_support), charted.secondary_support],
+                        &charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.support_uv,
                         &serialized_support_uv_geometry_budget,
@@ -596,8 +622,8 @@ pub(crate) fn try_decode_geometry(
                     if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
                         &model_index,
                         &surfaces_by_xmt,
-                        charted.supports,
-                        &charted.points,
+                        [Some(charted.primary_support), charted.secondary_support],
+                        &charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.ext_support_uv,
                         &serialized_support_uv_geometry_budget,
@@ -613,9 +639,12 @@ pub(crate) fn try_decode_geometry(
                 .collect::<BTreeMap<_, _>>()
         };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
-            let curve_id = CurveId(format!("nx:s{si}:intersection-crv#{ci}"));
-            let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
-            let unknown_id = UnknownId(format!("nx:container:parasolid#{si}"));
+            let curve_id =
+                CurveId::mint(format!("nx:s{si}:intersection-crv#{ci}")).expect("identity grammar");
+            let procedural_id = ProceduralCurveId::mint(format!("nx:s{si}:intersection#{ci}"))
+                .expect("identity grammar");
+            let unknown_id =
+                UnknownId::mint(format!("nx:container:parasolid#{si}")).expect("identity grammar");
             let charted = charted_intersections.get(&construction.xmt);
             let uncharted = uncharted_intersections
                 .get(&construction.xmt)
@@ -643,8 +672,7 @@ pub(crate) fn try_decode_geometry(
                 }
                 pending_ext11_support_uv.push((
                     procedural_id.clone(),
-                    charted.points.clone(),
-                    charted.parameters.clone(),
+                    charted.samples.clone(),
                     charted.fit_tolerance,
                     SerializedSupportUv {
                         values: charted.support_uv.clone(),
@@ -663,16 +691,20 @@ pub(crate) fn try_decode_geometry(
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: if let Some(charted) = charted {
-                    CurveGeometry::Nurbs(NurbsCurve {
-                        degree: 1,
-                        knots: linear_knots(&charted.parameters),
-                        control_points: charted.points.clone(),
-                        weights: None,
-                        periodic: false,
-                    })
+                    CurveGeometry::Nurbs(
+                        NurbsCurve::new(
+                            1,
+                            linear_knots(&charted.samples.parameters()),
+                            charted.samples.points(),
+                            None,
+                            false,
+                        )
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                    )
                 } else if uncharted.is_some() {
                     CurveGeometry::Procedural {
                         construction: procedural_id.clone(),
+                        cache: None,
                     }
                 } else {
                     CurveGeometry::Unknown {
@@ -680,7 +712,7 @@ pub(crate) fn try_decode_geometry(
                     }
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "nx".into(),
+                    format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
                     name: None,
                     color: None,
@@ -697,61 +729,56 @@ pub(crate) fn try_decode_geometry(
             } else {
                 annotations.exactness(&procedural_id, Exactness::Unknown);
             }
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: curve_id.clone(),
-                definition: if let Some(charted) = charted {
-                    let support_uv = intersection_support_uv
-                        .get(&construction.xmt)
-                        .cloned()
-                        .unwrap_or([None, None]);
-                    let first = intersection_side(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports[0],
-                        support_uv[0]
-                            .as_deref()
-                            .filter(|uv| uv.len() == charted.parameters.len())
-                            .map(|uv| (uv, charted.parameters.as_slice())),
-                    );
-                    let second = intersection_side(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports[1],
-                        support_uv[1]
-                            .as_deref()
-                            .filter(|uv| uv.len() == charted.parameters.len())
-                            .map(|uv| (uv, charted.parameters.as_slice())),
-                    );
-                    ProceduralCurveDefinition::Intersection {
-                        context: IntcurveSupportContext {
-                            sides: [first, second],
-                            parameter_range: [
-                                charted.parameters[0],
-                                *charted
-                                    .parameters
-                                    .last()
-                                    .expect("validated chart has points"),
-                            ],
-                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                        },
-                        discontinuity_flag: false,
-                    }
-                } else if let Some((supports, endpoints, tolerance)) = uncharted {
-                    ProceduralCurveDefinition::TolerantIntersection {
-                        supports,
-                        endpoints,
-                        tolerance,
-                        parameterization: None,
-                    }
-                } else {
-                    ProceduralCurveDefinition::Unknown {
-                        native_kind: Some("nx:intersection".into()),
-                        record: Some(unknown_id),
-                    }
-                },
-                cache_fit_tolerance: charted.map(|charted| charted.fit_tolerance),
-            });
+            let definition = if let Some(charted) = charted {
+                let support_uv = intersection_support_uv
+                    .get(&construction.xmt)
+                    .cloned()
+                    .unwrap_or([None, None]);
+                let parameters = charted.samples.parameters();
+                let first = intersection_side(
+                    &ir,
+                    &surfaces_by_xmt,
+                    Some(charted.primary_support),
+                    support_uv[0]
+                        .as_deref()
+                        .map(|uv| (uv, parameters.as_slice())),
+                );
+                let second = intersection_side(
+                    &ir,
+                    &surfaces_by_xmt,
+                    charted.secondary_support,
+                    support_uv[1]
+                        .as_deref()
+                        .map(|uv| (uv, parameters.as_slice())),
+                );
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides: [first, second],
+                        parameter_range: charted.samples.parameter_range(),
+                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    },
+                    discontinuity_flag: false,
+                }
+            } else if let Some((supports, endpoints, tolerance)) = uncharted {
+                ProceduralCurveDefinition::TolerantIntersection {
+                    supports,
+                    endpoints,
+                    tolerance,
+                    parameterization: None,
+                }
+            } else {
+                ProceduralCurveDefinition::Unknown {
+                    native_kind: Some("nx:intersection".into()),
+                    record: Some(unknown_id),
+                }
+            };
+            if let Ok(procedural) = ProceduralCurve::try_new(
+                procedural_id,
+                definition,
+                charted.map(|charted| charted.fit_tolerance),
+            ) {
+                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
+            }
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
@@ -759,14 +786,14 @@ pub(crate) fn try_decode_geometry(
             let Some(spine) = curves_by_xmt.get(&spine_xmt).cloned() else {
                 continue;
             };
-            let Some(ProceduralSurface {
-                definition: ProceduralSurfaceDefinition::Blend { spine: slot, .. },
-                ..
-            }) = ir.model.procedural_surfaces.get_mut(procedural_index)
-            else {
+            let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            *slot = Some(spine);
+            procedural.edit_definition(|definition| {
+                if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
+                    *slot = Some(spine);
+                }
+            });
         }
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
@@ -796,29 +823,32 @@ pub(crate) fn try_decode_geometry(
         loop {
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in trimmed_curves {
-                if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
+                if let Some(basis) = curves_by_xmt.get(&trim.state.basis()).cloned() {
                     let parameters = curve_indices
                         .get(&basis)
                         .and_then(|index| ir.model.curves.get(*index))
-                        .and_then(|curve| canonical_trim_range(&curve.geometry, trim.parameters));
+                        .and_then(|curve| {
+                            canonical_trim_range(&curve.geometry, trim.state.parameters())
+                        });
                     curves_by_xmt.insert(trim.xmt, basis);
                     if let Some(parameters) = parameters {
                         trim_ranges.insert(trim.xmt, parameters);
                     }
                 }
-                if let Some(pcurve) = pcurves_by_xmt.get(&trim.basis).cloned() {
+                if let Some(pcurve) = pcurves_by_xmt.get(&trim.state.basis()).cloned() {
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
-                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.basis).cloned() {
+                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()).cloned()
+                    {
                         pcurve_supports_by_xmt.insert(trim.xmt, support);
                     }
-                    trim_ranges.insert(trim.xmt, trim.parameters);
+                    trim_ranges.insert(trim.xmt, trim.state.parameters());
                 }
             }
             for surface_curve in surface_curves {
-                if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.pcurve).cloned() {
+                if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.state.pcurve()).cloned() {
                     if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
-                            .get(&surface_curve.surface)
+                            .get(&surface_curve.state.surface())
                             .and_then(|id| surface_indices.get(id))
                             .and_then(|index| ir.model.surfaces.get(*index))
                             .map(|surface| surface.geometry.clone());
@@ -833,7 +863,7 @@ pub(crate) fn try_decode_geometry(
                             false
                         };
                         if !normalized {
-                            pcurves_by_xmt.remove(&surface_curve.pcurve);
+                            pcurves_by_xmt.remove(&surface_curve.state.pcurve());
                             invalid_pcurves.insert(pcurve.clone());
                             continue;
                         }
@@ -843,14 +873,31 @@ pub(crate) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        carrier.fit_tolerance = decoded_tolerance(surface_curve.tolerance);
+                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance());
+                        match &mut carrier.metadata {
+                            cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
+                                metadata.fit_tolerance = fit_tolerance;
+                            }
+                            cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => {
+                                if let Some(fit_tolerance) = fit_tolerance {
+                                    inline.fit_tolerance = fit_tolerance;
+                                }
+                            }
+                        }
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
-                    if let Some(support) = surfaces_by_xmt.get(&surface_curve.surface).cloned() {
+                    if let Some(support) =
+                        surfaces_by_xmt.get(&surface_curve.state.surface()).cloned()
+                    {
                         pcurve_supports_by_xmt.insert(surface_curve.xmt, support);
                     }
                 }
-                if let Some(original) = curves_by_xmt.get(&surface_curve.original).cloned() {
+                if let Some(original) = surface_curve
+                    .state
+                    .original()
+                    .and_then(|original| curves_by_xmt.get(&original))
+                    .cloned()
+                {
                     curves_by_xmt.insert(surface_curve.xmt, original);
                 }
             }
@@ -987,21 +1034,21 @@ pub(crate) fn try_decode_geometry(
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(si, stream);
-        unknown.links.extend(
+        unknown.links_mut().extend(
             ir.model.surfaces[first_surface..]
                 .iter()
-                .map(|surface| surface.id.0.clone()),
+                .map(|surface| surface.id.as_str().to_owned()),
         );
-        unknown.links.extend(
+        unknown.links_mut().extend(
             ir.model.curves[first_curve..]
                 .iter()
-                .map(|curve| curve.id.0.clone()),
+                .map(|curve| curve.id.as_str().to_owned()),
         );
         let container_stream = annotations.stream("nx:container");
         annotations
-            .note(&unknown.id, container_stream, stream.file_offset as u64)
-            .tag(stream.kind.label());
-        annotations.exactness(&unknown.id, Exactness::Derived);
+            .note(unknown.id(), container_stream, stream.file_offset as u64)
+            .tag(stream.kind().label());
+        annotations.exactness(unknown.id(), Exactness::Derived);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }
@@ -1028,6 +1075,8 @@ pub(crate) fn try_decode_geometry(
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
     }
+
+    ir.source = Some(source_meta(scan, dialects));
 
     ctx.admit_entities(
         ir.model.entity_count() as u64,
@@ -1099,9 +1148,7 @@ pub(crate) fn try_decode_geometry(
         coupled_support_uv_geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
         support_uv_lane_geometry_exhausted,
         transfer_limit,
-        support_uv_validation_limit: support_uv_limit,
         support_uv_limit,
-        coupled_support_uv_limit: support_uv_limit,
     };
     let mut report = build_geometry_report(
         scan,
@@ -1114,6 +1161,8 @@ pub(crate) fn try_decode_geometry(
         &model,
         completion_budget,
         adaptive_geometry_budget.exhausted(),
+        dialect_losses,
+        notes,
     );
     report_untransferred_streams(scan, &mut report, true);
     Ok(Some((ir, report, annotations, unknowns)))
@@ -1135,10 +1184,13 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     loop {
         let previous = (used_surfaces.len(), used_curves.len());
         for procedural in &ir.model.procedural_surfaces {
-            if !used_surfaces.contains(&procedural.surface) {
+            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+                continue;
+            };
+            if !used_surfaces.contains(owner) {
                 continue;
             }
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     used_surfaces.insert(support.clone());
                 }
@@ -1157,15 +1209,24 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             }
         }
         for procedural in &ir.model.procedural_curves {
-            if !used_curves.contains(&procedural.curve) {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                continue;
+            };
+            if !used_curves.contains(owner) {
                 continue;
             }
-            match &procedural.definition {
-                ProceduralCurveDefinition::Intersection { context, .. }
-                | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+            match procedural.definition() {
+                ProceduralCurveDefinition::Intersection { context, .. } => {
                     used_surfaces
                         .extend(context.sides.iter().filter_map(|side| side.surface.clone()));
                 }
+                ProceduralCurveDefinition::SurfaceCurve { family } => used_surfaces.extend(
+                    family
+                        .context()
+                        .sides
+                        .iter()
+                        .filter_map(|side| side.surface.clone()),
+                ),
                 _ => {}
             }
         }
@@ -1210,9 +1271,11 @@ pub(crate) fn retain_live_annotations(
         ir.model.procedural_curves,
         ir.model.features,
     );
-    ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
+    ids.extend(unknowns.iter().map(|unknown| unknown.id().to_string()));
     annotations.provenance.retain(|id, _| ids.contains(id));
-    annotations.exactness.retain(|id, _| ids.contains(id));
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+    builder.retain_exactness(|id| ids.contains(id));
+    *annotations = builder.build();
 }
 
 pub(crate) fn retain_live_unknown_links(
@@ -1237,9 +1300,9 @@ pub(crate) fn retain_live_unknown_links(
             .map(|entity| entity.id.to_string()),
     );
     for unknown in unknowns.iter_mut() {
-        unknown.links.retain(|link| ids.contains(link));
-        if !unknown.links.is_empty() {
-            annotations.derived(&unknown.id, "links");
+        unknown.links_mut().retain(|link| ids.contains(link));
+        if !unknown.links().is_empty() {
+            annotations.derived(unknown.id(), "links");
         }
     }
 }
@@ -1258,7 +1321,7 @@ pub(crate) fn topology_body_node_ids(
         .into_iter()
         .filter_map(|body_xmt| {
             let shells: BTreeSet<_> = graph
-                .of_kind(13)
+                .of_kind(NodeKind::Shell)
                 .filter(|shell| {
                     shell
                         .shell_fields()
@@ -1267,7 +1330,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|shell| shell.xmt)
                 .collect();
             let faces: Vec<_> = graph
-                .of_kind(14)
+                .of_kind(NodeKind::Face)
                 .filter(|face| {
                     face.face_fields()
                         .is_some_and(|fields| shells.contains(&fields.shell))
@@ -1275,7 +1338,7 @@ pub(crate) fn topology_body_node_ids(
                 .collect();
             let face_xmts: BTreeSet<_> = faces.iter().map(|face| face.xmt).collect();
             let loops: BTreeSet<_> = graph
-                .of_kind(15)
+                .of_kind(NodeKind::Loop)
                 .filter(|loop_| {
                     loop_
                         .loop_fields()
@@ -1284,7 +1347,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|loop_| loop_.xmt)
                 .collect();
             let fins: Vec<_> = graph
-                .of_kind(17)
+                .of_kind(NodeKind::Fin)
                 .filter(|fin| {
                     fin.fin_fields()
                         .is_some_and(|fields| loops.contains(&fields.loop_xmt))
@@ -1303,7 +1366,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|face| face.u32_at(4))
                 .collect::<Option<BTreeSet<_>>>()?;
             let edges = graph
-                .of_kind(16)
+                .of_kind(NodeKind::Edge)
                 .filter(|edge| edge_xmts.contains(&edge.xmt))
                 .collect::<Vec<_>>();
             if edges.len() != edge_xmts.len() {
@@ -1314,7 +1377,7 @@ pub(crate) fn topology_body_node_ids(
                 .map(|edge| edge.u32_at(4))
                 .collect::<Option<BTreeSet<_>>>()?;
             let vertices = graph
-                .of_kind(18)
+                .of_kind(NodeKind::Vertex)
                 .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
                 .collect::<Vec<_>>();
             if vertices.len() != vertex_xmts.len() {
@@ -1329,7 +1392,10 @@ pub(crate) fn topology_body_node_ids(
                 .chain(edge_ids)
                 .chain(vertex_ids)
                 .collect();
-            Some((BodyId(format!("{prefix}:body#{body_xmt}")), ids))
+            Some((
+                BodyId::mint(format!("{prefix}:body#{body_xmt}")).expect("identity grammar"),
+                ids,
+            ))
         })
         .collect()
 }
@@ -1363,7 +1429,14 @@ pub(crate) fn rmfastload_allows_terminal_lineage(
 pub(crate) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
     selected
         .iter()
-        .map(|body| body.0.strip_prefix("nx:s")?.split_once(':')?.0.parse().ok())
+        .map(|body| {
+            body.as_str()
+                .strip_prefix("nx:s")?
+                .split_once(':')?
+                .0
+                .parse()
+                .ok()
+        })
         .collect()
 }
 
@@ -1554,10 +1627,13 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
         let old_surface_count = surfaces.len();
         let old_curve_count = curves.len();
         for procedural in &ir.model.procedural_surfaces {
-            if !surfaces.contains(&procedural.surface) {
+            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+                continue;
+            };
+            if !surfaces.contains(owner) {
                 continue;
             }
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     surfaces.insert(support.clone());
                 }
@@ -1576,14 +1652,23 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
             }
         }
         for procedural in &ir.model.procedural_curves {
-            if !curves.contains(&procedural.curve) {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                continue;
+            };
+            if !curves.contains(owner) {
                 continue;
             }
-            match &procedural.definition {
-                ProceduralCurveDefinition::Intersection { context, .. }
-                | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+            match procedural.definition() {
+                ProceduralCurveDefinition::Intersection { context, .. } => {
                     surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
                 }
+                ProceduralCurveDefinition::SurfaceCurve { family } => surfaces.extend(
+                    family
+                        .context()
+                        .sides
+                        .iter()
+                        .filter_map(|side| side.surface.clone()),
+                ),
                 _ => {}
             }
         }
@@ -1592,12 +1677,26 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
         }
     }
 
+    let surface_constructions = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surfaces.contains(&surface.id))
+        .filter_map(|surface| surface.geometry.procedural_construction().cloned())
+        .collect::<BTreeSet<_>>();
+    let curve_constructions = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curves.contains(&curve.id))
+        .filter_map(|curve| curve.geometry.procedural_construction().cloned())
+        .collect::<BTreeSet<_>>();
     ir.model
         .procedural_surfaces
-        .retain(|procedural| surfaces.contains(&procedural.surface));
+        .retain(|procedural| surface_constructions.contains(&procedural.id));
     ir.model
         .procedural_curves
-        .retain(|procedural| curves.contains(&procedural.curve));
+        .retain(|procedural| curve_constructions.contains(&procedural.id));
     ir.model
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));
@@ -1625,11 +1724,12 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
         return;
     }
 
-    let body_id = BodyId("nx:derived:point-body#0".to_string());
-    let region_id = RegionId("nx:derived:point-region#0".to_string());
-    let shell_id = ShellId("nx:derived:point-shell#0".to_string());
+    let body_id = BodyId::mint("nx:derived:point-body#0".to_string()).expect("identity grammar");
+    let region_id =
+        RegionId::mint("nx:derived:point-region#0".to_string()).expect("identity grammar");
+    let shell_id = ShellId::mint("nx:derived:point-shell#0".to_string()).expect("identity grammar");
     let stream = annotations.stream("nx:container");
-    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations
             .note(id, stream, 0)
             .tag("derived_point_topology");
@@ -1638,7 +1738,8 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
 
     let mut free_vertices = Vec::with_capacity(ir.model.points.len());
     for (index, point) in ir.model.points.iter().enumerate() {
-        let vertex_id = VertexId(format!("nx:derived:point-vertex#{index}"));
+        let vertex_id =
+            VertexId::mint(format!("nx:derived:point-vertex#{index}")).expect("identity grammar");
         annotations
             .note(&vertex_id, stream, 0)
             .tag("derived_point_topology");

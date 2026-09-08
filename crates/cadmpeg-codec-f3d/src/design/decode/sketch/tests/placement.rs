@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -15,15 +14,14 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes: &[u8],
         scope_record_index: u32,
         entity_id: &str,
-        entity_suffix: u64,
         record_index: u32,
     ) -> Vec<DesignSketchPlacement> {
         let records = IndexedRecordOffsets::build(bytes);
         parse_sketch_placement_candidates(
             bytes,
             scope_record_index,
-            entity_id,
-            entity_suffix,
+            &crate::records::DesignEntityId::try_from(entity_id.to_owned())
+                .expect("valid entity ID"),
             record_index,
             &records,
         )
@@ -51,11 +49,11 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes
     }
 
-    let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 172, 185);
+    let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 185);
     assert_eq!(compact.len(), 1);
-    assert_eq!(compact[0].frame_length, 201);
-    assert_eq!(compact[0].transform, identity_matrix());
-    assert_eq!(compact[0].transform_offset, None);
+    assert_eq!(compact[0].frame_length(), 201);
+    assert_eq!(*compact[0].transform(), identity_matrix());
+    assert_eq!(compact[0].transform_offset(), None);
 
     let transform = [
         [0.0, 0.0, 1.0, 12.0],
@@ -67,26 +65,24 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         &placement_frame(1773, 329, 55, Some(transform)),
         1765,
         "0_1761",
-        1761,
         1773,
     );
     assert_eq!(explicit.len(), 1);
-    assert_eq!(explicit[0].frame_length, 329);
-    assert_eq!(explicit[0].transform, transform);
-    assert_eq!(explicit[0].transform_offset, Some(55));
+    assert_eq!(explicit[0].frame_length(), 329);
+    assert_eq!(*explicit[0].transform(), transform);
+    assert_eq!(explicit[0].transform_offset(), Some(55));
 
     for length in [305, 325] {
         let legacy = candidates(
             &placement_frame(1773, length, 48, Some(transform)),
             1765,
             "0_1761",
-            1761,
             1773,
         );
         assert_eq!(legacy.len(), 1);
-        assert_eq!(legacy[0].frame_length, length as u64);
-        assert_eq!(legacy[0].transform, transform);
-        assert_eq!(legacy[0].transform_offset, Some(48));
+        assert_eq!(legacy[0].frame_length(), length as u64);
+        assert_eq!(*legacy[0].transform(), transform);
+        assert_eq!(legacy[0].transform_offset(), Some(48));
     }
 }
 
@@ -96,15 +92,14 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         bytes: &[u8],
         scope_record_index: u32,
         entity_id: &str,
-        entity_suffix: u64,
         record_index: u32,
     ) -> Vec<DesignSketchPlacement> {
         let records = IndexedRecordOffsets::build(bytes);
         parse_sketch_placement_candidates(
             bytes,
             scope_record_index,
-            entity_id,
-            entity_suffix,
+            &crate::records::DesignEntityId::try_from(entity_id.to_owned())
+                .expect("valid entity ID"),
             record_index,
             &records,
         )
@@ -134,11 +129,11 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         bytes
     }
 
-    let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 201, 214);
+    let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 214);
     assert_eq!(compact.len(), 1);
-    assert_eq!(compact[0].frame_length, 213);
-    assert_eq!(compact[0].transform, identity_matrix());
-    assert_eq!(compact[0].transform_offset, None);
+    assert_eq!(compact[0].frame_length(), 213);
+    assert_eq!(*compact[0].transform(), identity_matrix());
+    assert_eq!(compact[0].transform_offset(), None);
 
     let transform = [
         [0.0, 0.0, 1.0, 26.0],
@@ -150,21 +145,19 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         &genesis_frame(3060, 341, 0, Some(transform)),
         3052,
         "0_3048",
-        3048,
         3060,
     );
     assert_eq!(explicit.len(), 1);
-    assert_eq!(explicit[0].frame_length, 341);
-    assert_eq!(explicit[0].transform, transform);
-    assert_eq!(explicit[0].transform_offset, Some(66));
+    assert_eq!(explicit[0].frame_length(), 341);
+    assert_eq!(*explicit[0].transform(), transform);
+    assert_eq!(explicit[0].transform_offset(), Some(66));
 
     // A mismatched form byte fails both lengths.
-    assert!(candidates(&genesis_frame(214, 213, 0, None), 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(&genesis_frame(214, 213, 0, None), 206, "0_201", 214).is_empty());
     assert!(candidates(
         &genesis_frame(3060, 341, 1, Some(transform)),
         3052,
         "0_3048",
-        3048,
         3060,
     )
     .is_empty());
@@ -174,62 +167,73 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     let mut workplane_like = genesis_frame(214, 213, 1, None);
     workplane_like[57] = 1;
     workplane_like[58..62].copy_from_slice(&788u32.to_le_bytes());
-    assert!(candidates(&workplane_like, 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(&workplane_like, 206, "0_201", 214).is_empty());
 }
 
 #[test]
 fn entity_genesis_placement_origin_scales_to_neutral_units() {
-    let placement = |frame_length: u64| DesignSketchPlacement {
-        member_run_head: false,
+    let placement = |form: fn(
+        crate::records::SketchPlacementMatrix,
+    ) -> crate::records::DesignSketchFrameForm| DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            form(
+                crate::records::SketchPlacementMatrix::try_from([
+                    [0.0, 0.0, 1.0, 26.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
+
         id: "f3d:native:design-sketch-placement#0".into(),
         scope_record_index: Some(10),
-        entity_id: "0_100".into(),
-        entity_suffix: 100,
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
+
         visibility: None,
-        byte_offset: 0,
-        class_tag: "293".into(),
+
+        class_tag: crate::records::DesignClassTag::try_from("293".to_owned()).unwrap(),
         record_index: 11,
-        frame_length,
-        transform: [
-            [0.0, 0.0, 1.0, 26.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: Some(66),
-        paired_class_tag: "261".into(),
-        paired_byte_offset: 341,
+
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
     };
     let point = SketchPoint {
         id: "f3d:native:sketch-point#0".into(),
         record_index: 20,
         owner_reference: Some(100),
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
-        entity_genesis: Some(2),
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(20),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            20,
+            crate::records::SketchPointClosure::Selector0State0,
+            Some(2),
+            0.0,
+            None,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(120.0, 30.0),
-        depth: 0.0,
-        closure: None,
-        companion: None,
     };
     let mut identityless_point = point.clone();
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
-    identityless_point.entity_genesis = None;
-    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0;
-    identityless_point.persistent_id = None;
+    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 {
+        flag: false,
+        companion: None,
+    };
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
     // projected sketch origin scales by ten to stay commensurate.
     let (sketches, entities) = project_sketch_design(
-        &[placement(341)],
+        &[placement(
+            crate::records::DesignSketchFrameForm::ScopeGenesisExplicit,
+        )],
         &[point.clone(), identityless_point],
         &[],
         &[],
@@ -251,12 +255,21 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             if position == Point2::new(120.0, 30.0)
     ));
     assert_eq!(
-        entities[1].id,
+        entities[1].id().clone(),
         crate::ids::neutral_sketch_record_id(&sketches[0].id, 21)
     );
 
     // The settled explicit frame keeps its stored origin unscaled.
-    let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], &[], &[], 1.0e-6);
+    let (sketches, _) = project_sketch_design(
+        &[placement(
+            crate::records::DesignSketchFrameForm::ScopeExplicit,
+        )],
+        &[point],
+        &[],
+        &[],
+        &[],
+        1.0e-6,
+    );
     assert_eq!(
         sketches[0]
             .resolved_placement()
@@ -300,34 +313,37 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
         byte_offset: 0,
-        entity_suffix: 100,
-        entity_id: "0_100".into(),
-        class_tag: "281".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_indices: Vec::new(),
-        member_offsets: Vec::new(),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let records = IndexedRecordOffsets::build(&bytes);
-    let placement =
-        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
-            .expect("feature-owned sketch placement");
+    let placement = crate::design::decode::sketch::parse_member_run_head_placement(
+        &bytes,
+        entity.byte_offset,
+        &entity.entity_id,
+        &records,
+    )
+    .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
-    assert_eq!(placement.byte_offset, head_at as u64);
-    assert_eq!(placement.paired_byte_offset, paired_at as u64);
-    assert_eq!(placement.transform, identity_matrix());
-    assert!(placement.member_run_head);
+    assert_eq!(placement.byte_offset(), head_at as u64);
+    assert_eq!(placement.paired_byte_offset(), paired_at as u64);
+    assert_eq!(*placement.transform(), identity_matrix());
+    assert!(placement.member_run_head());
     assert_eq!(placement.scope_record_index, None);
     assert_eq!(
         crate::design::decode::sketch::parse_legacy_sketch_container_members(
             &bytes, 0, 100, &records,
         ),
-        Some((Vec::new(), Vec::new()))
+        Some(Vec::new())
     );
 
     bytes.truncate(head_at);
@@ -342,12 +358,16 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    let compact =
-        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
-            .expect("compact identity sketch placement");
-    assert_eq!(compact.frame_length, 34);
-    assert_eq!(compact.transform, identity_matrix());
-    assert_eq!(compact.transform_offset, None);
+    let compact = crate::design::decode::sketch::parse_member_run_head_placement(
+        &bytes,
+        entity.byte_offset,
+        &entity.entity_id,
+        &records,
+    )
+    .expect("compact identity sketch placement");
+    assert_eq!(compact.frame_length(), 34);
+    assert_eq!(*compact.transform(), identity_matrix());
+    assert_eq!(compact.transform_offset(), None);
 }
 
 #[test]
@@ -374,11 +394,16 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
         bytes.extend_from_slice(&[0; 6]);
     }
 
-    let (members, offsets) =
-        crate::design::decode::sketch::parse_legacy_sketch_member_run(&bytes, 0, 100)
-            .expect("legacy sketch member run");
-    assert_eq!(members, [300, 301]);
-    assert_eq!(offsets, [(paired_at + 46) as u64, (paired_at + 57) as u64]);
+    let members = crate::design::decode::sketch::parse_legacy_sketch_member_run(&bytes, 0, 100)
+        .expect("legacy sketch member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [300, 301]
+    );
+    assert_eq!(
+        members.iter().map(|row| row.offset).collect::<Vec<_>>(),
+        [(paired_at + 46) as u64, (paired_at + 57) as u64]
+    );
 }
 
 #[test]
@@ -505,8 +530,15 @@ fn retained_compact_planar_line_edit_preserves_its_reference_tail() {
         ),
         normal: Vector3::new(0.0, 0.0, 1.0),
     };
-    crate::writer::patch::records::patch_sketch_curves(&mut bytes, &[(0, 0, geometry)])
-        .expect("compact planar line edit");
+    crate::writer::patch::records::patch_sketch_curves(
+        &mut bytes,
+        &[crate::writer::patch::edits::SketchCurveEdit {
+            offset: 0,
+            geometry_offset: 0,
+            geometry,
+        }],
+    )
+    .expect("compact planar line edit");
     assert_eq!(&bytes[72..], tail);
     assert_eq!(f64::from_le_bytes(bytes[0..8].try_into().unwrap()), 1.0);
     assert_eq!(f64::from_le_bytes(bytes[24..32].try_into().unwrap()), 2.0);
@@ -611,8 +643,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         degree,
         fit_tolerance,
         knots,
-        weights,
-        control_points,
+        poles,
         ..
     } = geometry
     else {
@@ -621,8 +652,11 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     assert_eq!(end, bytes.len());
     assert_eq!(degree, 2);
     assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(weights, [1.0; 3]);
-    assert_eq!(control_points[1], Point3::new(5.0, 7.5, 0.0));
+    assert_eq!(poles.weights().copied().collect::<Vec<_>>(), [1.0; 3]);
+    assert_eq!(
+        poles.points().nth(1).copied().unwrap(),
+        Point3::new(5.0, 7.5, 0.0)
+    );
     assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
 
     marked_reference(&mut bytes, 201);
@@ -630,15 +664,18 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version,
             version_offset: 0,
             module: module.into(),
-            entity_id_offsets: vec![0; entity_ids.len()],
-            entity_ids,
+            entities: crate::records::ReferenceRun::located(
+                entity_ids
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
         }
     };
     let meta = crate::metastream::MetaStream {
@@ -740,49 +777,57 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&[0; 8]);
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 100),
-        (vec![99, 20, 21], member_offsets)
+        vec![99, 20, 21]
+            .into_iter()
+            .zip(member_offsets)
+            .map(|(value, offset)| crate::records::Located { value, offset })
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 101),
-        (vec![], vec![])
+        vec![]
     );
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, paired_at + 1, 100),
-        (vec![], vec![])
+        vec![]
     );
 
     let header = |suffix: u64, members: Vec<u32>| DesignEntityHeader {
         id: format!("f3d:native:design-entity-header#{suffix}"),
         byte_offset: suffix,
-        entity_suffix: suffix,
-        entity_id: format!("0_{suffix}"),
-        class_tag: "281".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}"))
+            .expect("valid entity ID"),
+        class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        declared_reference_count: None,
-        reference_indices: Vec::new(),
-        reference_offsets: Vec::new(),
-        member_offsets: members.iter().map(|_| 0).collect(),
-        member_indices: members,
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::located(
+                members
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
+        )
+        .expect("valid module registration"),
     };
     let point = |record_index: u32| SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
-        entity_genesis: Some(2),
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(u64::from(record_index)),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            u64::from(record_index),
+            crate::records::SketchPointClosure::Selector0State0,
+            Some(2),
+            0.0,
+            None,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
-        depth: 0.0,
-        closure: None,
-        companion: None,
     };
 
     // Relation-free geometry named by the container's member run binds to

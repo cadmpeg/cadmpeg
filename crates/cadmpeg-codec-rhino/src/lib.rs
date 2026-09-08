@@ -2,27 +2,31 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
-//! Support level: [L0](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
-//! Archive 2/3/4/50/60/70/80/90 and V2–V4 open at L1 and show as extras.
-//! V1 and archive version 5 remain L0. The codec provides bounded 3DM
-//! container inspection, partial typed decoding, and explicitly versioned
-//! semantic native writing.
+//! <!-- generated: capability rhino -->
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
+//! <!-- /generated: capability rhino -->
+//!
+//! The codec provides bounded 3DM container inspection, typed decoding, and
+//! explicitly versioned native writing from neutral IR.
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
-use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{FidelityResolution, WritePath};
+use cadmpeg_core::target::TargetDescriptor;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::ContainerSummary;
 
 pub(crate) mod annotations;
 pub(crate) mod brep;
 pub(crate) mod cage;
 pub(crate) mod chunks;
 pub(crate) mod container;
+pub(crate) mod coverage;
 pub(crate) mod curve_on_surface;
 pub(crate) mod curves;
 pub(crate) mod decode;
 pub(crate) mod detail;
+pub(crate) mod dialect;
 pub(crate) mod dimensions;
 pub(crate) mod document_data;
 pub(crate) mod extrusion;
@@ -32,7 +36,6 @@ pub(crate) mod instances;
 /// Byte-offset constants generated from `docs/layouts/rhino.toml`.
 pub(crate) mod layout;
 pub(crate) mod legacy;
-#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
 pub(crate) mod loss;
 pub(crate) mod mesh;
 pub(crate) mod mesh_modifiers;
@@ -70,7 +73,46 @@ pub enum RhinoArchiveVersion {
     V8,
 }
 
+macro_rules! writer_vocabulary {
+    ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
+        $(#[$all_meta])*
+        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        /// The generic encoder view projected from [`Self::ALL`].
+        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+            $(Self::$variant.descriptor()),+
+        ];
+    };
+}
+
 impl RhinoArchiveVersion {
+    writer_vocabulary!(
+        /// Every archive version this writer can emit, in registry order.
+        ///
+        /// The same invocation projects the generic encoder catalog, so adding
+        /// a typed version cannot omit its target descriptor. Archive words and
+        /// Rhino majors are aliases; archive 80 is the cross-format default.
+        4;
+        V5,
+        V6,
+        V7,
+        V8
+    );
+
+    /// The typed write-target catalog row for this archive version.
+    #[must_use]
+    pub const fn descriptor(self) -> TargetDescriptor {
+        let (dialect, aliases) = match self {
+            Self::V5 => (chunks::ArchiveVersion::V5, &["50"].as_slice()),
+            Self::V6 => (chunks::ArchiveVersion::V6, &["6", "60"].as_slice()),
+            Self::V7 => (chunks::ArchiveVersion::V7, &["7", "70"].as_slice()),
+            Self::V8 => (chunks::ArchiveVersion::V8, &["8", "80"].as_slice()),
+        };
+        TargetDescriptor {
+            id: dialect.id(),
+            aliases,
+        }
+    }
+
     const fn value(self) -> u64 {
         match self {
             Self::V5 => 50,
@@ -79,27 +121,24 @@ impl RhinoArchiveVersion {
             Self::V8 => 80,
         }
     }
-}
 
-/// Native 3DM encoder with an explicit target archive version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RhinoEncoder {
-    version: RhinoArchiveVersion,
-}
+    const fn uses_extended_brep_layout(self) -> bool {
+        !matches!(self, Self::V5)
+    }
 
-impl RhinoEncoder {
-    /// Select a target archive version.
-    pub const fn new(version: RhinoArchiveVersion) -> Self {
-        Self { version }
+    const fn uses_face_array_v2(self) -> bool {
+        matches!(self, Self::V7 | Self::V8)
+    }
+
+    const fn stores_mesh_vertices_as_f64(self) -> bool {
+        !matches!(self, Self::V5)
     }
 }
 
 impl CodecBackend for RhinoCodec {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
             Confidence::High
         } else {
@@ -115,77 +154,24 @@ impl CodecBackend for RhinoCodec {
         container::inspect(root)
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        container::decode(ctx, root, ctx.container_only())
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+        container::decode(ctx, root)
     }
 }
 
-impl Encoder for RhinoEncoder {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
+impl EncoderBackend for RhinoCodec {
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        let mut bytes = Vec::new();
-        writer::write(input.ir, self.version.value(), &mut bytes)?;
-        let vertex_quantization = self.version == RhinoArchiveVersion::V5
-            && input
-                .ir
-                .model
-                .tessellations
-                .iter()
-                .flat_map(|mesh| &mesh.vertices)
-                .any(|point| {
-                    f64::from(point.x as f32) != point.x
-                        || f64::from(point.y as f32) != point.y
-                        || f64::from(point.z as f32) != point.z
-                });
-        let normal_quantization = input
-            .ir
-            .model
-            .tessellations
-            .iter()
-            .flat_map(|mesh| &mesh.normals)
-            .any(|normal| {
-                f64::from(normal.x as f32) != normal.x
-                    || f64::from(normal.y as f32) != normal.y
-                    || f64::from(normal.z as f32) != normal.z
-            });
-        let mut losses = Vec::new();
-        if vertex_quantization {
-            losses.push(
-                loss::RhinoLossCode::MeshVertexPrecisionReduced
-                    .note("archive version 50 stores standalone mesh vertices as f32"),
-            );
-        }
-        if normal_quantization {
-            losses.push(
-                loss::RhinoLossCode::MeshNormalPrecisionReduced
-                    .note("3DM mesh normals are stored as f32"),
-            );
-        }
-        let report = ExportReport {
-            format: "rhino".into(),
-            census: cadmpeg_ir::EntityCensus {
-                basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: input.ir.census(),
-            },
-            fidelity: if input.fidelity.is_some() {
-                FidelityResolution::NotConsumed
-            } else {
-                FidelityResolution::NotProvided
-            },
-            // The 3DM writer builds every chunk from the neutral IR; it has no
-            // retained-source branch.
-            write_path: WritePath::Synthesized,
-            losses,
-            notes: vec![format!("3DM archive version {}", self.version.value())],
-        };
-        Ok(ExportPlan::buffered(report, bytes))
+    /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
+    /// because 3DM has no retained-image path.
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

@@ -2,9 +2,12 @@
 //! Spatial-sketch write-back and semantic-write round-trip pins.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::{collections::BTreeMap, io::Cursor};
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
@@ -35,21 +38,18 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line { start, end },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            entity_id,
+            sketch_id.clone(),
+            SpatialSketchGeometry::Line { start, end },
+        ));
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#spatial-path".into()),
+        id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -68,10 +68,13 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut first_encoding = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(
+                &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
+                None,
+            ),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut first_encoding))
         .expect("source-less spatial line should encode");
     let mut decoded = SldprtCodec
@@ -88,10 +91,7 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
 
     let mut second_encoding = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut second_encoding))
         .expect("edited retained spatial line should encode");
     let regenerated = SldprtCodec
@@ -109,21 +109,25 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
 
 #[test]
 fn mutated_semantic_write_round_trips() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .expect("triangle fixture should decode");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     let expected_z = decoded.ir().model.points[0].position.z;
     let expected_bodies = decoded.ir().model.bodies.len();
     let expected_faces = decoded.ir().model.faces.len();
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .expect("mutated triangle should write");
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .expect("mutated triangle should write");
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written triangle should decode");
@@ -141,26 +145,31 @@ fn mutated_semantic_write_round_trips() {
 
 #[test]
 fn bake_transform_is_applied_and_output_stays_valid() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .expect("triangle fixture should decode");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let original_x = decoded.ir().model.points[0].position.x;
-    decoded.ir_mut().model.bodies[0].transform = Some(Transform {
-        rows: [
+    decoded.ir_mut().model.bodies[0].transform = Some(
+        Transform::from_rows([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .expect("translated triangle should write");
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .expect("translated triangle should write");
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written translated triangle should decode");

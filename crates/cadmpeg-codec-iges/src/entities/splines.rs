@@ -160,26 +160,30 @@ fn add_edge(
     parameter_range: [f64; 2],
 ) -> Option<EdgeId> {
     let start = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
         None,
         parameter_range[0],
     )?;
     let end = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
         None,
         parameter_range[1],
     )?;
     let stem = format!("D{}", entry.sequence);
-    let start_point = PointId(format!("iges:model:point#{stem}-start"));
-    let end_point = PointId(format!("iges:model:point#{stem}-end"));
-    let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-    let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-    let curve = CurveId(format!("iges:model:curve#{stem}"));
-    let edge = EdgeId(format!("iges:model:edge#{stem}"));
+    let start_point =
+        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+    let end_point =
+        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+    let start_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+    let end_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+    let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+    let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -555,12 +559,12 @@ pub(super) fn project(
             knots.extend([*breakpoint; 3]);
         }
         knots.extend([breakpoints[segment_count]; 4]);
-        let nurbs = NurbsCurve {
-            degree: 3,
-            knots,
-            control_points,
-            weights: None,
-            periodic: false,
+        let Ok(nurbs) = NurbsCurve::new(3, knots, control_points, None, false) else {
+            losses.push(entity_loss(
+                entry,
+                "converted spline cardinalities are inconsistent",
+            ));
+            continue;
         };
         let Some(edge) = add_edge(
             ir,
@@ -852,21 +856,29 @@ pub(super) fn project(
             ));
             continue;
         };
+        let Ok(nurbs) = NurbsSurface::new(
+            3,
+            3,
+            u_knots,
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            None,
+            false,
+            false,
+            false,
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "converted spline-surface cardinalities are inconsistent",
+            ));
+            continue;
+        };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 3,
-                v_degree: 3,
-                u_knots,
-                v_knots,
-                u_count,
-                v_count,
-                control_points,
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(source_object(entry)),
         });
         losses.push(

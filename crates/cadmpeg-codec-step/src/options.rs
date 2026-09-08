@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writer header metadata and target-schema selection.
+//! Writer targets and header metadata.
+//!
+//! These configure *how* a target is written. Which target is written is the
+//! export request's answer, resolved against the source: `StepCodec::plan`
+//! takes it from `TargetRequest`.
+
+use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::target::TargetDescriptor;
+
+use crate::dialect::{
+    STEP_AP203_E1, STEP_AP203_E2, STEP_AP214, STEP_AP242_E1, STEP_AP242_E2, STEP_AP242_E3,
+};
 
 /// Metadata written to the STEP `FILE_NAME` header record.
 ///
 /// Default values produce deterministic output. They identify the file as
 /// `cadmpeg_model`, leave the author and organization empty, use `cadmpeg` as
-/// the originating system, and substitute `1970-01-01T00:00:00` for the empty
-/// timestamp.
+/// the originating system, and substitute `1970-01-01T00:00:00` when the
+/// timestamp is absent.
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
-    /// Application protocol and edition declared by `FILE_SCHEMA`.
-    pub schema: StepSchema,
-    /// Handling of IR content the selected writer cannot represent exactly.
-    pub unsupported: StepUnsupportedPolicy,
     /// The `FILE_NAME` name field.
     ///
     /// The STEP `PRODUCT` id and name come from the first IR body name, or
@@ -24,9 +31,8 @@ pub struct StepWriteOptions {
     pub organization: String,
     /// The `FILE_NAME` timestamp.
     ///
-    /// Supply an ISO 8601 value. An empty string is written as
-    /// `1970-01-01T00:00:00`.
-    pub timestamp: String,
+    /// Supply an ISO 8601 value. Absence writes `1970-01-01T00:00:00`.
+    pub timestamp: Option<String>,
     /// The `FILE_NAME` originating-system field.
     pub originating_system: String,
 }
@@ -34,39 +40,26 @@ pub struct StepWriteOptions {
 impl Default for StepWriteOptions {
     fn default() -> Self {
         StepWriteOptions {
-            schema: StepSchema::Ap214,
-            unsupported: StepUnsupportedPolicy::Report,
             product_name: "cadmpeg_model".to_string(),
             author: String::new(),
             organization: String::new(),
-            timestamp: String::new(),
+            timestamp: None,
             originating_system: "cadmpeg".to_string(),
         }
     }
-}
-
-/// Policy for semantic content not representable by the selected STEP target.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum StepUnsupportedPolicy {
-    /// Emit the representable subset and return machine-readable loss notes.
-    #[default]
-    Report,
-    /// Reject the document before writing any output byte.
-    Reject,
 }
 
 /// STEP application-protocol targets supported by the Part 21 writer.
 ///
 /// The AP242 edition number and the long-form schema revision are distinct:
 /// editions 1, 2, and 3 use long-form revisions 1, 3, and 4 respectively.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StepSchema {
     /// AP203 edition 1 `CONFIG_CONTROL_DESIGN`.
     Ap203Edition1,
     /// AP203 edition 2 modular long form.
     Ap203Edition2,
     /// AP214 `AUTOMOTIVE_DESIGN`.
-    #[default]
     Ap214,
     /// AP242 edition 1 modular long form.
     Ap242Edition1,
@@ -76,7 +69,33 @@ pub enum StepSchema {
     Ap242Edition3,
 }
 
+macro_rules! writer_vocabulary {
+    ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
+        $(#[$all_meta])*
+        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        /// The generic encoder view projected from [`Self::ALL`].
+        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+            $(Self::$variant.descriptor()),+
+        ];
+    };
+}
+
 impl StepSchema {
+    writer_vocabulary!(
+        /// Every schema the Part 21 writer can emit, and so every row of the
+        /// synthesis catalog. The same invocation projects the generic encoder
+        /// catalog, so adding a typed schema cannot omit its target descriptor.
+        /// Every row names the exact `FILE_SCHEMA` declaration this enum writes;
+        /// AP214 is the cross-format default.
+        6;
+        Ap203Edition1,
+        Ap203Edition2,
+        Ap214,
+        Ap242Edition1,
+        Ap242Edition2,
+        Ap242Edition3,
+    );
+
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
         match self {
@@ -89,17 +108,32 @@ impl StepSchema {
         }
     }
 
-    pub(crate) fn ap242_edition(identifier: &str) -> Option<&'static str> {
-        const NAME: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
-        let (name, oid) = schema_identifier_arcs(identifier)?;
-        if !name.eq_ignore_ascii_case(NAME) {
-            return None;
+    /// The typed dialect identity written for this schema.
+    pub(crate) const fn id(self) -> DialectId {
+        match self {
+            Self::Ap203Edition1 => STEP_AP203_E1,
+            Self::Ap203Edition2 => STEP_AP203_E2,
+            Self::Ap214 => STEP_AP214,
+            Self::Ap242Edition1 => STEP_AP242_E1,
+            Self::Ap242Edition2 => STEP_AP242_E2,
+            Self::Ap242Edition3 => STEP_AP242_E3,
         }
-        match oid.as_deref() {
-            Some([1, 0, 10303, 442, 1, 1, 4]) => Some("edition 1"),
-            Some([1, 0, 10303, 442, 3, 1, 4]) => Some("edition 2"),
-            Some([1, 0, 10303, 442, 4, 1, 4]) => Some("edition 3"),
-            _ => None,
+    }
+
+    /// The typed write-target catalog row for this schema.
+    #[must_use]
+    pub const fn descriptor(self) -> TargetDescriptor {
+        let aliases = match self {
+            Self::Ap203Edition1 => &["ap203e1"].as_slice(),
+            Self::Ap203Edition2 => &["ap203e2"].as_slice(),
+            Self::Ap214 => &["ap214"].as_slice(),
+            Self::Ap242Edition1 => &["ap242e1"].as_slice(),
+            Self::Ap242Edition2 => &["ap242e2"].as_slice(),
+            Self::Ap242Edition3 => &["ap242e3"].as_slice(),
+        };
+        TargetDescriptor {
+            id: self.id(),
+            aliases,
         }
     }
 
@@ -148,27 +182,4 @@ impl StepSchema {
             ),
         }
     }
-}
-
-/// The schema name and the object identifier arcs of one schema identifier.
-///
-/// The edition report needs the arcs as numbers, so an object identifier with a
-/// named component, with fewer than two components, or with a component that is
-/// not a plain decimal number has no arcs. `split_schema_identifier` owns the
-/// name and object identifier split.
-fn schema_identifier_arcs(identifier: &str) -> Option<(&str, Option<Vec<u64>>)> {
-    let (name, object_identifier) =
-        crate::parse::schema_identifier::split_schema_identifier(identifier)?;
-    let Some(object_identifier) = object_identifier else {
-        return Some((name, None));
-    };
-    if name.is_empty() {
-        return None;
-    }
-    let arcs = object_identifier
-        .split_whitespace()
-        .map(str::parse::<u64>)
-        .collect::<Result<Vec<u64>, _>>()
-        .ok()?;
-    (arcs.len() >= 2).then_some((name, Some(arcs)))
 }

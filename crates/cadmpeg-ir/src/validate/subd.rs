@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::math::{Point3, Vector3};
-use crate::subd::{SubdSurface, SubdSymmetryKind};
+use crate::subd::{SubdGripWedge, SubdSurface, SubdSymmetryKind};
 use crate::validate::geometry_payloads::bounds_err;
 
 const EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9: f64 = 1.0e-9;
@@ -94,21 +94,27 @@ fn check_symmetries(
         if !frame_valid {
             bounds_err(
                 findings,
-                &subd.id.0,
+                subd.id.as_str(),
                 &format!("SubD symmetry {symmetry_index} plane frame is invalid"),
             );
         }
-        if let SubdSymmetryKind::Radial { segments, sweep } = symmetry.kind {
-            if segments == 0 || !sweep.is_finite() {
+        if let SubdSymmetryKind::Radial {
+            segments,
+            sweep,
+            radial_maps,
+        } = &symmetry.kind
+        {
+            if *segments == 0 || !sweep.is_finite() {
                 bounds_err(
                     findings,
-                    &subd.id.0,
+                    subd.id.as_str(),
                     &format!("SubD symmetry {symmetry_index} radial controls are invalid"),
                 );
             }
+            check_radial_maps(subd.id.as_str(), symmetry_index, radial_maps, findings);
         }
         check_symmetry_pairs(
-            &subd.id.0,
+            subd.id.as_str(),
             symmetry_index,
             "face",
             &symmetry.face_pairs,
@@ -116,7 +122,7 @@ fn check_symmetries(
             findings,
         );
         check_symmetry_pairs(
-            &subd.id.0,
+            subd.id.as_str(),
             symmetry_index,
             "edge",
             &symmetry.edge_pairs,
@@ -124,22 +130,13 @@ fn check_symmetries(
             findings,
         );
         check_symmetry_pairs(
-            &subd.id.0,
+            subd.id.as_str(),
             symmetry_index,
             "vertex",
             &symmetry.vertex_pairs,
             vertex_count,
             findings,
         );
-        if let SubdSymmetryKind::Radial { .. } = symmetry.kind {
-            check_radial_maps(&subd.id.0, symmetry_index, &symmetry.radial_maps, findings);
-        } else if !symmetry.radial_maps.is_empty() {
-            bounds_err(
-                findings,
-                &subd.id.0,
-                &format!("SubD symmetry {symmetry_index} has radial maps in correspondence mode"),
-            );
-        }
     }
 }
 
@@ -149,11 +146,11 @@ fn check_source(
     findings: &mut Vec<Finding>,
 ) {
     let Some(source) = source else { return };
-    if source.format.is_empty() || source.object_id.is_empty() {
+    if source.object_id.is_empty() {
         bounds_err(
             findings,
             owner,
-            "source association format and object_id must not be empty",
+            "source association object_id must not be empty",
         );
     }
     if source.color.is_some_and(|color| {
@@ -171,19 +168,23 @@ fn check_source(
 
 pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for surface in &ir.model.surfaces {
-        check_source(surface.source_object.as_ref(), &surface.id.0, findings);
+        check_source(
+            surface.source_object.as_ref(),
+            surface.id.as_str(),
+            findings,
+        );
     }
     for curve in &ir.model.curves {
-        check_source(curve.source_object.as_ref(), &curve.id.0, findings);
+        check_source(curve.source_object.as_ref(), curve.id.as_str(), findings);
     }
     for point in &ir.model.points {
-        check_source(point.source_object.as_ref(), &point.id.0, findings);
+        check_source(point.source_object.as_ref(), point.id.as_str(), findings);
     }
     for mesh in &ir.model.tessellations {
         check_source(mesh.source_object.as_ref(), &mesh.id, findings);
     }
     for subd in &ir.model.subds {
-        check_source(subd.source_object.as_ref(), &subd.id.0, findings);
+        check_source(subd.source_object.as_ref(), subd.id.as_str(), findings);
     }
 }
 
@@ -197,7 +198,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !finite_point(&vertex.point) {
                 bounds_err(
                     findings,
-                    &subd.id.0,
+                    subd.id.as_str(),
                     &format!("SubD vertex {index} is not finite"),
                 );
             }
@@ -207,52 +208,52 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if layout.wedges.is_empty() {
                 bounds_err(
                     findings,
-                    &subd.id.0,
+                    subd.id.as_str(),
                     &format!("SubD vertex {index} has an empty secondary-grip layout"),
                 );
                 continue;
             }
             for (wedge_index, wedge) in layout.wedges.iter().enumerate() {
                 let next = &layout.wedges[(wedge_index + 1) % layout.wedges.len()];
-                let expected_sectors = wedge.spokes.len().checked_mul(next.spokes.len());
-                if expected_sectors != Some(wedge.sectors.len()) {
+                let spoke_count = |wedge: &SubdGripWedge| match wedge {
+                    SubdGripWedge::Phantom => 0,
+                    SubdGripWedge::Slot { spokes, .. } => spokes.len(),
+                };
+                let sector_count = match wedge {
+                    SubdGripWedge::Phantom => 0,
+                    SubdGripWedge::Slot { sectors, .. } => sectors.len(),
+                };
+                let expected_sectors = spoke_count(wedge).checked_mul(spoke_count(next));
+                if expected_sectors != Some(sector_count) {
                     bounds_err(
                         findings,
-                        &subd.id.0,
+                        subd.id.as_str(),
                         &format!(
                             "SubD vertex {index} wedge {wedge_index} has invalid sector arity"
                         ),
                     );
                 }
-                if wedge.phantom
-                    && (wedge.edge.is_some()
-                        || wedge.sector_face.is_some()
-                        || !wedge.spokes.is_empty()
-                        || !wedge.sectors.is_empty())
+                let SubdGripWedge::Slot {
+                    edge,
+                    sector_face,
+                    spokes,
+                    sectors,
+                } = wedge
+                else {
+                    continue;
+                };
+                if edge.is_some_and(|edge| edge as usize >= edge_count)
+                    || sector_face.is_some_and(|face| face as usize >= face_count)
                 {
                     bounds_err(
                         findings,
-                        &subd.id.0,
-                        &format!(
-                            "SubD vertex {index} wedge {wedge_index} has invalid phantom data"
-                        ),
-                    );
-                }
-                if wedge.edge.is_some_and(|edge| edge as usize >= edge_count)
-                    || wedge
-                        .sector_face
-                        .is_some_and(|face| face as usize >= face_count)
-                {
-                    bounds_err(
-                        findings,
-                        &subd.id.0,
+                        subd.id.as_str(),
                         &format!(
                             "SubD vertex {index} wedge {wedge_index} has an invalid topology reference"
                         ),
                     );
                 }
-                if wedge
-                    .edge
+                if edge
                     .and_then(|edge| subd.edges.get(edge as usize))
                     .is_some_and(|edge| {
                         u32::try_from(index).map_or(true, |owner| !edge.vertices.contains(&owner))
@@ -260,16 +261,13 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 {
                     bounds_err(
                         findings,
-                        &subd.id.0,
+                        subd.id.as_str(),
                         &format!(
                             "SubD vertex {index} wedge {wedge_index} edge is not incident to its owner"
                         ),
                     );
                 }
-                if let Some(face) = wedge
-                    .sector_face
-                    .and_then(|face| subd.faces.get(face as usize))
-                {
+                if let Some(face) = sector_face.and_then(|face| subd.faces.get(face as usize)) {
                     let incident = match u32::try_from(index) {
                         Ok(owner) => face.edges.iter().any(|use_| {
                             subd.edges
@@ -281,14 +279,14 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     if !incident {
                         bounds_err(
                             findings,
-                            &subd.id.0,
+                            subd.id.as_str(),
                             &format!(
                                 "SubD vertex {index} wedge {wedge_index} sector face is not incident to its owner"
                             ),
                         );
                     }
                 }
-                for grip in wedge.spokes.iter().chain(&wedge.sectors).flatten() {
+                for grip in spokes.iter().chain(sectors).flatten() {
                     if !finite_point(&grip.point)
                         || !grip.weight.is_finite()
                         || grip.weight <= 0.0
@@ -296,7 +294,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     {
                         bounds_err(
                             findings,
-                            &subd.id.0,
+                            subd.id.as_str(),
                             &format!(
                                 "SubD vertex {index} has an invalid or repeated secondary grip"
                             ),
@@ -316,7 +314,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &subd.id.0,
+                    subd.id.as_str(),
                     &format!("SubD edge {index} is invalid"),
                 );
             }
@@ -325,7 +323,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if face.edges.len() < 3 {
                 bounds_err(
                     findings,
-                    &subd.id.0,
+                    subd.id.as_str(),
                     &format!("SubD face {face_index} has fewer than three edge uses"),
                 );
                 continue;
@@ -355,7 +353,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &subd.id.0,
+                    subd.id.as_str(),
                     &format!("SubD face {face_index} ring is not directed and closed"),
                 );
             }
@@ -371,7 +369,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             angular_parameter_interval,
             parameter_interval,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             let valid = [
                 Some(angular_interval),
@@ -386,7 +384,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             if !valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "revolution interval is not finite and ordered",
                 );
             }
@@ -395,7 +393,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             axis_origin,
             axis_direction,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         {
             if ![
                 axis_origin.x,
@@ -409,14 +407,18 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             .all(f64::is_finite)
                 || (axis_direction.norm() - 1.0).abs() > EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9
             {
-                bounds_err(findings, &procedural.id.0, "invalid revolution axis");
+                bounds_err(findings, procedural.id.as_str(), "invalid revolution axis");
             }
         }
         if let crate::geometry::ProceduralSurfaceDefinition::Sum { basepoint, .. } =
-            &procedural.definition
+            procedural.definition()
         {
             if !basepoint.x.is_finite() || !basepoint.y.is_finite() || !basepoint.z.is_finite() {
-                bounds_err(findings, &procedural.id.0, "sum basepoint is not finite");
+                bounds_err(
+                    findings,
+                    procedural.id.as_str(),
+                    "sum basepoint is not finite",
+                );
             }
         }
     }

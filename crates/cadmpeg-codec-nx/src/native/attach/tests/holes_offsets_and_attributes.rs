@@ -1,10 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{BodyId, SurfaceId};
 
+use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
+use crate::parasolid::attribute_action::AttributeAction;
+use crate::parasolid::attribute_field::AttributeField;
 use crate::test_support::*;
 
 use super::*;
+
+fn insert_test_procedural_surface(
+    ir: &mut cadmpeg_ir::document::CadIr,
+    owner: SurfaceId,
+    procedural: ProceduralSurface,
+) {
+    ir.model.surfaces.push(Surface {
+        id: owner.clone(),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.add_procedural_surface(owner, procedural).unwrap();
+}
+
+fn attach_test_body_procedural_surface(
+    ir: &mut cadmpeg_ir::document::CadIr,
+    body: &BodyId,
+    owner: SurfaceId,
+    procedural: ProceduralSurface,
+) {
+    attach_test_body_surface(ir, body, owner.clone());
+    insert_test_procedural_surface(ir, owner, procedural);
+}
 
 fn attribute_field_name(
     topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
@@ -20,12 +49,15 @@ fn attribute_field_name(
 
 #[test]
 fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
-    use crate::native::features::{
-        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
-        SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, HoleKind, HolePlacement, Length, LinearTermination,
+    };
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
@@ -33,7 +65,6 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::Units;
 
     let operation = "blind".to_string();
     let template = FeatureSimpleHoleTemplate {
@@ -47,8 +78,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         end_treatment: SimpleHoleEndTreatment::None,
     };
     let mut model = Model::default();
-    let cylinder_surface = SurfaceId("blind-cylinder-surface".into());
-    let cap_surface = SurfaceId("blind-cap-surface".into());
+    let cylinder_surface =
+        SurfaceId::mint("test:model:entity#blind-cylinder-surface").expect("identity grammar");
+    let cap_surface =
+        SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: cylinder_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -71,9 +104,12 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
         let mut add_circle_loop =
             |loop_name: &str, edge_name: &str, center: Point3, radius: f64| {
-                let loop_id = LoopId(loop_name.into());
-                let edge_id = EdgeId(edge_name.into());
-                let curve_id = CurveId(format!("{edge_name}-curve"));
+                let loop_id = LoopId::mint(format!("test:model:entity#{loop_name}"))
+                    .expect("identity grammar");
+                let edge_id = EdgeId::mint(format!("test:model:entity#{edge_name}"))
+                    .expect("identity grammar");
+                let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
+                    .expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
                     model.curves.push(Curve {
                         id: curve_id.clone(),
@@ -88,24 +124,23 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     model.edges.push(Edge {
                         id: edge_id.clone(),
                         curve: Some(curve_id),
-                        start: VertexId("vertex".into()),
-                        end: VertexId("vertex".into()),
+                        start: VertexId::mint("test:model:entity#vertex")
+                            .expect("identity grammar"),
+                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                         param_range: None,
                         tolerance: None,
                     });
                 }
-                let coedge_id = CoedgeId(format!("{loop_name}-coedge"));
+                let coedge_id = CoedgeId::mint(format!("test:model:entity#{loop_name}-coedge"))
+                    .expect("identity grammar");
                 model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
-                    next: coedge_id.clone(),
-                    previous: coedge_id.clone(),
                     radial_next: coedge_id,
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
                 loop_id
             };
@@ -130,51 +165,52 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             ),
         )
     };
-    let cylinder_face = FaceId("blind-cylinder-face".into());
-    let cap_face = FaceId("blind-cap-face".into());
+    let cylinder_face =
+        FaceId::mint("test:model:entity#blind-cylinder-face").expect("identity grammar");
+    let cap_face = FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar");
     model.faces.push(Face {
         id: cylinder_face.clone(),
-        shell: ShellId("blind-shell".into()),
+        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: cylinder_surface,
         sense: Sense::Reversed,
-        loops: vec![entry_loop, cylinder_cap_loop],
+        loops: vec![entry_loop, cylinder_cap_loop].into(),
         name: None,
         color: None,
         tolerance: None,
     });
     model.faces.push(Face {
         id: cap_face.clone(),
-        shell: ShellId("blind-shell".into()),
+        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: cap_surface,
         sense: Sense::Forward,
-        loops: vec![cap_face_loop],
+        loops: vec![cap_face_loop].into(),
         name: None,
         color: None,
         tolerance: None,
     });
-    let body = BodyId("blind-body".into());
+    let body = BodyId::mint("test:model:entity#blind-body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("blind-region".into())],
+        regions: vec![RegionId::mint("test:model:entity#blind-region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId("blind-region".into()),
+        id: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId("blind-shell".into())],
+        shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId("blind-shell".into()),
-        region: RegionId("blind-region".into()),
+        id: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
         faces: vec![cylinder_face, cap_face],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model = model;
     let operation_positions = BTreeMap::from([("blind", 0usize)]);
     assert_eq!(
@@ -219,7 +255,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 direction: Vector3::new(0.0, 0.0, 1.0),
             }],
             diameter: Some(Length(4.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(3.0),
             }),
             ..super::HoleProjection::default()
@@ -229,21 +265,24 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     assert!(matches!(
         definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(4.0)),
-            extent: Some(Termination::Blind { length: Length(3.0) }),
+            extent: Some(LinearTermination::Blind { length: Length(3.0) }),
             placements,
             ..
-        } if placements == [HolePlacement::Directed {
+        } if placements.as_deref() == Some(&[HolePlacement::Directed {
             position: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        }][..])
     ));
 
     let mut missing_cap = ir.clone();
-    missing_cap.model.shells[0]
-        .faces
-        .retain(|face| face != &FaceId("blind-cap-face".into()));
+    missing_cap.model.shells[0].faces.retain(|face| {
+        face != &FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar")
+    });
     assert!(super::blind_hole_body_projection(
         &missing_cap,
         std::slice::from_ref(&operation),
@@ -252,18 +291,21 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     .is_none());
     let mut duplicate_cap = ir.clone();
     duplicate_cap.model.faces.push(Face {
-        id: FaceId("blind-duplicate-cap-face".into()),
-        shell: ShellId("blind-shell".into()),
-        surface: SurfaceId("blind-cap-surface".into()),
+        id: FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId("blind-cap-face-loop".into())],
+        loops: vec![
+            LoopId::mint("test:model:entity#blind-cap-face-loop").expect("identity grammar")
+        ]
+        .into(),
         name: None,
         color: None,
         tolerance: None,
     });
-    duplicate_cap.model.shells[0]
-        .faces
-        .push(FaceId("blind-duplicate-cap-face".into()));
+    duplicate_cap.model.shells[0].faces.push(
+        FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
+    );
     assert!(super::blind_hole_body_projection(
         &duplicate_cap,
         std::slice::from_ref(&operation),
@@ -289,10 +331,11 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
 
 #[test]
 fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
-    use crate::native::features::{
-        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
-        SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
@@ -302,7 +345,6 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::Units;
 
     let operation = "counterbore".to_string();
     let template = FeatureSimpleHoleTemplate {
@@ -334,11 +376,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     let mut model = Model::default();
     let mut add_circle_loop =
         |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
-            let loop_id = LoopId(format!("{name}-loop"));
+            let loop_id =
+                LoopId::mint(format!("test:model:entity#{name}-loop")).expect("identity grammar");
             let edge_name = shared_edge.unwrap_or(name);
-            let curve_id = CurveId(format!("{edge_name}-curve"));
-            let edge_id = EdgeId(format!("{edge_name}-edge"));
-            let coedge_id = CoedgeId(format!("{name}-coedge"));
+            let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
+                .expect("identity grammar");
+            let edge_id = EdgeId::mint(format!("test:model:entity#{edge_name}-edge"))
+                .expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("test:model:entity#{name}-coedge"))
+                .expect("identity grammar");
             if !model.edges.iter().any(|edge| edge.id == edge_id) {
                 model.curves.push(Curve {
                     id: curve_id.clone(),
@@ -353,8 +399,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 model.edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(curve_id),
-                    start: VertexId("vertex".into()),
-                    end: VertexId("vertex".into()),
+                    start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                    end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     param_range: None,
                     tolerance: None,
                 });
@@ -363,29 +409,26 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id,
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
                 radial_next: coedge_id,
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             loop_id
         };
     let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
         model.faces.push(Face {
-            id: FaceId(id.into()),
-            shell: ShellId("shell".into()),
+            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface,
             sense,
-            loops,
+            loops: loops.into(),
             name: None,
             color: None,
             tolerance: None,
         });
     };
-    let bore_surface = SurfaceId("bore-surface".into());
+    let bore_surface = SurfaceId::mint("test:model:entity#bore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: bore_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -407,7 +450,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     ];
     add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
 
-    let counterbore_surface = SurfaceId("counterbore-surface".into());
+    let counterbore_surface =
+        SurfaceId::mint("test:model:entity#counterbore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: counterbore_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -434,7 +478,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         counterbore_loops,
     );
 
-    let shoulder_surface = SurfaceId("shoulder-surface".into());
+    let shoulder_surface =
+        SurfaceId::mint("test:model:entity#shoulder-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: shoulder_surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -465,33 +510,33 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         shoulder_loops,
     );
 
-    let body = BodyId("body".into());
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("region".into())],
+        regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId("region".into()),
+        id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId("shell".into())],
+        shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId("shell".into()),
-        region: RegionId("region".into()),
+        id: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#region").expect("identity grammar"),
         faces: vec![
-            FaceId("bore-face".into()),
-            FaceId("counterbore-face".into()),
-            FaceId("shoulder-face".into()),
+            FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
+            FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
+            FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
         ],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model = model;
     let operations = vec![operation.clone()];
     let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
@@ -558,24 +603,27 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     assert!(matches!(
         definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Counterbore {
-                diameter: Length(8.0),
-                depth: Length(2.0),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(8.0),
+                    depth: Length(2.0),
+                },
+                ..
             },
             diameter: Some(Length(4.0)),
-            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             placements,
             ..
-        } if placements == [HolePlacement::Axis {
+        } if placements.as_deref() == Some(&[HolePlacement::Axis {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        }][..])
     ));
 
     let mut missing_shoulder = ir.clone();
-    missing_shoulder.model.shells[0]
-        .faces
-        .retain(|face| face != &FaceId("shoulder-face".into()));
+    missing_shoulder.model.shells[0].faces.retain(|face| {
+        face != &FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar")
+    });
     assert!(super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
@@ -597,27 +645,32 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    let output = BodyId("nx:s4:body#3".into());
-    let make_offset = |ordinal: u32, distance: f64| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
-            distance,
-            u_sense: Some(1),
-            v_sense: Some(1),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+    let make_offset = |ordinal: u32, distance: f64| {
+        let owner =
+            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
+        let procedural = ProceduralSurface::new(
+            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::Offset {
+                support: SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                    .expect("identity grammar"),
+                distance,
+                u_sense: Some(1),
+                v_sense: Some(1),
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        );
+        (owner, procedural)
     };
     for ordinal in 0..2 {
-        let procedural = make_offset(ordinal, 30.0);
-        attach_test_body_surface(&mut ir, &output, procedural.surface.clone());
-        ir.model.procedural_surfaces.push(procedural);
+        let (owner, procedural) = make_offset(ordinal, 30.0);
+        attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
     }
 
     let (definition, supports) =
@@ -632,12 +685,12 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         }
     ));
 
-    let input = BodyId("nx:s4:body#input".into());
+    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
     for ordinal in 0..2 {
         attach_test_body_surface(
             &mut ir,
             &input,
-            SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+            SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
         );
     }
     let (definition, _) =
@@ -652,7 +705,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     ));
 
     for face in ir.model.faces.iter_mut().filter(|face| {
-        face.surface.0 == "nx:s4:nurbs-surf#0" || face.surface.0 == "nx:s4:nurbs-surf#1"
+        face.surface.as_str() == "nx:s4:nurbs-surf#0"
+            || face.surface.as_str() == "nx:s4:nurbs-surf#1"
     }) {
         face.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
@@ -670,7 +724,9 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     ir.model
         .faces
         .iter_mut()
-        .find(|face| face.surface == SurfaceId("nx:s4:nurbs-surf#0".into()))
+        .find(|face| {
+            face.surface == SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar")
+        })
         .expect("first support face")
         .sense = cadmpeg_ir::topology::Sense::Forward;
     let (definition, _) =
@@ -687,8 +743,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     let mut ambiguous = ir.clone();
     attach_test_body_surface(
         &mut ambiguous,
-        &BodyId("nx:s4:body#duplicate".into()),
-        SurfaceId("nx:s4:nurbs-surf#0".into()),
+        &BodyId::mint("nx:s4:body#duplicate").expect("identity grammar"),
+        SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar"),
     );
     let (definition, _) =
         super::offset_surface_feature_definition(&ambiguous, std::slice::from_ref(&output))
@@ -701,13 +757,14 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         }
     ));
 
-    ir.model.procedural_surfaces.push(make_offset(99, -40.0));
+    let (unowned, procedural) = make_offset(99, -40.0);
+    insert_test_procedural_surface(&mut ir, unowned, procedural);
     assert!(super::offset_surface_feature_definition(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
+    ir.model.surfaces.pop();
 
-    let conflicting = make_offset(2, -30.0);
-    attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
-    ir.model.procedural_surfaces.push(conflicting);
+    let (owner, conflicting) = make_offset(2, -30.0);
+    attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
     assert!(super::offset_surface_feature_definition(&ir, &[output]).is_none());
 }
 
@@ -717,27 +774,32 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    let output = BodyId("nx:s4:body#3".into());
-    let make_offset = |ordinal: u32, distance: f64| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
-            distance,
-            u_sense: Some(1),
-            v_sense: Some(1),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+    let make_offset = |ordinal: u32, distance: f64| {
+        let owner =
+            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
+        let procedural = ProceduralSurface::new(
+            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::Offset {
+                support: SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                    .expect("identity grammar"),
+                distance,
+                u_sense: Some(1),
+                v_sense: Some(1),
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        );
+        (owner, procedural)
     };
     for ordinal in 0..2 {
-        let procedural = make_offset(ordinal, -12.5);
-        attach_test_body_surface(&mut ir, &output, procedural.surface.clone());
-        ir.model.procedural_surfaces.push(procedural);
+        let (owner, procedural) = make_offset(ordinal, -12.5);
+        attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
     }
 
     let (definition, supports) =
@@ -765,12 +827,12 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         super::thicken_feature_definition(&sheet_output, std::slice::from_ref(&output)).is_none()
     );
 
-    let input = BodyId("nx:s4:body#input".into());
+    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
     for ordinal in 0..2 {
         attach_test_body_surface(
             &mut ir,
             &input,
-            SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+            SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
         );
     }
     let (definition, _) = super::thicken_feature_definition(&ir, std::slice::from_ref(&output))
@@ -787,7 +849,9 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     ir.model
         .faces
         .iter_mut()
-        .find(|face| face.surface == SurfaceId("nx:s4:nurbs-surf#1".into()))
+        .find(|face| {
+            face.surface == SurfaceId::mint("nx:s4:nurbs-surf#1").expect("identity grammar")
+        })
         .expect("second support face")
         .sense = cadmpeg_ir::topology::Sense::Reversed;
     let (definition, _) = super::thicken_feature_definition(&ir, std::slice::from_ref(&output))
@@ -801,19 +865,19 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         }
     ));
 
-    ir.model.procedural_surfaces.push(make_offset(99, 40.0));
+    let (unowned, procedural) = make_offset(99, 40.0);
+    insert_test_procedural_surface(&mut ir, unowned, procedural);
     assert!(super::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
+    ir.model.surfaces.pop();
 
-    let conflicting = make_offset(2, 12.5);
-    attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
-    ir.model.procedural_surfaces.push(conflicting);
+    let (owner, conflicting) = make_offset(2, 12.5);
+    attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
     assert!(super::thicken_feature_definition(&ir, &[output]).is_none());
 
-    let zero_output = BodyId("nx:s4:body#4".into());
-    let zero = make_offset(3, 0.0);
-    attach_test_body_surface(&mut ir, &zero_output, zero.surface.clone());
-    ir.model.procedural_surfaces.push(zero);
+    let zero_output = BodyId::mint("nx:s4:body#4").expect("identity grammar");
+    let (owner, zero) = make_offset(3, 0.0);
+    attach_test_body_procedural_surface(&mut ir, &zero_output, owner, zero);
     assert!(super::thicken_feature_definition(&ir, &[zero_output]).is_none());
 }
 
@@ -823,30 +887,34 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    let output = BodyId("nx:s4:body#symmetric".into());
-    let input = BodyId("nx:s4:body#input".into());
-    let support = SurfaceId("nx:s4:nurbs-surf#0".into());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let output = BodyId::mint("nx:s4:body#symmetric").expect("identity grammar");
+    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
+    let support = SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar");
     attach_test_body_surface(&mut ir, &input, support.clone());
-    let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support,
-            distance,
-            u_sense: Some(1),
-            v_sense: Some(1),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| {
+        let owner =
+            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
+        let procedural = ProceduralSurface::new(
+            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::Offset {
+                support,
+                distance,
+                u_sense: Some(1),
+                v_sense: Some(1),
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        );
+        (owner, procedural)
     };
     for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
-        let procedural = make_offset(ordinal, support.clone(), distance);
-        attach_test_body_surface(&mut ir, &output, procedural.surface.clone());
-        ir.model.procedural_surfaces.push(procedural);
+        let (owner, procedural) = make_offset(ordinal, support.clone(), distance);
+        attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
     }
 
     let (definition, supports) =
@@ -863,48 +931,49 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     ));
 
     let mut mismatched_support = ir.clone();
-    let ProceduralSurfaceDefinition::Offset { support, .. } = &mut mismatched_support
+    mismatched_support
         .model
         .procedural_surfaces
         .last_mut()
         .expect("positive offset")
-        .definition
-    else {
-        unreachable!()
-    };
-    *support = SurfaceId("nx:s4:nurbs-surf#other".into());
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Offset { support, .. } = definition else {
+                unreachable!()
+            };
+            *support = SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar");
+        });
     assert!(
         super::thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output))
             .is_none()
     );
 
-    let ProceduralSurfaceDefinition::Offset { distance, .. } = &mut ir
-        .model
+    ir.model
         .procedural_surfaces
         .last_mut()
         .expect("positive offset")
-        .definition
-    else {
-        unreachable!()
-    };
-    *distance = 7.0;
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Offset { distance, .. } = definition else {
+                unreachable!()
+            };
+            *distance = 7.0;
+        });
     assert!(super::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());
 }
 
 #[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RadiusForm, RadiusSpec};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RadiusSpec};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, BlendSupport, ProceduralSurface,
         ProceduralSurfaceDefinition,
     };
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    let output = BodyId("nx:s4:body#3".into());
-    let support_a = SurfaceId("support-a".into());
-    let support_b = SurfaceId("support-b".into());
-    let support_c = SurfaceId("support-c".into());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+    let support_a = SurfaceId::mint("test:model:entity#support-a").expect("identity grammar");
+    let support_b = SurfaceId::mint("test:model:entity#support-b").expect("identity grammar");
+    let support_c = SurfaceId::mint("test:model:entity#support-c").expect("identity grammar");
     assert_eq!(
         super::blend_support_bipartition(vec![
             [support_a.clone(), support_b.clone()],
@@ -922,34 +991,42 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ])
     .is_none());
     assert!(super::blend_support_bipartition(vec![
-        [SurfaceId("a".into()), SurfaceId("b".into())],
-        [SurfaceId("c".into()), SurfaceId("d".into())],
+        [
+            SurfaceId::mint("test:model:entity#a").expect("identity grammar"),
+            SurfaceId::mint("test:model:entity#b").expect("identity grammar")
+        ],
+        [
+            SurfaceId::mint("test:model:entity#c").expect("identity grammar"),
+            SurfaceId::mint("test:model:entity#d").expect("identity grammar")
+        ],
     ])
     .is_none());
-    let make_blend = |ordinal: u32, radius: BlendRadiusLaw| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:blend-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:blend-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Blend {
-            supports: [None, None],
-            spine: None,
-            radius,
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let make_blend = |ordinal: u32, radius: BlendRadiusLaw| {
+        let owner =
+            SurfaceId::mint(format!("nx:s4:blend-surf#{ordinal}")).expect("identity grammar");
+        let procedural = ProceduralSurface::new(
+            ProceduralSurfaceId::mint(format!("nx:s4:blend-construction#{ordinal}"))
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::Blend {
+                supports: [None, None],
+                spine: None,
+                radius,
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        );
+        (owner, procedural)
     };
-    let first = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
-    attach_test_body_surface(&mut ir, &output, first.surface.clone());
-    ir.model.procedural_surfaces.push(first);
-    let second = make_blend(
+    let (first_owner, first) = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
+    attach_test_body_procedural_surface(&mut ir, &output, first_owner, first);
+    let (second_owner, second) = make_blend(
         1,
         BlendRadiusLaw::Constant {
             signed_radius: -5.0,
         },
     );
-    attach_test_body_surface(&mut ir, &output, second.surface.clone());
-    ir.model.procedural_surfaces.push(second);
+    attach_test_body_procedural_surface(&mut ir, &output, second_owner, second);
 
     let (definition, surfaces) = super::blend_feature_definition(
         &ir,
@@ -983,22 +1060,24 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ));
 
     let mut face_blend_ir = ir.clone();
-    let first_support = SurfaceId("nx:s4:blend-support#a".into());
-    let second_support = SurfaceId("nx:s4:blend-support#b".into());
+    let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
+    let second_support = SurfaceId::mint("nx:s4:blend-support#b").expect("identity grammar");
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut procedural.definition else {
-            unreachable!()
-        };
-        *supports = [
-            Some(BlendSupport {
-                surface: first_support.clone(),
-                reversed: false,
-            }),
-            Some(BlendSupport {
-                surface: second_support.clone(),
-                reversed: true,
-            }),
-        ];
+        procedural.edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                unreachable!()
+            };
+            *supports = [
+                Some(BlendSupport {
+                    surface: first_support.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: second_support.clone(),
+                    reversed: true,
+                }),
+            ];
+        });
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);
@@ -1035,12 +1114,13 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         } if faces.len() == 1 && second.len() == 1 && faces != second
     ));
 
-    ir.model.procedural_surfaces.push(make_blend(
+    let (unowned, procedural) = make_blend(
         99,
         BlendRadiusLaw::Constant {
             signed_radius: 17.0,
         },
-    ));
+    );
+    insert_test_procedural_surface(&mut ir, unowned, procedural);
     let (definition, _) = super::blend_feature_definition(
         &ir,
         std::slice::from_ref(&output),
@@ -1057,10 +1137,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         }])
     ));
     ir.model.procedural_surfaces.pop();
+    ir.model.surfaces.pop();
 
-    let conflicting = make_blend(2, BlendRadiusLaw::Constant { signed_radius: 7.0 });
-    attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
-    ir.model.procedural_surfaces.push(conflicting);
+    let (owner, conflicting) = make_blend(2, BlendRadiusLaw::Constant { signed_radius: 7.0 });
+    attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
     let (definition, _) =
         super::blend_feature_definition(&ir, &[output], super::NxBlendFamily::Edge)
             .expect("required invariant");
@@ -1069,34 +1149,33 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         FeatureDefinition::Fillet {
             groups
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::Unresolved { form: Some(RadiusForm::Constant) },
+        radius: RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));
     assert!(super::blend_feature_definition(&ir, &[], super::NxBlendFamily::Edge,).is_none());
 
-    let conic = ProceduralSurface {
-        id: ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
-        surface: SurfaceId("nx:s4:blend-surf#3".into()),
-        definition: ProceduralSurfaceDefinition::Blend {
+    let conic_owner = SurfaceId::mint("nx:s4:blend-surf#3").expect("identity grammar");
+    let conic = ProceduralSurface::new(
+        ProceduralSurfaceId::mint("nx:s4:blend-construction#3").expect("identity grammar"),
+        ProceduralSurfaceDefinition::Blend {
             supports: [None, None],
             spine: None,
             radius: BlendRadiusLaw::Constant { signed_radius: 7.0 },
             cross_section: BlendCrossSection::Conic,
             native: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    };
-    attach_test_body_surface(
-        &mut ir,
-        &BodyId("nx:s4:body#3".into()),
-        conic.surface.clone(),
+        None,
     );
-    ir.model.procedural_surfaces.push(conic);
+    attach_test_body_procedural_surface(
+        &mut ir,
+        &BodyId::mint("nx:s4:body#3").expect("identity grammar"),
+        conic_owner,
+        conic,
+    );
     assert!(super::blend_feature_definition(
         &ir,
-        &[BodyId("nx:s4:body#3".into())],
+        &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
         super::NxBlendFamily::Edge,
     )
     .is_none());
@@ -1110,13 +1189,19 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
     let positions = BTreeMap::from([("csys", 1), ("consumer", 2), ("later", 3)]);
     let features = BTreeMap::from([
-        ("csys", FeatureId("nx:test:feature#csys".into())),
-        ("consumer", FeatureId("nx:test:feature#consumer".into())),
+        (
+            "csys",
+            FeatureId::mint("nx:test:feature#csys").expect("identity grammar"),
+        ),
+        (
+            "consumer",
+            FeatureId::mint("nx:test:feature#consumer").expect("identity grammar"),
+        ),
     ]);
 
     assert_eq!(
         super::preceding_operation_dependency("csys", 2, &positions, &features),
-        Some(FeatureId("nx:test:feature#csys".into()))
+        Some(FeatureId::mint("nx:test:feature#csys").expect("identity grammar"))
     );
     assert_eq!(
         super::preceding_operation_dependency("consumer", 2, &positions, &features),
@@ -1145,33 +1230,38 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.model.shells[0].id = ShellId("nx:s3:shell#58".into());
-    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
-    ir.model.loops[0].id = LoopId("nx:s3:loop#59".into());
-    let references = [(13, 58), (14, 60), (15, 59)].map(|(topology_type, topology_xmt)| {
-        ParasolidTopologyAttributeListReference {
-            id: format!("topology-reference-{topology_type}"),
+    ir.model.shells[0].id = ShellId::mint("nx:s3:shell#58").expect("identity grammar");
+    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
+    ir.model.loops[0].id = LoopId::mint("nx:s3:loop#59").expect("identity grammar");
+    let references = [
+        (TopologyAttributeKind::Shell, 58),
+        (TopologyAttributeKind::Face, 60),
+        (TopologyAttributeKind::Loop, 59),
+    ]
+    .map(
+        |(topology_type, topology_xmt)| ParasolidTopologyAttributeListReference {
+            id: format!("topology-reference-{}", topology_type.code()),
             stream_ordinal: 3,
             topology_type,
             topology_xmt,
             attribute_list_xmt: 50,
             attribute_list_record: Some("entity".into()),
             inflated_offset: 300,
-        }
-    });
+        },
+    );
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
-        xmt: 70,
-        values: vec![4, u32::MAX],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![4, u32::MAX]).unwrap(),
         byte_len: 18,
         inflated_offset: 400,
     };
     let double = ParasolidEntity53DoubleRecord {
         id: "doubles".into(),
         stream_ordinal: 3,
-        xmt: 71,
-        values: vec![0.25, 7.5],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![0.25, 7.5]).unwrap(),
         byte_len: 26,
         inflated_offset: 500,
     };
@@ -1180,8 +1270,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             id: "double-use".into(),
             stream_ordinal: 3,
             entity_51_record: "entity".into(),
-            reference_ordinal: 4,
-            referenced_xmt: 71,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
+            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: double.id.clone(),
             inflated_offset: 200,
@@ -1190,8 +1280,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             id: "integer-use".into(),
             stream_ordinal: 3,
             entity_51_record: "entity".into(),
-            reference_ordinal: 3,
-            referenced_xmt: 70,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
             kind: ParasolidEntity51NumericKind::UnsignedIntegers,
             value_record: integer.id.clone(),
             inflated_offset: 200,
@@ -1200,18 +1290,18 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
-        next_definition_xmt: 1,
-        identifier_xmt: 35,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        next_definition_xmt: None,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "SDL/TYSA_DENSITY".into(),
-        type_id: 8004,
-        action_codes: [0; 8],
-        field_names_xmt: 1,
-        legal_owner_flags: [0; 16],
-        legal_owner_flag_count: 16,
-        field_count: 1,
-        field_codes: vec![2],
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string())
+            .unwrap(),
+        type_id: std::num::NonZeroU32::new(8004).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
+        field_names_xmt: None,
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+
+        field_codes: vec![AttributeField::Real],
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
@@ -1250,17 +1340,17 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
+        .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
         .collect::<Vec<_>>();
     assert_eq!(attributes.len(), 6);
     assert_eq!(
         attributes[0].target,
-        AttributeTarget::Shell(ShellId("nx:s3:shell#58".into()))
+        AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
     );
-    assert_eq!(attributes[0].name, "parasolid_type_integer_reference_3");
+    assert_eq!(attributes[0].name, "parasolid_type_integer_reference_5");
     assert_eq!(
         attributes[4].name,
-        "SDL/TYSA_DENSITY.parasolid_type_integer_reference_3"
+        "SDL/TYSA_DENSITY.parasolid_type_integer_reference_5"
     );
     assert_eq!(
         attributes[0].values,
@@ -1272,15 +1362,15 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     for (attributes, target) in [
         (
             &attributes[0..2],
-            AttributeTarget::Shell(ShellId("nx:s3:shell#58".into())),
+            AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar")),
         ),
         (
             &attributes[2..4],
-            AttributeTarget::Face(FaceId("nx:s3:face#60".into())),
+            AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar")),
         ),
         (
             &attributes[4..6],
-            AttributeTarget::Loop(LoopId("nx:s3:loop#59".into())),
+            AttributeTarget::Loop(LoopId::mint("nx:s3:loop#59").expect("identity grammar")),
         ),
     ] {
         assert!(attributes
@@ -1304,7 +1394,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),
@@ -1313,18 +1403,18 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
-        next_definition_xmt: 1,
-        identifier_xmt: 35,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        next_definition_xmt: None,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "SDL/TYSA_DENSITY".into(),
-        type_id: 8004,
-        action_codes: [0; 8],
-        field_names_xmt: 1,
-        legal_owner_flags: [0; 16],
-        legal_owner_flag_count: 16,
-        field_count: 2,
-        field_codes: vec![2, 3],
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string())
+            .unwrap(),
+        type_id: std::num::NonZeroU32::new(8004).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
+        field_names_xmt: None,
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+
+        field_codes: vec![AttributeField::Real, AttributeField::Character],
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
@@ -1341,9 +1431,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         attribute_class_use: "attribute-class-use".into(),
         entity_51_record: "entity".into(),
         attribute_definition: definition.id.clone(),
-        field_ordinal: 0,
-        field_code: 2,
-        reference_ordinal: 5,
+        position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::Doubles,
         value_use: "double-use".into(),
         value_record: "double-record".into(),
@@ -1364,9 +1452,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let units = ParasolidAttributeFieldUse {
-        field_ordinal: 1,
-        field_code: 3,
-        reference_ordinal: 6,
+        position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::String,
         value_use: "string-use".into(),
         value_record: "string-record".into(),
@@ -1386,8 +1472,8 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let generic_definition = ParasolidAttributeDefinition {
-        name: "CLASS".into(),
-        field_names_xmt: 25,
+        name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+        field_names_xmt: crate::framing::xmt_reference::XmtTarget::from_wire(25),
         ..definition.clone()
     };
     assert_eq!(
@@ -1404,8 +1490,8 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let named_definition = ParasolidAttributeDefinition {
-        name: "PVM/25_1".into(),
-        field_names_xmt: 25,
+        name: crate::printable_string::PrintableString::new("PVM/25_1".to_string()).unwrap(),
+        field_names_xmt: crate::framing::xmt_reference::XmtTarget::from_wire(25),
         ..definition.clone()
     };
     let field_names = ParasolidAttributeFieldNames {
@@ -1413,8 +1499,16 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         stream_ordinal: 3,
         attribute_definition: named_definition.id.clone(),
         field_names_record: "field-names-record".into(),
-        value_records: vec!["name-1".into(), "name-2".into()],
-        names: vec!["width".into(), "units".into()],
+        fields: vec![
+            crate::native::parasolid::named_fields::NamedField {
+                value_record: "name-1".into(),
+                name: "width".into(),
+            },
+            crate::native::parasolid::named_fields::NamedField {
+                value_record: "name-2".into(),
+                name: "units".into(),
+            },
+        ],
     };
     assert_eq!(
         attribute_field_name(
@@ -1454,7 +1548,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),
@@ -1463,18 +1557,18 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
-        next_definition_xmt: 1,
-        identifier_xmt: 35,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        next_definition_xmt: None,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "SDL/TYSA_BLEND_ID".into(),
-        type_id: 8004,
-        action_codes: [0; 8],
-        field_names_xmt: 1,
-        legal_owner_flags: [0; 16],
-        legal_owner_flag_count: 16,
-        field_count: 2,
-        field_codes: vec![3, 2],
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_BLEND_ID".to_string())
+            .unwrap(),
+        type_id: std::num::NonZeroU32::new(8004).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
+        field_names_xmt: None,
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+
+        field_codes: vec![AttributeField::Character, AttributeField::Real],
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
@@ -1491,9 +1585,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         attribute_class_use: class_use.attribute_class_use.clone(),
         entity_51_record: class_use.entity_51_record.clone(),
         attribute_definition: definition.id.clone(),
-        field_ordinal: 0,
-        field_code: 3,
-        reference_ordinal: 5,
+        position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::String,
         value_use: "text-use".into(),
         value_record: "text-record".into(),
@@ -1501,9 +1593,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     };
     let numeric_field = ParasolidAttributeFieldUse {
         id: "numeric-field-use".into(),
-        field_ordinal: 1,
-        field_code: 2,
-        reference_ordinal: 6,
+        position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::Doubles,
         value_use: "numeric-use".into(),
         value_record: "numeric-record".into(),
@@ -1549,11 +1639,11 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("head".into()),
@@ -1562,18 +1652,17 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
-        next_definition_xmt: 1,
-        identifier_xmt: 35,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        next_definition_xmt: None,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "CLASS".into(),
-        type_id: 8000,
-        action_codes: [0; 8],
-        field_names_xmt: 1,
-        legal_owner_flags: [0; 16],
-        legal_owner_flag_count: 16,
-        field_count: 1,
-        field_codes: vec![2],
+        name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+        type_id: std::num::NonZeroU32::new(8000).unwrap(),
+        action_codes: [AttributeAction::Code0; 8],
+        field_names_xmt: None,
+        legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+
+        field_codes: vec![AttributeField::Real],
         inflated_offset: 100,
     };
     let class_uses = [
@@ -1601,9 +1690,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             attribute_class_use: "head-class-use".into(),
             entity_51_record: "head".into(),
             attribute_definition: definition.id.clone(),
-            field_ordinal: 0,
-            field_code: 2,
-            reference_ordinal: 5,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             value_kind: ParasolidAttributeFieldValueKind::Doubles,
             value_use: "head-use".into(),
             value_record: "head-value".into(),
@@ -1615,9 +1702,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             attribute_class_use: "child-class-use".into(),
             entity_51_record: "child".into(),
             attribute_definition: definition.id.clone(),
-            field_ordinal: 0,
-            field_code: 2,
-            reference_ordinal: 5,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             value_kind: ParasolidAttributeFieldValueKind::Doubles,
             value_use: "child-use".into(),
             value_record: "child-value".into(),
@@ -1629,8 +1714,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             id: "head-use".into(),
             stream_ordinal: 3,
             entity_51_record: "head".into(),
-            reference_ordinal: 5,
-            referenced_xmt: 70,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "head-value".into(),
             inflated_offset: 200,
@@ -1639,8 +1724,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             id: "child-use".into(),
             stream_ordinal: 3,
             entity_51_record: "child".into(),
-            reference_ordinal: 5,
-            referenced_xmt: 71,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "child-value".into(),
             inflated_offset: 210,
@@ -1650,16 +1735,16 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         ParasolidEntity53DoubleRecord {
             id: "head-value".into(),
             stream_ordinal: 3,
-            xmt: 70,
-            values: vec![1.0],
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![1.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 400,
         },
         ParasolidEntity53DoubleRecord {
             id: "child-value".into(),
             stream_ordinal: 3,
-            xmt: 71,
-            values: vec![2.0],
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![2.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 410,
         },
@@ -1709,11 +1794,12 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
+        .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
         .collect::<Vec<_>>();
     assert_eq!(attributes.len(), 2);
     assert!(attributes.iter().all(|attribute| {
-        attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        attribute.target
+            == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
             && attribute.name == "CLASS.field_0.parasolid_type_2"
     }));
     assert_ne!(attributes[0].id, attributes[1].id);
@@ -1727,23 +1813,23 @@ fn topology_attribute_index_retains_linked_type_81_records() {
 
 #[test]
 fn topology_structured_attribute_values_preserve_serialized_lanes() {
+    use crate::native::parasolid::structured_value_kind::StructuredValueKind as Kind;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
-        ParasolidAttributeFieldValueKind as Kind, ParasolidEntity51StructuredUse,
-        ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
-        ParasolidEntityVectorRecord, ParasolidTopologyAttributeListReference,
-        ParasolidVectorValueKind,
+        ParasolidEntity51StructuredUse, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+        ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+        ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),
@@ -1762,33 +1848,36 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: id.into(),
         stream_ordinal: 3,
         kind,
-        xmt: 70,
-        values: vec![value],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![value]).unwrap(),
         byte_len: 36,
         inflated_offset: 400,
     });
     let axis = ParasolidEntity57AxisRecord {
         id: "axis".into(),
         stream_ordinal: 3,
-        xmt: 73,
-        values: vec![[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(73).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![[
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]])
+        .unwrap(),
         byte_len: 60,
         inflated_offset: 430,
     };
     let tag = ParasolidEntity58TagRecord {
         id: "tag".into(),
         stream_ordinal: 3,
-        xmt: 74,
-        values: vec![u32::MAX],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(74).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![u32::MAX]).unwrap(),
         byte_len: 16,
         inflated_offset: 440,
     };
     let unicode = ParasolidEntity62UnicodeRecord {
         id: "unicode".into(),
         stream_ordinal: 3,
-        xmt: 75,
-        code_units: vec![0x03bc],
-        value: "μ".into(),
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(75).unwrap(),
+        value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
         byte_len: 14,
         inflated_offset: 450,
     };
@@ -1806,8 +1895,14 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: format!("use-{ordinal}"),
         stream_ordinal: 3,
         entity_51_record: "entity".into(),
-        reference_ordinal: u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
-        referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
+        position: crate::parasolid::entity_references::FieldPosition::try_from(
+            u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+        )
+        .unwrap(),
+        referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(
+            u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
+        )
+        .unwrap(),
         kind,
         value_record: record.into(),
         inflated_offset: 200,
@@ -1840,11 +1935,17 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.contains("topology-structured-attribute"))
+        .filter(|attribute| {
+            attribute
+                .id
+                .as_str()
+                .contains("topology-structured-attribute")
+        })
         .collect::<Vec<_>>();
     assert_eq!(attributes.len(), 6);
     assert!(attributes.iter().all(|attribute| {
-        attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        attribute.target
+            == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
     }));
     let values = attributes
         .iter()

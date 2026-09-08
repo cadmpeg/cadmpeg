@@ -388,7 +388,7 @@
         "spreadsheets": 0,
         "subds": 0,
         "surfaces": 167,
-        "surfaces_unknown_geometry": 2,
+        "surfaces_unknown_geometry": 0,
         "tessellations": 0,
         "vertices": 191,
         "view_presentations": 0
@@ -400,9 +400,10 @@
     "format": "fcstd",
     "losses": [],
     "notes": [
-      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
       "unsupported retained entries and unedited XML records were preserved"
     ],
+    "target": "fcstd:schema-4",
     "write_path": "patched"
   }
 }

@@ -8,11 +8,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry,
         source_object: None,
     }
@@ -33,11 +32,10 @@ fn cylinder_surface(id: u32, radius: f64) -> Surface {
 fn carrier_row(id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 1,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 0,
     }
@@ -109,7 +107,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
@@ -128,27 +126,27 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 7,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
-                origin: [-12.5, 4.0, 0.0],
-                axis: [0.0, 1.0, 0.0],
-                ref_direction: [1.0, 0.0, 0.0],
-                radius: 0.75,
-                length: Some(34.0),
-            }),
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cylinder {
+                    frame: crate::surface::PositionalCylinderFrame {
+                        origin: [-12.5, 4.0, 0.0],
+                        axis: [0.0, 1.0, 0.0],
+                        ref_direction: [1.0, 0.0, 0.0],
+                        radius: 0.75,
+                        length: Some(34.0),
+                    },
+                    split_bounds: None,
+                },
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.75));
     ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
         origin: Point3::new(0.0, 0.0, 12.5),
@@ -173,8 +171,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
-        header: [0, 0],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -188,31 +185,31 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 7,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
-                origin: [-30.0, 6.5, -14.0],
-                axis: [
-                    std::f64::consts::FRAC_1_SQRT_2,
-                    0.0,
-                    std::f64::consts::FRAC_1_SQRT_2,
-                ],
-                ref_direction: [0.0, -1.0, 0.0],
-                radius: 0.8,
-                length: Some(0.282_842_712_474_619),
-            }),
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cylinder {
+                    frame: crate::surface::PositionalCylinderFrame {
+                        origin: [-30.0, 6.5, -14.0],
+                        axis: [
+                            std::f64::consts::FRAC_1_SQRT_2,
+                            0.0,
+                            std::f64::consts::FRAC_1_SQRT_2,
+                        ],
+                        ref_direction: [0.0, -1.0, 0.0],
+                        radius: 0.8,
+                        length: Some(0.282_842_712_474_619),
+                    },
+                    split_bounds: None,
+                },
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.2));
 
     let carriers = placed_carriers(&scan, &ir);
@@ -239,7 +236,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
             u_axis: [1.0, 0.0, 0.0],
             offset: 0,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         carrier_surface(
             7,
@@ -265,7 +262,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
 #[test]
 fn placed_carriers_admits_unique_rowless_model_surface() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
     let carriers = placed_carriers(&scan, &ir);
@@ -278,7 +275,7 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
 #[test]
 fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
@@ -289,20 +286,20 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
 #[test]
 fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
     let outer = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..8)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
     let inner = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..3)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -354,20 +351,20 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
 #[test]
 fn parameter_loop_classifier_orders_unique_outer() {
     let outer = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
     let inner = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
-                side: 0,
+                side: crate::topology::Side::Zero,
             })
             .collect(),
     };
@@ -405,20 +402,20 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             type_byte: 0,
             feature_id: 1,
             directions: [0; 2],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [11, 0],
             offset: 20,
         });
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![crate::topology::HalfEdgeId {
             curve_id: 11,
-            side: 0,
+            side: crate::topology::Side::Zero,
         }],
     });
 
     let curve = Curve {
-        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(2.0, 3.0, 4.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -427,7 +424,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
         },
         source_object: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.extend([curve.clone(), curve]);
 
     assert_eq!(

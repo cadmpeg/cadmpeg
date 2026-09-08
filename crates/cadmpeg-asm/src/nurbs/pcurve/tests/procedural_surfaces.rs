@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::kernel_header::RefWidth;
 
 #[test]
 fn offset_surface_uses_direct_support_fields_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["off_spl_sur", "offsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -35,8 +36,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 distance,
                 u_sense,
                 v_sense,
-                extension_flags,
-                revision_form: None,
+                extension,
             } = decoded.definition
             else {
                 panic!("expected legacy offset surface");
@@ -52,8 +52,11 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             assert!((distance - -2.5).abs() < f64::EPSILON);
             assert_eq!(u_sense, Some(2));
             assert_eq!(v_sense, Some(3));
+            let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
+                panic!("expected legacy offset extension")
+            };
             assert_eq!(
-                extension_flags,
+                flags.wire_values(),
                 if name == "off_spl_sur" {
                     vec![false]
                 } else {
@@ -67,7 +70,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
 
 #[test]
 fn offset_surface_rejects_nested_cache_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "offsur");
         push_ident(&mut bytes, "plane");
@@ -99,7 +102,7 @@ fn offset_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "defm_spl_sur");
         push_int(&mut bytes, 0x04, 22_506, int_width);
@@ -167,7 +170,8 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             panic!("expected revision form");
         };
         assert_eq!(revision_form.revision, 22_506);
-        assert_eq!(revision_form.tail_enum, 0);
+        assert_eq!(revision_form.cache.selector(), 0);
+        assert_eq!(revision_form.cache.fit_tolerance(), Some(0.01));
         assert_eq!(
             revision_form.support_bounds,
             [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
@@ -214,7 +218,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
         ("swept_tpr_spl_sur", 5),
         ("swepttapersur", 5),
     ];
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in variants {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -262,7 +266,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 panic!("expected legacy taper surface");
             };
 
-            assert!((reference.control_points[1].x - 40.0).abs() < f64::EPSILON);
+            assert!((reference.control_points()[1].x - 40.0).abs() < f64::EPSILON);
             assert!(pcurve.is_none());
             assert!((parameter - 0.25).abs() < f64::EPSILON);
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
@@ -284,7 +288,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
 
 #[test]
 fn taper_surface_rejects_nested_cache_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "taper_spl_sur");
         push_ident(&mut bytes, "plane");
@@ -316,7 +320,7 @@ fn taper_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn compound_surface_uses_leading_cache_then_parameterized_components() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "comp_spl_sur");
         bytes.extend_from_slice(&surface_block_with_x_offset(int_width, 5.0));
@@ -340,26 +344,22 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         )
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
         let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-        let DecodedProceduralSurfaceDefinition::Compound {
-            parameters,
-            components,
-        } = decoded.definition
-        else {
+        let DecodedProceduralSurfaceDefinition::Compound { components } = decoded.definition else {
             panic!("expected compound surface");
         };
 
-        assert!((parameters[0] - 0.25).abs() < f64::EPSILON);
-        assert!((parameters[1] - 0.75).abs() < f64::EPSILON);
+        assert!((components[0].parameter - 0.25).abs() < f64::EPSILON);
+        assert!((components[1].parameter - 0.75).abs() < f64::EPSILON);
         assert_eq!(components.len(), 2);
         assert!(matches!(
-            components[0],
+            components[0].component,
             SurfaceGeometry::Plane { origin, .. }
                 if (origin.x - 10.0).abs() < f64::EPSILON
                     && (origin.y - 20.0).abs() < f64::EPSILON
                     && (origin.z - 30.0).abs() < f64::EPSILON
         ));
         assert!(matches!(
-            components[1],
+            components[1].component,
             SurfaceGeometry::Plane { origin, .. }
                 if (origin.x - 40.0).abs() < f64::EPSILON
                     && (origin.y - 50.0).abs() < f64::EPSILON
@@ -371,7 +371,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
 
 #[test]
 fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "comp_spl_sur");
@@ -405,7 +405,7 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn loft_surface_walks_bridge_to_direct_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["loft_spl_sur", "loftsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -460,7 +460,7 @@ fn loft_surface_walks_bridge_to_direct_cache() {
 
 #[test]
 fn loft_surface_rejects_nested_cache_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "loftsur");
         push_int(&mut bytes, 0x04, 0, int_width);
@@ -493,7 +493,7 @@ fn loft_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn exact_surface_uses_leading_cache_ranges_then_extension() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["exact_spl_sur", "exactsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -513,9 +513,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
             let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
             let DecodedProceduralSurfaceDefinition::Exact {
-                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
-                extension,
-                revision_form: None,
+                spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension },
             } = decoded.definition
             else {
                 panic!("expected legacy exact surface");
@@ -533,7 +531,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
 
 #[test]
 fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "exactsur");
@@ -570,7 +568,7 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn ruled_surface_uses_two_direct_profiles_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [1.0, 0.0, 0.0]));
@@ -589,8 +587,8 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
             panic!("expected ruled surface");
         };
 
-        assert!((first.control_points[1].x - 10.0).abs() < f64::EPSILON);
-        assert!((second.control_points[1].x - 40.0).abs() < f64::EPSILON);
+        assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
+        assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
         assert!(
             (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
                 < f64::EPSILON * 10.0
@@ -600,7 +598,7 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
 
 #[test]
 fn ruled_surface_rejects_nested_profile_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
         bytes.push(0x0f);
@@ -627,7 +625,7 @@ fn ruled_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn sum_surface_uses_two_direct_curves_origin_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [1.0, 0.0, 0.0]));
@@ -660,8 +658,8 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
             panic!("expected second NURBS curve");
         };
 
-        assert!((first.control_points[1].x - 10.0).abs() < f64::EPSILON);
-        assert!((second.control_points[1].x - 40.0).abs() < f64::EPSILON);
+        assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
+        assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
         assert!((basepoint.x - 5.0).abs() < f64::EPSILON);
         assert!((basepoint.y - 10.0).abs() < f64::EPSILON);
         assert!((basepoint.z - 15.0).abs() < f64::EPSILON);
@@ -671,7 +669,7 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
 
 #[test]
 fn sum_surface_rejects_nested_curve_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
         bytes.push(0x0f);
@@ -699,7 +697,7 @@ fn sum_surface_rejects_nested_curve_substitution() {
 
 #[test]
 fn revolution_surface_uses_direct_profile_axis_then_cache() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [4.0, 0.0, 0.0]));
@@ -731,7 +729,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             panic!("expected NURBS profile");
         };
 
-        assert!((directrix.control_points[1].x - 40.0).abs() < f64::EPSILON);
+        assert!((directrix.control_points()[1].x - 40.0).abs() < f64::EPSILON);
         assert!((axis_origin.x - 5.0).abs() < f64::EPSILON);
         assert!((axis_origin.y - 10.0).abs() < f64::EPSILON);
         assert!((axis_origin.z - 15.0).abs() < f64::EPSILON);
@@ -748,7 +746,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
 
 #[test]
 fn revolution_surface_rejects_nested_profile_substitution() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
         bytes.push(0x0f);
@@ -776,7 +774,7 @@ fn revolution_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
         push_int(&mut bytes, 0x04, 23_100, int_width);
@@ -821,24 +819,24 @@ fn surface_cache_resolves_width4_subtype_ref() {
     // Active slice: one named subtype span holding the surface cache.
     let mut active = vec![0x0f, 0x0d, 0x07];
     active.extend_from_slice(b"spl_sur");
-    active.extend_from_slice(&surface_block(4));
+    active.extend_from_slice(&surface_block(RefWidth::Four));
     active.push(0x10);
     // Record: `ref 0` into the subtype table, 4-byte index payload.
     let mut record = vec![0x0f, 0x0d, 0x03];
     record.extend_from_slice(b"ref");
-    push_int(&mut record, 0x04, 0, 4);
+    push_int(&mut record, 0x04, 0, RefWidth::Four);
     record.push(0x10);
     let surface = crate::nurbs::core::surface_cache_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&record, 4),
-        &crate::nurbs::toks::test_table(&active, 4),
+        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four),
+        &crate::nurbs::toks::test_table(&active, RefWidth::Four),
     )
     .expect("resolved width-4 ref");
-    assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
 }
 
 #[test]
 fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut active = vec![0x0f];
         push_ident(&mut active, "spl_sur");
         active.extend_from_slice(&surface_block(int_width));
@@ -851,13 +849,13 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
             &crate::nurbs::toks::test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
-        assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
     }
 }
 
 #[test]
 fn spring_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f, 0x0d, 0x0e];
         bytes.extend_from_slice(b"spring_int_cur");
         for _ in 0..2 {
@@ -898,7 +896,7 @@ fn spring_layout_walks_both_integer_widths() {
 
 #[test]
 fn three_surface_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f, 0x0d, 0x0b];
         bytes.extend_from_slice(b"sss_int_cur");
         for _ in 0..2 {
@@ -935,13 +933,13 @@ fn three_surface_layout_walks_both_integer_widths() {
 
 #[test]
 fn surface_curve_layout_walks_each_family_at_both_widths() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
-    for int_width in [4usize, 8] {
+    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, family) in [
-            ("blend_int_cur", SurfaceCurveFamily::Blend),
-            ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
-            ("par_int_cur", SurfaceCurveFamily::Parametric),
-            ("skin_int_cur", SurfaceCurveFamily::Skin),
+            ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
+            ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
+            ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
+            ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
         ] {
             let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
             bytes.extend_from_slice(name.as_bytes());
@@ -961,7 +959,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
                 }
             }
 
-            let layout = surface_curve_patch_layout(&bytes, int_width, &family)
+            let layout = surface_curve_patch_layout(&bytes, int_width, family)
                 .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
             assert_eq!(
                 layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
@@ -973,7 +971,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
 
 #[test]
 fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["int_int_cur", "surf_surf_int_cur", "surfintcur"] {
             let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
             bytes.extend_from_slice(name.as_bytes());
@@ -1008,7 +1006,7 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
 
 #[test]
 fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "intersection_support");
         support.extend_from_slice(&surface_block(int_width));
@@ -1051,18 +1049,20 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
-        let (context, flag) = decoded
-            .embedded_intersection
-            .expect("typed intersection context");
+        let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, flag) =
+            decoded.construction
+        else {
+            panic!("typed intersection context")
+        };
         assert!(!flag);
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            Some(SurfaceGeometry::Plane { .. })
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane { .. })
         ));
         assert!(matches!(
             context.surfaces[1],
-            Some(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
@@ -1072,7 +1072,7 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
 
 #[test]
 fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_forms() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "helix_spl_line");
         push_int(&mut support, 0x04, 23_100, int_width);
@@ -1125,13 +1125,18 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
             let table = test_table(&active, int_width);
             let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
                 .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
-            let context = decoded
-                .embedded_intersection
-                .as_ref()
-                .map(|(context, _)| context)
-                .expect("typed intersection context");
-            assert_eq!(context.support_present, [true, false]);
-            assert!(context.surfaces[0].is_none());
+            let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, _) =
+                &decoded.construction
+            else {
+                panic!("typed intersection context")
+            };
+            assert!(matches!(
+                context.surfaces,
+                [
+                    crate::nurbs::proc_curve::SupportSlot::DeclaredOnly,
+                    crate::nurbs::proc_curve::SupportSlot::Absent
+                ]
+            ));
             assert!(context.pcurves[0].is_some());
             assert!(
                 crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
@@ -1147,9 +1152,7 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
 
 #[test]
 fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
-
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "blend_support");
         support.extend_from_slice(&surface_block(int_width));
@@ -1186,31 +1189,39 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
-        let (family, context, tail) = decoded.embedded_surface_curve.expect("typed blend context");
-        assert_eq!(family, SurfaceCurveFamily::Blend);
+        let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
+            EmbeddedSurfaceCurve::Blend {
+                context,
+                tail: Some(tail),
+            },
+        ) = decoded.construction
+        else {
+            panic!("blend surface-curve family")
+        };
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            Some(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
         ));
-        assert!(context.surfaces[1].is_none());
+        assert!(matches!(
+            context.surfaces[1],
+            crate::nurbs::proc_curve::SupportSlot::Absent
+                | crate::nurbs::proc_curve::SupportSlot::DeclaredOnly
+        ));
         assert!(context.pcurves[0].is_some());
         assert!(context.pcurves[1].is_none());
-        let tail = tail.expect("cache-first tail");
-        assert_eq!(tail.extension, 7);
-        assert!(tail.flag);
+        assert_eq!(tail.tail.extension, 7);
+        assert!(tail.flags);
     }
 }
 
 #[test]
 fn cache_first_par_curve_selects_mirrored_support_slot() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
-
     // `flag1 = F` mirrors the support onto the second serialized slot:
     // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
     // parametric support surface and its bs2 pcurve. `par_int_cur`
     // terminates on two booleans, so `flag2` is read after `flag1`.
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "par_support");
         support.extend_from_slice(&surface_block(int_width));
@@ -1250,25 +1261,35 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
-        let (family, context, tail) = decoded.embedded_surface_curve.expect("typed par context");
-        assert_eq!(family, SurfaceCurveFamily::Parametric);
-        assert!(context.surfaces[0].is_none());
+        let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
+            EmbeddedSurfaceCurve::Parametric {
+                context,
+                tail: Some(tail),
+            },
+        ) = decoded.construction
+        else {
+            panic!("parametric surface-curve family")
+        };
+        assert!(matches!(
+            context.surfaces[0],
+            crate::nurbs::proc_curve::SupportSlot::Absent
+                | crate::nurbs::proc_curve::SupportSlot::DeclaredOnly
+        ));
         assert!(matches!(
             context.surfaces[1],
-            Some(SurfaceGeometry::Nurbs(_))
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
-        let tail = tail.expect("cache-first tail");
-        assert_eq!(tail.extension, 7);
-        assert!(!tail.flag);
-        assert_eq!(tail.second_flag, Some(false));
+        assert_eq!(tail.tail.extension, 7);
+        assert!(!tail.flags.flag);
+        assert_eq!(tail.flags.second_flag, Some(false));
     }
 }
 
 #[test]
 fn projection_layout_walks_both_tail_forms_at_both_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for early_close in [false, true] {
             let mut bytes = vec![0x0f, 0x0d, 0x0c];
             bytes.extend_from_slice(b"proj_int_cur");
@@ -1322,7 +1343,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
 #[test]
 fn silhouette_layout_walks_each_family_at_both_widths() {
     use cadmpeg_ir::geometry::SilhouetteKind;
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
             ("silh_int_cur", SilhouetteKind::Standard),
             ("para_silh_int_cur", SilhouetteKind::Parametric),
@@ -1370,7 +1391,7 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
 
 #[test]
 fn surface_offset_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let name = "off_surf_int_cur";
         let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
         bytes.extend_from_slice(name.as_bytes());

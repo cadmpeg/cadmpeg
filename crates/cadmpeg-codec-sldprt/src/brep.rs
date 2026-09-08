@@ -153,31 +153,66 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
     }
 }
 
-/// A parsed compact analytic carrier: its attribute id, byte extent, and decoded
-/// geometry (either a surface or a curve).
+/// A parsed analytic carrier selected by its geometry family.
 #[derive(Debug, Clone)]
-pub(crate) struct Carrier {
-    pub attr: u16,
-    pub offset: usize,
-    pub end: usize,
-    pub geometry: CarrierGeometry,
-    pub frame: Option<(Point3, Vector3, Vector3)>,
-    /// Native parameter interval when a bounded curve wrapper supplies one.
-    pub parameter_range: Option<[f64; 2]>,
-    /// Whether neutral radius normalization reverses the surface parameter frame.
-    pub orientation_reversed: bool,
+pub(crate) enum Carrier {
+    Curve(CurveCarrier),
+    Surface(SurfaceCarrier),
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum CarrierGeometry {
-    Surface(SurfaceGeometry),
-    Curve(CurveGeometry),
+pub(crate) struct CurveCarrier {
+    pub attr: u16,
+    pub offset: usize,
+    pub end: usize,
+    pub geometry: CurveGeometry,
+    pub parameter_range: Option<[f64; 2]>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SurfaceCarrier {
+    pub attr: u16,
+    pub offset: usize,
+    pub end: usize,
+    pub geometry: SurfaceGeometry,
+    pub orientation_reversed: bool,
+}
+
+impl SurfaceCarrier {
+    pub fn frame(&self) -> Option<(Vector3, Vector3)> {
+        match &self.geometry {
+            SurfaceGeometry::Plane { normal, u_axis, .. } => {
+                Some((*u_axis, cross(*normal, *u_axis)))
+            }
+            SurfaceGeometry::Cylinder {
+                axis,
+                ref_direction,
+                ..
+            }
+            | SurfaceGeometry::Cone {
+                axis,
+                ref_direction,
+                ..
+            }
+            | SurfaceGeometry::Sphere {
+                axis,
+                ref_direction,
+                ..
+            }
+            | SurfaceGeometry::Torus {
+                axis,
+                ref_direction,
+                ..
+            } => Some((*ref_direction, *axis)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Default)]
 pub(crate) struct CarrierIndex {
-    curves: HashMap<u16, Carrier>,
-    surfaces: HashMap<u16, Carrier>,
+    curves: HashMap<u16, CurveCarrier>,
+    surfaces: HashMap<u16, SurfaceCarrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
     sweeps: HashMap<u16, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
@@ -194,17 +229,17 @@ pub(crate) struct CarrierIndex {
 
 impl CarrierIndex {
     fn insert(&mut self, carrier: Carrier) {
-        match carrier.geometry {
-            CarrierGeometry::Curve(_) => {
+        match carrier {
+            Carrier::Curve(carrier) => {
                 self.curves.insert(carrier.attr, carrier);
             }
-            CarrierGeometry::Surface(_) => {
+            Carrier::Surface(carrier) => {
                 self.surfaces.insert(carrier.attr, carrier);
             }
         }
     }
 
-    pub(crate) fn curve(&self, attr: u16) -> Option<&Carrier> {
+    pub(crate) fn curve(&self, attr: u16) -> Option<&CurveCarrier> {
         self.curves.get(&attr)
     }
 
@@ -212,7 +247,7 @@ impl CarrierIndex {
         self.curves.keys().copied().collect()
     }
 
-    pub(crate) fn surface(&self, attr: u16) -> Option<&Carrier> {
+    pub(crate) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
         self.surfaces.get(&attr)
     }
 
@@ -328,17 +363,7 @@ fn parse_carrier_at_marker(
         return None;
     }
 
-    let geometry = decode_carrier_values(tt, &vals)?;
-    let frame = surface_frame(tt, &vals);
-    Some(Carrier {
-        attr,
-        offset: off,
-        end,
-        geometry,
-        frame,
-        parameter_range: None,
-        orientation_reversed: tt == tag::TORUS && vals[6].is_sign_negative(),
-    })
+    decode_carrier_values(tt, &vals, attr, off, end)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
@@ -369,53 +394,57 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
     c.unit().unwrap_or(c)
 }
 
-fn surface_frame(tag: u8, v: &[f64]) -> Option<(Point3, Vector3, Vector3)> {
-    let (origin, axis, reference) = match tag {
-        tag::PLANE => (scale_point(&v[0..3]), unit(&v[3..6]), unit(&v[6..9])),
-        tag::CYLINDER => (scale_point(&v[0..3]), unit(&v[3..6]), unit(&v[7..10])),
-        tag::CONE => (scale_point(&v[0..3]), unit(&v[3..6]), unit(&v[9..12])),
-        tag::SPHERE => (scale_point(&v[0..3]), unit(&v[4..7]), unit(&v[7..10])),
-        tag::TORUS => (scale_point(&v[0..3]), unit(&v[3..6]), unit(&v[8..11])),
-        _ => return None,
-    };
-    Some((
-        origin,
-        reference,
-        if tag == tag::PLANE {
-            cross(axis, reference)
-        } else {
-            axis
-        },
-    ))
-}
-
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
 /// coordinates and radii only.
-fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
+fn decode_carrier_values(
+    tt: u8,
+    v: &[f64],
+    attr: u16,
+    offset: usize,
+    end: usize,
+) -> Option<Carrier> {
+    let curve = |geometry| {
+        Carrier::Curve(CurveCarrier {
+            attr,
+            offset,
+            end,
+            geometry,
+            parameter_range: None,
+        })
+    };
+    let surface = |geometry| {
+        Carrier::Surface(SurfaceCarrier {
+            attr,
+            offset,
+            end,
+            geometry,
+            orientation_reversed: tt == tag::TORUS && v[6].is_sign_negative(),
+        })
+    };
     let g = match tt {
-        tag::LINE => CarrierGeometry::Curve(CurveGeometry::Line {
+        tag::LINE => curve(CurveGeometry::Line {
             origin: scale_point(&v[0..3]),
             direction: unit(&v[3..6]),
         }),
-        tag::CIRCLE => CarrierGeometry::Curve(CurveGeometry::Circle {
+        tag::CIRCLE => curve(CurveGeometry::Circle {
             center: scale_point(&v[0..3]),
             axis: unit(&v[3..6]),
             ref_direction: unit(&v[6..9]),
             radius: v[9] * LEN_TO_MM,
         }),
-        tag::ELLIPSE => CarrierGeometry::Curve(CurveGeometry::Ellipse {
+        tag::ELLIPSE => curve(CurveGeometry::Ellipse {
             center: scale_point(&v[0..3]),
             axis: unit(&v[3..6]),
             major_direction: unit(&v[6..9]),
             major_radius: v[9] * LEN_TO_MM,
             minor_radius: v[10] * LEN_TO_MM,
         }),
-        tag::PLANE => CarrierGeometry::Surface(SurfaceGeometry::Plane {
+        tag::PLANE => surface(SurfaceGeometry::Plane {
             origin: scale_point(&v[0..3]),
             normal: unit(&v[3..6]),
             u_axis: unit(&v[6..9]),
         }),
-        tag::CYLINDER => CarrierGeometry::Surface(SurfaceGeometry::Cylinder {
+        tag::CYLINDER => surface(SurfaceGeometry::Cylinder {
             origin: scale_point(&v[0..3]),
             axis: unit(&v[3..6]),
             ref_direction: unit(&v[7..10]),
@@ -425,7 +454,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
             // origin(3) axis(3) radius sin cos refdir(3): half-angle from the
             // stored sine, which satisfies sin^2+cos^2=1 in the observed sample.
             let sin = v[7];
-            return Some(CarrierGeometry::Surface(SurfaceGeometry::Cone {
+            return Some(surface(SurfaceGeometry::Cone {
                 origin: scale_point(&v[0..3]),
                 axis: unit(&v[3..6]),
                 ref_direction: unit(&v[9..12]),
@@ -434,14 +463,14 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
                 half_angle: sin.abs().clamp(0.0, 1.0).asin(),
             }));
         }
-        tag::SPHERE => CarrierGeometry::Surface(SurfaceGeometry::Sphere {
+        tag::SPHERE => surface(SurfaceGeometry::Sphere {
             center: scale_point(&v[0..3]),
             axis: unit(&v[4..7]),
             ref_direction: unit(&v[7..10]),
             radius: v[3] * LEN_TO_MM,
         }),
         tag::TORUS => {
-            return Some(CarrierGeometry::Surface(SurfaceGeometry::Torus {
+            return Some(surface(SurfaceGeometry::Torus {
                 center: scale_point(&v[0..3]),
                 axis: unit(&v[3..6]),
                 ref_direction: unit(&v[8..11]),
@@ -472,14 +501,14 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     }
     for (attr, carrier) in spline::scan_curve_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
-        out.insert(carrier);
+        out.curves.insert(attr, carrier);
     }
     for (attr, carrier) in spline::scan_surface_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
-        out.insert(carrier);
+        out.surfaces.insert(attr, carrier);
     }
     for carrier in subset::scan(body, &out) {
-        out.insert(carrier);
+        out.curves.insert(carrier.attr, carrier);
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
     (out.blends, out.blend_support_pairs) = blend::scan(body);
@@ -498,10 +527,7 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
 
 /// Return the typed curve carried by one stream-local attribute.
 pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
-    match &scan_carriers(body).curve(attr)?.geometry {
-        CarrierGeometry::Curve(curve) => Some(curve.clone()),
-        CarrierGeometry::Surface(_) => unreachable!("curve index contains only curve carriers"),
-    }
+    Some(scan_carriers(body).curve(attr)?.geometry.clone())
 }
 
 /// Replace the scalar run of one compact analytic carrier.
@@ -532,7 +558,7 @@ pub(crate) fn patch_nurbs_by_attr(
     let Some(carrier) = carriers.curve(attr) else {
         return false;
     };
-    let CarrierGeometry::Curve(CurveGeometry::Nurbs(old)) = &carrier.geometry else {
+    let CurveGeometry::Nurbs(old) = &carrier.geometry else {
         return false;
     };
     patch_nurbs_curve(body, carrier.offset, old, new, 0.001).is_some()
@@ -578,6 +604,40 @@ mod tests {
     }
 
     #[test]
+    fn analytic_surface_frames_follow_the_source_axis_order() {
+        let reference = Vector3::new(0.0, 1.0, 0.0);
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        for (kind, values, expected_v) in [
+            (
+                tag::PLANE,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+                Vector3::new(-1.0, 0.0, 0.0),
+            ),
+            (
+                tag::CYLINDER,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.0, 1.0, 0.0],
+                axis,
+            ),
+            (
+                tag::SPHERE,
+                vec![0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+                axis,
+            ),
+            (
+                tag::TORUS,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, -0.002, 0.001, 0.0, 1.0, 0.0],
+                axis,
+            ),
+        ] {
+            let bytes = compact_carrier(kind, 7, &values);
+            let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).unwrap() else {
+                panic!("expected surface carrier");
+            };
+            assert_eq!(carrier.frame(), Some((reference, expected_v)));
+        }
+    }
+
+    #[test]
     fn scan_does_not_skip_overlapping_carrier_starts() {
         let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
         bytes.truncate(60);
@@ -604,12 +664,14 @@ mod tests {
                 has_ff,
             );
 
-            let carrier = parse_carrier(&bytes, 0).expect("tripled compact carrier");
+            let Carrier::Curve(carrier) =
+                parse_carrier(&bytes, 0).expect("tripled compact carrier")
+            else {
+                panic!("expected curve carrier");
+            };
             assert_eq!(carrier.attr, 7);
             assert_eq!(carrier.end, bytes.len());
-            let CarrierGeometry::Curve(CurveGeometry::Line { origin, direction }) =
-                carrier.geometry
-            else {
+            let CurveGeometry::Line { origin, direction } = carrier.geometry else {
                 panic!("expected line");
             };
             assert_eq!(origin, Point3::new(1_000_000_000_000.0, 0.0, 0.0));
@@ -646,15 +708,18 @@ mod tests {
                 0.0, 0.0, 0.0067, 0.0, 0.0, -1.0, 0.0015, root_half, root_half, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).expect("required invariant");
-        let CarrierGeometry::Surface(SurfaceGeometry::Cone {
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
+        else {
+            panic!("expected surface carrier");
+        };
+        let SurfaceGeometry::Cone {
             origin,
             axis,
             ref_direction,
             radius,
             ratio,
             half_angle,
-        }) = carrier.geometry
+        } = carrier.geometry
         else {
             panic!("expected cone");
         };
@@ -675,14 +740,17 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0002, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).expect("required invariant");
-        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
+        else {
+            panic!("expected surface carrier");
+        };
+        let SurfaceGeometry::Torus {
             center,
             axis,
             ref_direction,
             major_radius,
             minor_radius,
-        }) = carrier.geometry
+        } = carrier.geometry
         else {
             panic!("expected torus");
         };
@@ -731,12 +799,14 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0044, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).expect("spindle torus");
-        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("spindle torus") else {
+            panic!("expected surface carrier");
+        };
+        let SurfaceGeometry::Torus {
             major_radius,
             minor_radius,
             ..
-        }) = carrier.geometry
+        } = carrier.geometry
         else {
             panic!("expected torus");
         };
@@ -753,12 +823,15 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
             ],
         );
-        let carrier = parse_carrier(&bytes, 0).expect("signed-major torus");
-        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("signed-major torus")
+        else {
+            panic!("expected surface carrier");
+        };
+        let SurfaceGeometry::Torus {
             major_radius,
             minor_radius,
             ..
-        }) = carrier.geometry
+        } = carrier.geometry
         else {
             panic!("expected torus");
         };

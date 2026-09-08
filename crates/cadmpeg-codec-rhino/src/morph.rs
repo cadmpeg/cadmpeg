@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Morph-control payload decoding.
 
+use std::fmt;
 use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 
@@ -35,9 +38,47 @@ pub(crate) enum Control {
     },
 }
 
+/// Localizer code as written by Rhino; the file may carry values outside the
+/// documented table, which decode unchanged.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct LocalizerKind(pub(crate) i32);
+
+impl LocalizerKind {
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const SPHERE: Self = Self(1);
+    pub(crate) const PLANE: Self = Self(2);
+    pub(crate) const CYLINDER: Self = Self(3);
+    pub(crate) const CURVE: Self = Self(4);
+    pub(crate) const SURFACE: Self = Self(5);
+    pub(crate) const DISTANCE: Self = Self(6);
+}
+
+impl fmt::Debug for LocalizerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match *self {
+            Self::NONE => "None",
+            Self::SPHERE => "Sphere",
+            Self::PLANE => "Plane",
+            Self::CYLINDER => "Cylinder",
+            Self::CURVE => "Curve",
+            Self::SURFACE => "Surface",
+            Self::DISTANCE => "Distance",
+            Self(code) => return write!(f, "LocalizerKind({code})"),
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for LocalizerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Localizer {
-    pub(crate) kind: i32,
+    pub(crate) kind: LocalizerKind,
     pub(crate) point: [f64; 3],
     pub(crate) vector: [f64; 3],
     pub(crate) interval: [f64; 2],
@@ -64,16 +105,16 @@ fn anonymous<'a>(
     family: &str,
 ) -> Result<(BoundedReader<'a>, usize, i32, i32), GeometryError> {
     let chunk = chunk_at(data, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
             format!("{family} is not anonymous"),
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    Ok((reader, chunk.next_offset, major, minor))
+    Ok((reader, chunk.next_offset(), major, minor))
 }
 
 fn count(
@@ -215,10 +256,7 @@ fn localizer(
             message: format!("unsupported localizer version {major}.{minor}"),
         });
     }
-    let kind = match value.i32()? {
-        value @ 0..=6 => value,
-        _ => 0,
-    };
+    let kind = LocalizerKind(value.i32()?);
     let offset = value.position();
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;
@@ -238,13 +276,14 @@ fn localizer(
     })
 }
 
-fn control_child<'a>(
-    data: &'a [u8],
+fn control_child<T>(
+    data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
-) -> Result<(BoundedReader<'a>, usize), GeometryError> {
-    let (child, next, major, minor) =
+    read: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
+) -> Result<T, GeometryError> {
+    let (mut child, next, major, minor) =
         anonymous(data, reader.position(), reader.end(), archive, label)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
@@ -252,7 +291,23 @@ fn control_child<'a>(
             message: format!("unsupported {label} version {major}.{minor}"),
         });
     }
-    Ok((child, next))
+    let value = read(&mut child)?;
+    child.skip_remaining()?;
+    reader.skip(next - reader.position())?;
+    Ok(value)
+}
+
+fn scaled_transform(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<[f64; 16], GeometryError> {
+    let mut transform = xform(reader)?.0;
+    for index in [3, 7, 11] {
+        transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
+        })?;
+    }
+    Ok(transform)
 }
 
 fn cage_at(
@@ -276,7 +331,7 @@ pub(crate) fn decode(
     let data = expand.data();
     let (mut outer, _next, major, minor) =
         anonymous(data, range.start, range.end, archive, "morph control")?;
-    if !matches!(major, 1 | 2) || (major == 1 && minor < 0) || (major == 2 && minor < 0) {
+    if !matches!(major, 1 | 2) || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
             message: format!("unsupported morph-control version {major}.{minor}"),
@@ -285,16 +340,7 @@ pub(crate) fn decode(
     if major == 1 {
         let end = cage_at(expand, &mut outer, scale, archive)?;
         let captive_ids = captive_ids(data, &mut outer, archive)?;
-        let mut start_transform = xform(&mut outer)?.0;
-        for index in [3, 7, 11] {
-            start_transform[index] =
-                scaled_coordinate(start_transform[index], scale).ok_or_else(|| {
-                    GeometryError::malformed(
-                        outer.position() - 128,
-                        "scaled cage transform is invalid",
-                    )
-                })?;
-        }
+        let start_transform = scaled_transform(&mut outer, scale)?;
         outer.skip_remaining()?;
         return Ok(Morph {
             source_range: range,
@@ -310,53 +356,42 @@ pub(crate) fn decode(
         });
     }
 
-    let variant = outer.i32()?;
-    if !(1..=3).contains(&variant) {
-        return Err(GeometryError::malformed(
-            outer.position() - 4,
-            "invalid morph-control variant",
-        ));
-    }
-    let (mut start, start_next) = control_child(data, &mut outer, archive, "morph start control")?;
-    let start_curve = (variant == 1)
-        .then(|| crate::surfaces::read_nurbs_curve(&mut start, scale))
-        .transpose()?;
-    let start_surface = (variant == 2)
-        .then(|| crate::surfaces::read_nurbs_surface(&mut start, scale))
-        .transpose()?;
-    let mut start_transform = if variant == 3 {
-        Some(xform(&mut start)?.0)
-    } else {
-        None
-    };
-    if let Some(transform) = &mut start_transform {
-        for index in [3, 7, 11] {
-            transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
-                GeometryError::malformed(start.position() - 128, "scaled cage transform is invalid")
-            })?;
-        }
-    }
-    start.skip_remaining()?;
-    outer.skip(start_next - outer.position())?;
-
-    let (mut end, end_next) = control_child(data, &mut outer, archive, "morph end control")?;
-    let control = match variant {
+    let control = match outer.i32()? {
         1 => Control::Curve {
-            start: start_curve.expect("curve variant has start curve"),
-            end: crate::surfaces::read_nurbs_curve(&mut end, scale)?,
+            start: control_child(data, &mut outer, archive, "morph start control", |reader| {
+                crate::surfaces::read_nurbs_curve(reader, scale)
+            })?,
+            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
+                crate::surfaces::read_nurbs_curve(reader, scale)
+            })?,
         },
         2 => Control::Surface {
-            start: start_surface.expect("surface variant has start surface"),
-            end: crate::surfaces::read_nurbs_surface(&mut end, scale)?,
+            start: control_child(data, &mut outer, archive, "morph start control", |reader| {
+                crate::surfaces::read_nurbs_surface(reader, scale)
+            })?,
+            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
+                crate::surfaces::read_nurbs_surface(reader, scale)
+            })?,
         },
         3 => Control::Cage {
-            start_transform: start_transform.expect("cage variant has transform"),
-            end: cage_at(expand, &mut end, scale, archive)?,
+            start_transform: control_child(
+                data,
+                &mut outer,
+                archive,
+                "morph start control",
+                |reader| scaled_transform(reader, scale),
+            )?,
+            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
+                cage_at(expand, reader, scale, archive)
+            })?,
         },
-        _ => unreachable!("validated morph variant"),
+        _ => {
+            return Err(GeometryError::malformed(
+                outer.position() - 4,
+                "invalid morph-control variant",
+            ))
+        }
     };
-    end.skip_remaining()?;
-    outer.skip(end_next - outer.position())?;
     let captive_ids = captive_ids(data, &mut outer, archive)?;
 
     let (mut list, list_next, list_major, list_minor) = anonymous(
@@ -422,17 +457,17 @@ fn curve_properties(
     curve: &NurbsCurve,
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
-    properties.insert(format!("{prefix}_degree"), curve.degree.to_string());
+    properties.insert(format!("{prefix}_degree"), curve.degree().to_string());
     properties.insert(
         format!("{prefix}_knots"),
-        numbers(curve.knots.iter().copied()),
+        numbers(curve.knots().iter().copied()),
     );
     properties.insert(
         format!("{prefix}_control_points"),
-        points(&curve.control_points),
+        points(curve.control_points()),
     );
-    properties.insert(format!("{prefix}_periodic"), curve.periodic.to_string());
-    if let Some(weights) = &curve.weights {
+    properties.insert(format!("{prefix}_periodic"), curve.periodic().to_string());
+    if let Some(weights) = curve.weights() {
         properties.insert(
             format!("{prefix}_weights"),
             numbers(weights.iter().copied()),
@@ -445,31 +480,31 @@ fn surface_properties(
     surface: &NurbsSurface,
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
-    properties.insert(format!("{prefix}_u_degree"), surface.u_degree.to_string());
-    properties.insert(format!("{prefix}_v_degree"), surface.v_degree.to_string());
+    properties.insert(format!("{prefix}_u_degree"), surface.u_degree().to_string());
+    properties.insert(format!("{prefix}_v_degree"), surface.v_degree().to_string());
     properties.insert(
         format!("{prefix}_u_knots"),
-        numbers(surface.u_knots.iter().copied()),
+        numbers(surface.u_knots().iter().copied()),
     );
     properties.insert(
         format!("{prefix}_v_knots"),
-        numbers(surface.v_knots.iter().copied()),
+        numbers(surface.v_knots().iter().copied()),
     );
-    properties.insert(format!("{prefix}_u_count"), surface.u_count.to_string());
-    properties.insert(format!("{prefix}_v_count"), surface.v_count.to_string());
+    properties.insert(format!("{prefix}_u_count"), surface.u_count().to_string());
+    properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
     properties.insert(
         format!("{prefix}_control_points"),
-        points(&surface.control_points),
+        points(surface.control_points()),
     );
     properties.insert(
         format!("{prefix}_u_periodic"),
-        surface.u_periodic.to_string(),
+        surface.u_periodic().to_string(),
     );
     properties.insert(
         format!("{prefix}_v_periodic"),
-        surface.v_periodic.to_string(),
+        surface.v_periodic().to_string(),
     );
-    if let Some(weights) = &surface.weights {
+    if let Some(weights) = surface.weights() {
         properties.insert(
             format!("{prefix}_weights"),
             numbers(weights.iter().copied()),
@@ -483,7 +518,7 @@ fn cage_properties(
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}_dimension"), cage.dimension.to_string());
-    properties.insert(format!("{prefix}_rational"), cage.rational.to_string());
+    properties.insert(format!("{prefix}_rational"), cage.rational().to_string());
     properties.insert(
         format!("{prefix}_orders"),
         format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
@@ -516,16 +551,14 @@ fn cage_properties(
 
 /// Projects one decoded morph control into a native feature.
 ///
-/// `captives` is positional over `morph.captive_ids`: index `i` holds the native
-/// identity of the record that owns `captive_ids[i]`, or `None` when that UUID is
-/// nil or does not resolve to exactly one record. Unresolved captives are
-/// charged by the caller; the raw UUIDs stay in `captive_ids`.
+/// `resolve_captive` maps each captive UUID to its native record identity.
+/// It charges unresolved references as needed; raw UUIDs stay in `captive_ids`.
 pub(crate) fn project(
     morph: &Morph,
     key: &str,
     name: Option<String>,
     native_ref: String,
-    captives: &[Option<String>],
+    mut resolve_captive: impl FnMut(Uuid) -> Option<String>,
 ) -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
@@ -569,19 +602,18 @@ pub(crate) fn project(
         }
     }
     Feature {
-        id: FeatureId(format!("rhino:morph:feature#{key}")),
+        id: FeatureId::mint(format!("rhino:morph:feature#{key}")).expect("identity grammar"),
         ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
         name,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
+        source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
-            kind: "morph_control".to_string(),
+            kind: "morph_control".into(),
             parameters: {
                 let mut parameters = BTreeMap::from([
                     ("variant".to_string(), variant.to_string()),
@@ -601,14 +633,14 @@ pub(crate) fn project(
                         morph.preserve_structure.to_string(),
                     ),
                 ]);
-                parameters.extend(captives.iter().enumerate().filter_map(|(index, record)| {
-                    record
-                        .as_ref()
-                        .map(|record| (format!("captive_{index}_object"), record.clone()))
-                }));
+                parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
+                    |(index, id)| {
+                        resolve_captive(*id)
+                            .map(|record| (format!("captive_{index}_object"), record))
+                    },
+                ));
                 parameters
             },
-            properties,
         },
         native_ref: Some(native_ref),
     }
@@ -706,7 +738,7 @@ mod tests {
         assert_eq!(end.control_points[7][0], 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(&morph, "test", None, "native".to_string(), &[None]);
+        let feature = project(&morph, "test", None, "native".to_string(), |_| None);
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
             &feature.definition
@@ -714,13 +746,9 @@ mod tests {
             panic!("expected a native morph definition");
         };
         assert!(!parameters.contains_key("captive_0_object"));
-        let resolved = project(
-            &morph,
-            "test",
-            None,
-            "native".to_string(),
-            &[Some("rhino:object:record#000007".to_string())],
-        );
+        let resolved = project(&morph, "test", None, "native".to_string(), |_| {
+            Some("rhino:object:record#000007".to_string())
+        });
         let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
             &resolved.definition
         else {
@@ -772,11 +800,62 @@ mod tests {
         let Control::Curve { start, end } = &morph.control else {
             panic!("expected curve morph");
         };
-        assert_eq!(start.control_points[1].x, 10.0);
-        assert_eq!(end.control_points[1].x, 20.0);
+        assert_eq!(start.control_points()[1].x, 10.0);
+        assert_eq!(end.control_points()[1].x, 20.0);
         assert_eq!(morph.localizers[0].point, [10.0, 20.0, 30.0]);
         assert_eq!(morph.localizers[0].vector, [0.0, 0.0, 1.0]);
         assert_eq!(morph.localizers[0].interval, [40.0, 50.0]);
         assert!(morph.preserve_structure);
+    }
+
+    #[test]
+    fn localizer_geometry_presence_is_independent_of_its_kind() {
+        let mut surface = vec![0x10];
+        for value in [3_i32, 0, 2, 2, 2, 2, 0, 0] {
+            surface.extend(value.to_le_bytes());
+        }
+        surface.extend([0; 48]);
+        for _ in 0..2 {
+            surface.extend(2_i32.to_le_bytes());
+            surface.extend(0.0_f64.to_le_bytes());
+            surface.extend(1.0_f64.to_le_bytes());
+        }
+        surface.extend(4_i32.to_le_bytes());
+        for point in [
+            [0.0_f64, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
+            for value in point {
+                surface.extend(value.to_le_bytes());
+            }
+        }
+        let mut curve_payload = vec![1];
+        curve_payload.extend(curve(2.0));
+        let mut surface_payload = vec![1];
+        surface_payload.extend(surface);
+        for kind in [
+            LocalizerKind::NONE,
+            LocalizerKind::SPHERE,
+            LocalizerKind::CURVE,
+            LocalizerKind::SURFACE,
+            LocalizerKind(99),
+        ] {
+            let mut payload = kind.0.to_le_bytes().to_vec();
+            for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0] {
+                payload.extend(value.to_le_bytes());
+            }
+            payload.extend(anonymous(1, 0, &curve_payload));
+            payload.extend(anonymous(1, 0, &surface_payload));
+            let bytes = anonymous(1, 0, &payload);
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
+            let value =
+                localizer(&bytes, &mut reader, 1.0, ArchiveVersion::V8).expect("localizer fields");
+            assert_eq!(value.kind, kind);
+            assert!(value.curve.is_some());
+            assert!(value.surface.is_some());
+            assert_eq!(reader.remaining(), 0);
+        }
     }
 }

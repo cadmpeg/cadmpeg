@@ -22,7 +22,7 @@ fn decode_builds_valid_topology_and_plane() {
         )
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.loops.len(), 1);
@@ -56,7 +56,7 @@ fn decode_builds_valid_topology_and_plane() {
 
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
-    assert_eq!(result.ir().model.loops[0].coedges.len(), 3);
+    assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
     assert!(result
         .ir()
         .model
@@ -87,7 +87,10 @@ fn numeric_entity_chains_do_not_claim_faces() {
 
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.0, "sldprt:brep:body#0");
+    assert_eq!(
+        result.ir().model.bodies[0].id.as_str(),
+        "sldprt:brep:body#0"
+    );
     assert!(result
         .report()
         .losses
@@ -127,8 +130,14 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
     assert_eq!(result.ir().model.regions.len(), 2);
     assert_eq!(result.ir().model.shells.len(), 2);
     assert_eq!(result.ir().model.faces.len(), 2);
-    assert_eq!(result.ir().model.bodies[0].id.0, "sldprt:brep:body#500");
-    assert_eq!(result.ir().model.bodies[1].id.0, "sldprt:brep:body#501");
+    assert_eq!(
+        result.ir().model.bodies[0].id.as_str(),
+        "sldprt:brep:body#500"
+    );
+    assert_eq!(
+        result.ir().model.bodies[1].id.as_str(),
+        "sldprt:brep:body#501"
+    );
     assert!(result
         .ir()
         .model
@@ -155,8 +164,14 @@ fn typed_face_ownership_overrides_compact_bridge_owner() {
 
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.0, "sldprt:brep:body#900");
-    assert_eq!(result.ir().model.faces[0].shell.0, "sldprt:brep:shell#901");
+    assert_eq!(
+        result.ir().model.bodies[0].id.as_str(),
+        "sldprt:brep:body#900"
+    );
+    assert_eq!(
+        result.ir().model.faces[0].shell.as_str(),
+        "sldprt:brep:shell#901"
+    );
 }
 
 #[test]
@@ -176,7 +191,10 @@ fn duplicate_face_uses_emit_one_face() {
         .unwrap();
 
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.faces[0].id.0, "sldprt:brep:face#10");
+    assert_eq!(
+        result.ir().model.faces[0].id.as_str(),
+        "sldprt:brep:face#10"
+    );
 }
 
 #[test]
@@ -197,7 +215,10 @@ fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
         .unwrap();
 
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.faces[0].id.0, "sldprt:brep:face#210");
+    assert_eq!(
+        result.ir().model.faces[0].id.as_str(),
+        "sldprt:brep:face#210"
+    );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted
             && loss.message.contains("non-equivalent bridge uses")

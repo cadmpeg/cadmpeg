@@ -5,8 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::vecmath::normalized;
-pub(crate) use crate::vecmath::{cross, dot};
+use crate::vecmath::{cross, dot, normalized};
 
 use super::planes::point_on_carrier;
 
@@ -35,16 +34,65 @@ pub struct CylinderEquation {
 
 #[derive(Clone, Copy)]
 pub struct ConeEquation {
-    pub origin: [f64; 3],
-    pub axis: [f64; 3],
-    pub ref_direction: [f64; 3],
-    pub radius: f64,
-    pub ratio: f64,
-    pub half_angle: f64,
+    origin: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    radius: f64,
+    ratio: f64,
+    half_angle: f64,
+}
+
+impl ConeEquation {
+    /// A cone with finite radius, positive finite ratio, and half-angle in [0, pi/2).
+    pub fn new(
+        origin: [f64; 3],
+        axis: [f64; 3],
+        ref_direction: [f64; 3],
+        radius: f64,
+        ratio: f64,
+        half_angle: f64,
+    ) -> Option<Self> {
+        (radius.is_finite()
+            && ratio.is_finite()
+            && ratio > 0.0
+            && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle))
+        .then_some(Self {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        })
+    }
+    /// The cone reference origin.
+    pub const fn origin(self) -> [f64; 3] {
+        self.origin
+    }
+    /// The cone axis direction.
+    pub const fn axis(self) -> [f64; 3] {
+        self.axis
+    }
+    /// The cone reference radial direction.
+    pub const fn ref_direction(self) -> [f64; 3] {
+        self.ref_direction
+    }
+    /// The radius at the reference origin.
+    pub const fn radius(self) -> f64 {
+        self.radius
+    }
+    /// The radial aspect ratio.
+    pub const fn ratio(self) -> f64 {
+        self.ratio
+    }
+    /// The cone half-angle in radians.
+    pub const fn half_angle(self) -> f64 {
+        self.half_angle
+    }
 }
 
 pub fn circular_cone(cone: ConeEquation) -> bool {
-    cone.ratio.is_finite() && (cone.ratio - 1.0).abs() <= EPS_NEAR_ZERO
+    (cone.ratio - 1.0).abs() <= EPS_NEAR_ZERO
 }
 
 #[derive(Clone, Copy)]
@@ -119,12 +167,7 @@ pub fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
         CarrierEquation::Cone(cone) => {
             let axis = normalized(cone.axis)?;
             let x_axis = normalized(cone.ref_direction)?;
-            if dot(axis, x_axis).abs() > EPS_ORTHO
-                || !cone.ratio.is_finite()
-                || cone.ratio <= 0.0
-                || !cone.radius.is_finite()
-                || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
-            {
+            if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return None;
             }
             let y_axis = cross(axis, x_axis);
@@ -754,13 +797,7 @@ pub fn plane_cone_conic(
     let axis = normalized(cone.axis)?;
     let x_axis = normalized(cone.ref_direction)?;
     let slope = cone.half_angle.tan();
-    if slope <= EPS_NEAR_ZERO
-        || !slope.is_finite()
-        || cone.radius < 0.0
-        || cone.ratio <= 0.0
-        || !cone.ratio.is_finite()
-        || dot(axis, x_axis).abs() > EPS_ORTHO
-    {
+    if slope <= EPS_NEAR_ZERO || cone.radius < 0.0 || dot(axis, x_axis).abs() > EPS_ORTHO {
         return None;
     }
     let y_axis = cross(axis, x_axis);
@@ -940,4 +977,55 @@ pub fn plane_cone_conic(
         },
         "plane_cone_hyperbola",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConeEquation;
+    use std::f64::consts::FRAC_PI_2;
+
+    const ORIGIN: [f64; 3] = [1.0, 2.0, 3.0];
+    const AXIS: [f64; 3] = [0.0, 0.0, 1.0];
+    const REF_DIRECTION: [f64; 3] = [1.0, 0.0, 0.0];
+
+    fn cone(radius: f64, ratio: f64, half_angle: f64) -> Option<ConeEquation> {
+        ConeEquation::new(ORIGIN, AXIS, REF_DIRECTION, radius, ratio, half_angle)
+    }
+
+    #[test]
+    fn admitted_cone_keeps_its_stored_parameters() {
+        let admitted =
+            cone(4.0, 1.5, 0.25).expect("finite radius, positive ratio, acute half-angle");
+
+        assert_eq!(admitted.origin(), ORIGIN);
+        assert_eq!(admitted.axis(), AXIS);
+        assert_eq!(admitted.ref_direction(), REF_DIRECTION);
+        assert_eq!(admitted.radius(), 4.0);
+        assert_eq!(admitted.ratio(), 1.5);
+        assert_eq!(admitted.half_angle(), 0.25);
+        assert!(cone(4.0, 1.5, 0.0).is_some());
+    }
+
+    #[test]
+    fn non_finite_radius_is_rejected() {
+        assert!(cone(f64::INFINITY, 1.5, 0.25).is_none());
+        assert!(cone(f64::NEG_INFINITY, 1.5, 0.25).is_none());
+        assert!(cone(f64::NAN, 1.5, 0.25).is_none());
+    }
+
+    #[test]
+    fn non_finite_or_non_positive_ratio_is_rejected() {
+        assert!(cone(4.0, f64::INFINITY, 0.25).is_none());
+        assert!(cone(4.0, f64::NAN, 0.25).is_none());
+        assert!(cone(4.0, 0.0, 0.25).is_none());
+        assert!(cone(4.0, -1.5, 0.25).is_none());
+    }
+
+    #[test]
+    fn half_angle_outside_the_acute_range_is_rejected() {
+        assert!(cone(4.0, 1.5, FRAC_PI_2).is_none());
+        assert!(cone(4.0, 1.5, FRAC_PI_2 + 0.25).is_none());
+        assert!(cone(4.0, 1.5, -0.25).is_none());
+        assert!(cone(4.0, 1.5, f64::NAN).is_none());
+    }
 }

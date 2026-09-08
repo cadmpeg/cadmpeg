@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 use super::project_coil;
-use crate::records::{
+use crate::records::feature::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCoilTransform,
-    DesignExtrudeOperation, DesignParameter, DesignParameterKind, DesignParameterScope,
+    DesignExtrudeOperation, DesignParameterScope,
 };
+use crate::records::DesignParameter;
 use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition};
 
 fn parameter(
@@ -25,19 +24,19 @@ fn parameter(
     DesignParameter {
         id: format!("f3d:Design/BulkStream.dat:parameter#{record_index}"),
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index,
-        family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 0,
-        owner_record_index: None,
+        source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+            .unwrap(),
         expression: value.to_string(),
         expression_offset: 0,
-        source_kind: source_kind.into(),
         source_kind_offset: 0,
-        kind: DesignParameterKind::Feature,
-        unit: unit.map(str::to_owned),
-        unit_offset: None,
+
+        unit: unit.map(|value| crate::records::RecordedValue {
+            value: value.to_owned(),
+            offset: None,
+        }),
         name: source_kind.into(),
         name_offset: 0,
         evaluated_value: value,
@@ -49,23 +48,73 @@ fn parameter(
 fn long_coil_matrix_projects_as_explicit_placement() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#40",
-        "CoilPrimitive",
+        crate::records::feature::DesignFeatureKind::CoilPrimitive,
         40,
     );
-    scope.coil_operation = Some(DesignExtrudeOperation::NewBody);
-    scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
-    scope.coil_section = Some(DesignCoilSection::Circular);
-    scope.coil_section_placement = Some(DesignCoilSectionPlacement::Inside);
-    scope.coil_clockwise = Some(false);
-    scope.coil_transform = Some(DesignCoilTransform {
-        transform: [
-            [1.0, 0.0, 0.0, 1.25],
-            [0.0, 1.0, 0.0, -2.5],
-            [0.0, 0.0, 1.0, 3.75],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: 77,
-    });
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).coil_operation =
+            Some(crate::records::RecordedValue {
+                value: DesignExtrudeOperation::NewBody,
+                offset: None,
+            });
+    }
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).coil_extent =
+            Some(crate::records::RecordedValue {
+                value: DesignCoilExtent::RevolutionsHeight,
+                offset: None,
+            });
+    }
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).coil_section =
+            Some(crate::records::RecordedValue {
+                value: DesignCoilSection::Circular,
+                offset: None,
+            });
+    }
+    {
+        let value = Some(DesignCoilSectionPlacement::Inside);
+        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .coil_section_placement = value.map(|value| crate::records::RecordedValue {
+                value,
+                offset: None,
+            });
+        }
+    }
+    {
+        let value = Some(false);
+        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default).coil_clockwise =
+                value.map(|value| crate::records::RecordedValue {
+                    value,
+                    offset: None,
+                });
+        }
+    }
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).coil_transform = Some(DesignCoilTransform {
+            transform: [
+                [1.0, 0.0, 0.0, 1.25],
+                [0.0, 1.0, 0.0, -2.5],
+                [0.0, 0.0, 1.0, 3.75],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: 77,
+        });
+    }
     let parameters = [
         parameter(1, "Diameter", Some("cm"), 2.0),
         parameter(2, "SectionSize", Some("cm"), 0.2),

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -97,58 +97,75 @@
     },
     "native": {
       "sat": {
-        "arenas": {
-          "body_native_keys": [
-            {
-              "body": "sat:brep:entity#1",
-              "body_ordinal": 0,
-              "id": "sat:asm:body-native-key#1",
-              "record_index": 1,
-              "source_brep": "stream"
-            }
-          ],
-          "edge_continuities": [],
-          "edge_ownerships": [],
-          "face_native_keys": [
-            {
-              "face": "sat:brep:entity#4",
-              "id": "sat:asm:face-native-key#4",
-              "record_index": 4
-            }
-          ],
-          "face_sidedness": [
-            {
-              "face": "sat:brep:entity#4",
-              "id": "sat:asm:face-sidedness#4",
-              "native_sense": "forward",
-              "normalized_sense": "forward",
-              "record_index": 4
-            }
-          ],
-          "mesh_surface_sentinels": [],
-          "tolerant_coedge_parameters": [],
-          "tolerant_edge_tails": [],
-          "tolerant_vertex_tails": [],
-          "transform_hints": [],
-          "unknowns": [],
-          "vertex_ownerships": [],
-          "wire_topologies": []
-        },
-        "version": 1
+        "body_native_keys": [
+          {
+            "body": "sat:brep:entity#1",
+            "body_ordinal": 0,
+            "id": "sat:asm:body-native-key#1",
+            "record_index": 1,
+            "source_brep": "stream"
+          }
+        ],
+        "edge_continuities": [],
+        "edge_ownerships": [],
+        "face_native_keys": [
+          {
+            "face": "sat:brep:entity#4",
+            "id": "sat:asm:face-native-key#4",
+            "record_index": 4
+          }
+        ],
+        "face_sidedness": [
+          {
+            "face": "sat:brep:entity#4",
+            "id": "sat:asm:face-sidedness#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          }
+        ],
+        "mesh_surface_sentinels": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [],
+        "unknowns": [],
+        "vertex_ownerships": [],
+        "wire_topologies": []
       }
     },
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
-        "encoding": "text",
         "kernel_entity_count": "2",
         "kernel_family": "asm",
         "kernel_flags": "2",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic",
-        "scale": "1",
-        "terminator": "End-of-ASM-data"
+        "scale": "1"
+      },
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "save_format_major": "232",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:text-asm",
+            "format": "acis"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "encoding": "text",
+            "terminator": "End-of-ASM-data"
+          },
+          "dialect": "sat:text",
+          "format": "sat"
+        }
       },
       "format": "sat"
     },
@@ -166,13 +183,34 @@
       "unknown_records": 0,
       "unknown_surface_faces": 0
     },
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "save_format_major": "232",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:text-asm",
+          "format": "acis"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "text",
+          "terminator": "End-of-ASM-data"
+        },
+        "dialect": "sat:text",
+        "format": "sat"
+      }
+    },
     "format": "sat",
     "geometry_transferred": true,
     "losses": [],
     "notes": []
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

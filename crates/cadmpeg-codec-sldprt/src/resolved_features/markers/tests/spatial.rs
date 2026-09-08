@@ -10,9 +10,9 @@ use crate::layout::{
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
-    FeatureInputScalarRole, SketchInputKind, SketchRelationKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
+    SketchInputKind, SketchRelationKind,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
@@ -62,7 +62,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
+
         operands: vec![reference(143), reference(287)],
     }];
     let classes = [FeatureInputClass {
@@ -71,7 +71,6 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         ordinal: 0,
         offset: 155,
         name: "sgEntHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     }];
 
     let references = reference_cells(&scalars, &classes);
@@ -88,7 +87,6 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         ordinal: 1,
         offset: 299,
         name: "sgArcHandle".into(),
-        role: FeatureInputClassRole::SketchEntity,
     });
     assert!(reference_cells(&scalars, &ambiguous_classes)
         .iter()
@@ -340,7 +338,6 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("spatial".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "3D Sketch".into(),
             kind: "3D Sketch".into(),
@@ -354,11 +351,10 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         }],
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId("sldprt:model:feature#spatial".into()),
+        id: FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar"),
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -446,7 +442,6 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("spatial-indexed-profile".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "3D Sketch".into(),
             kind: "Sketch".into(),
@@ -460,11 +455,11 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         }],
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId("sldprt:model:feature#spatial-indexed-profile".into()),
+        id: FeatureId::mint("sldprt:model:feature#spatial-indexed-profile")
+            .expect("identity grammar"),
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -631,7 +626,6 @@ fn relation_binding_requires_family_operand_signature() {
         ordinal: 0,
         offset: 10,
         name: "sgLLDist".into(),
-        role: FeatureInputClassRole::SketchConstraint,
     };
     let operand = |kind, entity_index| FeatureInputOperand {
         offset: 0,
@@ -650,7 +644,7 @@ fn relation_binding_requires_family_operand_signature() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: vec![0, 1],
+
         operands: vec![operand(kind, 0), operand(kind, 1)],
     };
 
@@ -679,7 +673,6 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         ordinal: 0,
         offset,
         name: name.into(),
-        role: FeatureInputClassRole::SketchConstraint,
     };
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
@@ -698,7 +691,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: vec![0, 1],
+
         operands: vec![operand(0), operand(1)],
     };
 
@@ -718,7 +711,6 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         ordinal: 0,
         offset: 10,
         name: "sgPntPntDist".into(),
-        role: FeatureInputClassRole::SketchConstraint,
     };
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
@@ -737,7 +729,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: vec![0, 1],
+
         operands: vec![operand(0), operand(1)],
     };
 

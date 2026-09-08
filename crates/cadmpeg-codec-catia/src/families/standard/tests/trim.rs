@@ -49,7 +49,7 @@ fn trim_record_layout_indexes_extent_without_materializing_triangles() {
     let bytes = triangle_packet([10, 11, 12]);
     let layout = parse_trim_record_layout(&bytes, 0, 2).expect("trim packet layout");
     assert_eq!(layout.handle_offset, 8);
-    assert_eq!(layout.stored_count, 3);
+    assert_eq!(layout.handle_count, 3);
     assert_eq!(layout.end, bytes.len());
 
     let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
@@ -67,7 +67,7 @@ fn trim_record_layout_uses_the_complete_handle_span_as_its_count_bound() {
     bytes.extend(std::iter::repeat_n(0, handle_count as usize));
 
     let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete handle span");
-    assert_eq!(layout.stored_count, handle_count as usize);
+    assert_eq!(layout.handle_count, handle_count as usize);
     assert_eq!(layout.end, bytes.len());
 }
 

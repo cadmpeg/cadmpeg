@@ -11,21 +11,19 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 0,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 1,
         },
         crate::surface::SurfaceRow {
             id: 2,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 42,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 2,
         },
@@ -37,7 +35,7 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
             type_byte: 0,
             feature_id: 42,
             directions: [1, 1],
-            faces: [2, 1],
+            faces: [std::num::NonZeroU32::new(2), std::num::NonZeroU32::new(1)],
             next_edges: [11, 11],
             offset: 11,
         });
@@ -55,7 +53,7 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
 
 fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
     cadmpeg_ir::geometry::Curve {
-        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -68,7 +66,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
 
 fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
-        id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: origin.into(),
             normal: [0.0, 0.0, 1.0].into(),
@@ -80,7 +78,7 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
 
 #[test]
 fn model_surface_geometry_lookup_rejects_duplicate_native_ids() {
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
     assert!(super::unique_model_surface_geometries(&ir).is_some());
 
@@ -91,7 +89,7 @@ fn model_surface_geometry_lookup_rejects_duplicate_native_ids() {
 #[test]
 fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
     let scan = boundary_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
@@ -104,7 +102,7 @@ fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
 fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
     let mut scan = boundary_scan();
     scan.planes.positional_frames.clear();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.curves.push(boundary_circle());
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
 
@@ -117,7 +115,7 @@ fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
 #[test]
 fn boundary_circle_rejects_conflicting_model_plane_carrier() {
     let scan = boundary_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.curves.push(boundary_circle());
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
 
@@ -130,7 +128,7 @@ fn boundary_circle_rejects_conflicting_model_plane_carrier() {
 #[test]
 fn boundary_circle_rejects_duplicate_model_curves() {
     let scan = boundary_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model
         .curves
         .extend([boundary_circle(), boundary_circle()]);
@@ -146,7 +144,7 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
     let mut scan = boundary_scan();
     let duplicate = scan.surfaces.rows[0].clone();
     scan.surfaces.rows.push(duplicate);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
@@ -170,10 +168,8 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
         .map(
             |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
                 dimension_type,
-                value: Some(value),
+                value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::kernel_header::RefWidth;
 
 #[test]
 fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
 
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
             (
                 "blend_support_cos_curve",
@@ -39,12 +40,19 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
                     });
                 assert_eq!(position, bytes.len() - 1);
                 assert_eq!(side.support_kind, kind);
-                assert_eq!(side.extension, expected);
+                assert_eq!(
+                    side.extension.as_ref().map(|extension| extension.value),
+                    expected
+                );
                 assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));
                 assert!(side.surface.is_none());
                 assert!(side.curve.is_none());
                 assert!(side.secondary_pcurve.is_none());
-                assert!(side.tertiary_pcurve.is_none());
+                assert!(side
+                    .extension
+                    .as_ref()
+                    .and_then(|extension| extension.pcurve.as_ref())
+                    .is_none());
             }
         }
     }
@@ -52,7 +60,7 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
 
 #[test]
 fn fixed_arity_law_operators_decode_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_string(&mut bytes, "SET");
         push_f64(&mut bytes, -2.0);
@@ -95,7 +103,7 @@ fn fixed_arity_law_operators_decode_at_both_integer_widths() {
 
 #[test]
 fn law_surface_layout_decodes_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "law_spl_sur");
         push_string(&mut bytes, "primary-law");
@@ -132,7 +140,7 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
             panic!("expected law surface at width {int_width}")
         };
         assert_eq!(construction.parameter_ranges, None);
-        assert_eq!(construction.primary.name, "primary-law");
+        assert_eq!(construction.primary.name(), "primary-law");
         assert_eq!(construction.additional.len(), 1);
         assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
         assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
@@ -141,7 +149,7 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
 
 #[test]
 fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "lawsur");
         for value in [-1.0, 2.0, -3.0, 4.0] {
@@ -175,7 +183,7 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
 
 #[test]
 fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for selector in 1..=4 {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "law_spl_sur");
@@ -231,7 +239,7 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
 
 #[test]
 fn sub_surface_layout_decodes_at_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["sub_spl_sur", "subsur"] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, name);
@@ -268,7 +276,7 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
 
 #[test]
 fn rolling_ball_layout_walks_both_integer_widths() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rb_blend_spl_sur");
         push_int(&mut bytes, 0x04, 22507, int_width);
@@ -310,7 +318,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
 
 #[test]
 fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut straight = Vec::new();
         push_ident(&mut straight, "straight");
         push_position(&mut straight, [1.0, 2.0, 3.0]);
@@ -322,8 +330,8 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let mut position = 0;
         assert!(matches!(
             decode_rolling_ball_curve(&straight, &mut position, int_width, None),
-            Some(DecodedRollingBallCurve {
-                geometry: CurveGeometry::Line { origin, direction },
+            Some(RollingBallSupportCurve {
+                curve: CurveGeometry::Line { origin, direction },
                 parameter_range: [Some(-2.0), Some(3.0)],
             })
                 if origin == Point3::new(10.0, 20.0, 30.0)
@@ -342,10 +350,10 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let mut position = 0;
         assert!(matches!(
             decode_rolling_ball_curve(&intcurve, &mut position, int_width, None),
-            Some(DecodedRollingBallCurve {
-                geometry: CurveGeometry::Nurbs(curve),
+            Some(RollingBallSupportCurve {
+                curve: CurveGeometry::Nurbs(curve),
                 parameter_range: [None, None],
-            }) if curve.degree == 1
+        }) if curve.degree() == 1
         ));
         assert_eq!(position, intcurve.len());
 
@@ -375,10 +383,10 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
                 int_width,
                 Some((&active, &tables)),
             ),
-            Some(DecodedRollingBallCurve {
-                geometry: CurveGeometry::Nurbs(curve),
+            Some(RollingBallSupportCurve {
+                curve: CurveGeometry::Nurbs(curve),
                 parameter_range: [None, None],
-            }) if curve.degree == 1
+        }) if curve.degree() == 1
         ));
         assert_eq!(position, intcurve.len());
     }
@@ -386,7 +394,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
 
 #[test]
 fn rolling_ball_surfaces_decode_framed_spline_supports() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_ident(&mut bytes, "spline");
         bytes.push(0x0b);
@@ -405,7 +413,7 @@ fn rolling_ball_surfaces_decode_framed_spline_supports() {
                 SurfaceGeometry::Nurbs(surface),
                 [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],
             ))
-                if surface.u_degree == 1 && surface.v_degree == 1
+        if surface.u_degree() == 1 && surface.v_degree() == 1
         ));
         assert_eq!(position, bytes.len());
     }

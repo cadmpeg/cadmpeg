@@ -1697,7 +1697,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     }
     let mut direct_points = Vec::new();
     let mut direct_radius_relations = Vec::new();
-    for link in &curve.links {
+    for link in curve.links() {
         let linked = markers_by_id.get(link.entity_ref.as_str()).copied()?;
         if linked.feature_ref != curve.feature_ref {
             return None;
@@ -1729,7 +1729,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
         {
             return None;
         }
-        let [first_link, second_link] = relation.links.as_slice() else {
+        let [first_link, second_link] = relation.links() else {
             return None;
         };
         let pair = [first_link, second_link].map(|link| {

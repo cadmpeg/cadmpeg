@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -51,20 +51,17 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:example_record#2",
-              "links": [
-                "step:product:product#1"
-              ]
-            },
-            {
-              "id": "step:file:signature#0"
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "step:data:example_record#2",
+            "links": [
+              "step:product:product#1"
+            ]
+          },
+          {
+            "id": "step:file:signature#0"
+          }
+        ]
       }
     },
     "source": {
@@ -76,6 +73,22 @@
         "data_sections": "2",
         "entity_instances": "2",
         "schema": "AP242"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "unverified": {
+              "using": "step:ap242-e3"
+            }
+          },
+          "declared": {
+            "file_schema_identifier": "AP242",
+            "implementation_level": "4;2"
+          },
+          "dialect": "step:unknown",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -89,9 +102,34 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "unverified": {
+            "using": "step:ap242-e3"
+          }
+        },
+        "declared": {
+          "file_schema_identifier": "AP242",
+          "implementation_level": "4;2"
+        },
+        "dialect": "step:unknown",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": false,
     "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "step"
+        },
+        "message": "FILE_SCHEMA identifier AP242; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "geometry.document-length-unit-unresolved",
@@ -153,7 +191,6 @@
         "sha256": "4658af8ce24b852b03d6801a706d9877e63da748cba1fe3cb94e6f96811fd3db",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

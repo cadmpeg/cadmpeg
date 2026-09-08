@@ -16,9 +16,9 @@ use crate::CadIr;
 
 #[test]
 fn subd_rejects_short_rings_and_negative_sharpness() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#short".into()),
+        id: SubdId::mint("synthetic:subd:surface#short").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![
@@ -65,9 +65,9 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
 
 #[test]
 fn subd_rejects_invalid_secondary_grip_sector_arity() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#grips".into()),
+        id: SubdId::mint("synthetic:subd:surface#grips").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![
@@ -76,10 +76,9 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
                 tag: SubdVertexTag::Smooth,
                 secondary_grips: Some(SubdVertexGripLayout {
                     direction: SubdGripDirection::North,
-                    wedges: vec![SubdGripWedge {
+                    wedges: vec![SubdGripWedge::Slot {
                         edge: Some(0),
                         sector_face: None,
-                        phantom: false,
                         spokes: vec![Some(SubdSecondaryGrip {
                             source_index: 0,
                             point: Point3::new(0.25, 0.0, 0.0),
@@ -113,9 +112,9 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
 
 #[test]
 fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#grip-incidence".into()),
+        id: SubdId::mint("synthetic:subd:surface#grip-incidence").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![
@@ -124,10 +123,9 @@ fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
                 tag: SubdVertexTag::Smooth,
                 secondary_grips: Some(SubdVertexGripLayout {
                     direction: SubdGripDirection::North,
-                    wedges: vec![SubdGripWedge {
+                    wedges: vec![SubdGripWedge::Slot {
                         edge: Some(0),
                         sector_face: None,
-                        phantom: false,
                         spokes: Vec::new(),
                         sectors: Vec::new(),
                     }],
@@ -170,9 +168,9 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
         knot_interval: Some(1.0),
         sector_coefficients: [0.0, 0.0],
     };
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#grip-sector-incidence".into()),
+        id: SubdId::mint("synthetic:subd:surface#grip-sector-incidence").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: (0..4)
@@ -181,10 +179,9 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
                 tag: SubdVertexTag::Smooth,
                 secondary_grips: (index == 0).then_some(SubdVertexGripLayout {
                     direction: SubdGripDirection::North,
-                    wedges: vec![SubdGripWedge {
+                    wedges: vec![SubdGripWedge::Slot {
                         edge: Some(0),
                         sector_face: Some(0),
-                        phantom: false,
                         spokes: Vec::new(),
                         sectors: Vec::new(),
                     }],
@@ -221,14 +218,15 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
 
 #[test]
 fn subd_rejects_invalid_symmetry_carriers() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#symmetry".into()),
+        id: SubdId::mint("synthetic:subd:surface#symmetry").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: vec![SubdSymmetry {
             kind: SubdSymmetryKind::Radial {
                 segments: 0,
                 sweep: f64::NAN,
+                radial_maps: Vec::new(),
             },
             plane: SubdPlaneFrame {
                 origin: Point3::new(0.0, 0.0, 0.0),
@@ -238,7 +236,6 @@ fn subd_rejects_invalid_symmetry_carriers() {
             face_pairs: vec![[0, 1]],
             edge_pairs: vec![[0, 1]],
             vertex_pairs: vec![[0, 3]],
-            radial_maps: Vec::new(),
         }],
         vertices: vec![
             SubdVertex {
@@ -312,12 +309,12 @@ fn subd_rejects_invalid_symmetry_carriers() {
 
 #[test]
 fn source_association_is_a_free_carrier_root() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("synthetic:source:curve#0".into()),
+        id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
-            format: "rhino".into(),
+            format: crate::CodecFormat::Rhino,
             object_id: "00000000-0000-0000-0000-000000000000".into(),
             name: Some("curve".into()),
             color: None,
@@ -334,12 +331,12 @@ fn source_association_is_a_free_carrier_root() {
 
 #[test]
 fn source_association_rejects_out_of_range_color() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("synthetic:source:curve#color".into()),
+        id: CurveId::mint("synthetic:source:curve#color").expect("valid identity"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
-            format: "rhino".into(),
+            format: crate::CodecFormat::Rhino,
             object_id: "object".into(),
             name: None,
             color: Some(Color {

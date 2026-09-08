@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native catalogue load, store, and version-migration tests.
+//! Native catalogue load and store tests.
 #![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
@@ -8,29 +8,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::SldprtCodec;
-
-use super::{SldprtNative, SLDPRT_NATIVE_VERSION};
-
-#[test]
-fn version_twelve_adds_generated_surface_identity_arena() {
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    SldprtNative::default()
-        .store(&mut namespace)
-        .expect("required invariant");
-    namespace.version = 12;
-    namespace
-        .arenas
-        .remove("feature_input_generated_surface_identities");
-
-    let migrated = SldprtNative::load(&namespace).expect("required invariant");
-    let mut current = cadmpeg_ir::NativeNamespace::default();
-    migrated.store(&mut current).expect("required invariant");
-
-    assert_eq!(current.version, SLDPRT_NATIVE_VERSION);
-    assert!(current
-        .arenas
-        .contains_key("feature_input_generated_surface_identities"));
-}
 
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
@@ -48,16 +25,15 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         typed,
         crate::native::SldprtNative::load(&round_trip).unwrap()
     );
-    assert_eq!(round_trip.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert_eq!(
         round_trip
-            .arenas
+            .arenas()
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
         crate::native::SLDPRT_ARENA_NAMES
     );
-    for records in round_trip.arenas.values() {
+    for records in round_trip.arenas().values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
             assert_eq!(json["id"], record.id());
@@ -67,162 +43,14 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
 }
 
 #[test]
-fn native_version_one_migrates_the_body_selection_arena() {
-    let mut decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    legacy.version = 1;
-    legacy.arenas.remove("feature_input_body_selections");
-
-    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
-    assert_eq!(migrated.version, crate::native::SLDPRT_NATIVE_VERSION);
-    assert!(migrated
-        .feature_input_lanes
-        .iter()
-        .all(|lane| lane.body_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
-    migrated.store(&mut current).unwrap();
-    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
-    assert!(current.arenas.contains_key("feature_input_body_selections"));
-
-    *decoded.ir_mut().native.namespace_mut("sldprt") = legacy;
-    assert!(crate::validate_native(decoded.ir()).is_empty());
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
-}
-
-#[test]
-fn native_version_two_migrates_the_edge_selection_arena() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    legacy.version = 2;
-    legacy.arenas.remove("feature_input_edge_selections");
-
-    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
-    assert_eq!(migrated.version, crate::native::SLDPRT_NATIVE_VERSION);
-    assert!(migrated
-        .feature_input_lanes
-        .iter()
-        .all(|lane| lane.edge_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
-    migrated.store(&mut current).unwrap();
-    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
-    assert!(current.arenas.contains_key("feature_input_edge_selections"));
-}
-
-#[test]
-fn native_version_three_migrates_the_surface_selection_arena() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    legacy.version = 3;
-    legacy.arenas.remove("feature_input_surface_selections");
-    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
-    assert!(migrated
-        .feature_input_lanes
-        .iter()
-        .all(|lane| lane.surface_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
-    migrated.store(&mut current).unwrap();
-    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
-    assert!(current
-        .arenas
-        .contains_key("feature_input_surface_selections"));
-}
-
-#[test]
-fn native_version_four_migrates_sketch_marker_object_indices() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_resolved_features(
-                &triangle_body(),
-                &[0, 1],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    legacy.version = 4;
-    for record in legacy.arenas.get_mut("sketch_input_entities").unwrap() {
-        let mut fields = record.fields();
-        fields.remove("object_index");
-        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
-    }
-    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
-    assert!(migrated.feature_input_lanes.iter().all(|lane| {
-        lane.sketch_entities.iter().all(|entity| {
-            usize::try_from(entity.offset).ok().and_then(|offset| {
-                crate::resolved_features::markers::marker_object_index(&lane.native_payload, offset)
-            }) == entity.object_index
-        })
-    }));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
-    migrated.store(&mut current).unwrap();
-    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
-
-    let mut sentinel = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    sentinel.version = 6;
-    let sentinel_entity = &mut sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0];
-    let mut sentinel_fields = sentinel_entity.fields();
-    sentinel_fields.insert("object_index".into(), serde_json::json!(u32::MAX));
-    *sentinel_entity =
-        cadmpeg_ir::NativeRecord::new(sentinel_entity.id().to_string(), sentinel_fields);
-    let migrated = crate::native::SldprtNative::load(&sentinel).unwrap();
-    assert_eq!(
-        migrated.feature_input_lanes[0].sketch_entities[0].object_index,
-        None
-    );
-}
-
-#[test]
-fn native_future_version_remains_rejected() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut future = decoded.ir().native.namespace("sldprt").unwrap().clone();
-    future.version = crate::native::SLDPRT_NATIVE_VERSION + 1;
-    let error = crate::native::SldprtNative::load(&future).unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_ir::NativeConvertError::UnsupportedVersion(
-            cadmpeg_ir::native::catalogue::NativeVersionError::Unsupported {
-                version,
-                minimum: crate::native::SLDPRT_MIN_NATIVE_VERSION,
-                maximum: crate::native::SLDPRT_NATIVE_VERSION,
-            }
-        ) if version == crate::native::SLDPRT_NATIVE_VERSION + 1
-    ));
-}
-
-#[test]
 fn native_store_rejects_mismatched_nested_owners_atomically() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].parent = "missing-history".into();
     let before = decoded.ir().native.namespace("sldprt").unwrap().clone();
@@ -297,11 +125,13 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
         .unwrap();
     let mut native = sldprt_native(decoded.ir());
     let entity = &mut native.feature_input_lanes[0].sketch_entities[0];
-    entity.links = vec![crate::records::SketchInputLink {
-        local_id: 7,
-        entity_ref: "sldprt:feature-input:sketch-entity#missing".into(),
-    }];
-    entity.link_selector = Some(0);
+    entity.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![crate::records::SketchInputLink {
+            local_id: 7,
+            entity_ref: "sldprt:feature-input:sketch-entity#missing".into(),
+        }],
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
@@ -332,17 +162,19 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     entities[2].kind = crate::records::SketchInputKind::ConstrainedPoint;
     entities[0].kind =
         crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Midpoint);
-    entities[0].links = vec![
-        crate::records::SketchInputLink {
-            local_id: 7,
-            entity_ref: point_id,
-        },
-        crate::records::SketchInputLink {
-            local_id: 8,
-            entity_ref: second_point_id,
-        },
-    ];
-    entities[0].link_selector = Some(0);
+    entities[0].links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            crate::records::SketchInputLink {
+                local_id: 7,
+                entity_ref: point_id,
+            },
+            crate::records::SketchInputLink {
+                local_id: 8,
+                entity_ref: second_point_id,
+            },
+        ],
+    );
     for scalar in &mut native.feature_input_lanes[0].scalars {
         for operand in &mut scalar.operands {
             operand.entity_ref = None;
@@ -358,7 +190,9 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     native.store(&mut namespace).unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
-        stored.feature_input_lanes[0].sketch_entities[0].links.len(),
+        stored.feature_input_lanes[0].sketch_entities[0]
+            .links()
+            .len(),
         2
     );
 }
@@ -399,9 +233,9 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut native = sldprt_native(decoded.ir());
-    let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs[0].clone();
+    let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs()[0].clone();
     native.feature_input_lanes[0].relation_instances[0]
-        .scalar_refs
+        .scalars
         .push(duplicate);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -433,8 +267,8 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
         .arena_as("feature_input_relation_instances")
         .unwrap();
     let relation = relations.first_mut().expect("relation instance");
-    assert_eq!(relation.scalar_refs.len(), 2);
-    relation.scalar_refs.push(relation.scalar_refs[0].clone());
+    assert_eq!(relation.scalar_refs().len(), 2);
+    relation.scalars.push(relation.scalar_refs()[0].clone());
     namespace
         .set_arena("feature_input_relation_instances", &relations)
         .unwrap();

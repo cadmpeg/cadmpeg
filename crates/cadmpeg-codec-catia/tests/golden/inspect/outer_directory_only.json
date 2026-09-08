@@ -1,5 +1,13 @@
 {
   "container_kind": "v5-cfv2",
+  "dialects": {
+    "extra": [],
+    "primary": {
+      "admission": "residual",
+      "dialect": "catia:unknown",
+      "format": "catia"
+    }
+  },
   "entries": [
     {
       "attributes": {
@@ -16,10 +24,21 @@
     }
   ],
   "format": "catia",
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "catia"
+      },
+      "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row, and no declared dialect grammar was substituted; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
+      "severity": "warning"
+    }
+  ],
   "notes": [
     "outer V5_CFV2 container: directory offset 36 + length 127 = 163 (file size 163); variant: unrecognized storage layout",
     "outer CATIA_V5 CB0001 directory with 1 stream(s)",
     "no nested V5_CFV2 sub-container (outer-preamble record families only)",
-    "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
   ]
 }

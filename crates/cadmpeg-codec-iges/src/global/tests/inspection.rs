@@ -10,7 +10,7 @@ use crate::test_support::point_file_with_global;
 use crate::IgesCodec;
 
 #[test]
-fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
+fn inspect_reports_the_resolution_losses_it_charges_as_typed_losses() {
     let mut fields = valid_global_fields();
     fields[11] = "7Hproduct".into();
     fields[16] = String::new();
@@ -26,17 +26,18 @@ fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
         .unwrap();
 
     assert!(summary.notes.contains(&"iges_version=4.0".into()));
-    assert!(!summary
-        .notes
-        .iter()
-        .any(|note| note == "loss.iges/source.dialect-unverified=1"));
     assert!(summary
-        .notes
-        .contains(&"loss.iges/presentation.line-weight-scale-unavailable=1".into()));
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::IgesLossCode::SourceDialectUnverified.kind()));
+    assert!(summary
+        .losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::IgesLossCode::LineWeightScaleUnavailable.kind() }));
 }
 
 #[test]
-fn inspect_reports_the_declared_version_flag_only_when_the_clamp_changes_it() {
+fn inspect_distinguishes_an_unknown_declaration_from_its_effective_version() {
     for (flag, version) in [("12", "5.3"), ("0", "2.0")] {
         let summary = IgesCodec
             .inspect(
@@ -45,14 +46,32 @@ fn inspect_reports_the_declared_version_flag_only_when_the_clamp_changes_it() {
             )
             .unwrap();
         assert!(
-            summary.notes.contains(&format!("iges_version={version}")),
+            summary.notes.contains(&"iges_version=unverified".into()),
             "{flag}: {:#?}",
             summary.notes
         );
         assert!(
-            summary.notes.contains(&format!("iges_version_flag={flag}")),
+            summary
+                .notes
+                .contains(&format!("iges_declared_version_flag={flag}")),
             "{flag}: {:#?}",
             summary.notes
+        );
+        assert!(
+            summary
+                .notes
+                .contains(&format!("iges_effective_version={version}")),
+            "{flag}: {:#?}",
+            summary.notes
+        );
+        assert_eq!(
+            summary
+                .dialects()
+                .expect("inspection classifies the document")
+                .primary()
+                .dialect()
+                .as_str(),
+            "iges:unknown"
         );
     }
 
@@ -67,7 +86,8 @@ fn inspect_reports_the_declared_version_flag_only_when_the_clamp_changes_it() {
         !summary
             .notes
             .iter()
-            .any(|note| note.starts_with("iges_version_flag=")),
+            .any(|note| note.starts_with("iges_declared_version_flag=")
+                || note.starts_with("iges_effective_version=")),
         "{:#?}",
         summary.notes
     );

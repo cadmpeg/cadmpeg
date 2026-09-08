@@ -28,8 +28,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
     let mut histories = [AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -50,8 +49,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
                 entity_ref: 10,
                 record_ref: 30,
             }],
-            record_table_complete: true,
-            topology: Some(topology),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
             transition: None,
         }],
     }];
@@ -59,8 +57,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
     discard_projection_caches(&mut histories);
 
     let retained = histories[0].states[0]
-        .topology
-        .as_ref()
+        .topology()
         .expect("plane topology remains available to late Mirror binding");
     assert_eq!(retained.bodies, [99]);
     assert_eq!(retained.faces, [10]);
@@ -87,36 +84,37 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let operand: crate::records::DesignFaceOperand = serde_json::from_value(serde_json::json!({
-        "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
-        "scope_record_index": 42,
-        "scope_reference_ordinal": 5,
-        "group_record_index": 30,
-        "group_member_ordinal": 0,
-        "record_index": 40,
-        "byte_offset": 0,
-        "class_tag": "276",
-        "paired_byte_offset": 0,
-        "paired_class_tag": "262",
-        "recipe_record_index": 43,
-        "recipe_record_byte_offset": 0,
-        "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
-        "recipe_prefix_offset": 0,
-        "recipe_prefix_bytes": "",
-        "recipe_references": [],
-        "recipe_kind": "face",
-        "recipe_program_offset": 0,
-        "recipe_program": [0, -1],
-        "recipe_node_offsets": [],
-        "recipe_nodes": [],
-        "preceding_candidate_faces": [
-            "f3d:brep:entity#10",
-            "f3d:brep:entity#11"
-        ],
-        "next_record_index": 44,
-        "next_byte_offset": 0
-    }))
-    .expect("face-recipe operand");
+    let operand: crate::records::topology::DesignFaceOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
+            "scope_record_index": 42,
+            "scope_reference_ordinal": 5,
+            "group_record_index": 30,
+            "group_member_ordinal": 0,
+            "record_index": 40,
+            "byte_offset": 0,
+            "class_tag": "276",
+            "paired_byte_offset": 0,
+            "paired_class_tag": "262",
+            "recipe_record_index": 43,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "preceding_candidate_faces": [
+                "f3d:brep:entity#10",
+                "f3d:brep:entity#11"
+            ],
+            "next_record_index": 44,
+            "next_byte_offset": 0
+        }))
+        .expect("face-recipe operand");
     let topology = AsmHistoricalTopology {
         faces: vec![10, 11],
         face_surfaces: vec![
@@ -146,8 +144,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -165,8 +162,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
             transition: None,
         }],
     };
@@ -178,8 +174,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
 
     let mut noncoincident = history;
     noncoincident.states[0]
-        .topology
-        .as_mut()
+        .topology_mut()
         .expect("topology")
         .surface_planes[1]
         .origin
@@ -263,8 +258,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
     let history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![AsmDeltaState {
@@ -282,16 +276,17 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            record_table_complete: true,
-            topology: Some(topology.clone()),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology.clone()),
             transition: None,
         }],
     };
-    let candidate = crate::records::DesignEntitySelectionFaceCandidate {
+    let candidate = crate::records::topology::DesignEntitySelectionFaceCandidate {
         history_id: "history".into(),
-        historical_entity_kind: AsmHistoricalEntityKind::Coedge,
-        historical_entity_ref: 30,
-        historical_state_ids: vec![1],
+        historical: crate::records::topology::HistoricalBinding {
+            kind: AsmHistoricalEntityKind::Coedge,
+            entity_ref: 30,
+            state_ids: vec![1],
+        },
         face_slot: 10,
     };
     let dispatched = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))

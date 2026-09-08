@@ -38,12 +38,10 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
         value: Some(value),
         raw: vec![offset as u8],
         offset,
-        length: 1,
     };
     let record = SurfaceParameterRecord {
         surface_id: 41,
         body: vec![0x00, 0x0c, 0x9a],
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: vec![SurfaceParameterScalarFrame {
@@ -55,22 +53,19 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
                 .collect(),
         }],
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        positional_torus_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Plane,
+        ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
         body_offset: 11,
     };
     let row = SurfaceRow {
         id: 41,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -101,23 +96,19 @@ fn derives_plane_from_auxiliary_corner_frame() {
         value: Some(value),
         raw: vec![0; length],
         offset,
-        length,
     };
     let record = SurfaceParameterRecord {
         surface_id: 41,
         body: vec![0; 49],
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: vec![
             SurfaceParameterOpaqueSpan {
                 raw: vec![0; 3],
                 offset: 0,
-                length: 3,
             },
             SurfaceParameterOpaqueSpan {
                 raw: vec![0; 8],
                 offset: 10,
-                length: 8,
             },
         ],
         scalar_frames: vec![
@@ -139,22 +130,19 @@ fn derives_plane_from_auxiliary_corner_frame() {
             },
         ],
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        positional_torus_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Plane,
+        ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
         body_offset: 11,
     };
     let row = SurfaceRow {
         id: 41,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -177,22 +165,18 @@ fn derives_plane_from_auxiliary_corner_frame() {
         SurfaceParameterOpaqueSpan {
             raw: vec![0],
             offset: 0,
-            length: 1,
         },
         SurfaceParameterOpaqueSpan {
             raw: vec![0; 4],
             offset: 11,
-            length: 4,
         },
         SurfaceParameterOpaqueSpan {
             raw: vec![0; 2],
             offset: 16,
-            length: 2,
         },
         SurfaceParameterOpaqueSpan {
             raw: vec![0xf7, 0x0c],
             offset: 63,
-            length: 2,
         },
     ];
     trailed.scalar_frames = vec![
@@ -270,7 +254,7 @@ fn derives_plane_from_auxiliary_corner_frame() {
     );
 
     let mut incomplete = record;
-    incomplete.opaque_spans[1].length = 7;
+    incomplete.opaque_spans[1].raw.truncate(7);
     assert!(positional_frame_planes(&[incomplete.clone()], std::slice::from_ref(&row)).is_empty());
 
     let mut short = incomplete;
@@ -296,11 +280,10 @@ fn derives_plane_from_terminal_corner_frame() {
     let record = parameter_records(&payload).remove(0);
     let row = SurfaceRow {
         id: record.surface_id,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -377,11 +360,10 @@ fn derives_plane_from_split_terminal_corner_frame() {
     let record = parameter_records(&payload).remove(0);
     let row = SurfaceRow {
         id: record.surface_id,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -398,7 +380,7 @@ fn derives_plane_from_split_terminal_corner_frame() {
     );
 
     let mut incomplete_controls = record.clone();
-    incomplete_controls.opaque_spans[1].length -= 1;
+    incomplete_controls.opaque_spans[1].raw.pop();
     assert!(positional_frame_planes(&[incomplete_controls], std::slice::from_ref(&row)).is_empty());
 
     let mut ambiguous = record;
@@ -418,16 +400,13 @@ fn derives_plane_from_marker_bounded_corner_frames() {
     let frames = scalar_frames(&tokens);
     let record = SurfaceParameterRecord {
         surface_id: 41,
-        scalar_values: tokens.iter().filter_map(|token| token.value).collect(),
         opaque_spans: opaque_spans(&body, &tokens),
         terminal_scalar_frame: terminal_scalar_frame(&body, &frames),
         scalar_tokens: tokens,
         scalar_frames: frames,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Plane,
+        ),
         body,
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
@@ -435,11 +414,10 @@ fn derives_plane_from_marker_bounded_corner_frames() {
     };
     let row = SurfaceRow {
         id: 41,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -777,10 +755,11 @@ fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
     let frames = [PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some([100.0, 200.0, 300.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 30,
@@ -803,7 +782,7 @@ fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
         frame_bound_outline_planes(&records, &frames)
     );
     let mut conflicting = frames[0].clone();
-    conflicting.normal = Some([1.0, 0.0, 0.0]);
+    conflicting.slots[6..9].copy_from_slice(&[Some(1.0), Some(0.0), Some(0.0)]);
     assert!(frame_bound_outline_planes(&records, &[frames[0].clone(), conflicting]).is_empty());
 }
 
@@ -838,10 +817,11 @@ fn support_frame_maps_shortened_terminal_outline_coordinate() {
     let frames = [PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some([100.0, 200.0, 300.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Simple,
         row_offset: 10,
         offset: 30,
@@ -963,7 +943,7 @@ fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
     let systems = plane_local_systems(&payload);
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
-    assert_eq!(systems[0].normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(systems[0].frame().normal, Some([0.0, 0.0, -1.0]));
 }
 
 #[test]
@@ -1084,7 +1064,7 @@ fn named_local_system_expands_row_lane_zero_forms() {
                 Some(0.0),
                 Some(1.0),
             ],
-            tokens: Vec::new(),
+            tokens: None,
         }
     );
 }
@@ -1130,7 +1110,7 @@ fn named_local_system_decodes_terminal_zero_slot() {
                 Some(15.0),
                 Some(0.0),
             ],
-            tokens: Vec::new(),
+            tokens: None,
         })
     );
 }
@@ -1239,7 +1219,7 @@ fn dimensioned_scalar_arrays_decode_compact_extents() {
         values,
         ..
     } = named_surface_value(
-        &SurfacePrototypeFamily::Spline,
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
         "i_points",
         &body,
         &scalar::ScalarCache::default(),
@@ -1275,7 +1255,7 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
                 Some(1.0),
                 Some(0.0),
             ],
-            tokens: vec![negative.to_vec(), vec![0xe4], vec![0x0f]],
+            tokens: Some(vec![negative.to_vec(), vec![0xe4], vec![0x0f]]),
         })
     );
 }
@@ -1491,7 +1471,7 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
     ] {
         assert_eq!(
             named_surface_value(
-                &SurfacePrototypeFamily::Spline,
+                &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
                 name,
                 body,
                 &scalar::ScalarCache::default(),
@@ -1527,7 +1507,7 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
         body.extend_from_slice(trailer);
         assert_eq!(
             named_surface_value(
-                &SurfacePrototypeFamily::Spline,
+                &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
                 "parent_feats",
                 &body,
                 &scalar::ScalarCache::default(),

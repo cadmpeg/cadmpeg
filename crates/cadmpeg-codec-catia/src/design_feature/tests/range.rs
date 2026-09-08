@@ -53,7 +53,9 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         None,
         None,
     );
-    range_record.entity_record = Some("range-entity".to_string());
+    if let Some(entity) = &mut range_record.entity {
+        entity.record = "range-entity".to_string();
+    }
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -79,7 +81,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         entity_records: vec![range_entity],
         ..CatiaNative::default()
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 

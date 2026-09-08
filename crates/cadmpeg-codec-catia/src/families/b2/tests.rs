@@ -17,8 +17,7 @@ fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
     let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].degree, 5);
-    assert_eq!(pcurves[0].second_derivatives, vec![[0.0, 0.0]; 2]);
+    assert_eq!(pcurves[0].second_derivatives(), vec![[0.0, 0.0]; 2]);
 }
 
 #[test]
@@ -28,9 +27,13 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
     assert_eq!(points.len(), 4);
     assert_eq!(
-        points.iter().map(|point| point.prefix).collect::<Vec<_>>(),
+        points
+            .iter()
+            .map(|point| point.prefix.as_u8())
+            .collect::<Vec<_>>(),
         [0x05, 0x09, 0x0d, 0x11]
     );
+    assert_eq!(points[0].payload.layout(), 0x12);
     assert!(matches!(
         &points[0].payload,
         B2ParameterPointPayload::Uv { uv: [2.0, 3.0] }
@@ -64,7 +67,7 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
     assert_eq!(
         carriers
             .iter()
-            .map(|carrier| carrier.selector)
+            .map(|carrier| carrier.payload.selector())
             .collect::<Vec<_>>(),
         [0xe4, 0xc4, 0xec]
     );
@@ -115,10 +118,10 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
 
     let carriers = crate::families::b2::records::b2_plane_carriers(&stream);
     assert_eq!(carriers.len(), 4);
-    assert_eq!(carriers[3].selector, 0x40);
+    assert_eq!(carriers[3].payload.selector(), 0x40);
     assert!(matches!(
         &carriers[3].payload,
-        B2PlaneCarrierPayload::ScalarLane { values: lane } if lane == &values
+        B2PlaneCarrierPayload::ScalarLane { values: lane, .. } if lane == &values
     ));
     assert!(crate::families::b2::records::b2_plane_geometry(&carriers[3]).is_none());
 }
@@ -301,7 +304,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
                 target.slot,
                 target.distance,
                 target.target_pos,
-                target.target_class,
+                u8::from(target.target_class),
             ))
             .collect::<Vec<_>>(),
         [
@@ -364,7 +367,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
             slot,
             distance: 1,
             target_pos,
-            target_class: 0x5e,
+            target_class: crate::native::CatiaOwnerIdentityClass::Edge,
         })
         .collect::<Vec<_>>();
     let endpoints = HashMap::from([
@@ -384,7 +387,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     assert!(b2_closed_owner_boundary_edges(&targets, &open).is_none());
 
     let mut mixed_classes = targets.clone();
-    mixed_classes[0].target_class = 0x5d;
+    mixed_classes[0].target_class = crate::native::CatiaOwnerIdentityClass::Vertex;
     assert!(b2_closed_owner_boundary_edges(&mixed_classes, &endpoints).is_none());
 
     let mut duplicate = endpoints;
@@ -394,28 +397,27 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
 
 #[test]
 fn owner_chart_requires_exact_source_closed_selector_rectangle() {
-    use crate::families::b2::records::{
-        B2OwnerChartBridge, B2OwnerChartCarrier, B2OwnerChartSideAxis,
-    };
+    use crate::families::b2::records::{B2OwnerChartBridge, B2OwnerChartCarrier};
+    use crate::native::owner_chart::CatiaOwnerChartSideAxis;
 
     for (carrier_class, carrier, carrier_selector, side_axis) in [
         (
             0x28,
             B2OwnerChartCarrier::B28,
             0x05,
-            B2OwnerChartSideAxis::FirstParameter,
+            CatiaOwnerChartSideAxis::FirstParameter,
         ),
         (
             0x2b,
             B2OwnerChartCarrier::B2b,
             0x09,
-            B2OwnerChartSideAxis::SecondParameter,
+            CatiaOwnerChartSideAxis::SecondParameter,
         ),
         (
             0x32,
             B2OwnerChartCarrier::A32,
             0x11,
-            B2OwnerChartSideAxis::SecondParameter,
+            CatiaOwnerChartSideAxis::SecondParameter,
         ),
     ] {
         let bytes = b2_owner_chart_stream(carrier_class);
@@ -427,12 +429,18 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             });
         assert_eq!(chart.source_index, 0);
         assert_eq!(chart.carrier, carrier);
-        assert_eq!(chart.side_axis, side_axis);
+        let native = crate::native::CatiaNative::decode(&bytes);
+        assert_eq!(
+            native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("source-closed owner chart")
+                .side_axis(),
+            side_axis
+        );
         let B2OwnerChartBridge::SupportedSurface {
             carrier_surface,
             support_surfaces,
             support_pcurves,
-            controls,
             construction_radius,
             ..
         } = chart.bridge
@@ -454,10 +462,21 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             carrier_surface.encoding,
             crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
         );
+        let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+            .expect("serialize owner chart");
+        let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
+            .expect("six bridge controls");
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius, 1.0);
         assert_eq!(
-            chart.parameter_points.map(|point| point.prefix),
+            chart.parameter_point_offsets().map(|pos| {
+                crate::families::b2::records::b2_parameter_points(&bytes)
+                    .into_iter()
+                    .find(|point| point.pos == pos)
+                    .expect("chart selector record")
+                    .prefix
+                    .as_u8()
+            }),
             [0x05, 0x09, 0x0d, 0x11]
         );
 
@@ -501,7 +520,14 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
             });
         assert_eq!(chart.carrier, carrier);
         assert_eq!(
-            chart.parameter_points.map(|point| point.prefix),
+            chart.parameter_point_offsets().map(|pos| {
+                crate::families::b2::records::b2_parameter_points(&bytes)
+                    .into_iter()
+                    .find(|point| point.pos == pos)
+                    .expect("chart selector record")
+                    .prefix
+                    .as_u8()
+            }),
             [0x05, 0x09, 0x0d, 0x11]
         );
     }
@@ -516,19 +542,21 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
     let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
         .try_into()
         .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
-    let B2OwnerChartBridge::Extended {
-        references,
-        controls,
-        terminal_controls,
-        ..
-    } = chart.bridge
-    else {
+    let B2OwnerChartBridge::Extended { references, .. } = chart.bridge else {
         panic!("eight-reference extended bridge")
     };
     assert_eq!(
         references.map(|reference| reference.value),
         [1, 100, 0, 101, 1, 2, 3, 4]
     );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+        .expect("serialize extended owner chart");
+    let controls: [u8; 4] = serde_json::from_value(wire["bridge"]["controls"].clone())
+        .expect("four extended bridge controls");
+    let terminal_controls: [u8; 2] =
+        serde_json::from_value(wire["bridge"]["terminal_controls"].clone())
+            .expect("two extended bridge terminal controls");
     assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
     assert_eq!(terminal_controls, [0x01, 0x05]);
 }
@@ -605,33 +633,34 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
     assert_eq!(
         records
             .iter()
-            .map(|record| record.class)
+            .map(|record| u8::from(record.class))
             .collect::<Vec<_>>(),
         [0x5b, 0x5c, 0x5b]
     );
     assert_eq!(
         records
             .iter()
-            .map(|record| record.width)
+            .map(|record| u8::from(record.frame.width))
             .collect::<Vec<_>>(),
         [1, 2, 3]
     );
     assert_eq!(
-        records.iter().map(|record| record.flag).collect::<Vec<_>>(),
+        records
+            .iter()
+            .map(|record| u8::from(record.frame.flag))
+            .collect::<Vec<_>>(),
         [0x13, 0x03, 0x83]
     );
-    assert!(records.iter().all(|record| {
-        record.source_index == 0
-            && record.source_offset == record.pos
-            && record.byte_len == 4 + usize::from(record.width) + record.payload.len()
-    }));
+    assert!(records
+        .iter()
+        .all(|record| { record.source_index == 0 && record.source_offset == record.frame.pos }));
 
     let mut invalid_flag = bytes;
     invalid_flag[1] = 0x04;
     assert_eq!(
         crate::families::b2::records::b2_class5b5c_records(&invalid_flag)
             .iter()
-            .map(|record| record.class)
+            .map(|record| u8::from(record.class))
             .collect::<Vec<_>>(),
         [0x5c, 0x5b]
     );
@@ -837,8 +866,8 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
     let uses = crate::families::b2::records::b2_use_metadata(&bytes);
     assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
     assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
-    assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
-    assert!(uses[0].references.is_none());
+    assert_eq!(uses[0].sense(), Some(B2UseSense::Sense88));
+    assert!(uses[0].references().is_none());
     assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
 }
 
@@ -912,7 +941,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         let records = crate::families::b2::records::b2_revolutions(&stream);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].pos, 0);
-        assert_eq!(records[0].reference_token, reference_token);
+        assert_eq!(u8::from(records[0].reference_token), reference_token);
         assert_eq!(records[0].profile_allocation_id, 0x1234);
         assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
         assert_eq!(records[0].direction_x, [1.0, 0.0, 0.0]);
@@ -1240,11 +1269,11 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
         "class 5b/5c control records",
         crate::families::b2::records::b2_class5b5c_records(&bytes)
             .into_iter()
-            .map(|record| record.pos)
+            .map(|record| record.frame.pos)
             .collect(),
         crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
             .into_iter()
-            .map(|record| record.pos)
+            .map(|record| record.frame.pos)
             .collect(),
     );
 
@@ -1336,25 +1365,6 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
 
     let bytes = b2_construction_use_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let construction_signature = |record: &crate::families::b2::records::B2ConstructionUse| {
-        (
-            record.pos,
-            record.support_id,
-            record.distance,
-            record.kind,
-            record.domain,
-        )
-    };
-    assert_eq!(
-        crate::families::b2::records::b2_construction_uses(&bytes)
-            .iter()
-            .map(construction_signature)
-            .collect::<Vec<_>>(),
-        crate::families::b2::records::b2_construction_uses_from_records(&bytes, &records)
-            .iter()
-            .map(construction_signature)
-            .collect::<Vec<_>>()
-    );
     let offset_signature = |record: &crate::families::b2::records::B2OffsetSupport| {
         (
             record.pos,
@@ -1487,16 +1497,25 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
 fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
     let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
-    let SurfaceGeometry::Nurbs(surface) = &mut carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
-    for knots in [&mut surface.u_knots, &mut surface.v_knots] {
-        let lower = knots[0];
-        let span = knots.last().copied().expect("nonempty knots") - lower;
-        for knot in knots {
-            *knot = (*knot - lower) / span * tiny;
-        }
-    }
+    let surface = &mut carriers[0].geometry;
+    surface
+        .edit_u_knots(|knots| {
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        })
+        .unwrap();
+    surface
+        .edit_v_knots(|knots| {
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        })
+        .unwrap();
     let exact = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 1,
@@ -1596,7 +1615,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
     assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
-    match &cylinders[0].geometry {
+    match cylinders[0].surface_geometry() {
         SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -1605,7 +1624,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         } => {
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
-            assert_eq!(*radius, 2.0);
+            assert_eq!(radius, 2.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
@@ -1621,7 +1640,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     large[54..62].copy_from_slice(&radius.to_le_bytes());
     large[70..78].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
     assert!(matches!(
-        crate::families::b2::records::b2_cylinders(&large)[0].geometry,
+        crate::families::b2::records::b2_cylinders(&large)[0].surface_geometry(),
         SurfaceGeometry::Cylinder {
             radius: 2_000_000.0,
             ..
@@ -1665,9 +1684,12 @@ fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
 fn consolidated_cylinder_parser_reads_width2_frame() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x5a);
     assert!(matches!(
-        cylinders[0].geometry,
+        cylinders[0].layout,
+        crate::families::b2::records::B2CylinderLayout::Full5a { .. }
+    ));
+    assert!(matches!(
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Cylinder { .. }
     ));
 }
@@ -1692,9 +1714,12 @@ fn consolidated_frame_width_and_flag_are_independent() {
 fn b2_cylinder_parser_reads_implicit_axis_layout() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_implicit_axis_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x52);
     assert!(matches!(
-        cylinders[0].geometry,
+        cylinders[0].layout,
+        crate::families::b2::records::B2CylinderLayout::Full52
+    ));
+    assert!(matches!(
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Cylinder { axis, .. } if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
     ));
 
@@ -1707,9 +1732,14 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_range_origin_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x62);
     assert!(matches!(
-        cylinders[0].geometry,
+        cylinders[0].layout,
+        crate::families::b2::records::B2CylinderLayout::RangeOrigin {
+            stored_vector: [0.0, 1.0],
+        }
+    ));
+    assert!(matches!(
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Cylinder {
             axis,
             ref_direction,
@@ -1717,9 +1747,8 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
         } if [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
             && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
     ));
-    assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
     assert_eq!(
-        cylinders[0].range_origin.map(f64::to_bits),
+        cylinders[0].range_origin().map(f64::to_bits),
         Some(((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits())
     );
 
@@ -1801,12 +1830,6 @@ fn b2_cone_parser_rejects_a_left_handed_or_nonfinite_payload() {
 
 #[test]
 fn b2_construction_use_parser_reorders_offset_domain() {
-    let uses = crate::families::b2::records::b2_construction_uses(&b2_construction_use_stream());
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].support_id, 0x1234);
-    assert_eq!(uses[0].distance, -2.0);
-    assert_eq!(uses[0].kind, 0x01);
-    assert_eq!(uses[0].domain, Some([0.0, -1.0, 4.0, 3.0]));
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_construction_use_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
@@ -1822,12 +1845,6 @@ fn b2_offset_support_parser_rejects_nonincreasing_domains() {
 
     let mut construction = b2_construction_use_stream();
     construction[26..34].copy_from_slice(&(-1.0f64).to_le_bytes());
-    let uses = crate::families::b2::records::b2_construction_uses(&construction);
-    let [use_record] = uses.as_slice() else {
-        panic!("one construction-use record");
-    };
-    assert_eq!(use_record.kind, 0x01);
-    assert_eq!(use_record.domain, None);
     assert!(crate::families::b2::records::b2_offset_supports(&construction).is_empty());
 }
 
@@ -1856,9 +1873,6 @@ fn b2_offset_support_parser_ignores_other_construction_kinds() {
     let mut record = b2_construction_use_stream();
     record[17] = 0x19;
 
-    let uses = crate::families::b2::records::b2_construction_uses(&record);
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].kind, 0x19);
     assert!(crate::families::b2::records::b2_offset_supports(&record).is_empty());
 }
 
@@ -1900,15 +1914,12 @@ fn b2_nurbs_curve_parser_preserves_asymmetric_weights_in_source_order() {
     let [curve] = curves.as_slice() else {
         panic!("one rational curve");
     };
-    assert_eq!(curve.geometry.degree, 3);
-    assert_eq!(curve.geometry.control_points.len(), 4);
-    assert_eq!(
-        curve.geometry.weights.as_deref(),
-        Some(&[1.0, 0.72, 1.31, 0.93][..])
-    );
-    assert_eq!(curve.geometry.knots.len(), 8);
-    assert_eq!(curve.geometry.knots[..4], [0.0; 4]);
-    assert_eq!(curve.geometry.knots[4..], [41.693_759_535_8; 4]);
+    assert_eq!(curve.geometry.degree(), 3);
+    assert_eq!(curve.geometry.control_points().len(), 4);
+    assert_eq!(curve.geometry.weights(), Some(&[1.0, 0.72, 1.31, 0.93][..]));
+    assert_eq!(curve.geometry.knots().len(), 8);
+    assert_eq!(curve.geometry.knots()[..4], [0.0; 4]);
+    assert_eq!(curve.geometry.knots()[4..], [41.693_759_535_8; 4]);
 }
 
 #[test]

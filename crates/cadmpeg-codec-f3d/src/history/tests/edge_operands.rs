@@ -12,14 +12,14 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
     };
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        "Fillet",
+        crate::records::feature::DesignFeatureKind::Fillet,
         10,
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    let mut operand: crate::records::DesignEdgeOperand =
+    let mut operand: crate::records::topology::DesignEdgeOperand =
         serde_json::from_value(serde_json::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,
@@ -58,8 +58,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(topology),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition,
     };
     let previous = state(
@@ -91,8 +90,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![previous, current],

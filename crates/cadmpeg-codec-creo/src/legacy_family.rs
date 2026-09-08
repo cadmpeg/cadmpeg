@@ -34,16 +34,16 @@ pub(crate) struct FamilyTable {
     /// Optional root generic-name field.
     pub(crate) generic_name: Option<legacy::StringValue>,
     /// Ordered table-column descriptors.
+    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) items: Vec<FamilyTableItem>,
     /// Ordered instance rows.
+    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) instances: Vec<FamilyTableInstance>,
 }
 
 /// One ordered family-table column descriptor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct FamilyTableItem {
-    /// Zero-based position in the source `items` array.
-    pub(crate) ordinal: usize,
     /// Legacy item object identity.
     pub(crate) source_object_id: String,
     /// Source offset of the item object row.
@@ -61,8 +61,6 @@ pub(crate) struct FamilyTableItem {
 /// One ordered family-table instance row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct FamilyTableInstance {
-    /// Zero-based position in the source `instances` array.
-    pub(crate) ordinal: usize,
     /// Legacy instance-row object identity.
     pub(crate) source_object_id: String,
     /// Source offset of the instance object row.
@@ -74,21 +72,18 @@ pub(crate) struct FamilyTableInstance {
     /// Direct model object referenced by the instance row.
     pub(crate) model_object_id: String,
     /// Values aligned by ordinal with [`FamilyTable::items`].
+    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) values: Vec<FamilyTableValue>,
 }
 
 /// One typed family-table cell.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableValue {
-    /// Zero-based position in the source `values` array.
-    pub(crate) ordinal: usize,
     /// Legacy value-row object identity.
     pub(crate) source_object_id: String,
     /// Source offset of the typed value field.
     pub(crate) offset: usize,
-    /// Stored value type code.
-    pub(crate) type_code: i32,
-    /// Typed value payload selected by `type_code`.
+    /// Typed value payload.
     pub(crate) value: FamilyTableValuePayload,
 }
 
@@ -111,6 +106,47 @@ pub(crate) enum FamilyTableValuePayload {
         /// Exact source integer value.
         value: i32,
     },
+}
+
+impl FamilyTableValuePayload {
+    pub(crate) fn type_code(&self) -> i32 {
+        match self {
+            Self::Real { .. } => 50,
+            Self::String { .. } => 51,
+            Self::Integer { .. } => 52,
+        }
+    }
+}
+
+impl Serialize for FamilyTableValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut record = serializer.serialize_struct("FamilyTableValue", 4)?;
+        record.serialize_field("source_object_id", &self.source_object_id)?;
+        record.serialize_field("offset", &self.offset)?;
+        record.serialize_field("type_code", &self.value.type_code())?;
+        record.serialize_field("value", &self.value)?;
+        record.end()
+    }
+}
+
+fn serialize_ordered<T: Serialize, S: serde::Serializer>(
+    rows: &[T],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    #[derive(Serialize)]
+    struct OrderedRow<'a, T> {
+        ordinal: usize,
+        #[serde(flatten)]
+        row: &'a T,
+    }
+
+    serializer.collect_seq(
+        rows.iter()
+            .enumerate()
+            .map(|(ordinal, row)| OrderedRow { ordinal, row }),
+    )
 }
 
 struct Index<'a> {
@@ -213,16 +249,11 @@ fn array_elements<'a>(
     let ObjectPayload::Array {
         dimensions,
         elements,
-        complete,
     } = &array.payload
     else {
         return None;
     };
-    if !complete || dimensions.len() != 1 {
-        return None;
-    }
-    let dimension = usize::try_from(*dimensions.first()?).ok()?;
-    if dimension != elements.len() {
+    if !array.payload.is_complete() || dimensions.len() != 1 {
         return None;
     }
     elements
@@ -370,13 +401,11 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
 
     let items = item_rows
         .into_iter()
-        .enumerate()
-        .map(|(ordinal, item)| {
+        .map(|item| {
             if !matches!(item.payload, ObjectPayload::Inline) {
                 return None;
             }
             Some(FamilyTableItem {
-                ordinal,
                 source_object_id: item.id.clone(),
                 offset: item.offset,
                 item_id: optional_integer(&index, &item.id, "id").ok()??,
@@ -390,8 +419,7 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
     let mut instance_names = BTreeSet::new();
     let instances = instance_rows
         .into_iter()
-        .enumerate()
-        .map(|(ordinal, instance)| {
+        .map(|instance| {
             if !matches!(instance.payload, ObjectPayload::Arrow) {
                 return None;
             }
@@ -413,24 +441,20 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
             }
             let values = value_rows
                 .into_iter()
-                .enumerate()
-                .map(|(value_ordinal, value_row)| {
+                .map(|value_row| {
                     if !matches!(value_row.payload, ObjectPayload::Inline) {
                         return None;
                     }
                     let type_code = optional_integer(&index, &value_row.id, "type").ok()??;
                     let (offset, value) = typed_value(&index, value_row, type_code)?;
                     Some(FamilyTableValue {
-                        ordinal: value_ordinal,
                         source_object_id: value_row.id.clone(),
                         offset,
-                        type_code,
                         value,
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(FamilyTableInstance {
-                ordinal,
                 source_object_id: instance.id.clone(),
                 offset: instance.offset,
                 name,
@@ -542,7 +566,6 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![item.to_string()],
-                        complete: true,
                     },
                     3,
                 ),
@@ -560,7 +583,6 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![instance.to_string()],
-                        complete: true,
                     },
                     5,
                 ),
@@ -579,7 +601,6 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![value.to_string()],
-                        complete: true,
                     },
                     8,
                 ),
@@ -612,8 +633,9 @@ mod tests {
         let table = parse(&complete_table()).expect("complete family table");
         assert_eq!(table.items[0].item_id, 17);
         assert_eq!(table.instances[0].name, "SMALL");
-        assert_eq!(table.instances[0].values[0].ordinal, 0);
-        assert_eq!(table.instances[0].values[0].type_code, 50);
+        let wire = serde_json::to_value(&table).expect("serialized family table");
+        assert_eq!(wire["instances"][0]["values"][0]["ordinal"], 0);
+        assert_eq!(table.instances[0].values[0].value.type_code(), 50);
         assert!(matches!(
             table.instances[0].values[0].value,
             FamilyTableValuePayload::Real { .. }

@@ -19,9 +19,10 @@ fn semantic_writer_round_trips_typed_shell() {
         "Contents/Keywords",
         br#"<Keywords><Shell Name="Thin" Type="Shell" id="14" RemovedFaces="face:4" Outward="false"><Dimension Name="Thickness">0.08in</Dimension></Shell></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Shell {
@@ -49,9 +50,12 @@ fn semantic_writer_round_trips_typed_shell() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -79,9 +83,10 @@ fn semantic_writer_round_trips_typed_thicken() {
         "Contents/Keywords",
         br#"<Keywords><Thicken Name="Wall" Type="Thicken" id="15" Faces="face:4" BothSides="false" Reverse="true"><Dimension Name="Thickness">0.08in</Dimension></Thicken></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Thicken {
@@ -107,9 +112,12 @@ fn semantic_writer_round_trips_typed_thicken() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -145,9 +153,10 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moThicken_c", "Wall", 15)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Thicken {
@@ -172,9 +181,12 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -196,7 +208,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 #[test]
 fn semantic_writer_round_trips_typed_scale() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter, ScaleFactors};
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -209,20 +221,16 @@ fn semantic_writer_round_trips_typed_scale() {
             <Scale Name="Reference" Type="Scale" id="19" Bodies="body:1" CenterType="CoordinateSystem" CenterRef="csys:4"><Dimension Name="Factor">1.3</Dimension></Scale>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(Point3 { x: 1.0, y: 2.0, z: 3.0 })),
-            factors: ScaleFactors {
-                uniform: Some(2.0),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Uniform(2.0),
         } if selection == "body:1"
     ));
     assert!(matches!(
@@ -259,18 +267,16 @@ fn semantic_writer_round_trips_typed_scale() {
         };
         *bodies = BodySelection::Native("body:2,body:3".into());
         *center = Some(ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0)));
-        *factors = ScaleFactors {
-            uniform: None,
-            x: Some(1.5),
-            y: Some(2.0),
-            z: Some(2.5),
-        };
+        *factors = ScaleFactors::PerAxis(Vector3::new(1.5, 2.0, 2.5));
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -296,12 +302,11 @@ fn semantic_writer_round_trips_typed_scale() {
                 y: 5.0,
                 z: 6.0
             })),
-            factors: ScaleFactors {
-                uniform: None,
-                x: Some(1.5),
-                y: Some(2.0),
-                z: Some(2.5),
-            },
+            factors: ScaleFactors::PerAxis(Vector3 {
+                x: 1.5,
+                y: 2.0,
+                z: 2.5,
+            }),
             ..
         }
     ));
@@ -341,20 +346,16 @@ fn semantic_writer_retains_partial_native_scale_construction() {
             <Scale Name="Partial axes" Type="Scale" id="72" CenterType="Centroid"><Dimension Name="Factor">0</Dimension><Dimension Name="ScaleX">1.5</Dimension><Dimension Name="ScaleY">NaN</Dimension><Dimension Name="ScaleZ">2.5</Dimension></Scale>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(bodies),
             center: None,
-            factors: ScaleFactors {
-                uniform: Some(2.0),
-                x: Some(3.0),
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Unresolved,
         } if bodies == "body:1"
     ));
     assert!(matches!(
@@ -362,25 +363,19 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Unresolved,
             center: Some(ScaleCenter::Centroid),
-            factors: ScaleFactors {
-                uniform: None,
-                x: Some(1.5),
-                y: None,
-                z: Some(2.5),
-            },
+            factors: ScaleFactors::Unresolved,
         }
     ));
 
     for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = SldprtCodec
-            .write_preserved_with_source_fidelity(
-                &detached,
-                decoded.source_fidelity(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
+        let error = crate::test_support::plan_inherited_write(
+            &detached,
+            decoded.source_fidelity(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
         assert!(
             error.to_string().contains("unresolved scale construction"),
             "{error}"
@@ -391,9 +386,12 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         feature.name = Some(format!("Renamed scale {}", index + 1));
     }
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -410,7 +408,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
 #[test]
 fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
     use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination,
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
     };
     use cadmpeg_ir::math::Vector3;
 
@@ -420,15 +418,16 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude" id="9" EndCondition="Blind"><Dimension Name="Depth">0mm</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -443,13 +442,19 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         else {
             panic!("typed extrusion");
         };
-        *direction = ExtrudeDirection::Explicit(Vector3::new(0.0, 1.0, 0.0));
+        *direction = ExtrudeDirection::Explicit {
+            vector: Vector3::new(0.0, 1.0, 0.0),
+            source: None,
+        };
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -462,7 +467,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -473,7 +478,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
 
 #[test]
 fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -481,15 +486,16 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude" id="9" EndCondition="Unrecognized" Direction="0,0,1" Face="face:1" Vertex="vertex:2"><Dimension Name="Depth">4mm</Dimension><Dimension Name="Depth2">6mm</Dimension><Dimension Name="Draft">3deg</Dimension></Extrusion></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -504,9 +510,12 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
     decoded.ir_mut().model.features[0].name = Some("Renamed extrusion".into());
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -535,17 +544,21 @@ fn semantic_writer_round_trips_typed_draft() {
         "Contents/Keywords",
         br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
-            neutral_plane: FaceSelection::Native(neutral_plane),
-            parting_tool: None,
-            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(neutral_plane),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                    plane: None,
+                }),
+            },
             angle: Some(Angle(value)),
             outward: Some(false),
         } if faces == "face:1,face:2"
@@ -557,8 +570,11 @@ fn semantic_writer_round_trips_typed_draft() {
         let mut ir_edit = decoded.ir_mut();
         let FeatureDefinition::Draft {
             faces,
-            neutral_plane,
-            pull_direction,
+            anchor:
+                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: neutral_plane,
+                    pull: Some(pull),
+                },
             angle,
             outward,
             ..
@@ -566,7 +582,7 @@ fn semantic_writer_round_trips_typed_draft() {
         else {
             panic!("typed draft");
         };
-        *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
+        pull.direction = Vector3::new(0.0, 1.0, 0.0);
         *angle = Some(Angle(7f64.to_radians()));
         *outward = Some(true);
         *faces = FaceSelection::Native("face:4".into());
@@ -574,9 +590,12 @@ fn semantic_writer_round_trips_typed_draft() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -592,11 +611,17 @@ fn semantic_writer_round_trips_typed_draft() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::Draft {
-            pull_direction: Some(Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0
-            }),
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3 {
+                        x: 0.0,
+                        y: 1.0,
+                        z: 0.0
+                    },
+                    ..
+                }),
+                ..
+            },
             outward: Some(true),
             ..
         }
@@ -614,17 +639,21 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         "Contents/Keywords",
         br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
-            neutral_plane: FaceSelection::Native(neutral_plane),
-            parting_tool: None,
-            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(neutral_plane),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                    plane: None,
+                }),
+            },
             angle: None,
             outward: None,
         } if faces == "face:1,face:2" && neutral_plane == "face:3"
@@ -640,9 +669,12 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -679,9 +711,10 @@ fn semantic_writer_preserves_absent_feature_selections() {
             <Draft Name="Taper" Type="Draft" id="33" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Chamfer {
@@ -702,7 +735,10 @@ fn semantic_writer_preserves_absent_feature_selections() {
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: FaceSelection::Unresolved,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Unresolved,
+                ..
+            },
             ..
         }
     ));
@@ -729,9 +765,12 @@ fn semantic_writer_preserves_absent_feature_selections() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -750,7 +789,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
 
 #[test]
 fn semantic_writer_round_trips_typed_combine() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -758,15 +797,16 @@ fn semantic_writer_round_trips_typed_combine() {
         "Contents/Keywords",
         br#"<Keywords><Combine Name="Union" Type="Combine" id="19" Target="body:1" Tools="body:2,body:3" Operation="Join"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
-            op: BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         } if target == "body:1" && tools == "body:2,body:3"
     ));
@@ -781,13 +821,16 @@ fn semantic_writer_round_trips_typed_combine() {
         };
         *target = BodySelection::Native("body:4".into());
         *tools = BodySelection::Native("body:5,body:6".into());
-        *op = BooleanOp::Intersect;
+        *op = cadmpeg_ir::features::BooleanKind::Intersect;
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -800,7 +843,7 @@ fn semantic_writer_round_trips_typed_combine() {
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
-            op: BooleanOp::Intersect,
+            op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
         } if target == "body:4" && tools == "body:5,body:6"
     ));
@@ -819,9 +862,10 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
             <KeepBody Name="Isolate" Type="KeepBody" id="21" Bodies="body:1"/>
         </Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
@@ -854,9 +898,12 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -891,9 +938,10 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Body-Delete/Keep 1" Type="Body-Delete/Keep " id="20"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
@@ -904,16 +952,16 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
 
     decoded.ir_mut().model.features[0].name = Some("Retained sparse operation".into());
     let mut sparse_encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut sparse_encoded,
-        )
-        .unwrap();
-    let mut sparse = SldprtCodec
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut sparse_encoded,
+    )
+    .unwrap();
+    let sparse = SldprtCodec
         .decode(&mut Cursor::new(sparse_encoded), &DecodeOptions::default())
         .unwrap();
+    let mut sparse = cadmpeg_test_support::EditableDecodeResult::from(sparse);
     let native = &sldprt_native(sparse.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Body-Delete/Keep ");
     assert!(!native.properties.contains_key("Bodies"));
@@ -937,13 +985,12 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
         *mode = BodyRetentionMode::KeepSelected;
     }
     let mut resolved_encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            sparse.ir(),
-            sparse.source_fidelity(),
-            &mut resolved_encoded,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        sparse.ir(),
+        sparse.source_fidelity(),
+        &mut resolved_encoded,
+    )
+    .unwrap();
     let resolved = SldprtCodec
         .decode(
             &mut Cursor::new(resolved_encoded),
@@ -973,9 +1020,10 @@ fn semantic_writer_round_trips_typed_delete_face() {
         "Contents/Keywords",
         br#"<Keywords><DeleteFace Name="Remove Boss" Type="DeleteFace" id="20" Faces="face:4,face:5" Heal="true"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::DeleteFace {
@@ -996,9 +1044,12 @@ fn semantic_writer_round_trips_typed_delete_face() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1024,9 +1075,10 @@ fn semantic_writer_round_trips_typed_replace_face() {
         "Contents/Keywords",
         br#"<Keywords><ReplaceFace Name="Patch" Type="ReplaceFace" id="21" Faces="face:4,face:5" ReplacementFaces="face:8"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::ReplaceFace {
@@ -1049,9 +1101,12 @@ fn semantic_writer_round_trips_typed_replace_face() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1078,9 +1133,10 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         "Contents/Keywords",
         br#"<Keywords><MoveFace Name="Offset" Type="MoveFace" id="21" Faces="face:1" Mode="Offset"><Dimension Name="Distance">2mm</Dimension></MoveFace><MoveFace Name="Translate" Type="MoveFace" id="22" Faces="face:2" Mode="Translate" Direction="1,0,0"><Dimension Name="Distance">3mm</Dimension></MoveFace><MoveFace Name="Rotate" Type="MoveFace" id="23" Faces="face:3" Mode="Rotate" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1"><Dimension Name="Angle">15deg</Dimension></MoveFace></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::MoveFace {
@@ -1147,9 +1203,12 @@ fn semantic_writer_round_trips_all_move_face_forms() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1177,9 +1236,10 @@ fn semantic_writer_round_trips_typed_dome() {
         "Contents/Keywords",
         br#"<Keywords><Dome Name="Crown" Type="Dome" id="24" Faces="face:9" Elliptical="false" Reverse="false"><Dimension Name="Height">0.25in</Dimension></Dome></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Dome {
@@ -1208,9 +1268,12 @@ fn semantic_writer_round_trips_typed_dome() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1240,9 +1303,10 @@ fn semantic_writer_retains_partial_native_dome_construction() {
         "Contents/Keywords",
         br#"<Keywords><Dome Name="Partial dome" Type="Dome" id="25" Faces="face:12" Elliptical="true" Reverse="invalid"><Dimension Name="Height">NaNmm</Dimension></Dome></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Dome {
@@ -1255,16 +1319,22 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        &detached,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("unresolved dome construction"));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed dome".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1276,7 +1346,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
 #[test]
 fn semantic_writer_round_trips_principal_reference_planes() {
-    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
+    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane, UnresolvedFamily};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1293,9 +1363,10 @@ fn semantic_writer_round_trips_principal_reference_planes() {
             ("moRefPlane_c", "Rechts", 4),
         ]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for (feature, plane) in decoded.ir().model.features[..3].iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,
@@ -1308,17 +1379,22 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     }
     assert!(matches!(
         &decoded.ir().model.features[3].definition,
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     ));
     assert!(matches!(
         &decoded.ir().model.features[4].definition,
-        FeatureDefinition::Native { kind, .. } if kind == "Ebene"
+        FeatureDefinition::Native { kind, .. } if kind.as_str() == "Ebene"
     ));
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1347,13 +1423,12 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     decoded.ir_mut().model.features[0].definition = FeatureDefinition::DatumPrincipalPlane {
         plane: PrincipalPlane::Right,
     };
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("principal-plane role"));
 }
 
@@ -1382,9 +1457,12 @@ fn semantic_writer_round_trips_legacy_principal_plane_triplet() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1402,9 +1480,10 @@ fn semantic_writer_round_trips_typed_reference_plane() {
         "Contents/Keywords",
         br#"<Keywords><ReferencePlane Name="Datum A" Type="ReferencePlane" id="25" Origin="1mm,2mm,3mm" Normal="0,0,1" UAxis="1,0,0"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumPlane {
@@ -1442,9 +1521,12 @@ fn semantic_writer_round_trips_typed_reference_plane() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1489,9 +1571,10 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[("moRefPlane_c", "Plano2", 549)]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -1515,9 +1598,12 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1546,9 +1632,10 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
         "Contents/Keywords",
         br#"<Keywords><ReferenceAxis Name="Axis A" Type="ReferenceAxis" id="26" Origin="1mm,2mm,3mm" Direction="0,0,1"/><ReferencePoint Name="Point A" Type="ReferencePoint" id="27" Position="4mm,5mm,6mm"/></Keywords>"#,
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumAxis {
@@ -1594,9 +1681,12 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

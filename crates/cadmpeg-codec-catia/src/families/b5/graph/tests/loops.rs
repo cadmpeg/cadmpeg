@@ -15,18 +15,21 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
     ];
     assert_eq!(
         loop_metadata(&base, 2),
-        Some(B5LoopMetadata {
-            framing_controls: [0x05, 0x05],
-            edge_controls: vec![[1, -1, 1], [-1, 1, -1]],
-            extension: None,
-        })
+        Some((
+            B5LoopMetadata {
+                framing_controls: [0x05, 0x05],
+                extension: None,
+            },
+            vec![[1, -1, 1], [-1, 1, -1]],
+        ))
     );
 
     for metadata_control in [0x05, 0x09, 0x21, 0x41, 0x71] {
         let extended = extended_loop_metadata(metadata_control);
-        let metadata = loop_metadata(&extended, 1).expect("complete extended metadata");
+        let (metadata, edge_controls) =
+            loop_metadata(&extended, 1).expect("complete extended metadata");
         assert_eq!(metadata.framing_controls, [0x03, 0x05]);
-        assert_eq!(metadata.edge_controls, [[1, -1, 1]]);
+        assert_eq!(edge_controls, [[1, -1, 1]]);
         assert_eq!(
             metadata.extension,
             Some(B5LoopMetadataExtension {
@@ -41,9 +44,10 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         0x05, 0x03, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0xff, 0xff,
         0x01,
     ];
-    let metadata = loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
+    let (metadata, edge_controls) =
+        loop_metadata(&alternate_framing_control, 2).expect("alternate framing control");
     assert_eq!(metadata.framing_controls, [0x05, 0x03]);
-    assert_eq!(metadata.edge_controls, [[1, -1, 1], [-1, 1, -1]]);
+    assert_eq!(edge_controls, [[1, -1, 1], [-1, 1, -1]]);
     assert_eq!(metadata.extension, None);
 }
 
@@ -59,9 +63,10 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
             0x01,
         ],
     };
-    let (references, metadata) = loop_references_and_metadata(&record).expect("exact loop payload");
+    let (references, _, edge_controls) =
+        loop_references_and_metadata(&record).expect("exact loop payload");
     assert_eq!(references, [9, 10, 11]);
-    assert_eq!(metadata.edge_controls, [[1, -1, 1]]);
+    assert_eq!(edge_controls, [[1, -1, 1]]);
 
     let mut mismatched = record.clone();
     mismatched.payload[4] = 0x82;
@@ -116,9 +121,8 @@ fn pcurve_candidate_merge_collapses_repeats_and_permanently_rejects_conflicts() 
 fn loop_rejects_a_pcurve_bound_to_another_surface() {
     let loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![2],
-        edges: vec![3],
-        metadata: test_loop_metadata(1),
+        members: test_loop_members(&[2], &[3]),
+        metadata: test_loop_metadata(),
         surface: 10,
     };
     let edge = B5Record {
@@ -580,19 +584,22 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
     )]);
     let resolved = HashMap::from([(
         1,
-        Some(B5Surface::Nurbs(NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_count: 2,
-            v_count: 2,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        })),
+        Some(B5Surface::Nurbs(
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid bilinear NURBS"),
+        )),
     )]);
     assert!(
         resolve_targeted_surface(1, &HashMap::new(), &HashMap::new(), &resolved, &rolling,)
@@ -704,9 +711,8 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
         20,
         B5Loop {
             object_id: 20,
-            pcurves: Vec::new(),
-            edges: Vec::new(),
-            metadata: test_loop_metadata(0),
+            members: Vec::new(),
+            metadata: test_loop_metadata(),
             surface: 10,
         },
     )]);
@@ -724,9 +730,8 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
 fn one_edge_loop_closes_on_one_native_vertex() {
     let loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![2],
-        edges: vec![3],
-        metadata: test_loop_metadata(1),
+        members: test_loop_members(&[2], &[3]),
+        metadata: test_loop_metadata(),
         surface: 4,
     };
 
@@ -738,16 +743,15 @@ fn one_edge_loop_closes_on_one_native_vertex() {
 fn loop_chain_requires_each_source_native_edge_sense() {
     let mut loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![4, 5, 6],
-        edges: vec![1, 2, 3],
-        metadata: test_loop_metadata(3),
+        members: test_loop_members(&[4, 5, 6], &[1, 2, 3]),
+        metadata: test_loop_metadata(),
         surface: 7,
     };
-    loop_.metadata.edge_controls[1][0] = -1;
+    loop_.members[1].controls[0] = -1;
     let edge_vertices = BTreeMap::from([(1, [0, 1]), (2, [2, 1]), (3, [2, 0])]);
     assert!(loop_chain_closes(&loop_, &edge_vertices));
 
-    loop_.metadata.edge_controls[1][0] = 1;
+    loop_.members[1].controls[0] = 1;
     assert!(!loop_chain_closes(&loop_, &edge_vertices));
 }
 
@@ -755,9 +759,8 @@ fn loop_chain_requires_each_source_native_edge_sense() {
 fn opaque_pcurve_occurrences_defer_endpoint_binding_to_native_edges() {
     let loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![2],
-        edges: vec![3],
-        metadata: test_loop_metadata(1),
+        members: test_loop_members(&[2], &[3]),
+        metadata: test_loop_metadata(),
         surface: 4,
     };
     let pcurves = BTreeMap::new();
@@ -802,9 +805,8 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
     };
     let loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![2],
-        edges: vec![3],
-        metadata: test_loop_metadata(1),
+        members: test_loop_members(&[2], &[3]),
+        metadata: test_loop_metadata(),
         surface: 4,
     };
     let surface = B5Surface::Sphere {
@@ -853,18 +855,22 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
             20,
             B5ParameterIncidence {
                 object_id: 20,
-                curves: vec![2],
-                parameters: vec![trimmed_start],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: trimmed_start,
+                    control: 1,
+                }],
             },
         ),
         (
             21,
             B5ParameterIncidence {
                 object_id: 21,
-                curves: vec![2],
-                parameters: vec![trimmed_end],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: trimmed_end,
+                    control: 1,
+                }],
             },
         ),
     ]);
@@ -944,9 +950,8 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
     };
     let loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![2],
-        edges: vec![3],
-        metadata: test_loop_metadata(1),
+        members: test_loop_members(&[2], &[3]),
+        metadata: test_loop_metadata(),
         surface: 4,
     };
 
@@ -960,8 +965,19 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
     );
 
     assert_eq!(bound.edges, BTreeMap::from([(3, [0, 1])]));
-    assert_eq!(bound.refs, vec![10, 11]);
-    assert_eq!(bound.points, endpoints);
+    assert_eq!(
+        bound.vertices,
+        vec![
+            B5LogicalVertex {
+                object_id: 10,
+                point: endpoints[0],
+            },
+            B5LogicalVertex {
+                object_id: 11,
+                point: endpoints[1],
+            },
+        ]
+    );
     assert!(bound.tolerances.is_empty());
 
     let mismatched = bind_native_vertices(
@@ -973,8 +989,19 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         &[],
     );
     assert_eq!(mismatched.edges, BTreeMap::from([(3, [0, 1])]));
-    assert_eq!(mismatched.refs, vec![10, 11]);
-    assert_eq!(mismatched.points, [endpoints[1], endpoints[1]]);
+    assert_eq!(
+        mismatched.vertices,
+        vec![
+            B5LogicalVertex {
+                object_id: 10,
+                point: endpoints[1],
+            },
+            B5LogicalVertex {
+                object_id: 11,
+                point: endpoints[1],
+            },
+        ]
+    );
     assert_eq!(mismatched.tolerances.len(), 1);
     assert!((mismatched.tolerances[&0] - (5.0 + 1.0e-9)).abs() < f64::EPSILON);
 }
@@ -1024,18 +1051,22 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
             20,
             B5ParameterIncidence {
                 object_id: 20,
-                curves: vec![2],
-                parameters: vec![0.25],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: 0.25,
+                    control: 1,
+                }],
             },
         ),
         (
             21,
             B5ParameterIncidence {
                 object_id: 21,
-                curves: vec![2],
-                parameters: vec![0.75],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: 0.75,
+                    control: 1,
+                }],
             },
         ),
     ]);
@@ -1051,9 +1082,8 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
     };
     let loop_ = B5Loop {
         object_id: 1,
-        pcurves: vec![2],
-        edges: vec![3],
-        metadata: test_loop_metadata(1),
+        members: test_loop_members(&[2], &[3]),
+        metadata: test_loop_metadata(),
         surface: 4,
     };
 
@@ -1196,8 +1226,15 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
     };
     assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
     let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
-    assert_eq!(incidence.curves, [2]);
-    assert_eq!(incidence.parameters, [parameter]);
+    assert_eq!(
+        incidence.lanes,
+        [B5IncidenceLane {
+            curve: 2,
+            parameter,
+            // The compact token 0x01 encodes 4 * 0 + 1.
+            control: 0,
+        }]
+    );
     assert!(
         distance_squared(
             sphere_great_circle_point(
@@ -1284,9 +1321,8 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
             1,
             B5Loop {
                 object_id: 1,
-                pcurves: vec![10],
-                edges: vec![20],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[10], &[20]),
+                metadata: test_loop_metadata(),
                 surface: 30,
             },
         ),
@@ -1294,9 +1330,8 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![11],
-                edges: vec![20],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[11], &[20]),
+                metadata: test_loop_metadata(),
                 surface: 31,
             },
         ),
@@ -1304,9 +1339,8 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
             3,
             B5Loop {
                 object_id: 3,
-                pcurves: vec![12],
-                edges: vec![21],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[12], &[21]),
+                metadata: test_loop_metadata(),
                 surface: 32,
             },
         ),

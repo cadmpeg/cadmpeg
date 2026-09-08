@@ -111,7 +111,11 @@ fn exact_class_363_operand_path(
                     .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
             )?,
         )?;
-        if !scope.reference_members.contains(&owner_record_index) {
+        if !scope
+            .reference_members
+            .values()
+            .any(|value| value == &owner_record_index)
+        {
             return None;
         }
     }
@@ -137,22 +141,26 @@ fn exact_class_363_operand_path(
         link: DesignAssemblyOperandPathLink {
             locator_reference_offset: frame.reference_offset,
             locator_record_index: frame.reference_record_index,
-            locator_class_tag: "363".into(),
+            locator_class_tag: "363".to_owned().try_into().ok()?,
             locator_byte_offset: u64::try_from(carrier_at).ok()?,
             locator_scope_reference_offset,
             wrapper_record_index: leading_identity_record_index,
             wrapper_reference_offset,
-            wrapper_class_tag: "388".into(),
+            wrapper_class_tag: "388".to_owned().try_into().ok()?,
             wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
             path_reference_offset: occurrence_guid_offset,
         },
         record_index: terminal_record_index,
-        class_tag: "386".into(),
+        class_tag: "386".to_owned().try_into().ok()?,
         byte_offset: u64::try_from(terminal_at).ok()?,
-        occurrence_guids: vec![occurrence_guid],
-        occurrence_guid_offsets: vec![occurrence_guid_offset],
-        identity_guids: vec![identity_guid],
-        identity_guid_offsets: vec![identity_guid_offset],
+        occurrence_guids: vec![crate::records::Located {
+            value: occurrence_guid,
+            offset: occurrence_guid_offset,
+        }],
+        identity_guids: vec![crate::records::Located {
+            value: identity_guid,
+            offset: identity_guid_offset,
+        }],
     })
 }
 
@@ -219,9 +227,9 @@ fn exact_class_307_joint_origin(
     }
     Some(DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: frame.reference_record_index,
-        class_tag: "307".into(),
+        class_tag: "307".to_owned().try_into().ok()?,
         byte_offset: u64::try_from(start).ok()?,
-        paired_class_tag: "264".into(),
+        paired_class_tag: "264".to_owned().try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
 }
@@ -295,7 +303,11 @@ fn exact_class_363_node_frame(
         "360",
         class_363_leading::LEN,
     )?;
-    if !scope.reference_members.contains(&leading_record_index) {
+    if !scope
+        .reference_members
+        .values()
+        .any(|value| value == &leading_record_index)
+    {
         return None;
     }
     Some((start, class_363_child::SCOPE_REFERENCE))
@@ -320,16 +332,19 @@ fn exact_class_264_record_frame(
 fn exact_class_363_identity_guids(
     bytes: &[u8],
     start: usize,
-) -> Option<(String, String, u64, u64)> {
+) -> Option<(
+    crate::records::DesignRelaxedGuidText,
+    crate::records::DesignRelaxedGuidText,
+    u64,
+    u64,
+)> {
     let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
     let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
     let (occurrence_guid, occurrence_end) = lp_utf16_bounded(bytes, occurrence_at, 36..=36)?;
     let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-    if !is_guid_relaxed(&occurrence_guid)
-        || !is_guid_relaxed(&identity_guid)
-        || occurrence_end != identity_at
-        || identity_end != identity_at.checked_add(76)?
-    {
+    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
         return None;
     }
     Some((
@@ -495,8 +510,8 @@ mod tests {
             );
             let (occurrence, identity, _, _) =
                 exact_class_363_identity_guids(&bytes, 0).expect("identity GUID prefix");
-            assert_eq!(occurrence, guid);
-            assert_eq!(identity, guid);
+            assert_eq!(occurrence.as_str(), guid);
+            assert_eq!(identity.as_str(), guid);
         }
     }
 }

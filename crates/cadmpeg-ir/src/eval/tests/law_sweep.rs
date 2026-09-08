@@ -66,32 +66,41 @@ fn cacheless_law_differential_rejects_undefined_domains() {
 
 #[test]
 fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
-    let profile_id = CurveId("profile-frame-profile".into());
-    let spine_id = CurveId("profile-frame-spine".into());
-    let surface_id = SurfaceId("profile-frame-sweep".into());
-    let construction_id = ProceduralSurfaceId("profile-frame-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let profile_id =
+        CurveId::mint("test:model:entity#profile-frame-profile").expect("valid identity");
+    let spine_id = CurveId::mint("test:model:entity#profile-frame-spine").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#profile-frame-sweep").expect("valid identity");
+    let construction_id = ProceduralSurfaceId::mint("test:model:entity#profile-frame-construction")
+        .expect("valid identity");
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Curve {
             id: spine_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ];
@@ -99,12 +108,12 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Sweep {
             profile: profile_id,
             spine: spine_id,
@@ -115,8 +124,9 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                     primary_flag: true,
                     profile_endpoints: [None, None],
                     path_endpoints: [None, None],
-                    tail_enum: 2,
-                    tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                    cache: crate::geometry::RevisionCacheForm::Parameterization(
+                        RevisionSurfaceParameterization::default(),
+                    ),
                 }),
                 layout: SweepSurfaceLayout::LawDriven {
                     mode: -2,
@@ -143,8 +153,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                         value: "VEC(2,1,1)".into(),
                     }),
                     formula_mode: 0,
-                    formula: LawFormula {
-                        name: "ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)".into(),
+                    formula: LawFormula::Named {
+                        name: crate::geometry::LawFormulaName::new(
+                            "ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)",
+                        )
+                        .unwrap(),
                         variables: vec![LawExpression::TransformVec {
                             vectors: [
                                 Vector3::new(0.0, 1.0, 0.0),
@@ -180,19 +193,24 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(partials.du, Vector3::new(0.0, -2.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
-    {
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+        panic!("fixture surface must retain its construction");
+    };
+    *cache = Some(
+        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
+            .unwrap(),
+    );
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
-        } = &mut ir.model.procedural_surfaces[0].definition
+        } = definition
         else {
             unreachable!()
         };
         let form = native.revision_form.as_mut().expect("revision sweep form");
-        form.tail_enum = 0;
-        form.tail_parameterization = None;
-    }
+        form.cache = crate::geometry::RevisionCacheForm::SolvedCache { fit_tolerance: 0.0 };
+    });
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -205,17 +223,18 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep {
             native: Some(native),
             ..
-        } = &mut ir.model.procedural_surfaces[0].definition
+        } = definition
         else {
             unreachable!()
         };
         let form = native.revision_form.as_mut().expect("revision sweep form");
-        form.tail_enum = 2;
-        form.tail_parameterization = Some(RevisionSurfaceParameterization::default());
+        form.cache = crate::geometry::RevisionCacheForm::Parameterization(
+            RevisionSurfaceParameterization::default(),
+        );
         if let SweepSurfaceLayout::LawDriven { first_law, .. } = &mut native.layout {
             **first_law = LawExpression::Text {
                 value: "unsupported-law".into(),
@@ -223,7 +242,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         } else {
             unreachable!()
         }
-    }
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).is_none());
     assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_none());

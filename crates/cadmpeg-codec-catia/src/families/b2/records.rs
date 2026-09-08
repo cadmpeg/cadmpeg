@@ -13,6 +13,7 @@ use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::families::a5a8::records::FreeformSurface;
+use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
@@ -22,7 +23,8 @@ use crate::wire::bytes::{
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
     b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
-    ConsolidatedPcurve, ConsolidatedRecord,
+    ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPcurve, ConsolidatedRawFrame,
+    ConsolidatedRecord,
 };
 
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -56,14 +58,42 @@ pub struct B2ParameterPoint {
     pub pos: usize,
     /// Exclusive end of the complete framed record.
     pub end: usize,
-    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
-    pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
-    pub prefix: u8,
+    pub prefix: B2ParameterPointPrefix,
     /// Second byte of the two-byte class-specific prefix.
     pub control: u8,
     /// Layout-specific finite scalar lane.
     pub payload: B2ParameterPointPayload,
+}
+
+/// Closed set of class-`0x18` parameter-point prefixes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2ParameterPointPrefix {
+    Sel05,
+    Sel09,
+    Sel0d,
+    Sel11,
+}
+
+impl B2ParameterPointPrefix {
+    pub(crate) fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x05 => Some(Self::Sel05),
+            0x09 => Some(Self::Sel09),
+            0x0d => Some(Self::Sel0d),
+            0x11 => Some(Self::Sel11),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn as_u8(self) -> u8 {
+        match self {
+            Self::Sel05 => 0x05,
+            Self::Sel09 => 0x09,
+            Self::Sel0d => 0x0d,
+            Self::Sel11 => 0x11,
+        }
+    }
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
@@ -91,6 +121,18 @@ pub enum B2ParameterPointPayload {
         /// Stored scalar payload.
         values: [f64; 5],
     },
+}
+
+#[cfg(test)]
+impl B2ParameterPointPayload {
+    pub(crate) const fn layout(&self) -> u8 {
+        match self {
+            Self::Scalar { .. } => 0x0a,
+            Self::Uv { .. } => 0x12,
+            Self::StationUv { .. } => 0x1a,
+            Self::FiveScalars { .. } => 0x2a,
+        }
+    }
 }
 
 /// Structurally decoded payload of a consolidated class-`0x27` plane carrier.
@@ -128,9 +170,23 @@ pub enum B2PlaneCarrierPayload {
     /// Finite scalar lane for a selector whose semantic layout is not yet
     /// established.
     ScalarLane {
+        /// Second payload byte selecting the scalar layout.
+        selector: u8,
         /// Complete selector-specific scalar lane in source order.
         values: Vec<f64>,
     },
+}
+
+#[cfg(test)]
+impl B2PlaneCarrierPayload {
+    pub(crate) const fn selector(&self) -> u8 {
+        match self {
+            Self::PointDirection2 { .. } => 0xe4,
+            Self::PointDirection3 { .. } => 0xc4,
+            Self::PointTail { .. } => 0xec,
+            Self::ScalarLane { selector, .. } => *selector,
+        }
+    }
 }
 
 /// One complete consolidated `b2/b3/b4 03 27` plane-carrier record.
@@ -141,13 +197,11 @@ pub struct B2PlaneCarrier {
     /// Exclusive end of the complete framed record.
     pub end: usize,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent frame flag.
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Width-coded frame header token.
     pub header_token: u32,
-    /// Second payload byte selecting the scalar layout.
-    pub selector: u8,
     /// Selector-specific finite scalar payload.
     pub payload: B2PlaneCarrierPayload,
 }
@@ -208,7 +262,7 @@ pub struct B2OwnerIdentityTarget {
     /// Selected class-`0x5d` or class-`0x5e` record offset.
     pub target_pos: usize,
     /// Selected record class.
-    pub target_class: u8,
+    pub target_class: crate::native::CatiaOwnerIdentityClass,
 }
 
 /// One fixed-nine identity that resolves to a closed owner-boundary edge.
@@ -220,18 +274,6 @@ pub(crate) struct B2OwnerBoundaryEdge {
     pub target_pos: usize,
     /// Resolved class-`0x5d` endpoint-record offsets, in edge order.
     pub endpoint_records: [usize; 2],
-}
-
-/// Parameter axis held constant by selectors `0x05` and `0x09` in an owner
-/// chart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2OwnerChartSideAxis {
-    /// Selectors `0x05` and `0x09` carry the lower and upper first-parameter
-    /// sides.
-    FirstParameter,
-    /// Selectors `0x05` and `0x09` carry the lower and upper second-parameter
-    /// sides.
-    SecondParameter,
 }
 
 /// Carrier production that opens a fixed owner chart.
@@ -267,8 +309,10 @@ pub enum B2OwnerChartBridge {
         support_surfaces: [B2OwnerChartBridgeReference; 2],
         /// Pcurves on the two supporting surfaces.
         support_pcurves: [B2OwnerChartBridgeReference; 2],
-        /// Six construction controls in storage order.
-        controls: [u8; 6],
+        /// Independent middle construction controls.
+        middle_controls: [CatiaOwnerChartMiddleControl; 2],
+        /// Independent terminal control.
+        terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
         construction_radius: f64,
     },
@@ -278,10 +322,6 @@ pub enum B2OwnerChartBridge {
         pos: usize,
         /// Counted allocation references in storage order.
         references: [B2OwnerChartBridgeReference; 8],
-        /// Four controls before the zero lane.
-        controls: [u8; 4],
-        /// Two terminal controls after the zero lane.
-        terminal_controls: [u8; 2],
     },
 }
 
@@ -301,10 +341,14 @@ pub struct B2OwnerChart {
     pub carrier: B2OwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub bridge: B2OwnerChartBridge,
-    /// Axis held constant by selectors `0x05` and `0x09`.
-    pub side_axis: B2OwnerChartSideAxis,
-    /// Ordered selector records `0x05`, `0x09`, `0x0d`, and `0x11`.
-    pub parameter_points: [B2ParameterPoint; 4],
+    parameter_points: [usize; 4],
+}
+
+impl B2OwnerChart {
+    /// Parameter point offsets in selector-prefix order.
+    pub fn parameter_point_offsets(&self) -> [usize; 4] {
+        self.parameter_points
+    }
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
@@ -381,24 +425,14 @@ pub struct B2Long61 {
 /// assigned until a source-closed relation establishes one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B2Class5b5cRecord {
-    /// Record byte offset.
-    pub pos: usize,
+    /// Framed record.
+    pub frame: ConsolidatedRawFrame,
     /// Zero-based bounded record-source ordinal.
     pub source_index: usize,
     /// Logical offset within the bounded record source.
     pub source_offset: usize,
-    /// Complete framed-record byte length.
-    pub byte_len: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent frame flag.
-    pub flag: u8,
-    /// Record class (`0x5b` or `0x5c`).
-    pub class: u8,
-    /// Width-coded frame header token.
-    pub header_token: u32,
-    /// Complete opaque payload in source order.
-    pub payload: Vec<u8>,
+    /// Record class.
+    pub class: crate::native::class5b5c::CatiaClass5b5c,
 }
 
 /// Target encoding of a structurally complete class-`0x5f` node.
@@ -473,6 +507,20 @@ pub enum B2UseSense {
     Sense88,
 }
 
+/// Closed payload grammar of a class-`0x06` consolidated use record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum B2UsePayload {
+    /// Compact references and a terminal sense that exhaust the payload.
+    Closed {
+        sense: B2UseSense,
+        references: Vec<u32>,
+    },
+    /// Terminal sense without a closed compact-reference lane.
+    SenseOnly(B2UseSense),
+    /// Payload that does not end in a settled sense.
+    Opaque,
+}
+
 /// Byte-level metadata from a class-`0x06` consolidated use record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B2UseMetadata {
@@ -480,12 +528,24 @@ pub struct B2UseMetadata {
     pub pos: usize,
     /// Complete payload bytes.
     pub payload: Vec<u8>,
-    /// Compact persistent references following the `0x80+n` count and
-    /// preceding a settled terminal sense. `None` when the payload does not
-    /// close under that grammar.
-    pub references: Option<Vec<u32>>,
-    /// Decoded terminal sense when the payload ends in `0x84` or `0x88`.
-    pub sense: Option<B2UseSense>,
+    /// Closed payload grammar.
+    pub kind: B2UsePayload,
+}
+
+impl B2UseMetadata {
+    pub fn sense(&self) -> Option<B2UseSense> {
+        match self.kind {
+            B2UsePayload::Closed { sense, .. } | B2UsePayload::SenseOnly(sense) => Some(sense),
+            B2UsePayload::Opaque => None,
+        }
+    }
+
+    pub fn references(&self) -> Option<&[u32]> {
+        match &self.kind {
+            B2UsePayload::Closed { references, .. } => Some(references.as_slice()),
+            B2UsePayload::SenseOnly(_) | B2UsePayload::Opaque => None,
+        }
+    }
 }
 
 /// Byte-level metadata from a class-`0x5e` consolidated record.
@@ -548,21 +608,29 @@ pub(crate) fn b2_use_metadata_from_records(
                 Some(0x88) => Some(B2UseSense::Sense88),
                 _ => None,
             };
-            let references = sense.and_then(|_| {
-                let end = frame.end.checked_sub(1)?;
-                let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
-                let mut at = frame.payload + 1;
-                let mut references = Vec::new();
-                for _ in 0..count {
-                    references.push(compact_int(data, &mut at)?);
+            let kind = match sense {
+                None => B2UsePayload::Opaque,
+                Some(sense) => {
+                    let references = (|| {
+                        let end = frame.end.checked_sub(1)?;
+                        let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
+                        let mut at = frame.payload + 1;
+                        let mut references = Vec::new();
+                        for _ in 0..count {
+                            references.push(compact_int(data, &mut at)?);
+                        }
+                        (at == end).then_some(references)
+                    })();
+                    match references {
+                        Some(references) => B2UsePayload::Closed { sense, references },
+                        None => B2UsePayload::SenseOnly(sense),
+                    }
                 }
-                (at == end).then_some(references)
-            });
+            };
             B2UseMetadata {
                 pos: frame.pos,
                 payload,
-                references,
-                sense,
+                kind,
             }
         })
         .collect()
@@ -888,13 +956,17 @@ pub(crate) fn b2_owner_identity_targets_from_records(
                 continue;
             };
             let target = &records[target_index];
+            let Ok(target_class) = crate::native::CatiaOwnerIdentityClass::try_from(target.class)
+            else {
+                continue;
+            };
             targets.push(B2OwnerIdentityTarget {
                 owner_pos: packet.pos,
                 source_index: packet.source_index,
                 slot,
                 distance,
                 target_pos: target.range.start,
-                target_class: target.class,
+                target_class,
             });
         }
     }
@@ -909,7 +981,11 @@ pub(crate) fn b2_closed_owner_boundary_edges(
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
 ) -> Option<[B2OwnerBoundaryEdge; 4]> {
-    if targets.len() != 4 || targets.iter().any(|target| target.target_class != 0x5e) {
+    if targets.len() != 4
+        || targets
+            .iter()
+            .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
+    {
         return None;
     }
     let mut edges = targets
@@ -995,7 +1071,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 .into_iter()
                 .collect::<Option<Vec<_>>>()?;
             let points: [B2ParameterPoint; 4] = points.try_into().ok()?;
-            if points.each_ref().map(|point| point.prefix) != [0x05, 0x09, 0x0d, 0x11]
+            if points.each_ref().map(|point| point.prefix.as_u8()) != [0x05, 0x09, 0x0d, 0x11]
                 || !owner_chart_bounds_match(carrier_kind, &points, &owner.numeric_tail)
             {
                 return None;
@@ -1006,12 +1082,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 carrier_pos: carrier.range.start,
                 carrier: carrier_kind,
                 bridge,
-                side_axis: if carrier_kind == B2OwnerChartCarrier::B28 {
-                    B2OwnerChartSideAxis::FirstParameter
-                } else {
-                    B2OwnerChartSideAxis::SecondParameter
-                },
-                parameter_points: points,
+                parameter_points: points.map(|point| point.pos),
             })
         })
         .collect()
@@ -1060,16 +1131,15 @@ fn owner_chart_bridge(
     if count == 5 {
         let unit_token = *data.get(at)?;
         let construction_radius = f64_le(data, at + 1)?;
-        let middle_controls = [*data.get(at + 9)?, *data.get(at + 10)?];
+        let middle_controls = [
+            CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
+            CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
+        ];
         let zeros = data.get(at + 11..at + 19)?;
-        let terminal_control = *data.get(at + 19)?;
+        let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 19)?)?;
         if unit_token != 0x05
             || construction_radius <= 0.0
-            || !middle_controls
-                .into_iter()
-                .all(|control| matches!(control, 0x03 | 0x05))
             || zeros != [0; 8]
-            || !matches!(terminal_control, 0x01 | 0x05)
             || data.get(at + 20) != Some(&0x05)
             || at + 21 != frame.end
         {
@@ -1082,14 +1152,8 @@ fn owner_chart_bridge(
             carrier_surface,
             support_surfaces: [support_surface_0, support_surface_1],
             support_pcurves: [support_pcurve_0, support_pcurve_1],
-            controls: [
-                carrier_selector,
-                unit_token,
-                middle_controls[0],
-                middle_controls[1],
-                terminal_control,
-                0x05,
-            ],
+            middle_controls,
+            terminal_control,
             construction_radius,
         })
     } else {
@@ -1107,13 +1171,6 @@ fn owner_chart_bridge(
         Some(B2OwnerChartBridge::Extended {
             pos: frame.pos,
             references: references.try_into().ok()?,
-            controls: [
-                carrier_selector,
-                control_tokens[0],
-                control_tokens[1],
-                control_tokens[2],
-            ],
-            terminal_controls: [terminal_control, 0x05],
         })
     }
 }
@@ -1404,24 +1461,16 @@ pub(crate) fn b2_class5b5c_records_from_records(
     records
         .iter()
         .filter_map(|record| {
-            if !record.physically_contiguous
-                || record.family != ConsolidatedFamily::B
-                || !matches!(record.class, 0x5b | 0x5c)
-            {
+            if !record.physically_contiguous || record.family != ConsolidatedFamily::B {
                 return None;
             }
+            let class = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class).ok()?;
             let payload = data.get(record.payload.clone())?;
-            let byte_len = record.range.end.checked_sub(record.range.start)?;
             Some(B2Class5b5cRecord {
-                pos: record.range.start,
+                frame: ConsolidatedRawFrame::from_record(record, payload.to_vec()),
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
-                byte_len,
-                width: record.width,
-                flag: record.flag,
-                class: record.class,
-                header_token: record.header_token,
-                payload: payload.to_vec(),
+                class,
             })
         })
         .collect()
@@ -1570,10 +1619,7 @@ pub(crate) fn b2_parameter_points_from_records(
             if frame.header_token != 5 {
                 return None;
             }
-            let prefix = *data.get(frame.payload)?;
-            if !matches!(prefix, 0x05 | 0x09 | 0x0d | 0x11) {
-                return None;
-            }
+            let prefix = B2ParameterPointPrefix::from_u8(*data.get(frame.payload)?)?;
             let layout = u8::try_from(frame.end - frame.payload).ok()?;
             let control = *data.get(frame.payload + 1)?;
             let at = frame.payload + 2;
@@ -1609,7 +1655,6 @@ pub(crate) fn b2_parameter_points_from_records(
             finite.then_some(B2ParameterPoint {
                 pos: frame.pos,
                 end: frame.end,
-                layout,
                 prefix,
                 control,
                 payload,
@@ -1634,9 +1679,6 @@ pub(crate) fn b2_plane_carriers_from_records(
         .iter()
         .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x27)
         .filter_map(|record| {
-            if !matches!(record.flag, 0x03 | 0x13 | 0x83) {
-                return None;
-            }
             let marker = *data.get(record.payload.start)?;
             let selector = *data.get(record.payload.start + 1)?;
             if marker != 0xb4 {
@@ -1667,7 +1709,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                         tail: [values[2], values[3], values[4], values[5]],
                     }
                 }
-                _ if !values.is_empty() => B2PlaneCarrierPayload::ScalarLane { values },
+                _ if !values.is_empty() => B2PlaneCarrierPayload::ScalarLane { selector, values },
                 _ => return None,
             };
             Some(B2PlaneCarrier {
@@ -1676,7 +1718,6 @@ pub(crate) fn b2_plane_carriers_from_records(
                 width: record.width,
                 flag: record.flag,
                 header_token: record.header_token,
-                selector,
                 payload,
             })
         })
@@ -1801,30 +1842,28 @@ pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
 }
 
 pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<Point3> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = &cylinder.geometry
-    else {
-        return None;
-    };
     if !parameter_in_closed_range(uv[0], cylinder.u_range)
         || !parameter_in_closed_range(uv[1], cylinder.v_range)
     {
         return None;
     }
+    let radius = cylinder.radius;
     let angle = uv[0] / radius;
-    let perpendicular = (*axis).cross(*ref_direction);
+    let axis = Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]);
+    let ref_direction = Vector3::new(
+        cylinder.reference_direction[0],
+        cylinder.reference_direction[1],
+        cylinder.reference_direction[2],
+    );
+    let perpendicular = axis.cross(ref_direction);
     Some(Point3::new(
-        origin.x
+        cylinder.origin[0]
             + uv[1] * axis.x
             + radius * (angle.cos() * ref_direction.x + angle.sin() * perpendicular.x),
-        origin.y
+        cylinder.origin[1]
             + uv[1] * axis.y
             + radius * (angle.cos() * ref_direction.y + angle.sin() * perpendicular.y),
-        origin.z
+        cylinder.origin[2]
             + uv[1] * axis.z
             + radius * (angle.cos() * ref_direction.z + angle.sin() * perpendicular.z),
     ))
@@ -1839,8 +1878,8 @@ pub(crate) fn point_distance(a: Point3, b: Point3) -> f64 {
 pub struct B2Circle {
     /// Record byte offset.
     pub pos: usize,
-    /// Payload-layout discriminator (`0x32..=0x34`).
-    pub layout: u8,
+    /// Payload-layout discriminator.
+    pub layout: crate::native::CatiaCircleLayout,
     /// Compact persistent record identifier.
     pub record_id: u32,
     /// Frame token following the record length.
@@ -2029,13 +2068,7 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
     Some(B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve {
-            degree,
-            knots,
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        },
+        geometry: NurbsCurve::new(degree, knots, control_points, Some(weights), false).ok()?,
     })
 }
 
@@ -2044,24 +2077,59 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
 pub struct B2Cylinder {
     /// Record byte offset.
     pub pos: usize,
-    /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
-    pub layout: u8,
-    /// Frame token following the origin.
-    pub frame_token: u8,
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
+    /// Cylinder-axis unit direction.
+    pub axis: [f64; 3],
+    /// Unit direction from which the circumferential parameter is measured.
+    pub reference_direction: [f64; 3],
     /// Cylinder radius.
     pub radius: f64,
-    /// Decoded carrier.
-    pub geometry: SurfaceGeometry,
     /// Arc-length circumferential range.
     pub u_range: [f64; 2],
     /// Axial range.
     pub v_range: [f64; 2],
-    /// Stored planar vector for a range-origin `0x62` frame.
-    pub stored_vector: Option<[f64; 2]>,
-    /// Origin of the stored partial circumferential interval.
-    pub range_origin: Option<f64>,
+    /// Layout-specific frame data.
+    pub layout: B2CylinderLayout,
+}
+
+/// Layout of a consolidated `B:28` cylinder chart.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2CylinderLayout {
+    /// Layout `0x5a` with a stored frame token.
+    Full5a { frame_token: u8 },
+    /// Layout `0x52` with a fixed X-axis frame.
+    Full52,
+    /// Layout `0x62` with a stored planar vector.
+    RangeOrigin { stored_vector: [f64; 2] },
+}
+
+impl B2Cylinder {
+    pub(crate) fn frame_token(&self) -> u8 {
+        match self.layout {
+            B2CylinderLayout::Full5a { frame_token } => frame_token,
+            B2CylinderLayout::Full52 => 0x1d,
+            B2CylinderLayout::RangeOrigin { .. } => 0x0e,
+        }
+    }
+
+    pub(crate) fn range_origin(&self) -> Option<f64> {
+        matches!(self.layout, B2CylinderLayout::RangeOrigin { .. })
+            .then(|| cylinder_range_origin(self.radius, self.u_range))
+    }
+
+    pub(crate) fn surface_geometry(&self) -> SurfaceGeometry {
+        SurfaceGeometry::Cylinder {
+            origin: Point3::new(self.origin[0], self.origin[1], self.origin[2]),
+            axis: Vector3::new(self.axis[0], self.axis[1], self.axis[2]),
+            ref_direction: Vector3::new(
+                self.reference_direction[0],
+                self.reference_direction[1],
+                self.reference_direction[2],
+            ),
+            radius: self.radius,
+        }
+    }
 }
 
 /// Slant-coordinate cone chart stored in a `b2 03 29` record.
@@ -2096,8 +2164,8 @@ pub struct B2Cone {
 pub struct B2Revolution {
     /// Record byte offset.
     pub pos: usize,
-    /// Reference-token dialect (`0x08` or `0x0a`).
-    pub reference_token: u8,
+    /// Reference-token dialect.
+    pub reference_token: crate::native::CatiaRevolutionReferenceToken,
     /// Stored profile allocation identity.
     pub profile_allocation_id: u16,
     /// Axis-frame origin.
@@ -2210,21 +2278,6 @@ pub struct B2Group {
     pub group_type: u32,
 }
 
-/// Construction-use wrapper stored in a `b2 03 30` record.
-#[derive(Debug, Clone)]
-pub struct B2ConstructionUse {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Referenced support identifier.
-    pub support_id: u32,
-    /// Signed wall or offset scalar.
-    pub distance: f64,
-    /// Construction-type discriminant.
-    pub kind: u8,
-    /// Carrier domain `[u0, v0, u1, v1]` for kind `0x01`.
-    pub domain: Option<[f64; 4]>,
-}
-
 /// Cylinder frame following a type-3 `b2 03 60` group opener.
 #[derive(Debug, Clone)]
 pub struct B2EmbeddedCylinder {
@@ -2303,18 +2356,10 @@ pub(crate) fn b2_embedded_cylinders_from_records(
     out
 }
 
-/// Decode `b2 03 30` construction-use wrappers.
-#[must_use]
-#[cfg(test)]
-pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
-    let records = consolidated_records(data);
-    b2_construction_uses_from_records(data, &records)
-}
-
-pub(crate) fn b2_construction_uses_from_records(
+fn b2_construction_offset_supports_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2ConstructionUse> {
+) -> Vec<B2OffsetSupport> {
     let mut out = Vec::new();
     for frame in b_family_frames_from_records(records, 0x30) {
         let pos = frame.pos;
@@ -2346,17 +2391,21 @@ pub(crate) fn b2_construction_uses_from_records(
         let Some(fields) = read_f64_array::<4>(data, at + 9) else {
             continue;
         };
-        if at + 41 != frame.end || !distance.is_finite() || fields.iter().any(|v| !v.is_finite()) {
+        if kind != 0x01
+            || at + 41 != frame.end
+            || !distance.is_finite()
+            || fields.iter().any(|v| !v.is_finite())
+        {
             continue;
         }
-        let domain = (kind == 0x01)
-            .then_some([fields[0], fields[2], fields[1], fields[3]])
-            .filter(|domain| valid_offset_domain(*domain));
-        out.push(B2ConstructionUse {
+        let domain = [fields[0], fields[2], fields[1], fields[3]];
+        if !valid_offset_domain(domain) {
+            continue;
+        }
+        out.push(B2OffsetSupport {
             pos,
             support_id,
             distance,
-            kind,
             domain,
         });
     }
@@ -2457,8 +2506,12 @@ pub(crate) fn b2_revolutions_from_records(
     let mut out = Vec::new();
     for frame in b_family_frames_from_records(records, 0x2d) {
         let p = frame.payload;
+        let Ok(reference_token) = data.get(p).copied().ok_or(()).and_then(|token| {
+            crate::native::CatiaRevolutionReferenceToken::try_from(token).map_err(|_| ())
+        }) else {
+            continue;
+        };
         if frame.end - p != 0xae
-            || !matches!(data.get(p), Some(0x08 | 0x0a))
             || data.get(p + 131..p + 133) != Some(&[0x05, 0x05])
             || f64_le(data, p + 141) != Some(1.0)
             || f64_le(data, p + 149) != Some(1.0)
@@ -2525,7 +2578,7 @@ pub(crate) fn b2_revolutions_from_records(
         }
         out.push(B2Revolution {
             pos: frame.pos,
-            reference_token: data[p],
+            reference_token,
             profile_allocation_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
             direction_x,
@@ -2900,7 +2953,6 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
     let layout = u8::try_from(frame.end.checked_sub(frame.payload)?).ok()?;
     let p = frame.payload;
     let origin_values = read_f64_array::<3>(data, p)?;
-    let origin = Point3::new(origin_values[0], origin_values[1], origin_values[2]);
     let frame_token = *data.get(p + 24)?;
     match layout {
         0x5a => {
@@ -2933,20 +2985,13 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
             Some(B2Cylinder {
                 pos,
-                layout,
-                frame_token,
                 origin: origin_values,
+                axis: [axis.x, axis.y, axis.z],
+                reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
                 radius,
-                geometry: SurfaceGeometry::Cylinder {
-                    origin,
-                    axis,
-                    ref_direction,
-                    radius,
-                },
                 u_range,
                 v_range,
-                stored_vector: None,
-                range_origin: None,
+                layout: B2CylinderLayout::Full5a { frame_token },
             })
         }
         0x52 => {
@@ -2972,20 +3017,13 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
-                layout,
-                frame_token,
                 origin: origin_values,
+                axis: [1.0, 0.0, 0.0],
+                reference_direction: [0.0, 1.0, 0.0],
                 radius,
-                geometry: SurfaceGeometry::Cylinder {
-                    origin,
-                    axis: Vector3::new(1.0, 0.0, 0.0),
-                    ref_direction: Vector3::new(0.0, 1.0, 0.0),
-                    radius,
-                },
                 u_range,
                 v_range,
-                stored_vector: None,
-                range_origin: None,
+                layout: B2CylinderLayout::Full52,
             })
         }
         0x62 if frame_token == 0x0e && data.get(p + 89) == Some(&0x03) => {
@@ -3013,20 +3051,15 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
-                layout,
-                frame_token,
                 origin: origin_values,
+                axis: [0.0, 1.0, 0.0],
+                reference_direction: [vector[0], 0.0, vector[1]],
                 radius,
-                geometry: SurfaceGeometry::Cylinder {
-                    origin,
-                    axis: Vector3::new(0.0, 1.0, 0.0),
-                    ref_direction: Vector3::new(vector[0], 0.0, vector[1]),
-                    radius,
-                },
                 u_range,
                 v_range,
-                stored_vector: Some(vector),
-                range_origin: Some(range_origin),
+                layout: B2CylinderLayout::RangeOrigin {
+                    stored_vector: vector,
+                },
             })
         }
         _ => None,
@@ -3052,9 +3085,12 @@ pub(crate) fn b2_circles_from_records(
     let mut out = Vec::new();
     for frame in b_family_frames_from_records(records, 0x19) {
         let pos = frame.pos;
-        if !(0x32..=0x34).contains(&(frame.end - frame.payload)) {
+        let Some(layout) = u8::try_from(frame.end - frame.payload)
+            .ok()
+            .and_then(|layout| crate::native::CatiaCircleLayout::try_from(layout).ok())
+        else {
             continue;
-        }
+        };
         let Ok(frame_token) = u8::try_from(frame.header_token) else {
             continue;
         };
@@ -3082,7 +3118,7 @@ pub(crate) fn b2_circles_from_records(
         {
             out.push(B2Circle {
                 pos,
-                layout: (frame.end - frame.payload) as u8,
+                layout,
                 record_id,
                 frame_token,
                 center_pair: [c1, c2],
@@ -3185,21 +3221,7 @@ pub(crate) fn b2_offset_supports_from_records(
             })
         })
         .collect::<Vec<_>>();
-    offsets.extend(
-        b2_construction_uses_from_records(data, records)
-            .into_iter()
-            .filter_map(|construction| {
-                if construction.kind != 0x01 {
-                    return None;
-                }
-                Some(B2OffsetSupport {
-                    pos: construction.pos,
-                    support_id: construction.support_id,
-                    distance: construction.distance,
-                    domain: construction.domain?,
-                })
-            }),
-    );
+    offsets.extend(b2_construction_offset_supports_from_records(data, records));
     offsets.sort_unstable_by_key(|offset| offset.pos);
     offsets
 }
@@ -3224,13 +3246,11 @@ pub fn offset_support_carriers(
                 .iter()
                 .enumerate()
                 .filter_map(|(index, carrier)| {
-                    let SurfaceGeometry::Nurbs(surface) = &carrier.geometry else {
-                        return None;
-                    };
-                    let u_min = *surface.u_knots.first()?;
-                    let u_max = *surface.u_knots.last()?;
-                    let v_min = *surface.v_knots.first()?;
-                    let v_max = *surface.v_knots.last()?;
+                    let surface = &carrier.geometry;
+                    let u_min = *surface.u_knots().first()?;
+                    let u_max = *surface.u_knots().last()?;
+                    let v_min = *surface.v_knots().first()?;
+                    let v_max = *surface.v_knots().last()?;
                     let u_span = u_max - u_min;
                     let v_span = v_max - v_min;
                     if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0
@@ -3245,7 +3265,7 @@ pub fn offset_support_carriers(
                         && v1 <= v_max + v_tolerance;
                     let has_v_limit = |limit: f64| {
                         surface
-                            .v_knots
+                            .v_knots()
                             .iter()
                             .any(|knot| (*knot - limit).abs() <= v_tolerance)
                     };

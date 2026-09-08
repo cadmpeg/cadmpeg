@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse body members, bounds, bindings, and visibility.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
@@ -34,7 +36,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(start) = bytes
@@ -95,12 +97,13 @@ pub fn decode_body_bounds(
     let mut out = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| entity.module.as_deref() == Some(DESIGN_MODULE_BODY))
+        .filter(|entity| entity.module() == Some(DESIGN_MODULE_BODY))
     {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -116,7 +119,7 @@ pub fn decode_body_bounds(
             .filter_map(|candidate| usize::try_from(candidate.byte_offset).ok())
             .min()
             .unwrap_or(bytes.len());
-        let Ok(record_index) = u32::try_from(entity.entity_suffix) else {
+        let Ok(record_index) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
         let Some(record_indices) = record_index
@@ -176,7 +179,7 @@ pub fn decode_body_bounds(
         };
         out.push(DesignBodyBounds {
             id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
-            entity_suffix: entity.entity_suffix,
+            entity_suffix: entity.entity_id.suffix(),
             entity_byte_offset: entity.byte_offset,
             record_indices,
             record_byte_offsets: [*first as u64, *second as u64, *third as u64],
@@ -259,18 +262,24 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             if !framed_name {
                 continue;
             }
-            let design_id_field = recipe_design_id(bytes, offset, name);
-            let design_id = design_id_field.as_ref().map(|field| field.0.clone());
-            let design_selector = design_id_field
-                .as_ref()
-                .and_then(|(design_id, design_id_at)| {
-                    let selector_at = design_id_at.checked_add(design_id.len())?;
-                    Some(ConstructionRecipeSelector {
-                        value: View::u32_le_at(bytes, selector_at)?,
-                        byte_offset: u64::try_from(selector_at).ok()?,
-                    })
-                });
-            let key = (kind, design_id.clone());
+            let design = recipe_design_id(bytes, offset, name).map(|(value, design_id_at)| {
+                let selector = design_id_at
+                    .checked_add(value.len())
+                    .and_then(|selector_at| {
+                        Some(ConstructionRecipeSelector {
+                            value: View::u32_le_at(bytes, selector_at)?,
+                            byte_offset: u64::try_from(selector_at).ok()?,
+                        })
+                    });
+                crate::records::ConstructionRecipeDesign {
+                    id: crate::records::RecordedValue {
+                        value,
+                        offset: Some(design_id_at as u64),
+                    },
+                    selector,
+                }
+            });
+            let key = (kind, design.as_ref().map(|design| design.id.value.clone()));
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
             *counter += 1;
@@ -283,9 +292,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 byte_offset: offset as u64,
                 record_index_offset: record_index_offset.map(|offset| offset as u64),
                 kind,
-                design_id,
-                design_id_offset: design_id_field.as_ref().map(|field| field.1 as u64),
-                design_selector,
+                design,
                 recipe_index,
                 record_index,
             });
@@ -333,34 +340,43 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
 /// body-map record, with the named B-rep blob the key resolves in and the
 /// suffix's byte offset for native patching.
 pub(crate) struct BodyBinding {
-    /// Basename of the B-rep blob entry the ASM key resolves in.
-    pub blob_name: String,
-    /// Byte offset of the BREP blob name's UTF-16LE code units.
-    pub blob_name_offset: usize,
-    /// Number of pairs in the enclosing map.
-    pub pair_count: u32,
-    /// Zero-based position in the enclosing map.
-    pub pair_ordinal: u32,
     /// The referenced ASM body key.
     pub asm_key: u64,
     /// Byte offset of `asm_key` within the stream.
     pub asm_key_offset: usize,
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
-    /// Byte offset of `entity_suffix` within the stream.
-    pub entity_suffix_offset: usize,
+}
+
+impl BodyBinding {
+    /// Byte offset of `entity_suffix`, which follows `asm_key` in the pair.
+    pub fn entity_suffix_offset(&self) -> usize {
+        self.asm_key_offset + 8
+    }
 }
 
 /// One exactly framed Design body-map record.
+///
+/// The record owns the blob name and its location, and its ordered `bindings`
+/// are the map's pairs: a binding's ordinal is its index and the pair count is
+/// `bindings.len()`.
 pub(crate) struct BodyMapRecord {
     pub blob_name: String,
+    /// Byte offset of the BREP blob name's UTF-16LE code units.
+    pub blob_name_offset: usize,
     pub bindings: Vec<BodyBinding>,
 }
 
 fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
     meta.types.iter().any(|design_type| {
-        design_type.type_guid.eq_ignore_ascii_case(type_guid)
-            && design_type.entity_ids.contains(&entity)
+        design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
+            && design_type
+                .entities
+                .values()
+                .any(|registered| *registered == entity)
     })
 }
 
@@ -379,23 +395,20 @@ fn local_reference_candidates(
     let mut candidates = Vec::new();
     let mut end = at;
     if let Some(reference) = take_reference(bytes, &mut end) {
-        if reference.segment.is_none() && reference.link_name.is_none() {
-            if let Some(target) = reference.target {
-                let inline_type_guid = reference.inline_type_guid;
+        if let Some((target, inline_type_guid)) = reference.into_local() {
+            candidates.push(LocalReferenceCandidate {
+                target,
+                end,
+                inline_type_guid: inline_type_guid.clone(),
+                trailing_zeros: 2,
+            });
+            if allow_extra_zero && bytes.get(end) == Some(&0) {
                 candidates.push(LocalReferenceCandidate {
                     target,
-                    end,
-                    inline_type_guid: inline_type_guid.clone(),
+                    end: end + 1,
+                    inline_type_guid,
                     trailing_zeros: 2,
                 });
-                if allow_extra_zero && bytes.get(end) == Some(&0) {
-                    candidates.push(LocalReferenceCandidate {
-                        target,
-                        end: end + 1,
-                        inline_type_guid,
-                        trailing_zeros: 2,
-                    });
-                }
             }
         }
     }
@@ -450,6 +463,7 @@ pub(crate) fn snapshot_body_map_records(
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID)
         {
             continue;
@@ -463,9 +477,18 @@ pub(crate) fn snapshot_body_map_records(
             )));
         }
         if design_type.module != DESIGN_MODULE_BODY
-            || !design_type.base_type_guid.as_deref().is_some_and(|base| {
-                base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
-            })
+            || !design_type
+                .base_type_guid
+                .as_ref()
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
+                .is_some_and(|base| {
+                    base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
+                })
         {
             return Err(crate::error::malformed(
                 "F3D Design snapshot body-map carrier has incompatible registration metadata",
@@ -481,7 +504,7 @@ pub(crate) fn snapshot_body_map_records(
                 )
             })?
             .to_string();
-        for &entity in &design_type.entity_ids {
+        for &entity in design_type.entities.values() {
             let Some(&frame_ordinal) = primary_by_entity.get(&entity) else {
                 return Err(crate::error::malformed(format!(
                     "F3D Design snapshot body-map entity {entity} has no primary record"
@@ -613,18 +636,14 @@ fn parse_snapshot_body_map_frame(
             for pair in 0..count {
                 let at = pairs_start + pair * 16;
                 bindings.push(BodyBinding {
-                    blob_name: blob_name.clone(),
-                    blob_name_offset: name_at + 4,
-                    pair_count,
-                    pair_ordinal: u32::try_from(pair).expect("pair ordinal is below its u32 count"),
                     asm_key: View::u64_le_at(bytes, at).expect("validated pair extent"),
                     asm_key_offset: at,
                     entity_suffix: View::u64_le_at(bytes, at + 8).expect("validated pair extent"),
-                    entity_suffix_offset: at + 8,
                 });
             }
             return Ok(Some(BodyMapRecord {
                 blob_name,
+                blob_name_offset: name_at + 4,
                 bindings,
             }));
         }
@@ -657,6 +676,7 @@ fn body_map_records(
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
             .type_guid
+            .as_str()
             .eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_TYPE_GUID)
         {
             continue;
@@ -668,9 +688,18 @@ fn body_map_records(
             )));
         }
         if design_type.module != DESIGN_MODULE_BODY
-            || !design_type.base_type_guid.as_deref().is_some_and(|base| {
-                base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
-            })
+            || !design_type
+                .base_type_guid
+                .as_ref()
+                .and_then(|field| {
+                    field
+                        .value
+                        .as_ref()
+                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                })
+                .is_some_and(|base| {
+                    base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
+                })
         {
             return Err(CodecError::Malformed(
                 "F3D Design body-map carrier type has incompatible registration metadata".into(),
@@ -687,7 +716,7 @@ fn body_map_records(
             })?;
         let class_tag = class_tag.to_string();
 
-        for &entity_id in &design_type.entity_ids {
+        for &entity_id in design_type.entities.values() {
             if !typed_entities.insert(entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} is registered more than once"
@@ -697,13 +726,13 @@ fn body_map_records(
                 Some(Some(record_ordinal)) => *record_ordinal,
                 Some(None) => {
                     return Err(CodecError::malformed(format_args!(
-                    "F3D Design body-map carrier entity {entity_id} has multiple primary records"
-                )))
+                        "F3D Design body-map carrier entity {entity_id} has multiple primary records"
+                    )));
                 }
                 None => {
                     return Err(CodecError::malformed(format_args!(
                         "F3D Design body-map carrier entity {entity_id} has no primary record"
-                    )))
+                    )));
                 }
             };
             let frame = record_frames[record_ordinal];
@@ -738,15 +767,8 @@ fn body_map_records(
                     )));
                 }
             }
-            if let Some(bindings) = matched {
-                let blob_name = bindings
-                    .first()
-                    .map(|binding| binding.blob_name.clone())
-                    .unwrap_or_default();
-                out.push(BodyMapRecord {
-                    blob_name,
-                    bindings,
-                });
+            if let Some(record) = matched {
+                out.push(record);
             }
         }
     }
@@ -784,7 +806,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         saw_design_stream = true;
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -816,7 +838,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
     let mut archive_counts = HashMap::<String, usize>::new();
     for entry in scan.entries.iter().filter(|entry| {
         scan.belongs_to_design_asset(&entry.name)
-            && matches!(entry.role.as_str(), role::BREP_SMB | role::BREP_SMBH)
+            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
     }) {
         let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
         *archive_counts.entry(basename.to_owned()).or_default() += 1;
@@ -842,7 +864,7 @@ fn parse_body_map_frame(
     start: usize,
     end: usize,
     prefix_len: usize,
-) -> Result<Option<Vec<BodyBinding>>, CodecError> {
+) -> Result<Option<BodyMapRecord>, CodecError> {
     let Some(count_at) = start
         .checked_add(indexed_header::LEN)
         .and_then(|payload| payload.checked_add(prefix_len))
@@ -928,17 +950,16 @@ fn parse_body_map_frame(
             )));
         };
         bindings.push(BodyBinding {
-            blob_name: blob_name.clone(),
-            blob_name_offset: name_at + 4,
-            pair_count,
-            pair_ordinal: u32::try_from(pair).expect("pair ordinal is below its u32 pair count"),
             asm_key: key,
             asm_key_offset: at,
             entity_suffix: suffix,
-            entity_suffix_offset: at + 8,
         });
     }
-    Ok(Some(bindings))
+    Ok(Some(BodyMapRecord {
+        blob_name,
+        blob_name_offset: name_at + 4,
+        bindings,
+    }))
 }
 
 fn is_brep_blob_basename(value: &str) -> bool {
@@ -960,7 +981,7 @@ pub fn decode_design_body_bindings(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -968,33 +989,34 @@ pub fn decode_design_body_bindings(
         else {
             continue;
         };
-        for binding in selected_body_map_records(bytes, &metadata)?
-            .into_iter()
-            .flat_map(|record| record.bindings)
-        {
-            let source_bodies = body_keys
-                .iter()
-                .filter(|key| {
-                    key.source_brep.as_deref().map_or_else(
-                        || active_basename == Some(binding.blob_name.as_str()),
-                        |source| source == binding.blob_name,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
-            out.push(DesignBodyBinding {
-                id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
-                stream: entry.name.clone(),
-                pair_count: binding.pair_count,
-                pair_ordinal: binding.pair_ordinal,
-                asm_body_key: binding.asm_key,
-                asm_body_key_offset: binding.asm_key_offset as u64,
-                entity_suffix: binding.entity_suffix,
-                entity_suffix_offset: binding.entity_suffix_offset as u64,
-                blob_name: binding.blob_name,
-                blob_name_offset: binding.blob_name_offset as u64,
-                body,
-            });
+        for record in selected_body_map_records(bytes, &metadata)? {
+            let pair_count = u32::try_from(record.bindings.len())
+                .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
+            for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
+                let source_bodies = body_keys
+                    .iter()
+                    .filter(|key| {
+                        key.source_brep.as_deref().map_or_else(
+                            || active_basename == Some(record.blob_name.as_str()),
+                            |source| source == record.blob_name,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
+                out.push(DesignBodyBinding {
+                    id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
+                    stream: entry.name.clone(),
+                    pair_count,
+                    pair_ordinal: ordinal,
+                    asm_body_key: binding.asm_key,
+                    asm_body_key_offset: binding.asm_key_offset as u64,
+                    entity_suffix: binding.entity_suffix,
+                    entity_suffix_offset: binding.entity_suffix_offset() as u64,
+                    blob_name: record.blob_name.clone(),
+                    blob_name_offset: record.blob_name_offset as u64,
+                    body,
+                });
+            }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1047,7 +1069,7 @@ pub(crate) fn decode_all_body_visibility(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1056,13 +1078,13 @@ pub(crate) fn decode_all_body_visibility(
             continue;
         };
         let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
-        for binding in selected_body_map_records(bytes, &metadata)?
-            .into_iter()
-            .flat_map(|record| record.bindings)
-        {
-            if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
+        for record in selected_body_map_records(bytes, &metadata)? {
+            for binding in record.bindings {
+                let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
+                    continue;
+                };
                 out.insert(
-                    (binding.blob_name, binding.asm_key),
+                    (record.blob_name.clone(), binding.asm_key),
                     DecodedBodyVisibility {
                         stream: entry.name.clone(),
                         byte_offset: node.byte_offset,
@@ -1132,10 +1154,10 @@ fn typed_browser_node_hidden_flags(
 ///
 /// The GUID is the stable join between browser presentation records; the
 /// adjacent entity suffix joins the node back to the Design body map.
-pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
+pub(crate) fn scanned_browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
     let mut entities = HashMap::new();
     let mut ambiguous = std::collections::HashSet::new();
-    for record in browser_node_records(bytes) {
+    for record in scan_browser_node_identities(bytes) {
         let key = record.guid.to_ascii_lowercase();
         if entities
             .insert(key.clone(), record.entity_suffix)
@@ -1149,12 +1171,12 @@ pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
 }
 
 #[derive(Debug, Clone)]
-struct BrowserNodeRecord {
+struct ScannedBrowserNodeIdentity {
     guid: String,
     entity_suffix: u64,
 }
 
-fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
+fn scan_browser_node_identities(bytes: &[u8]) -> Vec<ScannedBrowserNodeIdentity> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = Vec::new();
@@ -1169,7 +1191,7 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
-                out.push(BrowserNodeRecord {
+                out.push(ScannedBrowserNodeIdentity {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,
                 });
@@ -1237,15 +1259,16 @@ mod tests {
         crate::records::SegmentType {
             id: String::new(),
             byte_offset: 0,
-            type_guid: type_guid.into(),
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(str::to_owned),
-            base_type_guid_offset: base_type_guid.map(|_| 0),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
+                value: Some(value.to_owned().try_into().expect("base GUID")),
+                offset: Some(0),
+            }),
             version,
             version_offset: 0,
             module: module.into(),
-            entity_ids,
-            entity_id_offsets: Vec::new(),
+            entities: crate::records::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -1301,17 +1324,29 @@ mod tests {
                 crate::records::SegmentType {
                     id: String::new(),
                     byte_offset: 0,
-                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("type GUID"),
                     type_guid_offset: 0,
-                    base_type_guid: Some(
-                        crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
-                    ),
-                    base_type_guid_offset: Some(0),
+                    base_type_guid: Some(crate::records::RecordedValue {
+                        value: Some(
+                            crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
+                                .to_owned()
+                                .try_into()
+                                .expect("base GUID"),
+                        ),
+                        offset: Some(0),
+                    }),
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
-                    entity_ids: vec![900],
-                    entity_id_offsets: vec![0],
+                    entities: crate::records::ReferenceRun::located(vec![
+                        crate::records::Located {
+                            value: 900,
+                            offset: 0,
+                        },
+                    ]),
                 },
                 presentation_type(
                     crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
@@ -1475,7 +1510,7 @@ mod tests {
     #[test]
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
-        metadata.types[2].entity_ids.clear();
+        metadata.types[2].entities = crate::records::ReferenceRun::unlocated(Vec::new());
         assert!(
             snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
                 .expect("mixed carrier family")
@@ -1536,9 +1571,7 @@ mod tests {
         let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata())
             .expect("65-pair body map");
         assert_eq!(bindings.len(), 65);
-        assert!(bindings.iter().all(|binding| binding.pair_count == 65));
-        assert_eq!(bindings[0].pair_ordinal, 0);
-        assert_eq!(bindings[64].pair_ordinal, 64);
+        assert_eq!(bindings[0].asm_key, 1000);
         assert_eq!(bindings[64].asm_key, 1064);
         assert_eq!(bindings[64].entity_suffix, (1u64 << 40) + 64);
     }
@@ -1562,7 +1595,7 @@ mod tests {
                 parse_body_map_frame(&bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
                     .expect("empty body-map frame")
                     .expect("supported empty body-map variant");
-            assert!(frame.is_empty());
+            assert!(frame.bindings.is_empty());
             assert!(body_bindings(&bytes, &body_map_metadata())
                 .expect("empty typed body map")
                 .is_empty());
@@ -1752,7 +1785,7 @@ mod tests {
         crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 2);
         assert!(recipes.iter().all(|recipe| recipe.record_index == 309));
-        assert!(recipes.iter().all(|recipe| recipe.design_id.is_none()));
+        assert!(recipes.iter().all(|recipe| recipe.design.is_none()));
         assert_eq!(recipes[0].recipe_index, 0);
         assert_eq!(recipes[1].recipe_index, 1);
 
@@ -1766,10 +1799,25 @@ mod tests {
         let mut recipes = Vec::new();
         crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 1);
-        assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
-        assert_eq!(recipes[0].design_id_offset, Some(4));
         assert_eq!(
-            recipes[0].design_selector,
+            recipes[0]
+                .design
+                .as_ref()
+                .map(|design| design.id.value.as_str()),
+            Some("2265")
+        );
+        assert_eq!(
+            recipes[0]
+                .design
+                .as_ref()
+                .and_then(|design| design.id.offset),
+            Some(4)
+        );
+        assert_eq!(
+            recipes[0]
+                .design
+                .as_ref()
+                .and_then(|design| design.selector),
             Some(crate::records::ConstructionRecipeSelector {
                 value: 3,
                 byte_offset: 8,

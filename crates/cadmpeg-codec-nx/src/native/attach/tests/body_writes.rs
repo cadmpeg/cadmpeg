@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 //! Feature-output lineage from operation body-write frames.
 
 use super::*;
+use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -16,20 +18,18 @@ fn body_write(group: u8, image: u8) -> Vec<u8> {
 fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyWrite {
     crate::native::features::FeatureOperationBodyWrite {
         id: id.into(),
-        operation_label: "operation".into(),
+        operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
-        body_identity: 17,
-        group_node: 1,
-        raw_group_node: vec![1],
-        group_node_source_offset: 0,
-        endpoint_tag: 0x10,
-        body_image_object_index: 2,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            17,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
+            crate::om::body_write::BodyImageTag::Form10,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
+            0,
+        )
+        .unwrap(),
         body_image_data_block: Some("block".into()),
-        raw_body_image_object_index: vec![2],
-        body_image_object_index_source_offset: 0,
-        byte_len: 1,
-        source_offset: 0,
     }
 }
 
@@ -66,16 +66,25 @@ fn body_image_outputs_require_one_body_per_binding() {
         body_image_use("use-b", "write-b", "binding-b"),
     ];
     let bodies = BTreeMap::from([
-        ("binding-a", vec![BodyId("body-a".into())]),
+        (
+            "binding-a",
+            vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
+        ),
         (
             "binding-b",
-            vec![BodyId("body-b1".into()), BodyId("body-b2".into())],
+            vec![
+                BodyId::mint("test:model:entity#body-b1").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b2").expect("identity grammar"),
+            ],
         ),
     ]);
 
     let outputs = super::operation_body_image_outputs_by_write(&uses, &bodies);
 
-    assert_eq!(outputs.get("write-a"), Some(&BodyId("body-a".into())));
+    assert_eq!(
+        outputs.get("write-a"),
+        Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
+    );
     assert!(!outputs.contains_key("write-b"));
 }
 
@@ -85,20 +94,38 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
     let write_b = native_body_write("write-b");
     let writes = [&write_a, &write_b];
     let complete = BTreeMap::from([
-        ("write-a", BodyId("body-a".into())),
-        ("write-b", BodyId("body-b".into())),
+        (
+            "write-a",
+            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+        ),
+        (
+            "write-b",
+            BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
+        ),
     ]);
     assert_eq!(
         super::complete_operation_body_image_outputs(&writes, &complete),
-        [BodyId("body-a".into()), BodyId("body-b".into())]
+        [
+            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+            BodyId::mint("test:model:entity#body-b").expect("identity grammar")
+        ]
     );
 
-    let partial = BTreeMap::from([("write-a", BodyId("body-a".into()))]);
+    let partial = BTreeMap::from([(
+        "write-a",
+        BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+    )]);
     assert!(super::complete_operation_body_image_outputs(&writes, &partial).is_empty());
 
     let duplicate = BTreeMap::from([
-        ("write-a", BodyId("body".into())),
-        ("write-b", BodyId("body".into())),
+        (
+            "write-a",
+            BodyId::mint("test:model:entity#body").expect("identity grammar"),
+        ),
+        (
+            "write-b",
+            BodyId::mint("test:model:entity#body").expect("identity grammar"),
+        ),
     ]);
     assert!(super::complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
 }
@@ -111,12 +138,11 @@ fn native_boolean(
         id: "boolean".into(),
         operation_label: "operation".into(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target_object_index,
-        raw_target_object_index: vec![1],
-        target_source_offset: 0,
-        raw_tool_object_indices: vec![vec![2]; tool_object_indices.len()],
-        tool_source_offsets: vec![0; tool_object_indices.len()],
-        tool_object_indices,
+        target: crate::test_support::native_references::boolean_reference(target_object_index, 0),
+        tools: tool_object_indices
+            .into_iter()
+            .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
+            .collect(),
         source_offset: 0,
     }
 }
@@ -124,7 +150,14 @@ fn native_boolean(
 #[test]
 fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     let mut write = native_body_write("write");
-    write.body_image_object_index = 40;
+    write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
+        write.frame.body_identity(),
+        write.frame.group_node(),
+        write.frame.endpoint_tag(),
+        crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(),
+        write.frame.offset(),
+    )
+    .unwrap();
     let boolean = native_boolean(40, vec![41, 42]);
 
     assert!(super::body_writes_match_boolean_target(&[&write], None));
@@ -156,7 +189,10 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
         body_image_use("use-a", "write", "binding-a"),
         body_image_use("use-b", "write", "binding-b"),
     ];
-    let bodies = BTreeMap::from([("binding-a", vec![BodyId("body-a".into())])]);
+    let bodies = BTreeMap::from([(
+        "binding-a",
+        vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
+    )]);
 
     assert!(super::operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
 }
@@ -168,33 +204,51 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
         body_identity_use("use-b", "write-b", "binding-b"),
     ];
     let bodies = BTreeMap::from([
-        ("binding-a", vec![BodyId("body-a".into())]),
+        (
+            "binding-a",
+            vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
+        ),
         (
             "binding-b",
-            vec![BodyId("body-b1".into()), BodyId("body-b2".into())],
+            vec![
+                BodyId::mint("test:model:entity#body-b1").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b2").expect("identity grammar"),
+            ],
         ),
     ]);
 
     let outputs = super::operation_body_identity_outputs_by_write(&uses, &bodies);
 
-    assert_eq!(outputs.get("write-a"), Some(&BodyId("body-a".into())));
+    assert_eq!(
+        outputs.get("write-a"),
+        Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
+    );
     assert!(!outputs.contains_key("write-b"));
 }
 
 #[test]
 fn conflicting_body_output_witnesses_remain_unresolved() {
-    let mut outputs = BTreeMap::from([("write", BodyId("body-a".into()))]);
+    let mut outputs = BTreeMap::from([(
+        "write",
+        BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+    )]);
     let mut conflicts = BTreeSet::new();
 
     super::merge_operation_body_outputs(
         &mut outputs,
         &mut conflicts,
-        [("write", BodyId("body-b".into()))],
+        [(
+            "write",
+            BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
+        )],
     );
     super::merge_operation_body_outputs(
         &mut outputs,
         &mut conflicts,
-        [("write", BodyId("body-a".into()))],
+        [(
+            "write",
+            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+        )],
     );
 
     assert!(!outputs.contains_key("write"));
@@ -205,7 +259,14 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
 fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let write_a = native_body_write("write-a");
     let mut write_b = native_body_write("write-b");
-    write_b.group_node = 2;
+    write_b.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
+        write_b.frame.body_identity(),
+        crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
+        write_b.frame.endpoint_tag(),
+        write_b.frame.body_image(),
+        write_b.frame.offset(),
+    )
+    .unwrap();
     let use_ = crate::native::features::FeatureBodyWriteGroupPartitionUse {
         id: "partition-use".into(),
         body_write: "unlabeled-write".into(),
@@ -216,7 +277,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
         parasolid_group_members: Vec::new(),
     };
     let body = cadmpeg_ir::topology::Body {
-        id: BodyId("nx:s4:body#8".into()),
+        id: BodyId::mint("nx:s4:body#8").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -238,7 +299,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
 
 fn group_member(
     id: &str,
-    family: &str,
+    family: GroupNodeFamily,
     current_member_xmt: Option<u32>,
 ) -> crate::native::parasolid::ParasolidGroupMember {
     crate::native::parasolid::ParasolidGroupMember {
@@ -249,9 +310,11 @@ fn group_member(
         ordinal: 0,
         list_record_xmt: 20,
         member_xmt: 30,
-        member_family: family.into(),
-        member_node_id: Some(50),
-        current_member_xmt,
+        target: GroupMemberTarget::Node {
+            family,
+            node_id: 50,
+            current_xmt: current_member_xmt,
+        },
     }
 }
 
@@ -286,11 +349,11 @@ fn direct_group_use(
 fn result_topology_uses_only_unique_current_group_members() {
     let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
     let members = [
-        group_member("face", "FACE", Some(40)),
-        group_member("edge", "EDGE", Some(41)),
-        group_member("vertex", "VERTEX", Some(42)),
-        group_member("historical", "FACE", None),
-        group_member("shell", "SHELL", Some(43)),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
+        group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
+        group_member("historical", GroupNodeFamily::Face, None),
+        group_member("shell", GroupNodeFamily::Shell, Some(43)),
     ];
     let result = super::feature_result_group_members(
         use_.partition_stream_ordinal,
@@ -303,8 +366,8 @@ fn result_topology_uses_only_unique_current_group_members() {
     assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
 
     let duplicate_members = [
-        group_member("face", "FACE", Some(40)),
-        group_member("face", "FACE", Some(40)),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
     ];
     assert!(
         super::feature_result_group_members(4, &["face".into()], &duplicate_members)
@@ -316,8 +379,8 @@ fn result_topology_uses_only_unique_current_group_members() {
 #[test]
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let members = [
-        group_member("face", "FACE", Some(40)),
-        group_member("edge", "EDGE", Some(41)),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
     ];
     let image = group_use(&["face"]);
     let direct = direct_group_use(&["face"]);

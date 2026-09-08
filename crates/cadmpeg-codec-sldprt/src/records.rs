@@ -2,14 +2,15 @@
 //! `SolidWorks` parametric construction-history records.
 #![deny(clippy::disallowed_methods)]
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod debug;
+pub(crate) mod relation_scalars;
+pub(crate) mod sketch_code;
+
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PmiDimension {
     /// Globally unique source-derived record id.
     pub id: String,
@@ -34,12 +35,9 @@ pub struct PmiDimension {
     pub precision: i64,
     /// Byte offset of the `MessagePack` precision value.
     pub precision_offset: u64,
-    /// Native formatted dimension text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_text: Option<String>,
-    /// Byte offset of the formatted-text bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_text_offset: Option<u64>,
+    /// Native formatted dimension text and its byte offset.
+    #[serde(flatten, with = "pmi_display_text_wire")]
+    pub display_text: Option<(String, u64)>,
     /// Basic-dimension flag.
     pub basic: bool,
     /// Byte offset of the basic flag.
@@ -52,6 +50,55 @@ pub struct PmiDimension {
     pub reference_only: bool,
     /// Byte offset of the reference-only flag.
     pub reference_only_offset: u64,
+}
+
+impl PmiDimension {
+    pub fn display_text(&self) -> Option<&str> {
+        self.display_text.as_ref().map(|(text, _)| text.as_str())
+    }
+
+    pub fn display_text_offset(&self) -> Option<u64> {
+        self.display_text.as_ref().map(|(_, offset)| *offset)
+    }
+}
+
+mod pmi_display_text_wire {
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    pub(super) struct Wire {
+        #[serde(default)]
+        display_text: Option<String>,
+        #[serde(default)]
+        display_text_offset: Option<u64>,
+    }
+
+    // Serde passes the field by reference to this adapter.
+    #[allow(clippy::ref_option)]
+    pub(super) fn serialize<S: Serializer>(
+        display: &Option<(String, u64)>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if let Some((text, offset)) = display {
+            map.serialize_entry("display_text", text)?;
+            map.serialize_entry("display_text_offset", offset)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<(String, u64)>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.display_text, wire.display_text_offset) {
+            (Some(text), Some(offset)) => Ok(Some((text, offset))),
+            (None, None) => Ok(None),
+            _ => Err(serde::de::Error::custom(
+                "display_text and display_text_offset must be present together",
+            )),
+        }
+    }
 }
 
 fn default_pmi_item_count() -> u32 {
@@ -67,7 +114,6 @@ fn is_one(value: &u32) -> bool {
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
 /// material and property overrides.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Configuration {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -94,9 +140,89 @@ fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
 
+/// A construction-tree parent reference.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TreeParent {
+    Record {
+        record_id: String,
+        source_id: Option<String>,
+    },
+    Source(String),
+}
+
+impl TreeParent {
+    pub fn record_id(&self) -> Option<&str> {
+        match self {
+            Self::Record { record_id, .. } => Some(record_id),
+            Self::Source(_) => None,
+        }
+    }
+
+    pub fn source_id(&self) -> Option<&str> {
+        match self {
+            Self::Record { source_id, .. } => source_id.as_deref(),
+            Self::Source(source_id) => Some(source_id),
+        }
+    }
+}
+
+mod tree_parent_wire {
+    use super::TreeParent;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    pub(super) struct Wire {
+        #[serde(default)]
+        tree_parent: Option<String>,
+        #[serde(default)]
+        parent_source_id: Option<String>,
+    }
+
+    // Serde's field adapter borrows the complete optional parent field.
+    #[allow(clippy::ref_option)]
+    pub(super) fn serialize<S: Serializer>(
+        parent: &Option<TreeParent>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if let Some(parent) = parent {
+            if let Some(record) = parent.record_id() {
+                map.serialize_entry("tree_parent", record)?;
+            }
+            if let Some(source) = parent.source_id() {
+                map.serialize_entry("parent_source_id", source)?;
+            }
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<TreeParent>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        Ok(match (wire.tree_parent, wire.parent_source_id) {
+            (Some(record_id), source_id) => Some(TreeParent::Record {
+                record_id,
+                source_id,
+            }),
+            (None, Some(source_id)) => Some(TreeParent::Source(source_id)),
+            (None, None) => None,
+        })
+    }
+}
+
+impl Feature {
+    pub fn tree_parent_record_id(&self) -> Option<&str> {
+        self.tree_parent.as_ref().and_then(TreeParent::record_id)
+    }
+
+    pub fn parent_source_id(&self) -> Option<&str> {
+        self.tree_parent.as_ref().and_then(TreeParent::source_id)
+    }
+}
+
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Feature {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -105,16 +231,12 @@ pub struct Feature {
     /// XML element name carrying this feature record.
     #[serde(default = "default_feature_xml_tag")]
     pub xml_tag: String,
-    /// Native record id of the containing feature element.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tree_parent: Option<String>,
+    /// Containing feature, identified by its record or legacy source id.
+    #[serde(flatten, with = "tree_parent_wire")]
+    pub tree_parent: Option<TreeParent>,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
-    /// Native identifier of this feature's parent in the construction tree, when
-    /// the source recorded parent/child feature dependency.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_source_id: Option<String>,
     /// Position of this feature in the construction-history timeline, in
     /// regeneration order.
     pub ordinal: u32,
@@ -147,7 +269,6 @@ pub struct Feature {
 
 /// One ordered item inside a native feature XML element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum FeatureContent {
     /// Named dimension child.
@@ -160,7 +281,6 @@ pub enum FeatureContent {
 
 /// One ordered item inside the native `Keywords` root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum HistoryContent {
     /// Native configuration record id.
@@ -173,7 +293,6 @@ pub enum HistoryContent {
 
 /// The full parametric construction-history timeline for a part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -196,7 +315,6 @@ pub struct FeatureHistory {
 
 /// Native feature-input stream retained for parametric replay and rewrite.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
     pub id: String,
@@ -207,7 +325,6 @@ pub struct FeatureInputLane {
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub native_payload: Vec<u8>,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
@@ -246,7 +363,6 @@ pub struct FeatureInputLane {
 
 /// One compact feature-local body-selection vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputBodySelection {
     /// Globally unique deterministic identifier for this vector.
     pub id: String,
@@ -272,7 +388,6 @@ pub struct FeatureInputBodySelection {
 
 /// One compact feature-local edge-selection vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputEdgeSelection {
     /// Globally unique deterministic identifier for this vector.
     pub id: String,
@@ -303,8 +418,7 @@ pub struct FeatureInputEdgeSelection {
 }
 
 /// One compact feature-local surface-component selection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureInputSurfaceSelection {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -317,10 +431,9 @@ pub struct FeatureInputSurfaceSelection {
     /// Low selector subtype stored in the vector header.
     #[serde(default)]
     pub selector: u8,
-    /// Opaque endpoint selector stored four bytes before an edge-endpoint
-    /// `ToVertex` selection vector marker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint_selector: Option<u32>,
+    /// Component selection form; extrusion endpoints carry their opaque selector.
+    #[serde(flatten, with = "surface_selection_kind_wire")]
+    pub kind: FeatureInputSurfaceSelectionKind,
     /// Feature-input name record owning this selection.
     pub object_name_ref: String,
     /// Native history feature owning this selection.
@@ -336,9 +449,62 @@ pub struct FeatureInputSurfaceSelection {
     pub components: Vec<FeatureInputComponentPathEntry>,
 }
 
+/// Form of a retained surface-component selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureInputSurfaceSelectionKind {
+    Component,
+    ExtrusionEndpoint { endpoint_selector: u32 },
+}
+
+impl FeatureInputSurfaceSelection {
+    pub fn endpoint_selector(&self) -> Option<u32> {
+        match self.kind {
+            FeatureInputSurfaceSelectionKind::Component => None,
+            FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } => {
+                Some(endpoint_selector)
+            }
+        }
+    }
+}
+
+mod surface_selection_kind_wire {
+    use super::FeatureInputSurfaceSelectionKind;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    pub(super) struct Wire {
+        #[serde(default)]
+        endpoint_selector: Option<u32>,
+    }
+
+    // Serde field adapters borrow the field even when its type is Copy.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub(super) fn serialize<S: Serializer>(
+        kind: &FeatureInputSurfaceSelectionKind,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if let FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } = kind {
+            map.serialize_entry("endpoint_selector", endpoint_selector)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<FeatureInputSurfaceSelectionKind, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        Ok(match wire.endpoint_selector {
+            Some(endpoint_selector) => {
+                FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector }
+            }
+            None => FeatureInputSurfaceSelectionKind::Component,
+        })
+    }
+}
+
 /// One persistent identity of a surface produced by a regenerated feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputGeneratedSurfaceIdentity {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -361,7 +527,6 @@ pub struct FeatureInputGeneratedSurfaceIdentity {
 
 /// One typed node in a persistent feature-input component path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputComponentPathEntry {
     /// Serialized component instance tag; absent on anonymous path nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -375,7 +540,6 @@ pub struct FeatureInputComponentPathEntry {
 
 /// A declared sketch-relation family and its attached scalar record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputRelationBinding {
     /// Globally unique deterministic identifier for this binding.
     pub id: String,
@@ -397,8 +561,7 @@ pub struct FeatureInputRelationBinding {
 }
 
 /// One compact sketch-relation instance represented by related scalar records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
     pub id: String,
@@ -414,21 +577,29 @@ pub struct FeatureInputRelationInstance {
     pub class_ref: String,
     /// Native sketch feature owning the relation.
     pub feature_ref: String,
-    /// Scalar records carrying measured and target values.
-    pub scalar_refs: Vec<String>,
-    /// Unique driving scalar carrying the target parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_scalar_ref: Option<String>,
-    /// Unique display-role scalar attached to the relation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_scalar_ref: Option<String>,
+    /// Scalar members and their selected parameter and display roles.
+    #[serde(flatten)]
+    pub scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub operands: Vec<FeatureInputOperand>,
 }
 
+impl FeatureInputRelationInstance {
+    pub fn scalar_refs(&self) -> &[String] {
+        self.scalars.refs()
+    }
+
+    pub fn parameter_scalar_ref(&self) -> Option<&str> {
+        self.scalars.parameter()
+    }
+
+    pub fn display_scalar_ref(&self) -> Option<&str> {
+        self.scalars.display()
+    }
+}
+
 /// Native sketch-relation family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputRelationFamily {
     /// Diameter of one circular sketch entity.
@@ -449,7 +620,6 @@ pub enum FeatureInputRelationFamily {
 
 /// One native entity-reference cell in a feature-input stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputReference {
     /// Globally unique deterministic identifier for this cell.
     pub id: String,
@@ -473,7 +643,6 @@ pub struct FeatureInputReference {
 
 /// One serialized UTF-16 object name in a feature-input stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputName {
     /// Globally unique deterministic identifier for this name record.
     pub id: String,
@@ -491,8 +660,7 @@ pub struct FeatureInputName {
 }
 
 /// One named scalar serialized in native SI units.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureInputScalar {
     /// Globally unique deterministic identifier for this scalar record.
     pub id: String,
@@ -513,17 +681,71 @@ pub struct FeatureInputScalar {
     pub value: f64,
     /// Function of this scalar in the dimension record.
     pub role: FeatureInputScalarRole,
-    /// Local sketch-entity indices used as dimension operands.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entity_indices: Vec<u16>,
     /// Typed native operand cells attached to this scalar.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(flatten, with = "scalar_operands_wire")]
     pub operands: Vec<FeatureInputOperand>,
+}
+
+impl FeatureInputScalar {
+    /// Local sketch-entity indices carried by D6 dimension operands.
+    pub fn entity_indices(&self) -> Vec<u16> {
+        scalar_operands_wire::entity_indices(&self.operands)
+    }
+}
+
+mod scalar_operands_wire {
+    use super::{FeatureInputOperand, FeatureInputOperandKind};
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    pub(super) struct Wire {
+        #[serde(default)]
+        entity_indices: Option<Vec<u16>>,
+        #[serde(default)]
+        operands: Vec<FeatureInputOperand>,
+    }
+
+    pub(super) fn entity_indices(operands: &[FeatureInputOperand]) -> Vec<u16> {
+        operands
+            .iter()
+            .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
+            .map(|operand| operand.entity_index)
+            .collect()
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        operands: &[FeatureInputOperand],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        let indices = entity_indices(operands);
+        if !indices.is_empty() {
+            map.serialize_entry("entity_indices", &indices)?;
+        }
+        if !operands.is_empty() {
+            map.serialize_entry("operands", operands)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<FeatureInputOperand>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        if wire
+            .entity_indices
+            .is_some_and(|indices| indices != entity_indices(&wire.operands))
+        {
+            return Err(serde::de::Error::custom(
+                "entity_indices must match the D6 operands",
+            ));
+        }
+        Ok(wire.operands)
+    }
 }
 
 /// One native entity-reference cell attached to a feature-input scalar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputOperand {
     /// Byte offset of the reference cell within the feature-input stream.
     pub offset: u64,
@@ -540,7 +762,6 @@ pub struct FeatureInputOperand {
 
 /// Native feature-input entity-reference cell family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputOperandKind {
     /// `d6 80` reference cell.
@@ -553,7 +774,6 @@ pub enum FeatureInputOperandKind {
 
 /// Function of a named scalar in its dimension record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputScalarRole {
     /// Value consumed during model regeneration.
@@ -565,8 +785,7 @@ pub enum FeatureInputScalarRole {
 }
 
 /// One class declaration in a native feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureInputClass {
     /// Globally unique deterministic identifier for this declaration.
     pub id: String,
@@ -577,15 +796,53 @@ pub struct FeatureInputClass {
     /// Byte offset of the `ff ff 01 00` declaration marker.
     pub offset: u64,
     /// Declared native class name.
+    #[serde(flatten, with = "feature_class_wire")]
     pub name: String,
-    /// Design-intent role of this class.
-    #[serde(default)]
-    pub role: FeatureInputClassRole,
+}
+
+impl FeatureInputClass {
+    pub fn role(&self) -> FeatureInputClassRole {
+        crate::classification::native_object_class(&self.name).role
+    }
+}
+
+mod feature_class_wire {
+    use super::FeatureInputClassRole;
+    use crate::classification::native_object_class;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    pub(super) struct Wire {
+        name: String,
+        #[serde(default)]
+        role: Option<FeatureInputClassRole>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(name: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("name", name)?;
+        map.serialize_entry("role", &native_object_class(name).role)?;
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<String, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        if wire
+            .role
+            .is_some_and(|role| role != native_object_class(&wire.name).role)
+        {
+            return Err(serde::de::Error::custom(
+                "role must match the native class name",
+            ));
+        }
+        Ok(wire.name)
+    }
 }
 
 /// Design-intent role declared by a feature-input class.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputClassRole {
     /// Modeling operation or construction feature.
@@ -610,11 +867,7 @@ pub enum FeatureInputClassRole {
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
-///
-/// Prefer [`SketchInputEntity::new`] for invariant-bearing construction. There
-/// is no public [`Default`]: an empty id is illegal.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -641,16 +894,80 @@ pub struct SketchInputEntity {
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinates_m: Option<[f64; 2]>,
-    /// Resolved marker-local links carried by the reference-bearing layout.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<SketchInputLink>,
-    /// Selector stored beside `links` in the reference-bearing layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link_selector: Option<u16>,
+    /// Resolved links and their selector from the reference-bearing layout.
+    #[serde(flatten, with = "sketch_input_links_wire")]
+    pub links: Option<SketchInputLinks>,
+}
+
+/// A selector paired with a nonempty collection of resolved marker links.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SketchInputLinks {
+    pub selector: u16,
+    entries: Vec<SketchInputLink>,
+}
+
+impl SketchInputLinks {
+    pub fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
+        (!entries.is_empty()).then_some(Self { selector, entries })
+    }
+
+    pub fn entries(&self) -> &[SketchInputLink] {
+        &self.entries
+    }
+
+    #[cfg(test)]
+    pub(crate) fn entries_mut(&mut self) -> &mut [SketchInputLink] {
+        &mut self.entries
+    }
+}
+
+mod sketch_input_links_wire {
+    use super::{SketchInputLink, SketchInputLinks};
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    pub(super) struct Wire {
+        #[serde(default)]
+        links: Vec<SketchInputLink>,
+        #[serde(default)]
+        link_selector: Option<u16>,
+    }
+
+    // Serde field adapters borrow the complete optional links field.
+    #[allow(clippy::ref_option)]
+    pub(super) fn serialize<S: Serializer>(
+        links: &Option<SketchInputLinks>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(if links.is_some() { 2 } else { 0 }))?;
+        if let Some(links) = links {
+            map.serialize_entry("links", links.entries())?;
+            map.serialize_entry("link_selector", &links.selector)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<SketchInputLinks>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.links.is_empty(), wire.link_selector) {
+            (true, None) => Ok(None),
+            (false, Some(selector)) => Ok(SketchInputLinks::new(selector, wire.links)),
+            _ => Err(serde::de::Error::custom(
+                "links and link_selector must be present together, with nonempty links",
+            )),
+        }
+    }
 }
 
 impl SketchInputEntity {
+    pub fn links(&self) -> &[SketchInputLink] {
+        self.links.as_ref().map_or(&[], SketchInputLinks::entries)
+    }
+
     /// Construct a marker from its identity, parent lane, ordinal, offset, and kind.
+    #[cfg(test)]
     pub fn new(
         id: impl Into<String>,
         parent: impl Into<String>,
@@ -669,15 +986,13 @@ impl SketchInputEntity {
             kind,
             state_value: None,
             coordinates_m: None,
-            links: Vec::new(),
-            link_selector: None,
+            links: None,
         }
     }
 }
 
 /// One marker-local reference resolved within its owning feature object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchInputLink {
     /// Feature-local object identifier stored in the marker payload.
     pub local_id: u16,
@@ -686,14 +1001,12 @@ pub struct SketchInputLink {
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
 pub enum SketchInputKind {
     /// A sketch point.
     Point,
     /// A sketch line or circle from the shared native family.
-    #[serde(alias = "curve")]
     LineOrCircle,
     /// A sketch arc.
     Arc,
@@ -701,34 +1014,82 @@ pub enum SketchInputKind {
     ConstrainedPoint,
     /// A sketch relation handle.
     Relation(SketchRelationKind),
-    /// A native code not in the known vocabulary, preserved verbatim.
+    /// A native extension code in the unclassified marker namespace.
+    Native(sketch_code::NativeSketchCode),
+    /// A low code retained under a native handle layout, such as a slot handle.
+    NativeHandle(sketch_code::LowMarkerCode),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SketchInputKindWire {
+    Point,
+    #[serde(alias = "curve")]
+    LineOrCircle,
+    Arc,
+    ConstrainedPoint,
+    Relation(SketchRelationKind),
     Native(u32),
 }
 
+impl From<SketchInputKindWire> for SketchInputKind {
+    fn from(wire: SketchInputKindWire) -> Self {
+        match wire {
+            SketchInputKindWire::Point => Self::Point,
+            SketchInputKindWire::LineOrCircle => Self::LineOrCircle,
+            SketchInputKindWire::Arc => Self::Arc,
+            SketchInputKindWire::ConstrainedPoint => Self::ConstrainedPoint,
+            SketchInputKindWire::Relation(kind) => Self::Relation(kind),
+            SketchInputKindWire::Native(code) => Self::from_handle_code(code),
+        }
+    }
+}
+
+impl From<SketchInputKind> for SketchInputKindWire {
+    fn from(kind: SketchInputKind) -> Self {
+        match kind {
+            SketchInputKind::Point => Self::Point,
+            SketchInputKind::LineOrCircle => Self::LineOrCircle,
+            SketchInputKind::Arc => Self::Arc,
+            SketchInputKind::ConstrainedPoint => Self::ConstrainedPoint,
+            SketchInputKind::Relation(kind) => Self::Relation(kind),
+            SketchInputKind::Native(code) => Self::Native(code.value()),
+            SketchInputKind::NativeHandle(code) => Self::Native(code.value()),
+        }
+    }
+}
+
 impl SketchInputKind {
-    /// Maps a native sketch-entity type code to its typed kind, falling back to
-    /// [`SketchInputKind::Native`] for unrecognized codes.
+    /// Maps a code in the geometry-marker namespace.
     pub fn from_native_code(code: u32) -> Self {
-        match code {
-            0 => Self::Point,
-            1 => Self::LineOrCircle,
-            2 => Self::Arc,
-            3 => Self::ConstrainedPoint,
-            value => Self::Native(value),
+        use sketch_code::{LowMarkerCode, NativeSketchCode};
+        match NativeSketchCode::try_from(code) {
+            Ok(code) => Self::Native(code),
+            Err(LowMarkerCode::Zero) => Self::Point,
+            Err(LowMarkerCode::One) => Self::LineOrCircle,
+            Err(LowMarkerCode::Two) => Self::Arc,
+            Err(LowMarkerCode::Three) => Self::ConstrainedPoint,
         }
     }
 
-    /// Maps a marker code using the marker layout to separate geometry handles
-    /// from relation handles that reuse codes `1..3`.
+    /// Retains a code whose handle layout does not assign geometry semantics.
+    pub fn from_handle_code(code: u32) -> Self {
+        match sketch_code::NativeSketchCode::try_from(code) {
+            Ok(code) => Self::Native(code),
+            Err(code) => Self::NativeHandle(code),
+        }
+    }
+
+    /// Maps a marker code using its layout to separate geometry and relation handles.
     pub fn from_native_code_and_layout(code: u32, coordinate_bearing: bool) -> Self {
         if code == 0 || (coordinate_bearing && code <= 3) {
             return Self::from_native_code(code);
         }
-        SketchRelationKind::from_native_code(code).map_or(Self::Native(code), Self::Relation)
+        SketchRelationKind::from_native_code(code)
+            .map_or_else(|| Self::from_native_code(code), Self::Relation)
     }
 
-    /// Returns the native sketch-entity type code for this kind, the inverse of
-    /// [`SketchInputKind::from_native_code`].
+    /// Returns the stored code; the marker layout selects its namespace.
     pub fn native_code(self) -> u32 {
         match self {
             Self::Point => 0,
@@ -736,7 +1097,8 @@ impl SketchInputKind {
             Self::Arc => 2,
             Self::ConstrainedPoint => 3,
             Self::Relation(relation) => relation.native_code(),
-            Self::Native(value) => value,
+            Self::Native(value) => value.value(),
+            Self::NativeHandle(value) => value.value(),
         }
     }
 
@@ -751,7 +1113,7 @@ impl SketchInputKind {
                 | SketchRelationKind::Radius
                 | SketchRelationKind::Diameter,
             ) => false,
-            Self::Relation(_) | Self::Native(_) => true,
+            Self::Relation(_) | Self::Native(_) | Self::NativeHandle(_) => true,
             Self::Point | Self::LineOrCircle | Self::Arc | Self::ConstrainedPoint => false,
         }
     }
@@ -759,7 +1121,6 @@ impl SketchInputKind {
 
 /// Relation kind carried by a non-coordinate sketch marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchRelationKind {
     /// Linear distance.
@@ -1121,7 +1482,154 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn surface_selection_kind_preserves_the_endpoint_wire() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Selection {
+            #[serde(flatten, with = "super::surface_selection_kind_wire")]
+            kind: super::FeatureInputSurfaceSelectionKind,
+        }
+        for wire in [
+            serde_json::json!({}),
+            serde_json::json!({"endpoint_selector": 0}),
+        ] {
+            let selection: Selection = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                matches!(
+                    selection.kind,
+                    super::FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { .. }
+                ),
+                wire.get("endpoint_selector").is_some(),
+            );
+            assert_eq!(serde_json::to_value(selection).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn pmi_display_text_wire_keeps_text_and_offset_together() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Display {
+            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            value: Option<(String, u64)>,
+        }
+        let wire = serde_json::json!({"display_text": "25 mm", "display_text_offset": 17});
+        let display: Display = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(display).unwrap(), wire);
+        for field in ["display_text", "display_text_offset"] {
+            let mut split = wire.clone();
+            split.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<Display>(split).is_err());
+        }
+        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn class_role_wire_is_derived_from_name() {
+        let wire = serde_json::json!({
+            "id": "class", "parent": "lane", "ordinal": 0, "offset": 0,
+            "name": "sgEntHandle", "role": "sketch_entity"
+        });
+        let class: super::FeatureInputClass = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(class.role(), super::FeatureInputClassRole::SketchEntity);
+        assert_eq!(serde_json::to_value(class).unwrap(), wire);
+        let mut inconsistent = wire;
+        inconsistent["role"] = serde_json::json!("feature");
+        assert!(serde_json::from_value::<super::FeatureInputClass>(inconsistent).is_err());
+    }
+
+    #[test]
+    fn scalar_wire_derives_indices_from_d6_operands() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Operands {
+            #[serde(flatten, with = "super::scalar_operands_wire")]
+            operands: Vec<super::FeatureInputOperand>,
+        }
+        let wire = serde_json::json!({
+            "entity_indices": [7],
+            "operands": [
+                {"offset": 0, "reference_ref": "a", "kind": "d6", "entity_index": 7},
+                {"offset": 12, "reference_ref": "b", "kind": "e1", "entity_index": 9}
+            ]
+        });
+        let operands: Operands = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(operands).unwrap(), wire);
+        let mut inconsistent = wire;
+        inconsistent["entity_indices"] = serde_json::json!([7, 9]);
+        assert!(serde_json::from_value::<Operands>(inconsistent).is_err());
+        let empty: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(serde_json::to_value(empty).unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn tree_parent_preserves_record_and_source_wire_forms() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Parent {
+            #[serde(flatten, with = "super::tree_parent_wire")]
+            parent: Option<super::TreeParent>,
+        }
+        for wire in [
+            serde_json::json!({}),
+            serde_json::json!({"tree_parent": "record"}),
+            serde_json::json!({"parent_source_id": "7"}),
+            serde_json::json!({"tree_parent": "record", "parent_source_id": "7"}),
+        ] {
+            let parent: Parent = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                parent.parent.is_none(),
+                wire.as_object().unwrap().is_empty()
+            );
+            assert_eq!(serde_json::to_value(parent).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn sketch_links_preserve_flat_wire_and_reject_split_pairs() {
+        use super::{SketchInputEntity, SketchInputLinks};
+        let wire = serde_json::json!({
+            "id": "marker", "parent": "lane", "ordinal": 0, "offset": 0,
+            "kind": "point",
+            "links": [{ "local_id": 7, "entity_ref": "target" }],
+            "link_selector": 3
+        });
+        let entity: SketchInputEntity = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+        for missing in ["links", "link_selector"] {
+            let mut split = wire.clone();
+            split.as_object_mut().unwrap().remove(missing);
+            let error = serde_json::from_value::<SketchInputEntity>(split).unwrap_err();
+            assert!(error.to_string().contains("links and link_selector"));
+        }
+        let mut empty = wire.clone();
+        empty["links"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<SketchInputEntity>(empty).is_err());
+        let mut absent = wire;
+        absent.as_object_mut().unwrap().remove("links");
+        absent.as_object_mut().unwrap().remove("link_selector");
+        let entity: SketchInputEntity = serde_json::from_value(absent.clone()).unwrap();
+        assert!(entity.links.is_none());
+        assert_eq!(serde_json::to_value(entity).unwrap(), absent);
+        assert!(SketchInputLinks::new(3, Vec::new()).is_none());
+    }
+
     use super::{SketchInputKind, SketchRelationKind};
+
+    #[test]
+    fn low_native_handles_keep_their_layout_namespace_and_wire() {
+        for code in 0..=3 {
+            let geometry = SketchInputKind::from_native_code(code);
+            let handle = SketchInputKind::from_handle_code(code);
+            assert_ne!(geometry, handle);
+            assert!(matches!(handle, SketchInputKind::NativeHandle(_)));
+            assert_eq!(handle.native_code(), code);
+            let wire = serde_json::json!({"native": code});
+            assert_eq!(serde_json::to_value(handle).unwrap(), wire);
+            assert_eq!(
+                serde_json::from_value::<SketchInputKind>(wire).unwrap(),
+                handle
+            );
+        }
+    }
 
     #[test]
     fn marker_layout_disambiguates_geometry_and_relation_codes() {
@@ -1155,7 +1663,7 @@ mod tests {
         );
         assert_eq!(
             SketchInputKind::from_native_code_and_layout(86, false),
-            SketchInputKind::Native(86)
+            SketchInputKind::from_native_code(86)
         );
         for code in 1..=85 {
             let relation = SketchRelationKind::from_native_code(code).expect("required invariant");
@@ -1174,7 +1682,7 @@ mod tests {
             assert!(!SketchInputKind::Relation(relation).owns_constraint());
         }
         assert!(SketchInputKind::Relation(SketchRelationKind::Horizontal).owns_constraint());
-        assert!(SketchInputKind::Native(86).owns_constraint());
+        assert!(SketchInputKind::from_native_code(86).owns_constraint());
         assert!(!SketchInputKind::Point.owns_constraint());
     }
 }

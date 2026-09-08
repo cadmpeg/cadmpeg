@@ -2,6 +2,9 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::emit::decoded_tolerance;
+
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
 use crate::test_support::*;
@@ -18,7 +21,7 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
     let [surface] = surfaces.as_slice() else {
         panic!("offset surface")
     };
-    assert_eq!(surface.distance, 1_001_000.0);
+    assert_eq!(surface.state.distance(), 1_001_000.0);
 
     put_f64(&mut stream, offset + 23, f64::INFINITY);
     assert!(crate::topology::offset_surfaces(&stream).is_empty());
@@ -38,10 +41,12 @@ fn offset_surface_envelope_does_not_consume_the_following_record() {
 
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
-        graph.get(60, 12).map(crate::topology::Node::end),
+        graph
+            .get(NodeKind::OffsetSurface, 12)
+            .map(crate::topology::Node::end),
         Some(offset_end)
     );
-    assert!(graph.get(29, 20).is_some());
+    assert!(graph.get(NodeKind::Point, 20).is_some());
 }
 
 #[test]
@@ -100,8 +105,8 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
 
     assert_eq!(crate::geometry::surfaces(&cylinder).len(), 1);
-    let geometry =
-        crate::geometry::decode_surface_record(&cylinder, 0x33, 0).expect("graph-owned cylinder");
+    let geometry = crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0)
+        .expect("graph-owned cylinder");
     let SurfaceGeometry::Cylinder { origin, radius, .. } = geometry else {
         panic!("cylinder")
     };
@@ -109,7 +114,7 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     assert_eq!(radius, f64::from_bits(1) * 1000.0);
 
     put_f64(&mut cylinder, 67, f64::INFINITY);
-    assert!(crate::geometry::decode_surface_record(&cylinder, 0x33, 0).is_none());
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_none());
 }
 
 #[test]
@@ -124,7 +129,7 @@ fn ellipse_requires_ordered_serialized_radii() {
     put_f64(&mut ellipse, 99, 0.01 + 5.0e-10);
 
     assert!(crate::geometry::curves(&ellipse).is_empty());
-    assert!(crate::geometry::decode_curve_record(&ellipse, 0x20, 0).is_none());
+    assert!(crate::geometry::decode_curve_record(&ellipse, NodeKind::Ellipse, 0).is_none());
 
     put_f64(&mut ellipse, 99, 0.01);
     assert_eq!(crate::geometry::curves(&ellipse).len(), 1);
@@ -143,7 +148,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
-            .get(29, 11)
+            .get(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position),
         Some(cadmpeg_ir::math::Point3::new(
             1_001_000.0,
@@ -153,15 +158,17 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     );
 
     put_vec3(&mut stream, point + 16, [f64::INFINITY, 0.0, 0.0]);
-    assert!(crate::topology::Graph::parse(&stream).get(29, 11).is_none());
+    assert!(crate::topology::Graph::parse(&stream)
+        .get(NodeKind::Point, 11)
+        .is_none());
 }
 
 #[test]
 fn decoded_tolerance_has_no_model_magnitude_limit() {
-    assert_eq!(crate::decode::decoded_tolerance(1_001.0), Some(1_001_000.0));
-    assert_eq!(crate::decode::decoded_tolerance(0.0), None);
-    assert_eq!(crate::decode::decoded_tolerance(f64::INFINITY), None);
-    assert_eq!(crate::decode::decoded_tolerance(f64::MAX), None);
+    assert_eq!(decoded_tolerance(1_001.0), Some(1_001_000.0));
+    assert_eq!(decoded_tolerance(0.0), None);
+    assert_eq!(decoded_tolerance(f64::INFINITY), None);
+    assert_eq!(decoded_tolerance(f64::MAX), None);
 }
 
 #[test]

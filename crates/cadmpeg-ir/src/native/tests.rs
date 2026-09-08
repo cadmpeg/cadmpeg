@@ -12,22 +12,87 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
+fn native_identity_admission_is_shared_by_all_construction_paths() {
+    #[derive(Serialize)]
+    struct Record<'a> {
+        id: &'a str,
+    }
+
+    for id in [
+        "",
+        "f3d:record#1",
+        "f3d:test:record#",
+        "f3d:test:record#1 space",
+        "f3d:test:record#1#2",
+    ] {
+        assert!(matches!(
+            NativeRecord::new(id, serde_json::Map::new()),
+            Err(crate::native::NativeConvertError::InvalidIdentity(_))
+        ));
+        assert!(matches!(
+            NativeRecord::from_typed(&Record { id }),
+            Err(crate::native::NativeConvertError::InvalidIdentity(_))
+        ));
+        assert!(serde_json::from_value::<NativeRecord>(serde_json::json!({ "id": id })).is_err());
+    }
+
+    let id = "f3d:test:record#1";
+    let record = NativeRecord::new(
+        id,
+        serde_json::Map::from_iter([(
+            "id".to_owned(),
+            serde_json::Value::String("ignored".into()),
+        )]),
+    )
+    .unwrap();
+    let typed = NativeRecord::from_typed(&Record { id }).unwrap();
+    let decoded =
+        serde_json::from_value::<NativeRecord>(serde_json::to_value(&record).unwrap()).unwrap();
+    assert_eq!(record, typed);
+    assert_eq!(record, decoded);
+    assert_eq!(record.id(), id);
+}
+
+#[test]
+fn rejected_typed_identity_does_not_replace_an_existing_arena() {
+    #[derive(Serialize)]
+    struct Record<'a> {
+        id: &'a str,
+    }
+
+    let mut namespace = crate::native::NativeNamespace::default();
+    namespace
+        .set_arena(
+            "records",
+            &[Record {
+                id: "f3d:test:record#1",
+            }],
+        )
+        .unwrap();
+    let before = namespace.clone();
+    assert!(namespace
+        .set_arena("records", &[Record { id: "invalid" }])
+        .is_err());
+    assert_eq!(namespace, before);
+}
+
+#[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
-    right.native.namespace_mut("f3d").arenas.insert(
+    right.native.namespace_mut("f3d").arenas_mut().insert(
         "act_guids".into(),
-        vec![NativeRecord::new(
-            "f3d:test:act-guid#0",
-            serde_json::Map::new(),
-        )],
+        vec![
+            NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new())
+                .expect("valid native identity"),
+        ],
     );
-    right.native.namespace_mut("sldprt").arenas.insert(
+    right.native.namespace_mut("sldprt").arenas_mut().insert(
         "configurations".into(),
-        vec![NativeRecord::new(
-            "sldprt:test:configuration#0",
-            serde_json::Map::new(),
-        )],
+        vec![
+            NativeRecord::new("sldprt:test:configuration#0", serde_json::Map::new())
+                .expect("valid native identity"),
+        ],
     );
     right.native.finalize();
 
@@ -58,9 +123,10 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     right
         .native
         .namespace_mut("sldprt")
-        .arenas
+        .arenas_mut()
         .get_mut("configurations")
-        .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new());
+        .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new())
+        .expect("valid native identity");
     right.native.finalize();
     assert!(validate_neutral(&right, Vec::new())
         .findings
@@ -103,7 +169,7 @@ fn from_typed_matches_value_tree_canonical_text() {
     }
 
     let record = CanonRecord {
-        id: "f3d:test:canon#0 with \"quotes\" and \u{1F980}".into(),
+        id: "f3d:test:canon#0-\"quotes\"-\u{1F980}".into(),
         zulu: -0.0,
         alpha: vec![f64::NAN, f64::INFINITY, 0.1, -1.5e300, 3.0],
         nested: BTreeMap::from([(

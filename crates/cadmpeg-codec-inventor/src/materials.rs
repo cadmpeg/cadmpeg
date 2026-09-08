@@ -50,14 +50,14 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
             let mut properties = BTreeMap::new();
             let mut connected = Vec::new();
             for (id, property) in &record.properties {
-                if let cadmpeg_protein::PropertyValue::Float(value) = property.value {
-                    properties.insert(neutral_property_name(id).to_owned(), value);
+                if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
+                    property.value()
+                {
+                    properties.insert(neutral_property_name(id).to_owned(), *value);
                 }
-                for guid in &property.connections {
+                for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
-                        let mut texture = texture.clone();
-                        texture.slot.clone_from(id);
-                        connected.push(texture);
+                        connected.push(texture.clone().into_ref(id.clone()));
                     }
                 }
             }
@@ -75,10 +75,11 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
             .into_iter()
             .find_map(|id| color_property(record, id));
             appearances.push(Appearance {
-                id: AppearanceId(format!(
+                id: AppearanceId::mint(format!(
                     "inventor:protein:appearance#{instance_ordinal}-{}",
                     record.ordinal
-                )),
+                ))
+                .expect("identity grammar"),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),
@@ -103,8 +104,11 @@ fn library_id(value: &str) -> Option<String> {
 }
 
 fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<Color> {
-    let cadmpeg_protein::PropertyValue::Color([r, g, b, a]) =
-        record.properties.get(id).map(|property| &property.value)?
+    let cadmpeg_protein::property::PropertyValue::Color([r, g, b, a]) =
+        record
+            .properties
+            .get(id)
+            .and_then(|property| property.value())?
     else {
         return None;
     };
@@ -120,7 +124,31 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
         })
 }
 
-fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> {
+#[derive(Clone, PartialEq)]
+struct TextureAsset {
+    asset_guid: String,
+    schema: String,
+    paths: Vec<String>,
+    urn: Option<String>,
+    mapping: TextureMap2d,
+    bump: Option<BumpMap>,
+}
+
+impl TextureAsset {
+    fn into_ref(self, slot: String) -> TextureRef {
+        TextureRef {
+            asset_guid: self.asset_guid,
+            slot,
+            schema: self.schema,
+            paths: self.paths,
+            urn: self.urn,
+            mapping: self.mapping,
+            bump: self.bump,
+        }
+    }
+}
+
+fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureAsset> {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -132,26 +160,29 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> 
         .iter()
         .find_map(|(id, property)| {
             id.ends_with("_Bitmap")
-                .then_some(&property.value)
+                .then(|| property.value())
+                .flatten()
                 .and_then(|value| match value {
-                    cadmpeg_protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
+                    cadmpeg_protein::property::PropertyValue::TextureUri(paths) => {
+                        Some(paths.clone())
+                    }
                     _ => None,
                 })
         })
         .unwrap_or_default();
     let urn = record.properties.iter().find_map(|(id, property)| {
         id.ends_with("_Bitmap_urn")
-            .then_some(&property.value)
+            .then(|| property.value())
+            .flatten()
             .and_then(|value| match value {
-                cadmpeg_protein::PropertyValue::String(value) if !value.is_empty() => {
+                cadmpeg_protein::property::PropertyValue::String(value) if !value.is_empty() => {
                     Some(value.clone())
                 }
                 _ => None,
             })
     });
-    Some(TextureRef {
+    Some(TextureAsset {
         asset_guid: record.guid.clone(),
-        slot: String::new(),
         schema: record.schema.clone(),
         paths,
         urn,
@@ -181,38 +212,38 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> 
 fn property_with_suffix<'a>(
     record: &'a cadmpeg_protein::DecodedRecord,
     suffix: &str,
-) -> Option<&'a cadmpeg_protein::PropertyValue> {
+) -> Option<&'a cadmpeg_protein::property::PropertyValue> {
     let qualified_suffix = format!("_{suffix}");
     record
         .properties
         .iter()
         .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
-        .map(|(_, property)| &property.value)
+        .and_then(|(_, property)| property.value())
 }
 
 fn integer_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<u32> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Integer(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Integer(value) => Some(*value),
         _ => None,
     }
 }
 
 fn float_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Float(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Float(value) => Some(*value),
         _ => None,
     }
 }
 
 fn boolean_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<bool> {
     match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::PropertyValue::Boolean(value) => Some(*value),
+        cadmpeg_protein::property::PropertyValue::Boolean(value) => Some(*value),
         _ => None,
     }
 }
 
 fn distance_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
-    let cadmpeg_protein::PropertyValue::Distance { unit, value } =
+    let cadmpeg_protein::property::PropertyValue::Distance { unit, value } =
         property_with_suffix(record, suffix)?
     else {
         return None;
@@ -239,7 +270,8 @@ fn is_physical_schema(schema: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_protein::{DecodedProperty, DecodedRecord, PropertyValue};
+    use cadmpeg_protein::property::{DecodedProperty, PropertyValue};
+    use cadmpeg_protein::DecodedRecord;
 
     use super::*;
 
@@ -256,8 +288,10 @@ mod tests {
                 "generic_diffuse".into(),
                 DecodedProperty {
                     value_offset: 0,
-                    value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
-                    connections: vec!["duplicate-texture".into()],
+                    content: cadmpeg_protein::property::PropertyContent::Value {
+                        value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
+                        connections: vec!["duplicate-texture".into()],
+                    },
                 },
             )]),
         };

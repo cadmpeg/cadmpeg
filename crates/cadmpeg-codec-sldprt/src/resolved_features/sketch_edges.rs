@@ -32,9 +32,9 @@ pub(super) fn project_endpoint_constraints(
         }
         for (index, endpoint) in entity.endpoint_refs.iter().enumerate() {
             let locus = if index == 0 {
-                SketchLocus::Start(entity.id.clone())
+                SketchLocus::Start(entity.id().clone())
             } else {
-                SketchLocus::End(entity.id.clone())
+                SketchLocus::End(entity.id().clone())
             };
             loci_by_endpoint.entry(endpoint).or_default().push(locus);
         }
@@ -183,28 +183,31 @@ pub(super) fn project_edge(
                 major_angle: cadmpeg_ir::features::Angle(major_angle),
                 major_radius: cadmpeg_ir::features::Length(*major_radius),
                 minor_radius: cadmpeg_ir::features::Length(*minor_radius),
-                start_angle: (!full).then(|| {
-                    cadmpeg_ir::features::Angle(
-                        parameters.map_or_else(|| parameter(start), |range| range[0]),
-                    )
-                }),
-                end_angle: (!full).then(|| {
-                    cadmpeg_ir::features::Angle(
-                        parameters.map_or_else(|| parameter(end), |range| range[1]),
-                    )
+                bounds: (!full).then(|| {
+                    [
+                        cadmpeg_ir::features::Angle(
+                            parameters.map_or_else(|| parameter(start), |range| range[0]),
+                        ),
+                        cadmpeg_ir::features::Angle(
+                            parameters.map_or_else(|| parameter(end), |range| range[1]),
+                        ),
+                    ]
                 }),
             })
         }
         Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::Nurbs {
-            degree: nurbs.degree,
-            knots: nurbs.knots.clone(),
-            control_points: nurbs
-                .control_points
-                .iter()
-                .map(|point| project_point(*point, origin, u_axis, v_axis))
-                .collect(),
-            weights: nurbs.weights.clone(),
-            periodic: nurbs.periodic,
+            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                nurbs
+                    .control_points()
+                    .iter()
+                    .map(|point| project_point(*point, origin, u_axis, v_axis))
+                    .collect(),
+                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.periodic(),
+            )
+            .ok()?,
         }),
         None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
         Some(CurveGeometry::Line { .. }) | None => line(),

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
@@ -9,10 +8,11 @@
 )]
 
 use super::*;
-use crate::records::{
+use crate::records::feature::DesignParameterScope;
+use crate::records::topology::{
     DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignParameterScope, DesignRecipeReference,
 };
+use crate::records::DesignRecipeReference;
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -26,10 +26,10 @@ fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityO
         "class_tag": "277",
         "compact_layout": true,
         "local_id": record_index,
-        "local_id_offset": 0,
-        "asset_id": "asset",
+        "local_id_offset": 23,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
         "asset_id_offset": 0,
-        "context_id": "context",
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
         "context_id_offset": 0,
         "transition_edge_candidates": candidates
             .iter()
@@ -167,7 +167,7 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
     let scope = fixed_scope();
     let group = group(2, 10);
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    identity.compact_layout = false;
+    identity.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
 
     assert!(project_fixed_fillet(&scope, &[group], &[], &[identity]).is_none());
 }
@@ -176,10 +176,11 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
 fn only_edge_treatments_use_single_member_transition_chains() {
     let group = group(2, 10);
     let mut generic_identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    generic_identity.compact_layout = false;
+    generic_identity.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     generic_identity.treatment_radius_candidates.clear();
     let generic_feature_id =
-        cadmpeg_ir::features::FeatureId("f3d:model:feature#ruled-surface".into());
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface")
+            .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_group(
@@ -192,9 +193,10 @@ fn only_edge_treatments_use_single_member_transition_chains() {
         ),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
-    let treatment_feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+    let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    identity.compact_layout = false;
+    identity.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     identity.treatment_radius_candidates.clear();
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -208,12 +210,8 @@ fn only_edge_treatments_use_single_member_transition_chains() {
         ),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges == [
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:7:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:7:19".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:19").expect("identity grammar"),
             ]
     ));
 }
@@ -221,14 +219,23 @@ fn only_edge_treatments_use_single_member_transition_chains() {
 #[test]
 fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
-    first.compact_layout = false;
+    first.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
-    second.compact_layout = false;
+    second.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     second.group_member_ordinal = 1;
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -279,9 +286,9 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
     let selection_group = group(2, 10);
     let mut operand = recipe_edge_operand(10, &[], &[]);
     operand.recipe_state_id = Some(7);
-    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
         root: 1,
-        sides: vec![crate::records::DesignTopologyRecipeSide {
+        sides: vec![crate::records::topology::DesignTopologyRecipeSide {
             field_count: std::num::NonZeroU32::new(1).expect("one recipe field"),
             header_value: 1,
             scalars: Vec::new(),
@@ -292,7 +299,8 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
     });
     let mut persistent_identity = identity(10, &[]);
     persistent_identity.resolved_edge_slot = Some(19);
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -331,7 +339,8 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
     operand.recipe_state_id = Some(7);
     let mut persistent_identity = identity(10, &[(17, 0.0)]);
     persistent_identity.resolved_edge_slot = Some(17);
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -352,11 +361,27 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
     };
-    use crate::records::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
+    use crate::records::feature::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
 
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11, 12, 13];
-    selection_group.member_offsets = vec![0; 4];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 12,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 13,
+            offset: 0,
+        },
+    ];
     let mut first_edge = recipe_edge_operand(11, &[], &[]);
     first_edge.recipe_state_id = Some(7);
     first_edge.resolved_edge_slot = Some(17);
@@ -372,9 +397,9 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         recipe: DesignVertexRecipe {
             record_index,
             byte_offset: u64::from(record_index),
-            class_tag: "306".into(),
+            class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
             paired_byte_offset: 1,
-            paired_class_tag: "261".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
             recipe_record_index: record_index + 3,
             recipe_record_byte_offset: 2,
             recipe_id: format!("f3d:test:construction-recipe#{record_index}"),
@@ -383,8 +408,10 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             recipe_references: Vec::new(),
             recipe_program_offset: 4,
             recipe_program: vec![0],
-            recipe_state_id: Some(7),
-            resolved_vertex_slot: Some(vertex),
+            resolution: Some(
+                crate::records::feature::DesignVertexResolution::new(7, vertex)
+                    .expect("valid vertex slot"),
+            ),
             next_record_index: record_index + 5,
             next_byte_offset: 5,
         },
@@ -404,8 +431,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        record_table_complete: true,
-        topology: Some(AsmHistoricalTopology {
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
             edges: vec![17],
             vertices: vec![3, 4, 5],
             edge_vertices: vec![AsmHistoricalEdge {
@@ -420,13 +446,13 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     let history = AsmHistory {
         id: "f3d:test:history".into(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![state],
     };
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
     let corners = [corner(10, 0, 3), corner(12, 2, 4)];
     let edges = [first_edge.clone(), repeated_edge.clone()];
 
@@ -443,7 +469,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             None,
         ),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges.len() == 1 && edges[0].0.ends_with(":17")
+            if edges.len() == 1 && edges[0].as_str().ends_with(":17")
     ));
 
     let invalid_corners = [corner(10, 0, 3), corner(12, 2, 5)];
@@ -474,7 +500,7 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
         candidate_faces: Vec::new(),
         candidate_edges: candidate_edges
             .iter()
-            .map(|edge| EdgeId(format!("f3d:edge#{edge}")))
+            .map(|edge| EdgeId::mint(format!("f3d:test:edge#{edge}")).expect("identity grammar"))
             .collect(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -495,8 +521,8 @@ fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     assert_eq!(
         surface_patch_grouped_recipe_edges(&[&first, &second]),
         SurfacePatchRecipeEdges::Resolved(vec![
-            EdgeId("f3d:edge#17".into()),
-            EdgeId("f3d:edge#18".into())
+            EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
+            EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
         ])
     );
 }
@@ -532,18 +558,42 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
 #[test]
 fn grouped_surface_patch_recipe_projects_historical_edges() {
     let mut group = group(2, 10);
-    group.members = vec![10, 11];
-    group.member_offsets = vec![0, 0];
+    group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.recipe_references = vec![recipe_reference(&[17])];
-    first.surface_patch_recipe_structure =
-        Some(crate::records::DesignSurfacePatchRecipeStructure {
-            root: 2,
-            clauses: Vec::new(),
-        });
+    first.surface_patch_recipe_structure = Some(
+        crate::records::topology::DesignSurfacePatchRecipeStructure {
+            clauses: std::array::from_fn(|_| {
+                crate::records::topology::DesignSurfacePatchRecipeClause {
+                    fields: vec![
+                        vec![0],
+                        vec![0],
+                        vec![2, 0],
+                        vec![0, 0],
+                        vec![0],
+                        vec![0, 0],
+                    ],
+                    face_reference_ordinals: [0, 0],
+                    edge_reference_ordinals: [0, 0],
+                    payload_entry_count: 0,
+                    entries: Vec::new(),
+                }
+            }),
+        },
+    );
     let mut second = recipe_edge_operand(11, &[], &[]);
     second.recipe_references = vec![recipe_reference(&[18])];
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
+        .expect("identity grammar");
 
     let selection = resolved_surface_patch_edge_group(
         &group,
@@ -570,11 +620,12 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
     let mut operand = recipe_edge_operand(10, &[], &[]);
     operand.recipe_references = vec![recipe_reference(&[17]), recipe_reference(&[18])];
     operand.resolved_edge_slot = Some(17);
-    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
         root: 1,
         sides: Vec::new(),
     });
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_surface_patch_edge_group(
@@ -637,7 +688,7 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
         .expect("terminal edge recipe side")
     };
     let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
         root: 2,
         sides: vec![side(0, [2, 1]), side(0, [1, 3])],
     });
@@ -678,7 +729,8 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
     operand.changed_boundary_edge_slots = vec![17, 18];
     operand.updated_boundary_edge_slots = vec![17];
     operand.result_boundary_edge_slots = vec![17, 20];
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#edge-flange".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#edge-flange")
+        .expect("identity grammar");
 
     let selection = resolved_edge_flange_group(
         &group,
@@ -691,9 +743,7 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
     assert!(matches!(
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges == [cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#11:edge-flange:7:17".into()
-            )]
+            if edges == [cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#11:edge-flange:7:17").expect("identity grammar")]
     ));
 }
 
@@ -705,7 +755,8 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
     operand.changed_boundary_edge_slots = vec![17, 18];
     operand.updated_boundary_edge_slots = vec![17, 18];
     operand.result_boundary_edge_slots = vec![17, 18, 20];
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#edge-flange".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#edge-flange")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_flange_group(
@@ -769,8 +820,16 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
 #[test]
 fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -796,7 +855,8 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
         std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
     ]);
     second.recipe_reference_contexts = vec![context(vec![17, 18])];
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#chamfer".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer")
+        .expect("identity grammar");
 
     let selection = resolved_edge_treatment_group(
         &selection_group,
@@ -811,12 +871,8 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges == [
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:18".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
             ]
     ));
 }
@@ -824,8 +880,16 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
 #[test]
 fn lost_references_preserve_a_complete_compact_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -833,7 +897,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
         recipe_edge_operand(10, &[19], &[19]),
         recipe_edge_operand(11, &[19], &[19]),
     ];
-    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#chamfer".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -877,12 +942,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
         ),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges == [
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:18".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
             ]
     ));
 }
@@ -907,12 +968,21 @@ fn compact_identity_group_does_not_displace_a_possible_support_group() {
 #[test]
 fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![10, 11];
-    selection_group.member_offsets = vec![0, 0];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let first = identity(10, &[(17, 5.0), (19, 5.0)]);
     let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
     second.group_member_ordinal = 1;
-    let feature_id = cadmpeg_ir::features::FeatureId("feature".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("test:model:feature#feature")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_group(
@@ -1049,7 +1119,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::FeatureInputTopologyId;
 
-    let state = FeatureInputTopologyId("f3d:history-input:state#feature".into());
+    let state =
+        FeatureInputTopologyId::mint("f3d:history-input:state#feature").expect("identity grammar");
     let selection = partial_historical_edge_selection(
         [
             ("operand-a", Some(17)),
@@ -1066,9 +1137,10 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         selection,
         EdgeSelection::HistoricalPartial {
             state,
-            edges: vec![cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#7:feature:41:17".into()
-            )],
+            edges: vec![cadmpeg_ir::ids::HistoricalEdgeId::mint(
+                "f3d:history-input:edge#7:feature:41:17"
+            )
+            .expect("identity grammar")],
             unresolved: vec!["operand-b".into()],
             native: "group".into(),
         }
@@ -1077,7 +1149,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         [("operand-a", Some(17)), ("operand-b", Some(18))],
         41,
         "feature",
-        FeatureInputTopologyId("state".into()),
+        FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
         "group",
     )
     .is_none());
@@ -1086,7 +1158,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             [("operand-a", None), ("operand-b", None)],
             41,
             "feature",
-            FeatureInputTopologyId("state".into()),
+            FeatureInputTopologyId::mint("test:model:feature-input#state")
+                .expect("identity grammar"),
             "group",
         ),
         None
@@ -1095,17 +1168,16 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
 
 #[test]
 fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
-    use crate::records::{
+    use crate::records::topology::{
         DesignEdgeRecipeSelectorContext, DesignTopologyIncidentSide, DesignTopologyRecipeEntry,
         DesignTopologyRecipeTriplet,
     };
 
     let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
         selector,
-        clause_entries: vec![None, None],
-        clause_triplet_edge_slots: vec![None, None],
+        clauses: vec![None, None],
         incidence_matching_edge_slots: edges.to_vec(),
-        unique_incidence_edge_slot: (edges.len() == 1).then(|| edges[0]),
+
         boundary_count_matching_edge_slots: Vec::new(),
     };
     let selector_with_counts = |ordinal: i32, incidence: &[i64], counts: &[i64]| {
@@ -1246,18 +1318,20 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     let triplet = DesignTopologyRecipeTriplet {
         outer: std::num::NonZeroU32::new(3).unwrap(),
         middle: 2,
-        vertex_ordinal: 2,
-        incident_edge_ordinal: Some(1),
-        incident_side: Some(DesignTopologyIncidentSide::Preceding),
+        incident: Some(crate::records::topology::DesignTopologyIncident {
+            ordinal: 1,
+            side: DesignTopologyIncidentSide::Preceding,
+        }),
     };
     let mut common = selector(0, &[]);
-    common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
-        selector: 0,
-        boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-        topology_triplets: [triplet.clone(), triplet.clone()],
-        common_incident_edge_ordinal: Some(1),
+    common.clauses[0] = Some(crate::records::topology::DesignEdgeRecipeSelectorClause {
+        entry: DesignTopologyRecipeEntry {
+            selector: 0,
+            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+            topology_triplets: [triplet.clone(), triplet.clone()],
+        },
+        triplet_edge_slots: [vec![17, 18], vec![17]],
     });
-    common.clause_triplet_edge_slots[0] = Some([vec![17, 18], vec![17]]);
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
         Some(17)
@@ -1267,13 +1341,14 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         Some(17)
     );
     let mut common = selector(0, &[]);
-    common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
-        selector: 0,
-        boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-        topology_triplets: [triplet.clone(), triplet],
-        common_incident_edge_ordinal: Some(1),
+    common.clauses[0] = Some(crate::records::topology::DesignEdgeRecipeSelectorClause {
+        entry: DesignTopologyRecipeEntry {
+            selector: 0,
+            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+            topology_triplets: [triplet.clone(), triplet.clone()],
+        },
+        triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
     });
-    common.clause_triplet_edge_slots[0] = Some([vec![17, 18, 19], vec![17, 18]]);
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
         Some(17)
@@ -1282,9 +1357,31 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         resolved_edge_candidate_intersection(&[common], [&[19][..]]),
         None
     );
+    let clause = |triplet_edge_slots| {
+        Some(crate::records::topology::DesignEdgeRecipeSelectorClause {
+            entry: DesignTopologyRecipeEntry {
+                selector: 0,
+                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                topology_triplets: [
+                    triplet.clone(),
+                    DesignTopologyRecipeTriplet {
+                        outer: std::num::NonZeroU32::new(4).unwrap(),
+                        incident: Some(crate::records::topology::DesignTopologyIncident {
+                            ordinal: 2,
+                            side: DesignTopologyIncidentSide::Preceding,
+                        }),
+                        ..triplet.clone()
+                    },
+                ],
+            },
+            triplet_edge_slots,
+        })
+    };
     let mut cross_clause = selector(0, &[]);
-    cross_clause.clause_triplet_edge_slots =
-        vec![Some([vec![18], vec![17, 19]]), Some([vec![20], vec![17]])];
+    cross_clause.clauses = vec![
+        clause([vec![18], vec![17, 19]]),
+        clause([vec![20], vec![17]]),
+    ];
     assert_eq!(
         resolved_edge_candidate_intersection(&[cross_clause.clone()], std::iter::empty::<&[i64]>(),),
         Some(17)
@@ -1297,8 +1394,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         resolved_edge_candidate_intersection(&[cross_clause.clone()], [&[18][..]]),
         None
     );
-    cross_clause.clause_triplet_edge_slots =
-        vec![Some([vec![18], vec![17]]), Some([vec![18], vec![17]])];
+    cross_clause.clauses = vec![clause([vec![18], vec![17]]), clause([vec![18], vec![17]])];
     assert_eq!(
         resolved_edge_candidate_intersection(&[cross_clause], std::iter::empty::<&[i64]>(),),
         None
@@ -1307,12 +1403,11 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
 
 #[test]
 fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
-    let selector = |candidates: &[i64]| crate::records::DesignEdgeRecipeSelectorContext {
+    let selector = |candidates: &[i64]| crate::records::topology::DesignEdgeRecipeSelectorContext {
         selector: 0,
-        clause_entries: vec![None, None],
-        clause_triplet_edge_slots: vec![None, None],
+        clauses: vec![None, None],
         incidence_matching_edge_slots: Vec::new(),
-        unique_incidence_edge_slot: None,
+
         boundary_count_matching_edge_slots: candidates.to_vec(),
     };
     let first = [selector(&[19, 17, 18])];
@@ -1380,12 +1475,14 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
         None
     );
     let deleted = vec![17, 18, 19, 20];
+    let member = |identity, resolved_edge| crate::design::edge_resolve::EdgeGroupMember {
+        identity,
+        resolved_edge,
+        deleted_boundary_edges: deleted.clone(),
+    };
     let groups = vec![
-        vec![
-            (10, Some(17), deleted.clone()),
-            (11, Some(19), deleted.clone()),
-        ],
-        vec![(12, None, deleted.clone()), (13, None, deleted.clone())],
+        vec![member(10, Some(17)), member(11, Some(19))],
+        vec![member(12, None), member(13, None)],
     ];
     assert_eq!(
         crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &groups),
@@ -1396,13 +1493,13 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
         None
     );
     let mut two_incomplete = groups.clone();
-    two_incomplete[0][0].1 = None;
+    two_incomplete[0][0].resolved_edge = None;
     assert_eq!(
         crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &two_incomplete),
         None
     );
     let mut duplicate_identity = groups;
-    duplicate_identity[1][0].0 = 11;
+    duplicate_identity[1][0].identity = 11;
     assert_eq!(
         crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &duplicate_identity),
         None
@@ -1426,7 +1523,7 @@ fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
     let operand = |record_index: u32, deleted: &[i64]| {
         let mut operand = recipe_edge_operand(record_index, deleted, deleted);
         operand.preceding_boundary_edge_slots = deleted.to_vec();
-        operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+        operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
             root: 2,
             sides: Vec::new(),
         });
@@ -1472,7 +1569,7 @@ fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
         }))
         .expect("edge recipe reference context")
     };
-    let structure = || crate::records::DesignEdgeRecipeStructure {
+    let structure = || crate::records::topology::DesignEdgeRecipeStructure {
         root: 2,
         sides: Vec::new(),
     };
@@ -1516,10 +1613,10 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
         .expect("edge recipe reference context")
     };
     let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
         root: 2,
         sides: (0..2)
-            .map(|_| crate::records::DesignTopologyRecipeSide {
+            .map(|_| crate::records::topology::DesignTopologyRecipeSide {
                 field_count: std::num::NonZeroU32::new(3).expect("field count"),
                 header_value: 2,
                 scalars: vec![1, 0],
@@ -1664,12 +1761,11 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
     use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
 
-    let selector = |edges| crate::records::DesignEdgeRecipeSelectorContext {
+    let selector = |edges| crate::records::topology::DesignEdgeRecipeSelectorContext {
         selector: 0,
-        clause_entries: Vec::new(),
-        clause_triplet_edge_slots: Vec::new(),
+        clauses: Vec::new(),
         incidence_matching_edge_slots: edges,
-        unique_incidence_edge_slot: None,
+
         boundary_count_matching_edge_slots: Vec::new(),
     };
     let selectors = [selector(vec![11, 12]), selector(vec![13])];

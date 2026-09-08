@@ -12,13 +12,14 @@ use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;
 
 use super::edits::{
-    NurbsCurveEdit, NurbsPcurveEdit, NurbsSurfaceEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
+    NurbsCurveEdit, NurbsSurfaceEdit, PcurveEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
 use crate::writer::primitives::{finite_vector, unique_knot_count};
 use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
+use cadmpeg_asm::brep::records::EndpointSlot;
 use cadmpeg_asm::edit::{
-    AsmEditSet, NurbsCurveEdit as AsmNurbsCurveEdit, NurbsPcurveEdit as AsmNurbsPcurveEdit,
-    NurbsSurfaceEdit as AsmNurbsSurfaceEdit,
+    AsmEditSet, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
+    NurbsSurfaceEdit as AsmNurbsSurfaceEdit, PcurveEdit as AsmPcurveEdit,
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab;
@@ -30,10 +31,10 @@ use cadmpeg_asm::asm_header::stream_ref_width;
 
 pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
     valid_edited_nurbs_direction(
-        &before.knots,
-        after.degree,
-        &after.knots,
-        after.control_points.len(),
+        before.knots(),
+        after.degree(),
+        after.knots(),
+        after.control_points().len(),
     )
 }
 
@@ -85,12 +86,12 @@ pub(crate) struct GeometryEdits<'a> {
     pub(crate) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
     pub(crate) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
     pub(crate) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
-    pub(crate) pcurves: &'a BTreeMap<String, NurbsPcurveEdit>,
+    pub(crate) pcurves: &'a BTreeMap<String, PcurveEdit>,
     pub(crate) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
     pub(crate) procedural_surface_fits: &'a BTreeMap<String, f64>,
     pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
     pub(crate) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
-    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, u8)>,
+    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, EndpointSlot)>,
     pub(crate) face_sidedness: &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
     pub(crate) tolerant_edges: &'a BTreeMap<usize, f64>,
     pub(crate) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
@@ -110,14 +111,28 @@ fn asm_nurbs_curve_edit(edit: &NurbsCurveEdit) -> AsmNurbsCurveEdit<'_> {
     }
 }
 
-fn asm_nurbs_pcurve_edit(edit: &NurbsPcurveEdit) -> AsmNurbsPcurveEdit<'_> {
-    AsmNurbsPcurveEdit {
-        native_geometry: &edit.native_geometry,
-        periodic: edit.periodic,
-        wrapper_reversed: edit.wrapper_reversed,
-        native_tail_flags: edit.native_tail_flags,
-        parameter_range: edit.parameter_range,
-        fit_tolerance: edit.fit_tolerance,
+fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
+    match edit {
+        PcurveEdit::Inline {
+            native_geometry,
+            periodic,
+            wrapper_reversed,
+            native_tail_flags,
+            parameter_range,
+            fit_tolerance,
+        } => AsmPcurveEdit::Inline(InlinePcurveEdit {
+            native_geometry,
+            periodic: *periodic,
+            wrapper_reversed: *wrapper_reversed,
+            native_tail_flags: *native_tail_flags,
+            parameter_range: *parameter_range,
+            fit_tolerance: *fit_tolerance,
+        }),
+        PcurveEdit::Ref {
+            parameter_range, ..
+        } => AsmPcurveEdit::Ref {
+            parameter_range: *parameter_range,
+        },
     }
 }
 
@@ -135,7 +150,7 @@ pub(crate) fn patch_framed_geometry(
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let asm_edits =
-        AsmEditSet::from_framed(records.to_vec(), stream_ref_width(bytes), header_scale)?;
+        AsmEditSet::from_framed(records.to_vec(), stream_ref_width(bytes), header_scale);
     patch_asm_geometry(bytes, &asm_edits, edits)
 }
 
@@ -178,7 +193,7 @@ fn patch_asm_geometry(
         .collect::<BTreeMap<_, _>>();
     let transform_records = records
         .iter()
-        .filter(|record| record.head == "body")
+        .filter(|record| record.head() == "body")
         .filter_map(|body| {
             body_transforms
                 .get(&crate::ids::brep_entity_id(body.index))
@@ -190,22 +205,34 @@ fn patch_asm_geometry(
         .collect::<BTreeMap<_, _>>();
     let ref_pcurve_geometry = records
         .iter()
-        .filter(|record| record.head == "pcurve")
+        .filter(|record| record.head() == "pcurve")
         .filter_map(|record| {
-            let edit = pcurves.get(&crate::ids::brep_entity_id(record.index))?;
+            let PcurveEdit::Ref {
+                native_geometry,
+                periodic,
+                ..
+            } = pcurves.get(&crate::ids::brep_entity_id(record.index))?
+            else {
+                return None;
+            };
             let target = usize::try_from(record.ref_at(4)?).ok()?;
-            let mut geometry = edit.clone();
-            geometry.wrapper_reversed = None;
-            geometry.native_tail_flags = None;
-            geometry.parameter_range = None;
-            geometry.fit_tolerance = None;
-            Some((target, geometry))
+            Some((
+                target,
+                AsmPcurveEdit::Inline(InlinePcurveEdit {
+                    native_geometry,
+                    periodic: *periodic,
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: None,
+                    fit_tolerance: None,
+                }),
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let mut color_records = BTreeMap::new();
     for entity in records
         .iter()
-        .filter(|record| record.head == "body" || record.head == "face")
+        .filter(|record| record.head() == "body" || record.head() == "face")
     {
         let id = crate::ids::brep_entity_id(entity.index);
         let Some(color) = entity_colors.get(&id) else {
@@ -234,7 +261,7 @@ fn patch_asm_geometry(
     }
     for record in records {
         if let Some(timestamp) = creation_timestamps.get(&record.index) {
-            if !record.head.contains("ATTRIB_CUSTOM")
+            if !record.head().contains("ATTRIB_CUSTOM")
                 || !record.tokens.iter().any(
                     |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
                 )
@@ -263,7 +290,7 @@ fn patch_asm_geometry(
             continue;
         }
         if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
-            if !matches!(record.head.as_str(), "edge" | "tedge") {
+            if !matches!(record.head(), "edge" | "tedge") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D edge-continuity record {} is not an edge",
                     record.index
@@ -273,7 +300,7 @@ fn patch_asm_geometry(
             asm_edits.patch_ascii_field(bytes, record, 10, continuity)?;
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
-            if !matches!(record.head.as_str(), "vertex" | "tvertex") {
+            if !matches!(record.head(), "vertex" | "tvertex") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D vertex-ownership record {} is not a vertex",
                     record.index
@@ -281,13 +308,13 @@ fn patch_asm_geometry(
             }
             for (index, tag, value) in [
                 (3usize, 0x0c, *owning_edge),
-                (4, 0x04, i64::from(*endpoint_index)),
+                (4, 0x04, i64::from(endpoint_index.code())),
             ] {
                 asm_edits.patch_integer_field(bytes, record, index, tag, value)?;
             }
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
-            if record.head != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
+            if record.head() != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D face-sidedness record {} is not double-sided",
                     record.index
@@ -300,7 +327,7 @@ fn patch_asm_geometry(
             asm_edits.patch_sense_field(bytes, record, 10, sense)?;
         }
         if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
-            if record.head != "tvertex" {
+            if record.head() != "tvertex" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-vertex record {} is not a tvertex",
                     record.index
@@ -314,7 +341,7 @@ fn patch_asm_geometry(
             }
         }
         if let Some(tolerance) = tolerant_edges.get(&record.index) {
-            if record.head != "tedge"
+            if record.head() != "tedge"
                 || !matches!(record.chunk(12), Some(sab::Token::Long(_)))
                 || !matches!(record.chunk(13), Some(sab::Token::Long(_)))
             {
@@ -358,28 +385,24 @@ fn patch_asm_geometry(
         }
         let id = crate::ids::brep_entity_id(record.index);
         if let Some(edit) = ref_pcurve_geometry.get(&record.index) {
-            asm_edits.patch_nurbs_pcurve(bytes, record, asm_nurbs_pcurve_edit(edit))?;
+            asm_edits.patch_pcurve(bytes, record, *edit)?;
         }
         if let Some(edit) = pcurves.get(&id) {
-            if record.ref_at(4).is_some() {
-                asm_edits.patch_ref_pcurve(bytes, record, asm_nurbs_pcurve_edit(edit))?;
-            } else {
-                asm_edits.patch_nurbs_pcurve(bytes, record, asm_nurbs_pcurve_edit(edit))?;
-            }
+            asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit))?;
         }
         if let Some(edit) = nurbs_curves.get(&id) {
             asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
         }
         let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
         if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
-            if record.head != "tcoedge" {
+            if record.head() != "tcoedge" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D tolerant use-curve carrier {tolerant_curve_id} is not a tcoedge record"
                 )));
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                native_curve.reverse_parameterization();
                 asm_edits.patch_nurbs_curve(
                     bytes,
                     record,
@@ -429,7 +452,7 @@ fn patch_asm_geometry(
             asm_edits.patch_procedural_surface_fit(bytes, record, *tolerance)?;
         }
         if let Some(edit) = procedural_surface_edits.get(&procedural_id) {
-            if record.head != "spline" {
+            if record.head() != "spline" {
                 return Err(CodecError::malformed(format_args!(
                     "F3D extrusion carrier {procedural_id} is not a spline record"
                 )));
@@ -453,22 +476,22 @@ fn patch_asm_geometry(
                 }
             }
         }
-        if record.head == "face" {
+        if record.head() == "face" {
             if let Some(sense) = face_senses.get(&id) {
                 asm_edits.patch_sense_field(bytes, record, 8, *sense)?;
             }
-        } else if matches!(record.head.as_str(), "coedge" | "tcoedge") {
+        } else if matches!(record.head(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
                 asm_edits.patch_sense_field(bytes, record, 7, *sense)?;
             }
-        } else if matches!(record.head.as_str(), "edge" | "tedge") {
+        } else if matches!(record.head(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
                 for (index, value) in [(4usize, range[0]), (6, range[1])] {
                     let offset = asm_edits.required_payload_field(bytes, record, index, 0x06)?;
                     AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
-        } else if record.head == "point" {
+        } else if record.head() == "point" {
             if let Some(position) = positions.get(&id) {
                 let offset = asm_edits.required_payload_field(bytes, record, 3, 0x13)?;
                 for (component, value) in [
@@ -483,7 +506,7 @@ fn patch_asm_geometry(
                     AsmEditSet::patch_f64_payload(bytes, at, value)?;
                 }
             }
-        } else if record.head == "straight" {
+        } else if record.head() == "straight" {
             if let Some((origin, direction)) = lines.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "straight" => [0, 1],
@@ -513,7 +536,7 @@ fn patch_asm_geometry(
                     }
                 }
             }
-        } else if record.head == "degenerate_curve" {
+        } else if record.head() == "degenerate_curve" {
             if let Some(point) = degenerate_curves.get(&id) {
                 let field_index = match record.name.as_str() {
                     "degenerate_curve" => 0,
@@ -538,7 +561,7 @@ fn patch_asm_geometry(
                     AsmEditSet::patch_f64_payload(bytes, at, value)?;
                 }
             }
-        } else if record.head == "ellipse" {
+        } else if record.head() == "ellipse" {
             if let Some((center, axis, direction, major_radius, minor_radius)) = conics.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "ellipse" => [0, 1, 2, 3],
@@ -585,7 +608,7 @@ fn patch_asm_geometry(
                 };
                 AsmEditSet::patch_f64_payload(bytes, fields[3] + 1, signed_ratio)?;
             }
-        } else if record.head == "plane" {
+        } else if record.head() == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "plane" => [0, 1, 2],
@@ -617,7 +640,7 @@ fn patch_asm_geometry(
                     }
                 }
             }
-        } else if record.head == "sphere" {
+        } else if record.head() == "sphere" {
             if let Some((center, axis, ref_direction, radius)) = spheres.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "sphere" => [0, 1, 2, 3],
@@ -651,7 +674,7 @@ fn patch_asm_geometry(
                 }
                 AsmEditSet::patch_f64_payload(bytes, fields[1] + 1, radius / LEN_TO_MM)?;
             }
-        } else if record.head == "torus" {
+        } else if record.head() == "torus" {
             if let Some((center, axis, ref_direction, major_radius, minor_radius)) = tori.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "torus" => [0, 1, 2, 3, 4],
@@ -691,7 +714,7 @@ fn patch_asm_geometry(
                     AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
-        } else if record.head == "cone" {
+        } else if record.head() == "cone" {
             if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
                 let field_indices = match record.name.as_str() {
                     "cone" => [0, 1, 2, 3, 4, 5, 6],
@@ -764,7 +787,8 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     {
         return Err(CodecError::malformed(format_args!(
             "{} record {} has an invalid edited color",
-            record.head, record.index
+            record.head(),
+            record.index
         )));
     }
     let encoded = channels.map(|channel| (channel * 255.0).round() as u8);
@@ -772,7 +796,8 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     if decoded != channels {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
-            record.head, record.index
+            record.head(),
+            record.index
         )));
     }
     Ok(encoded)

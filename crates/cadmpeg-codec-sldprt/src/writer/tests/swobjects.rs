@@ -2,9 +2,12 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::test_support::*;
@@ -16,9 +19,10 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
     payload.extend([0xde, 0xad, 0xbe, 0xef]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x40, "SWObjects", &payload));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .source
@@ -28,9 +32,12 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
 
     let mut encoded = Vec::new();
-    let path = SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    let path = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     assert_eq!(path, cadmpeg_ir::WritePath::Patched);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -39,17 +46,18 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| record.stream == "SWObjects")
+        .find(|record| record.stream() == "SWObjects")
         .unwrap();
-    assert_eq!(retained.data.as_deref(), Some(payload.as_slice()));
+    assert_eq!(retained.data(), Some(payload.as_slice()));
 }
 
 #[test]
 fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
         r: 1.0,
         g: 0.0,
@@ -57,13 +65,12 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
         a: 1.0,
     });
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -84,14 +91,11 @@ fn encoder_writes_source_less_ir() {
 
     let mut encoded = Vec::new();
     let report = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     // No retained source content reached the writer, so it authored every byte.
-    assert_eq!(report.write_path, cadmpeg_ir::WritePath::Synthesized);
+    assert_eq!(report.write_path(), cadmpeg_ir::WritePath::Synthesized);
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
@@ -129,10 +133,7 @@ fn semantic_writer_emits_face_records_deterministically() {
     for _ in 0..4 {
         let mut encoded = Vec::new();
         SldprtCodec
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         if let Some(expected) = &expected {
@@ -147,16 +148,15 @@ fn semantic_writer_emits_face_records_deterministically() {
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        ProfileRef, Termination,
+        LinearTermination, ProfileRef,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#extrude".into()),
+        id: FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -169,15 +169,13 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(10.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::Join,
-            direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
@@ -188,10 +186,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     });
 
     let error = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(error
@@ -202,8 +197,9 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 #[test]
 fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, PathRef, ProfileRef, RevolveExtent, Termination,
+        Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
+        FeatureDefinition, FeatureId, Length, LinearTermination, PathRef, ProfileRef,
+        RevolveExtent,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -228,18 +224,14 @@ fn encoder_writes_source_less_line_sketches() {
         .map(|index| SketchEntityId(format!("synthetic:test:sketch-entity#line-{index}")))
         .collect::<Vec<_>>();
     for index in 0..3 {
-        ir.model.sketch_entities.push(SketchEntity {
-            id: entity_ids[index].clone(),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            entity_ids[index].clone(),
+            sketch_id.clone(),
+            SketchGeometry::Line {
                 start: points[index],
                 end: points[(index + 1) % 3],
             },
-        });
+        ));
     }
     for index in 0..3 {
         ir.model.sketch_constraints.push(SketchConstraint {
@@ -299,17 +291,13 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("synthetic:test:sketch-entity#point".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    ir.model.sketch_entities.push(SketchEntity::new(
+        SketchEntityId("synthetic:test:sketch-entity#point".into()),
+        sketch_id.clone(),
+        SketchGeometry::Point {
             position: Point2::new(4.0, 5.0),
         },
-    });
+    ));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
@@ -330,13 +318,13 @@ fn encoder_writes_source_less_line_sketches() {
             .collect()],
         native_ref: None,
     });
-    let sketch_feature_id = FeatureId("synthetic:test:feature#profile".into());
+    let sketch_feature_id =
+        FeatureId::mint("synthetic:test:feature#profile").expect("identity grammar");
     ir.model.features.push(Feature {
         id: sketch_feature_id.clone(),
         ordinal: 0,
         name: Some("Profile".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -344,8 +332,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(sketch_id.clone()),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
         },
         native_ref: None,
     });
@@ -353,21 +340,21 @@ fn encoder_writes_source_less_line_sketches() {
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: Some(profile.clone()),
-                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+            construction: cadmpeg_ir::features::RevolveConstruction::new(
+                Some(profile.clone()),
+                Some(cadmpeg_ir::features::RevolutionAxis {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     direction: Vector3::new(0.0, 1.0, 0.0),
+                    reference: None,
                 }),
-                extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(1.2) },
+                Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(1.2) },
                 }),
-                axis_reference: None,
-                solid: Some(true),
-                face_maker_class: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            },
+                Some(true),
+                None,
+                None,
+                None,
+            ),
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
@@ -375,7 +362,7 @@ fn encoder_writes_source_less_line_sketches() {
             sections: Vec::new(),
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: BooleanOp::Join,
+                op: cadmpeg_ir::features::BooleanKind::Join,
             },
             orientation: None,
             transition: None,
@@ -394,8 +381,7 @@ fn encoder_writes_source_less_line_sketches() {
                 cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
                 cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
             ],
-            guides: vec![path],
-            centerline: None,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(vec![path]),
             op: BooleanOp::NewBody,
             closed: false,
             solid: true,
@@ -417,11 +403,11 @@ fn encoder_writes_source_less_line_sketches() {
     ];
     for (index, definition) in generated.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#profile-op-{index}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
@@ -432,12 +418,13 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
+    let extrude_feature_id =
+        FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar");
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#extrude".into()),
+        id: extrude_feature_id.clone(),
         ordinal: 1,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        parent: Some(sketch_feature_id),
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -446,21 +433,20 @@ fn encoder_writes_source_less_line_sketches() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
-                0.0, 0.0, 1.0,
-            )),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: Vector3::new(0.0, 0.0, 1.0),
+                source: None,
+            },
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(12.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::Join,
-            direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
@@ -469,13 +455,13 @@ fn encoder_writes_source_less_line_sketches() {
         },
         native_ref: None,
     });
+    ir.model
+        .set_feature_regeneration_parent(extrude_feature_id, sketch_feature_id)
+        .unwrap();
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let scan = container::scan_bytes(&encoded);
@@ -485,9 +471,10 @@ fn encoder_writes_source_less_line_sketches() {
             .as_deref()
             .is_some_and(|section| section == "Contents/Config-0-ResolvedFeatures")
     }));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let marker_lane = &sldprt_native(decoded.ir()).feature_input_lanes[0];
     assert_eq!(
         marker_lane
@@ -505,10 +492,11 @@ fn encoder_writes_source_less_line_sketches() {
     assert_eq!(marker_relations.len(), 3);
     assert!(marker_relations
         .iter()
-        .all(|marker| marker.links.len() == 2 && marker.link_selector == Some(0)));
+        .all(|marker| marker.links().len() == 2
+            && marker.links.as_ref().map(|links| links.selector) == Some(0)));
     assert!(marker_relations
         .iter()
-        .all(|marker| marker.links.iter().all(|link| marker_lane
+        .all(|marker| marker.links().iter().all(|link| marker_lane
             .sketch_entities
             .iter()
             .any(|candidate| candidate.id == link.entity_ref
@@ -580,9 +568,7 @@ fn encoder_writes_source_less_line_sketches() {
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(_),
-            ..
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
@@ -591,7 +577,7 @@ fn encoder_writes_source_less_line_sketches() {
             profile: ProfileRef::Sketch(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(12.0)
                     },
                     ..
@@ -640,13 +626,12 @@ fn encoder_writes_source_less_line_sketches() {
         point.v = 8.0;
     }
     let mut rewritten = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut rewritten,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut rewritten,
+    )
+    .unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
@@ -694,42 +679,35 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position: point },
-    });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line { start, end },
-    });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
+            sketch_id.clone(),
+            SpatialSketchGeometry::Point { position: point },
+        ));
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            entity_id,
+            sketch_id.clone(),
+            SpatialSketchGeometry::Line { start, end },
+        ));
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
+            sketch_id.clone(),
+            SpatialSketchGeometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ));
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#spatial-path".into()),
+        id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -744,15 +722,13 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
-    let mut regenerated = SldprtCodec
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
 
     assert_eq!(regenerated.ir().model.spatial_sketches.len(), 1);
     assert_eq!(regenerated.ir().model.spatial_sketch_entities.len(), 3);
@@ -793,13 +769,12 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         end: edited_end,
     };
     let mut rewritten = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            regenerated.ir(),
-            regenerated.source_fidelity(),
-            &mut rewritten,
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        regenerated.ir(),
+        regenerated.source_fidelity(),
+        &mut rewritten,
+    )
+    .unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
@@ -845,18 +820,14 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         }]],
         native_ref: None,
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    });
+    ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
         sketch: sketch_id,
@@ -874,10 +845,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     });
 
     let error = SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));

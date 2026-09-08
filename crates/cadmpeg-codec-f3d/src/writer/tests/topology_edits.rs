@@ -27,21 +27,18 @@ fn generated_f3d_rewrites_body_transform() {
     assert_eq!(f3d_native(decoded.ir()).transform_hints.len(), 1);
     assert!(!f3d_native(decoded.ir()).transform_hints[0].rotation);
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let transform = edited.model.bodies[0]
-        .transform
-        .as_mut()
-        .expect("generated body transform");
-    transform.rows[0][3] = 125.0;
-    transform.rows[1][3] = -75.0;
-    transform.rows[2][3] = 50.0;
-    transform.rows[3][3] = 2.0;
-    let expected = *transform;
+    let expected = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 125.0],
+        [0.0, 1.0, 0.0, -75.0],
+        [0.0, 0.0, 1.0, 50.0],
+    ])
+    .expect("affine transform");
+    edited.model.bodies[0].transform = Some(expected);
     f3d_native_mut(&mut edited).transform_hints[0].reflection = true;
     f3d_native_mut(&mut edited).body_native_keys[0].asm_body_key = Some(84);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("body-transform regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -57,12 +54,14 @@ fn generated_f3d_rewrites_body_transform() {
 
 #[test]
 fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
-    let body = cadmpeg_ir::ids::BodyId("f3d:brep:entity#1".into());
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
     let mut baseline = crate::native::F3dNative::default();
     baseline
         .body_native_keys
         .push(cadmpeg_asm::brep::records::BodyNativeKey {
-            id: "f3d:asm:body-native-key#1".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             body: body.clone(),
             record_index: 1,
             body_ordinal: 0,
@@ -112,8 +111,7 @@ fn generated_f3d_rewrites_body_rgb_color() {
     edited.model.bodies[0].color = Some(expected);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("body-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -146,8 +144,7 @@ fn generated_f3d_rewrites_the_winning_truecolor_attribute() {
     edited.model.bodies[0].color = Some(expected);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("truecolor regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -173,8 +170,7 @@ fn generated_f3d_rewrites_fixed_width_decimal_color_text() {
     edited.model.bodies[0].color = Some(expected);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("decimal-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -196,8 +192,7 @@ fn generated_f3d_rejects_lossy_truecolor_edit() {
         a: 1.0,
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("nonrepresentable truecolor edit must be rejected");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -218,8 +213,7 @@ fn generated_f3d_rejects_decimal_color_text_growth() {
         a: 1.0,
     });
 
-    let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut Vec::new())
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
         .expect_err("wider decimal-color text must be rejected");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -241,8 +235,7 @@ fn generated_f3d_rewrites_face_rgb_color_and_sense() {
     edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("face-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -264,8 +257,7 @@ fn generated_f3d_rewrites_edge_parameter_range() {
     edited.model.edges[0].param_range = Some([-2.5, 4.75]);
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("edge-range regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -292,8 +284,7 @@ fn generated_f3d_rewrites_edge_native_metadata() {
     }
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("edge-continuity regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -323,19 +314,19 @@ fn generated_f3d_rewrites_vertex_ownership() {
     {
         let mut native = f3d_native_mut(&mut edited);
         native.vertex_ownerships[1].owning_edge = replacement.clone();
-        native.vertex_ownerships[1].endpoint_index = 0;
+        native.vertex_ownerships[1].endpoint_index =
+            cadmpeg_asm::brep::records::EndpointSlot::Start;
     }
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("vertex-ownership regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     let ownership = &f3d_native(round_trip.ir()).vertex_ownerships[1];
     assert_eq!(ownership.owning_edge, replacement);
-    assert_eq!(ownership.endpoint_index, 0);
+    assert_eq!(ownership.endpoint_index.code(), 0);
 }
 
 #[test]
@@ -349,8 +340,7 @@ fn generated_f3d_rewrites_face_and_coedge_sense() {
     edited.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("orientation regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

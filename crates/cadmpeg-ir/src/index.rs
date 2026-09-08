@@ -13,9 +13,7 @@ use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
-use crate::geometry::{
-    Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface, SurfaceGeometry,
-};
+use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::schema::EntitySchema;
@@ -138,61 +136,59 @@ macro_rules! define_model_index {
             ) -> Self {
                 let mut procedural_surface_by_surface =
                     HashMap::with_capacity(ir.model.procedural_surfaces.len());
-                for procedural in &ir.model.procedural_surfaces {
-                    procedural_surface_by_surface
-                        .entry(procedural.surface.0.as_str())
-                        .or_insert(procedural);
-                }
                 let mut procedural_curves_by_curve =
                     HashMap::<&'a str, Vec<&'a ProceduralCurve>>::with_capacity(
                         ir.model.procedural_curves.len(),
                     );
-                for procedural in &ir.model.procedural_curves {
-                    procedural_curves_by_curve
-                        .entry(procedural.curve.0.as_str())
-                        .or_default()
-                        .push(procedural);
-                }
-                let mut unique_cached_producers = HashMap::<
-                    &'a str,
-                    Option<&'a ProceduralSurface>,
-                >::new();
                 let mut procedural_surfaces_by_id =
                     HashMap::with_capacity(ir.model.procedural_surfaces.len());
                 for procedural in &ir.model.procedural_surfaces {
                     procedural_surfaces_by_id
-                        .entry(procedural.id.0.as_str())
+                        .entry(procedural.id.as_str())
                         .or_insert(procedural);
                 }
-                for procedural in &ir.model.procedural_surfaces {
-                    if procedural.cache_fit_tolerance.is_some() {
-                        if let Some(producer) =
-                            unique_cached_producers.get_mut(procedural.surface.0.as_str())
-                        {
-                            *producer = None;
-                        } else {
-                            unique_cached_producers
-                                .insert(procedural.surface.0.as_str(), Some(procedural));
-                        }
+                let mut procedural_curves_by_id =
+                    HashMap::with_capacity(ir.model.procedural_curves.len());
+                for procedural in &ir.model.procedural_curves {
+                    procedural_curves_by_id
+                        .entry(procedural.id.as_str())
+                        .or_insert(procedural);
+                }
+                for carrier in &ir.model.surfaces {
+                    if let Some(procedural) = carrier
+                        .geometry
+                        .procedural_construction()
+                        .and_then(|construction| {
+                            procedural_surfaces_by_id.get(construction.as_str())
+                        })
+                        .copied()
+                    {
+                        procedural_surface_by_surface
+                            .insert(carrier.id.as_str(), procedural);
+                    }
+                }
+                for carrier in &ir.model.curves {
+                    if let Some(procedural) = carrier
+                        .geometry
+                        .procedural_construction()
+                        .and_then(|construction| {
+                            procedural_curves_by_id.get(construction.as_str())
+                        })
+                        .copied()
+                    {
+                        procedural_curves_by_curve
+                            .entry(carrier.id.as_str())
+                            .or_default()
+                            .push(procedural);
                     }
                 }
                 let mut procedural_surface_for_carrier =
                     HashMap::with_capacity(ir.model.surfaces.len());
-                for carrier in &ir.model.surfaces {
-                    let procedural = match &carrier.geometry {
-                        SurfaceGeometry::Procedural { construction } => procedural_surfaces_by_id
-                            .get(construction.0.as_str())
-                            .copied()
-                            .filter(|procedural| procedural.surface == carrier.id),
-                        _ => unique_cached_producers
-                            .get(carrier.id.0.as_str())
-                            .copied()
-                            .flatten(),
-                    };
-                    if let Some(procedural) = procedural {
-                        procedural_surface_for_carrier.insert(carrier.id.0.as_str(), procedural);
-                    }
-                }
+                procedural_surface_for_carrier.extend(
+                    procedural_surface_by_surface
+                        .iter()
+                        .map(|(surface, procedural)| (*surface, *procedural)),
+                );
                 Self {
                     ir,
                     $($field: OnceLock::new(),)*
@@ -224,7 +220,7 @@ macro_rules! define_model_index {
                         .values()
                         .flat_map(|namespace| {
                             namespace
-                                .arenas
+                                .arenas()
                                 .values()
                                 .flatten()
                                 .map(|record| record.id().to_owned())
@@ -259,7 +255,7 @@ macro_rules! define_model_index {
                             .0
                             .values()
                             .flat_map(|namespace| {
-                                namespace.arenas.values().flatten().map(|record| record.id())
+                                namespace.arenas().values().flatten().map(|record| record.id())
                             }),
                     );
                     identities.extend(self.additional_native_identities.iter().copied());
@@ -330,81 +326,35 @@ crate::document::arena_registry!(define_model_index);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
-    use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
-    use crate::units::Units;
+    use crate::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
     use serde_json::Map;
 
-    #[test]
-    fn procedural_surface_owner_index_preserves_arena_precedence() {
-        let mut ir = CadIr::empty(Units::default());
-        for id in ["first", "second"] {
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!("test:procedural-surface#{id}")),
-                surface: SurfaceId("test:surface#owner".to_string()),
-                definition: ProceduralSurfaceDefinition::Unknown { record: None },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
-        }
-
-        let index = ModelIndex::new(&ir);
-
-        assert_eq!(
-            index
-                .procedural_surface_for_surface("test:surface#owner")
-                .map(|procedural| procedural.id.0.as_str()),
-            Some("test:procedural-surface#first")
-        );
-    }
-
-    #[test]
-    fn procedural_curve_owner_index_preserves_arena_precedence() {
-        let mut ir = CadIr::empty(Units::default());
-        let curve = CurveId("test:curve#owner".to_string());
-        for id in ["first", "second"] {
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: ProceduralCurveId(format!("test:procedural-curve#{id}")),
-                curve: curve.clone(),
-                definition: ProceduralCurveDefinition::Unknown {
-                    native_kind: None,
-                    record: None,
-                },
-                cache_fit_tolerance: None,
-            });
-        }
-
-        let index = ModelIndex::new(&ir);
-
-        assert_eq!(
-            index
-                .procedural_curves_for_curve(curve.0.as_str())
-                .and_then(|procedurals| procedurals.first().copied())
-                .map(|procedural| procedural.id.0.as_str()),
-            Some("test:procedural-curve#first")
-        );
+    macro_rules! procedural_surface {
+        (
+            id: $id:expr,
+            definition: $definition:expr,
+            cache_fit_tolerance: $cache_fit_tolerance:expr,
+            record_bounds: $record_bounds:expr $(,)?
+        ) => {
+            ProceduralSurface::try_new($id, $definition, $cache_fit_tolerance, $record_bounds)
+                .expect("valid procedural surface fixture")
+        };
     }
 
     #[test]
     fn model_only_index_excludes_native_identity_universe() {
-        let mut ir = CadIr::empty(Units::default());
-        let native_id = "test:native#0";
-        ir.native.0.insert(
-            "test".into(),
-            NativeNamespace {
-                version: 1,
-                arenas: [(
-                    "records".into(),
-                    vec![NativeRecord::new(native_id, Map::new())],
-                )]
-                .into_iter()
-                .collect(),
-            },
+        let mut ir = CadIr::empty();
+        let native_id = "test:fixture:native#0";
+        let mut namespace = NativeNamespace::default();
+        namespace.arenas_mut().insert(
+            "records".into(),
+            vec![NativeRecord::new(native_id, Map::new()).expect("valid native identity")],
         );
+        ir.native.0.insert("test".into(), namespace);
         let model_id = "test:model#0";
         ir.model.parameters.push(crate::features::DesignParameter {
-            id: crate::features::ParameterId(model_id.into()),
+            id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "p1".into(),
@@ -431,8 +381,9 @@ mod tests {
 
     #[test]
     fn typed_lookup_indexes_are_lazy_and_preserve_last_duplicate() {
-        let mut ir = CadIr::empty(Units::default());
-        let parameter_id = crate::features::ParameterId("test:parameter#0".into());
+        let mut ir = CadIr::empty();
+        let parameter_id =
+            crate::features::ParameterId::mint("test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
                 id: parameter_id.clone(),
@@ -454,7 +405,7 @@ mod tests {
         assert!(index.bodies.get().is_none());
         assert_eq!(
             index
-                .parameters(parameter_id.0.as_str())
+                .parameters(parameter_id.as_str())
                 .map(|parameter| parameter.expression.as_str()),
             Some("last")
         );
@@ -463,33 +414,30 @@ mod tests {
     }
 
     #[test]
-    fn procedural_carrier_index_preserves_exact_and_unique_producer_rules() {
-        let mut ir = CadIr::empty(Units::default());
-        let exact_surface = crate::ids::SurfaceId("test:surface#exact".to_string());
-        let exact_construction = crate::ids::ProceduralSurfaceId("test:procedural#exact".into());
+    fn procedural_carrier_index_follows_the_owning_geometry() {
+        let mut ir = CadIr::empty();
+        let exact_surface = crate::ids::SurfaceId::mint("test:model:surface#exact".to_string())
+            .expect("valid identity");
+        let exact_construction =
+            crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
+                .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: exact_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: exact_construction.clone(),
+                cache: None,
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
+        ir.model.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
-            surface: exact_surface.clone(),
-            definition: ProceduralSurfaceDefinition::Unknown { record: None },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: exact_construction,
-            surface: crate::ids::SurfaceId("test:surface#different".into()),
             definition: ProceduralSurfaceDefinition::Unknown { record: None },
             cache_fit_tolerance: None,
             record_bounds: None,
         });
 
-        let cached_surface = crate::ids::SurfaceId("test:surface#cached".to_string());
+        let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
+            .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -499,38 +447,43 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: crate::ids::ProceduralSurfaceId("test:procedural#cached".into()),
-            surface: cached_surface.clone(),
-            definition: ProceduralSurfaceDefinition::Unknown { record: None },
-            cache_fit_tolerance: Some(0.01),
-            record_bounds: None,
-        });
+        ir.model
+            .add_procedural_surface(
+                cached_surface.clone(),
+                procedural_surface! {
+                    id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
+                    definition: ProceduralSurfaceDefinition::Unknown { record: None },
+                    cache_fit_tolerance: Some(0.01),
+                    record_bounds: None,
+                },
+            )
+            .unwrap();
 
         let index = ModelIndex::new_model_only(&ir);
         assert_eq!(
             index
-                .procedural_surface_for_carrier(exact_surface.0.as_str())
-                .map(|surface| surface.id.0.as_str()),
-            Some("test:procedural#exact")
+                .procedural_surface_for_carrier(exact_surface.as_str())
+                .map(|surface| surface.id.as_str()),
+            Some("test:model:procedural#exact")
         );
         assert_eq!(
             index
-                .procedural_surface_for_carrier(cached_surface.0.as_str())
-                .map(|surface| surface.id.0.as_str()),
-            Some("test:procedural#cached")
+                .procedural_surface_for_carrier(cached_surface.as_str())
+                .map(|surface| surface.id.as_str()),
+            Some("test:model:procedural#cached")
         );
 
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: crate::ids::ProceduralSurfaceId("test:procedural#cached-duplicate".into()),
-            surface: cached_surface.clone(),
-            definition: ProceduralSurfaceDefinition::Unknown { record: None },
-            cache_fit_tolerance: Some(0.02),
-            record_bounds: None,
-        });
-        let ambiguous = ModelIndex::new_model_only(&ir);
-        assert!(ambiguous
-            .procedural_surface_for_carrier(cached_surface.0.as_str())
-            .is_none());
+        assert!(ir
+            .model
+            .add_procedural_surface(
+                cached_surface,
+                procedural_surface! {
+                    id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
+                    definition: ProceduralSurfaceDefinition::Unknown { record: None },
+                    cache_fit_tolerance: Some(0.02),
+                    record_bounds: None,
+                },
+            )
+            .is_err());
     }
 }

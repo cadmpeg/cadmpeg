@@ -21,11 +21,11 @@ use super::super::sketch_ids::{
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::transfer_section_entities;
-use super::{
-    ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
-    native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
-    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
-    reconcile_section_dimension_constraint, resolved_profile_chains, section_degenerate_axis_line,
+use crate::container::ContainerScan;
+use crate::coverage::SketchSegmentFamily;
+use crate::decode::sketch_transfer::constraints::{
+    native_section_segment_verhor_definition, reconcile_constraint_entity_references,
+    reconcile_constraint_parameter_reference, reconcile_section_dimension_constraint,
     section_dimension_constraints, section_equation_axis_distance_constraints,
     section_equation_equal_distance_constraints,
     section_equation_function_five_scalar_equality_constraints,
@@ -36,13 +36,19 @@ use super::{
     section_equation_native_constraints, section_equation_point_on_line_constraints,
     section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
     section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
-    section_segment_identity_suffix, section_segment_radius_constraints_for_emitted,
-    section_segment_verhor_definition, section_skamp_constraints_for_geometry,
-    solver_only_section_entities, solver_only_section_entity_family,
+    section_segment_radius_constraints_for_emitted, section_segment_verhor_definition,
+};
+use crate::decode::sketch_transfer::identity::{
+    ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
+    opaque_section_segment_identity_suffix, section_segment_identity_suffix,
     unique_saved_section_internal_ids, unique_section_segment_external_ids,
+};
+use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
+use crate::decode::sketch_transfer::profiles::{
+    resolved_profile_chains, solver_only_section_entities, solver_only_section_entity_family,
     SectionEntityIncidenceFamily,
 };
-use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
@@ -73,7 +79,7 @@ pub(in super::super) fn transfer_sketches(
         let transform = definition.section_3d.as_ref().and_then(|section| {
             unique_feature_section_transform(
                 &scan.features.section_transforms,
-                definition.id,
+                definition.identity.id(),
                 section.offset,
             )
         });
@@ -87,30 +93,39 @@ pub(in super::super) fn transfer_sketches(
             .as_ref()
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
         if let Some(table) = &definition.segments {
-            let decoded_rows = table.retained_row_count();
+            let decoded_rows = table.rows.len();
             let expected_rows = usize::try_from(table.declared_count)
                 .expect("u32 segment count fits usize")
                 .saturating_sub(usize::from(table.has_elided_prototype));
             coverage.decoded_rows += decoded_rows;
             coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
-            for segment in &table.rows {
+            for segment in table.rows.ordinary() {
                 let family = match segment.kind {
-                    crate::feature::FeatureSegmentKind::Line => "line",
-                    crate::feature::FeatureSegmentKind::Arc => "arc",
-                    crate::feature::FeatureSegmentKind::Point => "point",
+                    crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
+                    crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
+                    crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
                 };
-                coverage.by_family.entry(family).or_default().0 += 1;
+                coverage.family_mut(family).0 += 1;
             }
             for (family, count) in [
-                ("circle", table.circle_rows.len()),
-                ("point", table.point_rows.len()),
-                ("centered_line", table.centered_line_rows.len()),
-                ("reference_line", table.reference_line_rows.len()),
-                ("bounded_curve", table.bounded_curve_rows.len()),
-                ("conic", table.conic_rows.len()),
-                ("opaque", table.opaque_rows.len()),
+                (SketchSegmentFamily::Circle, table.rows.circles().count()),
+                (SketchSegmentFamily::Point, table.rows.points().count()),
+                (
+                    SketchSegmentFamily::CenteredLine,
+                    table.rows.centered_lines().count(),
+                ),
+                (
+                    SketchSegmentFamily::ReferenceLine,
+                    table.rows.reference_lines().count(),
+                ),
+                (
+                    SketchSegmentFamily::BoundedCurve,
+                    table.rows.bounded_curves().count(),
+                ),
+                (SketchSegmentFamily::Conic, table.rows.conics().count()),
+                (SketchSegmentFamily::Opaque, table.rows.opaque().count()),
             ] {
-                coverage.by_family.entry(family).or_default().0 += count;
+                coverage.family_mut(family).0 += count;
             }
         }
         let variable_points = resolved_section_coordinates(definition);
@@ -185,7 +200,7 @@ pub(in super::super) fn transfer_sketches(
         let circle_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.circle_rows)
+            .flat_map(|table| table.rows.circles())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -196,7 +211,7 @@ pub(in super::super) fn transfer_sketches(
         let point_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.point_rows)
+            .flat_map(|table| table.rows.points())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -207,7 +222,7 @@ pub(in super::super) fn transfer_sketches(
         let centered_line_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.centered_line_rows)
+            .flat_map(|table| table.rows.centered_lines())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -218,7 +233,7 @@ pub(in super::super) fn transfer_sketches(
         let reference_line_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.reference_line_rows)
+            .flat_map(|table| table.rows.reference_lines())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -243,7 +258,7 @@ pub(in super::super) fn transfer_sketches(
             definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.circle_rows)
+                .flat_map(|table| table.rows.circles())
                 .filter(|segment| {
                     unique_segment_ids.contains(&segment.external_id)
                         && circle_geometries.contains_key(&segment.offset)
@@ -267,16 +282,16 @@ pub(in super::super) fn transfer_sketches(
             .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
         {
             let family = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => "line",
-                crate::feature::FeatureSegmentKind::Arc => "arc",
-                crate::feature::FeatureSegmentKind::Point => "point",
+                crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
+                crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
+                crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
             };
-            coverage.by_family.entry(family).or_default().1 += 1;
+            coverage.family_mut(family).1 += 1;
         }
         let resolved_circles = definition
             .segments
             .iter()
-            .flat_map(|table| &table.circle_rows)
+            .flat_map(|table| table.rows.circles())
             .filter(|segment| {
                 circle_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
@@ -284,11 +299,11 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_circles;
-        coverage.by_family.entry("circle").or_default().1 += resolved_circles;
+        coverage.family_mut(SketchSegmentFamily::Circle).1 += resolved_circles;
         let resolved_points = definition
             .segments
             .iter()
-            .flat_map(|table| &table.point_rows)
+            .flat_map(|table| table.rows.points())
             .filter(|segment| {
                 point_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
@@ -296,11 +311,11 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_points;
-        coverage.by_family.entry("point").or_default().1 += resolved_points;
+        coverage.family_mut(SketchSegmentFamily::Point).1 += resolved_points;
         let resolved_centered_lines = definition
             .segments
             .iter()
-            .flat_map(|table| &table.centered_line_rows)
+            .flat_map(|table| table.rows.centered_lines())
             .filter(|segment| {
                 centered_line_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
@@ -308,48 +323,48 @@ pub(in super::super) fn transfer_sketches(
             })
             .count();
         coverage.resolved_geometry += resolved_centered_lines;
-        coverage.by_family.entry("centered_line").or_default().1 += resolved_centered_lines;
+        coverage.family_mut(SketchSegmentFamily::CenteredLine).1 += resolved_centered_lines;
         let resolved_reference_lines = definition
             .segments
             .iter()
-            .flat_map(|table| &table.reference_line_rows)
+            .flat_map(|table| table.rows.reference_lines())
             .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
             .count();
         coverage.resolved_geometry += resolved_reference_lines;
-        coverage.by_family.entry("reference_line").or_default().1 += resolved_reference_lines;
+        coverage.family_mut(SketchSegmentFamily::ReferenceLine).1 += resolved_reference_lines;
         let resolved_bounded_curves = definition
             .segments
             .iter()
-            .flat_map(|table| &table.bounded_curve_rows)
+            .flat_map(|table| table.rows.bounded_curves())
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
         coverage.resolved_geometry += resolved_bounded_curves;
-        coverage.by_family.entry("bounded_curve").or_default().1 += resolved_bounded_curves;
+        coverage.family_mut(SketchSegmentFamily::BoundedCurve).1 += resolved_bounded_curves;
         let resolved_conics = definition
             .segments
             .iter()
-            .flat_map(|table| &table.conic_rows)
+            .flat_map(|table| table.rows.conics())
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
         coverage.resolved_geometry += resolved_conics;
-        coverage.by_family.entry("conic").or_default().1 += resolved_conics;
+        coverage.family_mut(SketchSegmentFamily::Conic).1 += resolved_conics;
         let resolved_opaque = definition
             .segments
             .iter()
-            .flat_map(|table| &table.opaque_rows)
+            .flat_map(|table| table.rows.opaque())
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
         coverage.resolved_geometry += resolved_opaque;
-        coverage.by_family.entry("opaque").or_default().1 += resolved_opaque;
+        coverage.family_mut(SketchSegmentFamily::Opaque).1 += resolved_opaque;
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let generated_profile_geometries = segments
             .iter()
@@ -362,7 +377,7 @@ pub(in super::super) fn transfer_sketches(
                 let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                 section_entity_is_generated_profile(
                     complete_segment_table,
-                    definition.owner_feature_id,
+                    definition.identity.owner_feature_id(),
                     segment.external_id,
                     expected_kinds,
                     &scan.features.entity_tables,
@@ -374,14 +389,14 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.circle_rows)
+                    .flat_map(|table| table.rows.circles())
                     .filter(|segment| unique_segment_ids.contains(&segment.external_id))
                     .filter_map(|segment| {
                         let geometry = circle_geometries.get(&segment.offset)?.clone();
                         let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                         section_entity_is_generated_profile(
                             complete_segment_table,
-                            definition.owner_feature_id,
+                            definition.identity.owner_feature_id(),
                             segment.external_id,
                             expected_kinds,
                             &scan.features.entity_tables,
@@ -412,7 +427,7 @@ pub(in super::super) fn transfer_sketches(
             definition,
             transform,
             &sketch_id,
-            segments,
+            &segments,
             &unique_segment_ids,
             &unique_saved_ids,
             &ambiguous_segment_ids,
@@ -430,7 +445,7 @@ pub(in super::super) fn transfer_sketches(
         );
         for (external_id, offset) in solver_only_section_entities(definition) {
             let id = sketch_entity_id(&sketch_id, external_id);
-            if entities.iter().any(|entity| entity.id == id) {
+            if entities.iter().any(|entity| entity.id() == &id) {
                 continue;
             }
             annotate(
@@ -441,33 +456,36 @@ pub(in super::super) fn transfer_sketches(
                 "solver_only_section_entity",
                 Exactness::ByteExact,
             );
-            entities.push(SketchEntity {
-                id,
-                sketch: sketch_id.clone(),
-                construction: true,
-                native_ref: Some(sketch_native_ref(&sketch_id)),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Native {
-                    native_kind: match solver_only_section_entity_family(definition, external_id) {
-                        Some(SectionEntityIncidenceFamily::Point) => "point",
-                        Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
-                        Some(SectionEntityIncidenceFamily::Line) => "line",
-                        Some(SectionEntityIncidenceFamily::Arc) => "arc",
-                        Some(SectionEntityIncidenceFamily::Circular) => "circle",
-                        None => "solver_only_section_entity",
-                    }
-                    .to_string(),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    id,
+                    sketch_id.clone(),
+                    SketchGeometry::Native {
+                        native_kind: match solver_only_section_entity_family(
+                            definition,
+                            external_id,
+                        ) {
+                            Some(SectionEntityIncidenceFamily::Point) => "point",
+                            Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                            Some(SectionEntityIncidenceFamily::Line) => "line",
+                            Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                            Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                            None => "solver_only_section_entity",
+                        }
+                        .to_string(),
+                    },
+                )
+                .with_construction(true)
+                .with_native_ref(Some(sketch_native_ref(&sketch_id))),
+            );
         }
         let emitted_entity_ids = entities
             .iter()
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect::<BTreeSet<_>>();
         let emitted_entity_geometry = entities
             .iter()
-            .map(|entity| (entity.id.clone(), entity.geometry.clone()))
+            .map(|entity| (entity.id().clone(), entity.geometry.clone()))
             .collect::<BTreeMap<_, _>>();
         let verhor_definitions = segments
             .iter()
@@ -484,7 +502,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.centered_line_rows)
+                    .flat_map(|table| table.rows.centered_lines())
                     .map(|segment| {
                         let suffix = if unique_segment_ids.contains(&segment.external_id) {
                             segment.external_id.to_string()
@@ -508,7 +526,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.bounded_curve_rows)
+                    .flat_map(|table| table.rows.bounded_curves())
                     .filter_map(|segment| {
                         let verhor = segment.vertical_horizontal?;
                         let suffix = if unique_segment_ids.contains(&segment.external_id) {
@@ -533,7 +551,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.reference_line_rows)
+                    .flat_map(|table| table.rows.reference_lines())
                     .filter_map(|segment| {
                         let verhor = segment.vertical_horizontal?;
                         let suffix = if unique_segment_ids.contains(&segment.external_id) {
@@ -558,7 +576,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.opaque_rows)
+                    .flat_map(|table| table.rows.opaque())
                     .filter_map(|segment| {
                         let verhor = segment.vertical_horizontal?;
                         let suffix =
@@ -633,7 +651,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                &constraint.id.0,
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_dimension_constraint",
@@ -649,7 +667,7 @@ pub(in super::super) fn transfer_sketches(
         ) {
             annotate(
                 annotations,
-                &constraint.id.0,
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_segment_radius_constraint",
@@ -728,7 +746,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                &constraint.id.0,
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_equation_constraint",
@@ -746,7 +764,7 @@ pub(in super::super) fn transfer_sketches(
         {
             annotate(
                 annotations,
-                &constraint.id.0,
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_native_equation_constraint",
@@ -767,7 +785,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                &constraint.id.0,
+                constraint.id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "section_solver_constraint",
@@ -818,11 +836,11 @@ pub(in super::super) fn transfer_sketches(
             profiles,
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });
-        if owned_section_feature_id(scan, definition.id).is_none() {
+        if owned_section_feature_id(scan, definition.identity.id()).is_none() {
             let feature_id = sketch_feature_id(&sketch_id);
             annotate(
                 annotations,
-                &feature_id.0,
+                feature_id.as_str(),
                 "FeatDefs",
                 source_offset as u64,
                 "section_sketch_feature",
@@ -833,7 +851,6 @@ pub(in super::super) fn transfer_sketches(
                 ordinal: ir.model.features.len() as u64,
                 name: None,
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some("section".to_string()),
@@ -841,8 +858,9 @@ pub(in super::super) fn transfer_sketches(
                 source_content: Vec::new(),
                 outputs: Vec::new(),
                 definition: IrFeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::default(),
-                    sketch: Some(sketch_id.clone()),
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch_id.clone(),
+                    )),
                 },
                 native_ref: Some(sketch_native_ref(&sketch_id)),
             });

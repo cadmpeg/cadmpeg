@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section surface and curve construction and extrusion surface transfer.
 
-use super::super::analytic::{cross, dot};
 use super::super::feature_history::{
     analytic_surface_id_for_feature, feature_allows_linear_extrusion,
     generated_surface_id_for_feature, surface_kind_for_geometry,
@@ -13,7 +12,6 @@ use super::super::sketch::{
     trim_segment_id,
 };
 use super::super::sketch_ids::sketch_section_curve_id;
-use super::super::sketch_transfer::semantic_saved_section_entities;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -23,6 +21,8 @@ use super::nurbs::{
     translated_nurbs_curve,
 };
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{
@@ -44,7 +44,7 @@ use std::collections::BTreeSet;
 pub(in super::super) fn revolved_section_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
-    revolution_axis: RevolutionAxis,
+    revolution_axis: &RevolutionAxis,
 ) -> Option<SurfaceGeometry> {
     let axis = normalized([
         revolution_axis.direction.x,
@@ -216,7 +216,7 @@ fn unique_feature_surface_row(
     expected_kind: crate::surface::SurfaceKind,
 ) -> bool {
     crate::surface::unique_surface_row(rows, surface_id)
-        .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+        .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
 }
 
 pub(in super::super) fn transfer_saved_spline_curves(
@@ -253,13 +253,17 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 || format!("offset{}", spline.offset),
                 |entity_id| entity_id.to_string(),
             );
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.id
-            ));
+                definition.identity.id()
+            ))
+            .expect("identity grammar");
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
+            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
+                continue;
+            };
             annotate(
                 annotations,
                 &curve_id,
@@ -270,9 +274,9 @@ pub(in super::super) fn transfer_saved_spline_curves(
             );
             ir.model.curves.push(Curve {
                 id: curve_id,
-                geometry: CurveGeometry::Nurbs(placed_section_nurbs(transform, &nurbs)),
+                geometry: CurveGeometry::Nurbs(placed),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("FeatDefs:saved_spline#{suffix}"),
                     name: None,
                     color: None,
@@ -289,15 +293,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
 
 pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<NurbsSurface> {
-    if directrix
-        .weights
-        .as_ref()
-        .is_some_and(|weights| weights.len() != directrix.control_points.len())
-    {
-        return None;
-    }
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
@@ -323,9 +320,9 @@ pub(in super::super) fn revolved_nurbs_surface(
         diagonal_weight,
         1.0,
     ];
-    let mut control_points = Vec::with_capacity(directrix.control_points.len() * 9);
-    let mut weights = Vec::with_capacity(directrix.control_points.len() * 9);
-    for (index, point) in directrix.control_points.iter().enumerate() {
+    let mut control_points = Vec::with_capacity(directrix.control_points().len() * 9);
+    let mut weights = Vec::with_capacity(directrix.control_points().len() * 9);
+    for (index, point) in directrix.control_points().iter().enumerate() {
         let relative = [
             point.x - axis_origin[0],
             point.y - axis_origin[1],
@@ -342,8 +339,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         ];
         let tangent = cross(axis_direction, radial);
         let directrix_weight = directrix
-            .weights
-            .as_ref()
+            .weights()
             .map_or(1.0, |curve_weights| curve_weights[index]);
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
@@ -356,11 +352,11 @@ pub(in super::super) fn revolved_nurbs_surface(
             weights.push(directrix_weight * angular_weight);
         }
     }
-    Some(NurbsSurface {
-        u_degree: directrix.degree,
-        v_degree: 2,
-        u_knots: directrix.knots.clone(),
-        v_knots: vec![
+    NurbsSurface::new(
+        directrix.degree(),
+        2,
+        directrix.knots().to_vec(),
+        vec![
             0.0,
             0.0,
             0.0,
@@ -374,20 +370,21 @@ pub(in super::super) fn revolved_nurbs_surface(
             std::f64::consts::TAU,
             std::f64::consts::TAU,
         ],
-        u_count: u32::try_from(directrix.control_points.len()).ok()?,
-        v_count: 9,
+        u32::try_from(directrix.control_points().len()).ok()?,
+        9,
         control_points,
-        weights: Some(weights),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+        Some(weights),
+        false,
+        false,
+        false,
+    )
+    .ok()
 }
 
 pub(in super::super) fn revolved_section_circle(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<CurveGeometry> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -485,7 +482,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) else {
                 continue;
             };
-            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -501,7 +499,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{surface_id}"),
                     name: None,
                     color: None,
@@ -540,7 +538,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) {
                 continue;
             }
-            let id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -556,7 +555,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{native_surface_id}"),
                     name: None,
                     color: None,
@@ -585,7 +584,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     &scan.surfaces.rows,
                     surface_id,
                     feature_id,
-                    crate::surface::SurfaceKind::Extrusion,
+                    crate::surface::SurfaceKind::Extrusion(
+                        crate::surface::ExtrusionVariant::Linear,
+                    ),
                 )
                 .then_some((surface_id, spline))
             })
@@ -601,8 +602,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(section_curve) = saved_spline_nurbs(spline) else {
                 continue;
             };
-            let placed = placed_section_nurbs(transform, &section_curve);
-            let directrix = translated_nurbs_curve(&placed, lower_translation);
+            let Some(placed) = placed_section_nurbs(transform, &section_curve) else {
+                continue;
+            };
+            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
+                continue;
+            };
             let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
                 continue;
             };
@@ -610,9 +615,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .entity_id
                 .expect("ordered saved spline has an entity id")
                 .to_string();
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:feature:extrusion_directrix#{feature_id}:{suffix}"
-            ));
+            ))
+            .expect("identity grammar");
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
                     annotations,
@@ -626,7 +632,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Nurbs(directrix.clone()),
                     source_object: Some(SourceObjectAssociation {
-                        format: "creo".to_string(),
+                        format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: format!("FeatDefs:saved_spline#{suffix}"),
                         name: None,
                         color: None,
@@ -636,13 +642,15 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     }),
                 });
             }
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
+            let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            let procedural_id = ProceduralSurfaceId(format!(
+            let procedural_id = ProceduralSurfaceId::mint(format!(
                 "creo:feature:extrusion_construction#{feature_id}:{suffix}"
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &surface_id,
@@ -663,7 +671,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{native_surface_id}"),
                     name: None,
                     color: None,
@@ -672,22 +680,23 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Extrusion {
-                    directrix: curve_id,
-                    parameter_interval: Some([
-                        *directrix.knots.first().expect("validated spline knots"),
-                        *directrix.knots.last().expect("validated spline knots"),
-                    ]),
-                    direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
-                    native_position: None,
-                    revision_form: None,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+            let _attached = ir.model.add_procedural_surface(
+                surface_id,
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion {
+                        directrix: curve_id,
+                        parameter_interval: Some([
+                            *directrix.knots().first().expect("validated spline knots"),
+                            *directrix.knots().last().expect("validated spline knots"),
+                        ]),
+                        direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
+                        native_position: None,
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            );
             transferred += 1;
         }
     }

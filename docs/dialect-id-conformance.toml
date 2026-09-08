@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Shared examples for the Rust DialectId validator and the registry checker.
+
+valid = [
+  "demo:one",
+  "demo2:part9",
+  "iges:5.3-fixed-ascii",
+  "f3d:manifest-3-2-0-0",
+  "rhino:archive-80",
+]
+
+invalid = [
+  "",
+  "demo",
+  ":one",
+  "demo:",
+  "demo:one:two",
+  "Demo:one",
+  "demo:One",
+  "demo:one_two",
+  "demo-name:one",
+  "demo:-one",
+  "demo:one-",
+]

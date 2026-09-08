@@ -28,12 +28,12 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
-    /// Native namespace version lies outside the codec's declared contract.
-    #[error(transparent)]
-    UnsupportedVersion(#[from] catalogue::NativeVersionError),
     /// A serialized typed record has no string `id` field.
     #[error("native record is missing a string id")]
     MissingId,
+    /// A native identity does not follow the entity identity grammar.
+    #[error("native record has an invalid identity: {0}")]
+    InvalidIdentity(#[from] crate::ids::IdentityError),
     /// A typed record did not serialize as a JSON object.
     #[error("native record did not serialize as an object")]
     NonObject,
@@ -87,12 +87,26 @@ impl NativeRecord {
     /// Build a record from a stable identity and its codec-owned fields.
     ///
     /// Any `id` member of `fields` is dropped in favour of `id`.
-    #[must_use]
-    pub fn new(id: impl Into<String>, mut fields: Map<String, Value>) -> Self {
+    /// Identity syntax is checked here; document validation checks uniqueness.
+    pub fn new(
+        id: impl Into<String>,
+        mut fields: Map<String, Value>,
+    ) -> Result<Self, NativeConvertError> {
         let id = id.into();
+        Self::require_identity(&id)?;
         fields.remove("id");
         let json = Self::canonical_json(&id, &fields);
-        Self { id, json }
+        Ok(Self { id, json })
+    }
+
+    fn require_identity(id: &str) -> Result<(), NativeConvertError> {
+        if !crate::ids::is_valid_identity(id) {
+            return Err(crate::ids::IdentityError::InvalidId {
+                value: id.to_owned(),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     /// Build a record by serializing one codec-owned typed record.
@@ -111,6 +125,7 @@ impl NativeRecord {
             return Err(NativeConvertError::MissingId);
         }
         let id: String = serde_json::from_str(&id_json)?;
+        Self::require_identity(&id)?;
         let mut json = String::with_capacity(
             8 + id_json.len()
                 + fields
@@ -203,8 +218,7 @@ impl<'de> Deserialize<'de> for NativeRecord {
                 NativeConvertError::MissingId,
             ));
         };
-        let json = Self::canonical_json(&id, &fields);
-        Ok(Self { id, json })
+        Self::new(id, fields).map_err(serde::de::Error::custom)
     }
 }
 
@@ -223,18 +237,27 @@ impl JsonSchema for NativeRecord {
     }
 }
 
-/// Independently versioned source-format arena collection.
+/// Source-format arena collection.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
 pub struct NativeNamespace {
-    /// Codec-owned namespace schema version.
-    pub version: u32,
     /// Record arenas keyed by stable arena name.
-    #[serde(default)]
-    pub arenas: BTreeMap<String, Vec<NativeRecord>>,
+    arenas: BTreeMap<String, Vec<NativeRecord>>,
 }
 
 impl NativeNamespace {
+    /// Return the record arenas keyed by stable arena name.
+    #[must_use]
+    pub fn arenas(&self) -> &BTreeMap<String, Vec<NativeRecord>> {
+        &self.arenas
+    }
+
+    /// Return the record arenas for modification.
+    pub fn arenas_mut(&mut self) -> &mut BTreeMap<String, Vec<NativeRecord>> {
+        &mut self.arenas
+    }
+
     /// Replace an arena by serializing codec-owned typed records.
     pub fn set_arena<T: Serialize>(
         &mut self,

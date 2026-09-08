@@ -1,156 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::decode::feature_completeness::{
+    combine_definition_is_incomplete, incomplete_expression_parameters,
+};
+
 use cadmpeg_ir::math::Point2;
 
 use super::*;
-
-#[test]
-fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
-    let definition = crate::native::om::PartColorDefinition {
-        id: "nx:test:color#201".into(),
-        color_table: "nx:test:table#0".into(),
-        color_index: 201,
-        name: "Iron Gray".into(),
-        rgb: [0.25, 0.5, 0.75],
-        raw_color_index: vec![0x80, 200],
-        raw_components: [vec![1], vec![1], vec![1]],
-        source_offset: 10,
-        component_source_offsets: [11, 12, 13],
-    };
-    let assignment = crate::native::om::RmDisplayColorAssignment {
-        id: "nx:test:assignment#0".into(),
-        ordinal: 0,
-        encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Linked {
-            object_index: 42,
-            raw_object_index: vec![42],
-            object_index_source_offset: 22,
-            discriminator: 0x16,
-            target_index: 7,
-            raw_target_index: vec![7],
-            target_index_source_offset: 23,
-            indices: [1, 2, 3],
-            raw_indices: [vec![1], vec![2], vec![3]],
-            index_source_offsets: [24, 25, 26],
-            flag: 3,
-            mode: 4,
-        },
-        target_object_id: Some("nx:test:object-id#7".into()),
-        color_index: 201,
-        color_definition: definition.id.clone(),
-        raw_color_index: vec![0x80, 201],
-        source_entry: "/Root/FastLoad/RMFastLoad".into(),
-        source_offset: 20,
-        row_source_offset: 21,
-    };
-    let record = crate::native::parasolid::ParasolidDeltasRecord {
-        id: "nx:test:deltas#0".into(),
-        stream_ordinal: 1,
-        family: "FACE".into(),
-        kind: 14,
-        xmt: 99,
-        node_id: Some(42),
-        references: Vec::new(),
-        group_selector: None,
-        group_linked_reference_status: None,
-        position: None,
-        byte_len: 1,
-        inflated_offset: 0,
-    };
-    let face_ids = BTreeSet::from(["nx:s0:face#99".to_string()]);
-    let pairs = BTreeMap::from([(0, vec![1])]);
-    assert_eq!(
-        resolve_rm_face_colors(
-            &face_ids,
-            std::slice::from_ref(&assignment),
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&record),
-            &pairs,
-        ),
-        vec![(
-            "nx:s0:face#99".into(),
-            Color {
-                r: 0.25,
-                g: 0.5,
-                b: 0.75,
-                a: 1.0,
-            },
-        )]
-    );
-
-    assert_eq!(
-        resolve_rm_face_color_bindings(
-            &face_ids,
-            std::slice::from_ref(&assignment),
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&record),
-            &pairs,
-        ),
-        vec![RmFaceColorBinding {
-            face_id: "nx:s0:face#99".into(),
-            color_definition: definition.id.clone(),
-            source_offset: 20,
-        }]
-    );
-
-    let mut target_assignment = assignment.clone();
-    target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-        target_index: 7,
-        raw_target_index: vec![7],
-        target_index_source_offset: 23,
-        indices: [1, 2, 3],
-        raw_indices: [vec![1], vec![2], vec![3]],
-        index_source_offsets: [24, 25, 26],
-        mode: 4,
-    };
-    assert_eq!(
-        resolve_rm_face_colors(
-            &face_ids,
-            &[assignment.clone(), target_assignment],
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&record),
-            &pairs,
-        ),
-        vec![(
-            "nx:s0:face#99".into(),
-            Color {
-                r: 0.25,
-                g: 0.5,
-                b: 0.75,
-                a: 1.0,
-            },
-        )]
-    );
-
-    let mut conflicting = assignment;
-    conflicting.color_definition = "nx:test:color#other".into();
-    assert!(
-        resolve_rm_face_colors(&face_ids, &[conflicting], &[definition], &[record], &pairs,)
-            .is_empty()
-    );
-}
+use crate::native::om::display_color::{
+    DisplayColorFrame, RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
+};
+use crate::om::column_row::{LinkedRow, TargetRow};
+use crate::om::compact::CompactIndexAtom;
 
 #[test]
 fn rm_source_color_bindings_require_one_palette_per_source_identity() {
-    let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset| {
-        crate::native::om::RmDisplayColorAssignment {
+    let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset: u64| {
+        RmDisplayColorAssignment {
             id: id.into(),
             ordinal: 0,
-            encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-                target_index: 7,
-                raw_target_index: vec![7],
-                target_index_source_offset: offset,
-                indices: [1, 2, 3],
-                raw_indices: [vec![1], vec![2], vec![3]],
-                index_source_offsets: [offset + 1, offset + 2, offset + 3],
-                mode: 4,
-            },
+            frame: DisplayColorFrame::new(
+                RmDisplayColorAssignmentEncoding::Target(
+                    TargetRow::<(), u64>::new(
+                        CompactIndexAtom::read(&[7]).unwrap().into(),
+                        [1, 2, 3].map(|value| CompactIndexAtom::read(&[value]).unwrap().into()),
+                        crate::om::discriminators::IndexRowMode::Form04,
+                        offset + 2,
+                    )
+                    .unwrap(),
+                ),
+                crate::om::color::PaletteIndex::new(201).unwrap(),
+            )
+            .unwrap(),
             target_object_id: source_id.map(str::to_owned),
-            color_index: 201,
             color_definition: color_definition.into(),
-            raw_color_index: vec![0x80, 201],
             source_entry: "/Root/FastLoad/RMFastLoad".into(),
-            source_offset: offset,
-            row_source_offset: offset,
         }
     };
     let assignments = [
@@ -179,10 +63,12 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
 }
 #[test]
 fn ungrouped_simple_holes_follow_authoritative_history_order() {
-    use crate::native::features::{
-        FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
-        SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
 
     let template = |operation_label: &str| FeatureSimpleHoleTemplate {
         id: format!("template-{operation_label}"),
@@ -206,9 +92,19 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: vec!["operation#newer".into(), "operation#older".into()],
-        scalar_lanes: vec!["lane-newer".into(), "lane-older".into()],
-        block_references: vec!["blocks-newer".into(), "blocks-older".into()],
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#newer".into(),
+                scalar_lane: "lane-newer".into(),
+                block_reference: "blocks-newer".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#older".into(),
+                scalar_lane: "lane-older".into(),
+                block_reference: "blocks-older".into(),
+            },
+        ])
+        .unwrap(),
     };
     assert!(
         simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
@@ -236,30 +132,36 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         blind_hole_operations(&mixed_templates, &mixed_positions),
         Some(vec!["operation#blind".into()])
     );
-    let duplicate_group = FeatureSimpleHoleConstructionGroup {
-        id: "duplicate-group".into(),
-        first_data_blocks: ["a".into(), "b".into()],
-        second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: vec![
-            "operation#older".into(),
-            "operation#newer".into(),
-            "operation#older".into(),
-        ],
-        scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
-        block_references: vec!["refs-a".into(), "refs-b".into()],
-    };
-    assert!(
-        simple_hole_operations(&templates, &[duplicate_group], &operation_positions,).is_none()
-    );
+    let duplicate_members =
+        crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#older".into(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "refs-a".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#newer".into(),
+                scalar_lane: "lane-b".into(),
+                block_reference: "refs-b".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "operation#older".into(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "refs-a".into(),
+            },
+        ]);
+    assert!(duplicate_members.is_err());
 }
 
 #[test]
 fn exact_hole_package_owns_common_internal_simple_holes() {
-    use crate::native::features::{
-        FeatureHolePackageConstructionGroupUse, FeatureSimpleHoleConstructionGroup,
-        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
-        SimpleHoleForm,
-    };
+    use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
+    use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::features::{Angle, HoleKind, Length};
     use cadmpeg_ir::ids::BodyId;
 
@@ -281,9 +183,19 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        operation_labels: operations.to_vec(),
-        scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
-        block_references: vec!["blocks-a".into(), "blocks-b".into()],
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[0].clone(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "blocks-a".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[1].clone(),
+                scalar_lane: "lane-b".into(),
+                block_reference: "blocks-b".into(),
+            },
+        ])
+        .unwrap(),
     };
     let use_ = FeatureHolePackageConstructionGroupUse {
         id: "use".into(),
@@ -292,7 +204,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         simple_hole_construction_group: group.id.clone(),
         source_offset: 0,
     };
-    let body = BodyId("body".into());
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let outputs = operations
         .iter()
         .map(|operation| (operation.clone(), vec![body.clone()]))
@@ -311,7 +223,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .collect();
 
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -337,7 +249,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         })
         .collect::<Vec<_>>();
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &untreated_templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -356,7 +268,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     let mut mixed_templates = untreated_templates.clone();
     mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &mixed_templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -368,9 +280,12 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     assert!(projection.outputs.is_empty());
 
     let mut mismatched_outputs = outputs;
-    mismatched_outputs.insert("simple-b".into(), vec![BodyId("other-body".into())]);
+    mismatched_outputs.insert(
+        "simple-b".into(),
+        vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
+    );
     let projection = super::hole_package_projection(
-        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
         std::slice::from_ref(&use_),
@@ -385,7 +300,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
 #[test]
 fn active_configuration_retains_complete_evaluated_parameter_state() {
     let parameter = |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal,
         name: id.into(),
@@ -397,7 +312,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         pmi: None,
         native_ref: None,
     };
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.parameters = vec![
         parameter(
             "length",
@@ -409,19 +324,18 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
             "angle",
             1,
             Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
-            vec![ParameterId("length".into())],
+            vec![ParameterId::mint("length").expect("identity grammar")],
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("active".into()),
+        id: ConfigurationId::mint("active").expect("identity grammar"),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Model".into(),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -435,11 +349,11 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         ir.model.configurations[0].parameter_values,
         BTreeMap::from([
             (
-                ParameterId("angle".into()),
+                ParameterId::mint("angle").expect("identity grammar"),
                 ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))
             ),
             (
-                ParameterId("length".into()),
+                ParameterId::mint("length").expect("identity grammar"),
                 ParameterValue::Length(Length(25.4))
             ),
         ])
@@ -449,7 +363,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
 #[test]
 fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
     let parameter = |id: &str, value, dependencies: Vec<ParameterId>| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: id.into(),
@@ -462,15 +376,14 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         native_ref: None,
     };
     let configuration = || DesignConfiguration {
-        id: ConfigurationId("active".into()),
+        id: ConfigurationId::mint("active").expect("identity grammar"),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Model".into(),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -481,7 +394,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         vec![parameter(
             "p1",
             Some(ParameterValue::Real(1.0)),
-            vec![ParameterId("missing".into())],
+            vec![ParameterId::mint("missing").expect("identity grammar")],
         )],
         vec![
             parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
@@ -492,13 +405,13 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
             parameter(
                 "p2",
                 Some(ParameterValue::Real(2.0)),
-                vec![ParameterId("p1".into())],
+                vec![ParameterId::mint("p1").expect("identity grammar")],
             ),
         ],
     ];
     let mut annotations = AnnotationBuilder::new();
     for parameters in &mut cases {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
@@ -512,11 +425,10 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
 fn active_configuration_body_writers_close_false_suppression_through_dependencies() {
     let feature =
         |id: &str, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>, suppressed| Feature {
-            id: FeatureId(id.into()),
+            id: FeatureId::mint(id).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed,
-            parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -531,7 +443,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             native_ref: None,
         };
     let configuration = |active, bodies| DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active,
         source_index: Some(0),
@@ -539,19 +451,18 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies,
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     };
-    let body = BodyId("body".into());
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.features = vec![
         feature("dependency", Vec::new(), Vec::new(), None),
         feature(
             "writer",
-            vec![FeatureId("dependency".into())],
+            vec![FeatureId::mint("dependency").expect("identity grammar")],
             vec![body.clone()],
             None,
         ),
@@ -561,7 +472,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         feature.ordinal = ordinal as u64;
     }
     ir.model.configurations = vec![configuration(
-        true.into(),
+        true,
         ConfigurationBodies::Resolved(vec![body]),
     )];
     let mut annotations = AnnotationBuilder::new();
@@ -574,27 +485,31 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     let states = &ir.model.configurations[0].feature_states;
     assert_eq!(
         states.keys().cloned().collect::<Vec<_>>(),
-        [FeatureId("dependency".into()), FeatureId("writer".into())]
+        [
+            FeatureId::mint("dependency").expect("identity grammar"),
+            FeatureId::mint("writer").expect("identity grammar")
+        ]
     );
     assert_eq!(
-        states[&FeatureId("writer".into())].dependencies,
-        [FeatureId("dependency".into())]
+        states[&FeatureId::mint("writer").expect("identity grammar")].dependencies,
+        [FeatureId::mint("dependency").expect("identity grammar")]
     );
     assert_eq!(
-        states[&FeatureId("writer".into())].outputs,
-        [BodyId("body".into())]
+        states[&FeatureId::mint("writer").expect("identity grammar")]
+            .evaluation
+            .outputs(),
+        [BodyId::mint("test:model:entity#body").expect("identity grammar")]
     );
 }
 
 #[test]
 fn current_body_writers_close_false_suppression_without_a_configuration() {
-    let body = BodyId("body".into());
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies, outputs| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies,
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -608,7 +523,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         },
         native_ref: None,
     };
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut body_record = cadmpeg_ir::examples::unit_cube().model.bodies.remove(0);
     body_record.id = body.clone();
     ir.model.bodies.push(body_record);
@@ -617,7 +532,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         feature(
             "writer",
             2,
-            vec![FeatureId("dependency".into())],
+            vec![FeatureId::mint("dependency").expect("identity grammar")],
             vec![body],
         ),
         feature("unrelated", 3, Vec::new(), Vec::new()),
@@ -631,29 +546,40 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
+    assert!(super::active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
     ir.model.features[0].ordinal = 1;
-    ir.model.features[2].id = FeatureId("writer".into());
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
-    ir.model.features[2].id = FeatureId("unrelated".into());
+    ir.model.features[2].id = FeatureId::mint("writer").expect("identity grammar");
+    assert!(super::active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
+    ir.model.features[2].id = FeatureId::mint("unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
+    assert!(super::active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
 }
 
 #[test]
 fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_atomically() {
     let producer = |dependency: &str| Feature {
-        id: FeatureId("writer".into()),
+        id: FeatureId::mint("writer").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
-        dependencies: vec![FeatureId(dependency.into())],
+        dependencies: vec![FeatureId::mint(dependency).expect("identity grammar")],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
-        outputs: vec![BodyId("body".into())],
+        outputs: vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: Vec::new(),
@@ -662,7 +588,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         native_ref: None,
     };
     let configuration = |id: &str, active, bodies| DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal: 0,
         active,
         source_index: Some(0),
@@ -670,18 +596,19 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies,
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     };
-    let mut missing_dependency = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut missing_dependency = CadIr::empty();
     missing_dependency.model.features = vec![producer("missing")];
     missing_dependency.model.configurations = vec![configuration(
         "active",
-        true.into(),
-        ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+        true,
+        ConfigurationBodies::Resolved(vec![
+            BodyId::mint("test:model:entity#body").expect("identity grammar")
+        ]),
     )];
     let mut annotations = AnnotationBuilder::new();
     super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
@@ -690,12 +617,12 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         .feature_states
         .is_empty());
 
-    let mut unresolved_bodies = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut unresolved_bodies = CadIr::empty();
     unresolved_bodies.model.features = vec![producer("writer")];
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations = vec![configuration(
         "active",
-        true.into(),
+        true,
         ConfigurationBodies::Unresolved,
     )];
     super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
@@ -704,14 +631,16 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         .feature_states
         .is_empty());
 
-    let mut contradicted = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut contradicted = CadIr::empty();
     contradicted.model.features = vec![producer("writer")];
     contradicted.model.features[0].dependencies.clear();
     contradicted.model.features[0].suppressed = Some(true);
     contradicted.model.configurations = vec![configuration(
         "active",
-        true.into(),
-        ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+        true,
+        ConfigurationBodies::Resolved(vec![
+            BodyId::mint("test:model:entity#body").expect("identity grammar")
+        ]),
     )];
     super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
@@ -719,19 +648,23 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         .feature_states
         .is_empty());
 
-    let mut ambiguous = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ambiguous = CadIr::empty();
     ambiguous.model.features = vec![producer("writer")];
     ambiguous.model.features[0].dependencies.clear();
     ambiguous.model.configurations = vec![
         configuration(
             "first",
-            true.into(),
-            ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+            true,
+            ConfigurationBodies::Resolved(vec![
+                BodyId::mint("test:model:entity#body").expect("identity grammar")
+            ]),
         ),
         configuration(
             "second",
-            true.into(),
-            ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
+            true,
+            ConfigurationBodies::Resolved(vec![
+                BodyId::mint("test:model:entity#body").expect("identity grammar")
+            ]),
         ),
     ];
     super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
@@ -750,8 +683,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         section_link: "section".to_string(),
         ordinal: 7,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
@@ -765,13 +697,15 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let point_use = crate::native::features::FeatureSketchPointUse {
         id: "nx:feature-history:sketch-point-use#section-7-0".to_string(),
         operation_label: label.id.clone(),
-        sketch_references: vec!["reference".to_string()],
-        block_uses: vec!["block-use".to_string()],
+        references: vec![crate::native::features::FeatureSketchPointUseReference {
+            sketch_reference: "reference".to_string(),
+            block_use: "block-use".to_string(),
+            source_offset: 52,
+        }],
         sketch_point_group: group.id.clone(),
         named_point: "named-point".to_string(),
-        source_offsets: vec![52],
     };
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::attach_sketch_graph(
@@ -797,7 +731,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         }
     ));
 
-    let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut rejected_ir = CadIr::empty();
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = rejected_annotations.stream("nx:container");
     assert!(super::attach_sketch_graph(
@@ -826,8 +760,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         section_link: "section".to_string(),
         ordinal: 8,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
@@ -847,14 +780,19 @@ fn named_sketch_points_project_without_an_external_named_point() {
         coordinates: point.coordinates,
     };
     let scalar = |id: &str, ordinal: u32, value: f64, source_offset: u64| {
-        crate::native::features::FeatureSketchPayloadScalar {
+        crate::native::features::FeaturePayloadScalar {
             id: id.to_string(),
             operation_label: label.id.clone(),
-            construction_payload: "payload".to_string(),
+            payload: crate::native::features::FeatureScalarPayload::Construction {
+                construction_payload: "payload".to_string(),
+            },
             ordinal,
             field_code: 100,
-            value,
-            raw_value: [0; 8],
+            scalar: {
+                let mut raw = value.to_be_bytes();
+                raw[0] -= 0x10;
+                crate::om::scalar::ShiftedBinary64::try_from(raw).unwrap()
+            },
             payload_offset: ordinal as u64,
             source_offset,
         }
@@ -863,7 +801,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         scalar("scalar-1", 0, 12.5, 51),
         scalar("scalar-2", 1, -3.0, 59),
     ];
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::attach_sketch_graph(
@@ -899,12 +837,9 @@ fn named_sketch_points_project_without_an_external_named_point() {
 fn nx_native_feature_parameters_require_unique_resolved_names() {
     let expression = |id: &str, name: &str, text: &str| crate::native::om::Expression {
         id: id.to_string(),
-        object_id: None,
-        record: None,
+        owner: None,
         declaration: None,
-        name: name.to_string(),
-        parameter_index: None,
-        qualifier: None,
+        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: text.to_string(),
         value: None,
@@ -916,8 +851,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         id: id.to_string(),
         operation_label: "operation".to_string(),
         expression: expression.to_string(),
-        bindings: vec![format!("binding-{id}")],
-        source_offsets: vec![0],
+        bindings: vec![crate::native::features::FeatureParameterUseBinding {
+            binding: format!("binding-{id}"),
+            source_offset: 0,
+        }],
     };
     let expressions = vec![
         expression("expression-a", "p1_length", "p2_length * 2"),
@@ -946,12 +883,11 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             parameters,
         ),
         cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: "UNKNOWN OPERATION".to_string(),
+            kind: "UNKNOWN OPERATION".into(),
             parameters: std::collections::BTreeMap::from([
                 ("p1_length".to_string(), "p2_length * 2".to_string()),
                 ("p2_length".to_string(), "12.5".to_string()),
             ]),
-            properties: std::collections::BTreeMap::new(),
         }
     );
     assert!(matches!(
@@ -963,7 +899,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             super::HoleProjection::default(),
             std::collections::BTreeMap::default(),
         ),
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind.as_str() == "DELETE"
     ));
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(
@@ -974,7 +910,9 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             super::HoleProjection::default(),
             std::collections::BTreeMap::new(),
         ),
-        cadmpeg_ir::features::FeatureDefinition::LoftUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::Loft
+        }
     ));
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(
@@ -1038,7 +976,7 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
         ),
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             seeds,
-            pattern: cadmpeg_ir::features::PatternKind::Unresolved { form: None },
+            pattern: cadmpeg_ir::features::PatternKind::Unresolved,
         } if seeds.is_empty()
     ));
 }
@@ -1053,12 +991,10 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         id: "nx:test:boolean#0".into(),
         operation_label: "nx:test:operation#0".into(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 7,
-        raw_target_object_index: vec![7],
-        target_source_offset: 1,
-        tool_object_indices: vec![8],
-        raw_tool_object_indices: vec![vec![8]],
-        tool_source_offsets: vec![2],
+        target: crate::test_support::native_references::boolean_reference(7, 1),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            8, 2,
+        )],
         source_offset: 0,
     };
     assert_eq!(
@@ -1070,10 +1006,10 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
     );
 
     let primary = FeatureBodyReference {
+        ordinal: None,
         id: "nx:test:primary#0".into(),
         operation_label: boolean.operation_label.clone(),
-        body_object_index: 7,
-        raw_body_object_index: vec![7],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
         source_offset: 3,
     };
     assert_eq!(
@@ -1084,28 +1020,31 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
 
 #[test]
 fn boolean_target_output_requires_one_resolved_segment_body() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;
 
-    let body = BodyId("nx:s0:body#0".into());
+    let body = BodyId::mint("nx:s0:body#0").expect("identity grammar");
     let definition = FeatureDefinition::Combine {
         target: BodySelection::Resolved {
             bodies: vec![body.clone()],
             native: "target".into(),
         },
         tools: BodySelection::Unresolved,
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
 
     let ambiguous = FeatureDefinition::Combine {
         target: BodySelection::Resolved {
-            bodies: vec![BodyId("nx:s0:body#0".into()), BodyId("nx:s0:body#1".into())],
+            bodies: vec![
+                BodyId::mint("nx:s0:body#0").expect("identity grammar"),
+                BodyId::mint("nx:s0:body#1").expect("identity grammar"),
+            ],
             native: "target".into(),
         },
         tools: BodySelection::Unresolved,
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     assert!(super::boolean_target_output(Some(&ambiguous)).is_none());
@@ -1133,14 +1072,12 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 std::collections::BTreeMap::new(),
             ),
             FeatureDefinition::Hole {
-                position: None,
-                direction: None,
                 placements,
                 ..
-            } if placements == [HolePlacement::Axis {
+            } if placements.as_deref() == Some(&[HolePlacement::Axis {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-            }]
+            }][..])
         ));
     }
 }
@@ -1148,7 +1085,7 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 #[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, ProfileRef, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
     };
 
     assert_eq!(
@@ -1163,14 +1100,12 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
             start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
-            direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
@@ -1249,7 +1184,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
         BooleanOp::Unresolved
     );
 
-    let prior = super::FeatureId("prior-offset-writer".into());
+    let prior = super::FeatureId::mint("prior-offset-writer").expect("identity grammar");
     let offset_body = "store:block#7";
     let mut offset_history = super::BodyWriterHistory::default();
     offset_history.record_writer(None, Some(offset_body), &[], &prior);
@@ -1272,12 +1207,9 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
 fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     let expression = |key: u32| crate::native::om::Expression {
         id: format!("nx:test:expression#{key}"),
-        object_id: Some(key),
-        record: None,
+        owner: None,
         declaration: None,
-        name: format!("p{key}"),
-        parameter_index: Some(key),
-        qualifier: None,
+        name: crate::om::parameter_name::ParameterName::new(format!("p{key}")),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: key.to_string(),
         value: Some(f64::from(key)),
@@ -1291,15 +1223,13 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         operation_label: "nx:feature-history:operation-label#1-4".into(),
         construction: "construction".into(),
         anchor_bindings: vec!["binding".into()],
-        declarations: ["d20".into(), "d21".into(), "d22".into()],
-        expressions: [
-            expressions[0].id.clone(),
-            expressions[1].id.clone(),
-            expressions[2].id.clone(),
-        ],
-        values: [20.0, 21.0, 22.0],
+        dimensions: std::array::from_fn(|slot| crate::native::features::FeatureBlockDimension {
+            declaration: ["d20", "d21", "d22"][slot].into(),
+            expression: expressions[slot].id.clone(),
+            value: [20.0, 21.0, 22.0][slot],
+        }),
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
     let parameter_owners = ir
@@ -1309,9 +1239,9 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
     let parameter_references = dimensions
-        .expressions
+        .dimensions
         .iter()
-        .filter_map(|expression| super::expression_parameter_id(expression))
+        .filter_map(|dimension| super::expression_parameter_id(&dimension.expression))
         .collect::<Vec<_>>();
     assert_eq!(
         super::parameter_owner_dependencies(&parameter_owners, &parameter_references),
@@ -1345,12 +1275,9 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 fn nx_inch_expression_values_are_attached_in_millimeters() {
     let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
         id: format!("nx:test:expression#{key}"),
-        object_id: Some(key),
-        record: None,
+        owner: None,
         declaration: None,
-        name: name.into(),
-        parameter_index: Some(key),
-        qualifier: None,
+        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
         unit: crate::native::om::ExpressionUnit::Inch,
         expression: formula.into(),
         value,
@@ -1362,7 +1289,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
         expression(1, "p1", "2", Some(2.0)),
         expression(2, "p2", "p1 * 3", Some(6.0)),
     ];
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
@@ -1386,19 +1313,16 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             .map(String::as_str),
         Some("inch")
     );
-    assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+    assert!(incomplete_expression_parameters(&ir).is_empty());
 }
 
 #[test]
 fn nx_native_expression_units_remain_outside_neutral_values() {
     let expression = crate::native::om::Expression {
         id: "nx:test:expression#native".into(),
-        object_id: Some(1),
-        record: None,
+        owner: None,
         declaration: None,
-        name: "p1".into(),
-        parameter_index: Some(1),
-        qualifier: None,
+        name: crate::om::parameter_name::ParameterName::new("p1".to_string()),
         unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
         expression: "4".into(),
         value: Some(4.0),
@@ -1406,7 +1330,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         source_table: "table".into(),
         source_offset: 1,
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations);
@@ -1420,7 +1344,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        crate::decode::incomplete_expression_parameters(&ir),
+        incomplete_expression_parameters(&ir),
         [ir.model.parameters[0].id.clone()].into()
     );
 }
@@ -1431,7 +1355,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
-    let first = BodyId("nx:s2:body#3".to_string());
+    let first = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
     let roots = BTreeMap::from([(94, 94), (122, 122)]);
     assert_eq!(
         super::feature_body_selection(
@@ -1440,7 +1364,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &BTreeMap::new(),
             "nx:om-object-indices#94,122".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Local {
             bodies: vec![
                 "nx:om-body-object#94".to_string(),
@@ -1456,7 +1380,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &BTreeMap::new(),
             "nx:om-object-indices#94,123".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Native(_)
     ));
     let aliases = BTreeMap::from([(94, 94), (150, 94)]);
@@ -1467,7 +1391,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &BTreeMap::new(),
             "nx:om-object-indices#94,150".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Local {
             bodies: vec!["nx:om-body-object#94".to_string()],
             native: "nx:om-object-indices#94,150".to_string(),
@@ -1479,7 +1403,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             id: id.to_string(),
             stream_link: format!("stream-link#{stream_ordinal}"),
             stream_ordinal,
-            stream_kind: "partition".to_string(),
+            stream_kind: crate::parasolid::StreamKind::Partition,
             body_object_index,
             body_alias_object_index: alias,
             stream_role: 0,
@@ -1494,7 +1418,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &bindings,
             "nx:om-object-index#94".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Resolved {
             bodies: vec![first.clone()],
             native: "nx:om-object-index#94".to_string(),
@@ -1507,8 +1431,8 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     let ambiguous_body_bindings = BTreeMap::from([(
         94,
         vec![
-            BodyId("nx:s2:body#3".to_string()),
-            BodyId("nx:s2:body#4".to_string()),
+            BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar"),
+            BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
         ],
     )]);
     assert!(
@@ -1535,7 +1459,7 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
         "nx:om-object-index#94".to_string(),
     );
     assert_eq!(
-        selection.selection,
+        selection.into_selection(),
         BodySelection::Local {
             bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
             native: "nx:om-object-index#94".to_string(),
@@ -1550,10 +1474,14 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
     use crate::native::om::{DataBlock, DataBlockRole};
 
     let reference = |id: &str, operation_label: &str, body_object_index| FeatureBodyReference {
+        ordinal: None,
         id: id.to_string(),
         operation_label: operation_label.to_string(),
-        body_object_index,
-        raw_body_object_index: vec![body_object_index as u8],
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            body_object_index,
+            &[body_object_index as u8],
+        )
+        .unwrap(),
         source_offset: 0,
     };
     let references = [
@@ -1567,9 +1495,12 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
     let input = |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
-        input_slot: slot,
-        object_index: u32::from(slot),
-        raw_object_index: vec![slot],
+        input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            u32::from(slot),
+            &[slot],
+        )
+        .unwrap(),
         data_block: data_block.to_string(),
         source_offset: 0,
     };
@@ -1674,22 +1605,26 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     use cadmpeg_ir::ids::{BodyId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind};
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let bound = BodyId("nx:s2:body#3".to_string());
+    let mut ir = CadIr::empty();
+    let bound = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
     ir.model.bodies.extend([
         Body {
             id: bound.clone(),
             kind: BodyKind::Solid,
-            regions: vec![RegionId("region-2".to_string())],
+            regions: vec![
+                RegionId::mint("test:model:entity#region-2".to_string()).expect("identity grammar")
+            ],
             transform: None,
             name: None,
             color: None,
             visible: None,
         },
         Body {
-            id: BodyId("nx:s3:body#4".to_string()),
+            id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![RegionId("region-3".to_string())],
+            regions: vec![
+                RegionId::mint("test:model:entity#region-3".to_string()).expect("identity grammar")
+            ],
             transform: None,
             name: None,
             color: None,
@@ -1700,7 +1635,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         id: "nx:segment-body-bindings:binding#0".to_string(),
         stream_link: "nx:segment-stream-links:link#0".to_string(),
         stream_ordinal: 2,
-        stream_kind: "partition".to_string(),
+        stream_kind: crate::parasolid::StreamKind::Partition,
         body_object_index: 10,
         body_alias_object_index: 11,
         stream_role: 19,
@@ -1714,7 +1649,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
     assert_eq!(
         id,
-        FeatureId("nx:feature-history:feature#initial-bodies".into())
+        FeatureId::mint("nx:feature-history:feature#initial-bodies").expect("identity grammar")
     );
     assert_eq!(ir.model.features[0].outputs, std::slice::from_ref(&bound));
     assert_eq!(
@@ -1737,12 +1672,12 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
 #[test]
 fn body_write_does_not_materialize_missing_neutral_geometry() {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let binding = crate::native::segments::SegmentBodyBinding {
         id: "nx:segment-body-bindings:binding#0".to_string(),
         stream_link: "nx:segment-stream-links:link#0".to_string(),
         stream_ordinal: 2,
-        stream_kind: "plain".to_string(),
+        stream_kind: crate::parasolid::StreamKind::Plain,
         body_object_index: 10,
         body_alias_object_index: 11,
         stream_role: 5,
@@ -1761,7 +1696,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
 
 #[test]
 fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -1769,15 +1704,13 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         id: "boolean#0".to_string(),
         operation_label: "operation#0".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target_object_index: 94,
-        raw_target_object_index: vec![94],
-        target_source_offset: 0,
-        tool_object_indices: vec![122],
-        raw_tool_object_indices: vec![vec![122]],
-        tool_source_offsets: vec![1],
+        target: crate::test_support::native_references::boolean_reference(94, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            122, 1,
+        )],
         source_offset: 0,
     };
-    let body = BodyId("nx:s18:body#3".to_string());
+    let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
     let definition = super::boolean_feature_definition(
         &operation,
         &BTreeMap::from([(94, 94), (122, 122)]),
@@ -1796,16 +1729,15 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
                 bodies: vec!["nx:om-body-object#122".to_string()],
                 native: "nx:om-object-indices#122".to_string(),
             },
-            op: BooleanOp::Cut,
+            op: BooleanKind::Cut,
             keep_tools: false,
         }
     );
     let feature = Feature {
-        id: FeatureId("feature".to_string()),
+        id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1815,24 +1747,23 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         definition,
         native_ref: None,
     };
-    assert!(!crate::decode::combine_definition_is_incomplete(&feature));
+    assert!(!combine_definition_is_incomplete(&feature));
 }
 
 #[test]
 fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
     use std::collections::BTreeMap;
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#offset".to_string(),
         operation_label: "operation#offset".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402, 403],
-        raw_tool_object_indices: vec![Vec::new(), Vec::new()],
-        tool_source_offsets: vec![1, 2],
+        target: crate::test_support::native_references::boolean_reference(401, 0),
+        tools: vec![
+            crate::test_support::native_references::boolean_reference(402, 1),
+            crate::test_support::native_references::boolean_reference(403, 2),
+        ],
         source_offset: 0,
     };
     let blocks = BTreeMap::from([
@@ -1860,7 +1791,7 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
                 ],
                 native: "nx:om-object-indices#402,403".to_string(),
             },
-            op: BooleanOp::Join,
+            op: BooleanKind::Join,
             keep_tools: false,
         }
     );
@@ -1868,19 +1799,17 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
 
 #[test]
 fn nx_boolean_writers_follow_selected_identity_namespace() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#writer-namespace".to_string(),
         operation_label: "nx:feature-history:operation-label#section-7".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402],
-        raw_tool_object_indices: vec![Vec::new()],
-        tool_source_offsets: vec![1],
+        target: crate::test_support::native_references::boolean_reference(401, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            402, 1,
+        )],
         source_offset: 0,
     };
     let blocks = BTreeMap::from([
@@ -1897,8 +1826,8 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         panic!("Boolean definition");
     };
 
-    let native_prior = FeatureId("native-prior".to_string());
-    let offset_prior = FeatureId("offset-prior".to_string());
+    let native_prior = FeatureId::mint("native-prior".to_string()).expect("identity grammar");
+    let offset_prior = FeatureId::mint("offset-prior".to_string()).expect("identity grammar");
     let mut history = super::BodyWriterHistory::default();
     history.record_writer(Some(401), None, &[], &native_prior);
     history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
@@ -1920,7 +1849,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     let native_definition = FeatureDefinition::Combine {
         target: BodySelection::Native("nx:om-object-index#401".to_string()),
         tools: BodySelection::Native("nx:om-object-indices#402".to_string()),
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     assert_eq!(
@@ -1939,12 +1868,11 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         id: "boolean#offset-store".to_string(),
         operation_label: "nx:feature-history:operation-label#section-7".to_string(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402, 403],
-        raw_tool_object_indices: vec![Vec::new(), Vec::new()],
-        tool_source_offsets: vec![1, 2],
+        target: crate::test_support::native_references::boolean_reference(401, 0),
+        tools: vec![
+            crate::test_support::native_references::boolean_reference(402, 1),
+            crate::test_support::native_references::boolean_reference(403, 2),
+        ],
         source_offset: 0,
     };
     let block = |section_ordinal, block_ordinal| DataBlock {
@@ -1980,8 +1908,17 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     let mut control = block(3, 0);
     control.role = DataBlockRole::Control;
     let control_operation = crate::native::features::FeatureBooleanOperation {
-        target_object_index: 0,
-        tool_object_indices: vec![401, 402],
+        target: crate::test_support::native_references::boolean_reference(
+            0,
+            operation.target.offset,
+        ),
+        tools: [401, 402]
+            .into_iter()
+            .zip(operation.tools.iter())
+            .map(|(value, token)| {
+                crate::test_support::native_references::boolean_reference(value, token.offset)
+            })
+            .collect(),
         ..operation.clone()
     };
     assert!(matches!(
@@ -1992,3 +1929,5 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         crate::native::segments::BooleanOffsetStoreResolution::Unresolved
     ));
 }
+
+mod colors;

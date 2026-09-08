@@ -446,8 +446,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -491,6 +490,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
@@ -523,6 +523,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
 
@@ -546,6 +547,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
 
@@ -575,6 +577,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
 }
@@ -610,8 +613,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -653,6 +655,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
     lane.sketch_entities[0].kind = SketchInputKind::Arc;
@@ -689,8 +692,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -733,6 +735,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 
@@ -825,6 +828,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 
@@ -840,6 +844,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 
@@ -851,6 +856,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 }
@@ -858,7 +864,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
 #[test]
 fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
     let cylinder = |id: &str, origin: Point3| Surface {
-        id: SurfaceId(id.into()),
+        id: SurfaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin,
             axis: Vector3::new(1.0, 0.0, 0.0),
@@ -879,6 +885,7 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
     assert_eq!(
@@ -916,8 +923,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut entities = vec![
         marker("vertical-near", 0, Some(1), Some([0.0, 0.01])),
@@ -967,7 +973,6 @@ fn revolution_consumes_the_preceding_profile_object() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source.into()),
-        parent_source_id: None,
         ordinal: 0,
         name: id.into(),
         kind: String::new(),

@@ -59,9 +59,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Variable)
-            }, ..
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
         }])
     ));
 
@@ -81,7 +79,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None }, ..
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved, ..
         }])
     ));
 }
@@ -125,7 +123,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
-    assert!(feature.parent.is_none());
+    assert!(result.ir().model.feature_parent(&feature.id).is_none());
     assert_eq!(
         feature
             .dependencies
@@ -201,20 +199,17 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("revolution feature");
 
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: None,
-                ..
-            },
+            construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_none()
+            && construction.extent().is_none()
     ));
 }
 
@@ -230,7 +225,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("extrusion feature");
 
     assert!(matches!(
@@ -240,7 +235,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -262,7 +257,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("reference-backed extrusion feature");
 
     assert_eq!(feature.name.as_deref(), Some("Extrude 1 id 40"));
@@ -273,7 +268,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -309,8 +304,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .native
         .namespace("creo")
         .expect("creo namespace");
-    assert_eq!(namespace.version, 1);
-    let definitions = &namespace.arenas["feature_definitions"];
+    let definitions = &namespace.arenas()["feature_definitions"];
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
     assert_eq!(definitions[0].fields()["definition_id"], 40);
@@ -318,7 +312,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         definitions[0].fields()["body"].as_array().unwrap().len(),
         definition_length
     );
-    let sketches = &namespace.arenas["sketches"];
+    let sketches = &namespace.arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id(), "creo:featdefs:sketch#40");
     assert_eq!(sketches[0].fields()["definition_id"], 40);
@@ -413,8 +407,11 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.features.definitions[0].id, 917);
-    assert_eq!(scan.features.definitions[0].owner_feature_id, Some(40));
+    assert_eq!(scan.features.definitions[0].identity.id(), 917);
+    assert_eq!(
+        scan.features.definitions[0].identity.owner_feature_id(),
+        Some(40)
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -476,7 +473,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             profile: cadmpeg_ir::features::ProfileRef::Native(profile),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -717,7 +714,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     );
     assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
-    let sketches = &result.ir().native.namespace("creo").unwrap().arenas["sketches"];
+    let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     let sketch_fields = sketches[0].fields();
     let dimensions = sketch_fields["dimensions"]
         .as_array()
@@ -785,7 +782,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
         .features
         .definitions
         .iter()
-        .all(|definition| definition.id == 917));
+        .all(|definition| definition.identity.id() == 917));
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -795,11 +792,11 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
         .native
         .namespace("creo")
         .expect("creo namespace");
-    let definition_ids = namespace.arenas["feature_definitions"]
+    let definition_ids = namespace.arenas()["feature_definitions"]
         .iter()
         .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
-    let sketch_ids = namespace.arenas["sketches"]
+    let sketch_ids = namespace.arenas()["sketches"]
         .iter()
         .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
@@ -990,7 +987,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
         .expect("recipe feature");
-    let rows = &result.ir().native.namespace("creo").unwrap().arenas["depdb_recipe_rows"];
+    let rows = &result.ir().native.namespace("creo").unwrap().arenas()["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
     assert_eq!(rows[0].fields()["header"][0], 0);
@@ -1000,9 +997,10 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
     );
     assert_eq!(feature.name, None);
     assert_eq!(
-        feature
-            .parent
-            .as_ref()
+        result
+            .ir()
+            .model
+            .feature_parent(&feature.id)
             .map(cadmpeg_ir::features::FeatureId::as_str),
         Some("creo:model:feature#8051")
     );
@@ -1039,8 +1037,11 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
 
     assert_eq!(scan.features.operation_states.len(), 2);
     assert_eq!(scan.features.operations.len(), 1);
-    assert_eq!(scan.features.operations[0].recipe, None);
-    assert!(scan.features.operations[0].recipe_conflict);
+    assert_eq!(
+        scan.features.operations[0].recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
+    assert!(scan.features.operations[0].recipe.is_conflicting());
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert!(scan
         .features
@@ -1052,6 +1053,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
             .depdb_recipe_rows
             .iter()
             .filter_map(|row| row.root_schema_class)
+            .map(crate::feature::schema::SchemaClass::code)
             .collect::<Vec<_>>(),
         [917, 917]
     );
@@ -1067,7 +1069,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
         .expect("native feature");
     let operation_states =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_operation_states"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_operation_states"];
     assert_eq!(operation_states.len(), 2);
     assert!(operation_states
         .iter()
@@ -1075,7 +1077,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "Native Feature"
+            if kind.as_str() == "Native Feature"
     ));
     assert_eq!(
         feature
@@ -1103,7 +1105,7 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     assert_eq!(positional.len(), 2);
     assert!(positional
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
     let expected_positional_ids = positional
         .iter()
         .map(|definition| {
@@ -1117,7 +1119,7 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     let positional_ids = records
         .iter()
         .filter(|record| expected_positional_ids.contains(record.id()))

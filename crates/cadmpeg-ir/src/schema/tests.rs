@@ -10,9 +10,10 @@ use crate::CadIr;
 
 #[test]
 fn typed_reference_walk_ignores_id_shaped_plain_strings() {
-    let mut ir = crate::CadIr::empty(crate::units::Units::default());
-    let owner = crate::ids::ProductDefinitionId("test:model:product#owner".into());
-    let target = crate::ids::BodyId("test:model:body#missing".into());
+    let mut ir = crate::CadIr::empty();
+    let owner =
+        crate::ids::ProductDefinitionId::mint("test:model:product#owner").expect("valid identity");
+    let target = crate::ids::BodyId::mint("test:model:body#missing").expect("valid identity");
     ir.model.product_definitions.push(ProductDefinition {
         id: owner.clone(),
         kind: ProductDefinitionKind::Part,
@@ -28,13 +29,13 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut references = Vec::new();
     ir.model
         .visit_references(&mut |reference| references.push(reference.target));
-    assert_eq!(references, vec![target.0.clone()]);
+    assert_eq!(references, vec![target.as_str().to_owned()]);
 
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
-            && finding.entity.as_deref() == Some(owner.0.as_str())
-            && finding.message.contains(&target.0)
+            && finding.entity.as_deref() == Some(owner.as_str())
+            && finding.message.contains(target.as_str())
     }));
     assert!(!report
         .findings
@@ -51,9 +52,11 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
 
-    let feature_id = FeatureId("test:model:feature#owner".into());
-    let state_id = FeatureInputTopologyId("test:model:feature-input#owner".into());
-    let historical_edge = HistoricalEdgeId("test:model:historical-edge#local".into());
+    let feature_id = FeatureId::mint("test:model:feature#owner").expect("identity grammar");
+    let state_id =
+        FeatureInputTopologyId::mint("test:model:feature-input#owner").expect("valid identity");
+    let historical_edge =
+        HistoricalEdgeId::mint("test:model:historical-edge#local").expect("valid identity");
     let state = FeatureInputTopology {
         id: state_id.clone(),
         input_of: feature_id.clone(),
@@ -68,7 +71,6 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -93,13 +95,13 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let mut state_references = Vec::new();
     state.visit_references(&mut |reference| state_references.push(reference.target));
-    assert_eq!(state_references, vec![feature_id.0.clone()]);
+    assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
 
     let mut feature_references = Vec::new();
     feature.visit_references(&mut |reference| feature_references.push(reference.target));
-    assert_eq!(feature_references, vec![state_id.0]);
+    assert_eq!(feature_references, vec![state_id.as_str()]);
 
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.push(state);
     ir.model.features.push(feature);
     assert!(!validate_neutral(&ir, Vec::new())
@@ -114,7 +116,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
         unreachable!("test fillet uses a historical selection")
     };
-    edges[0] = HistoricalEdgeId(missing.into());
+    edges[0] = HistoricalEdgeId::mint(missing).expect("valid identity");
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -43,119 +43,116 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "parasolid_deltas_inline_schema_declarations": [
-              {
-                "byte_len": 78,
-                "id": "nx:s0:deltas-inline-schema#67",
-                "inflated_offset": 67,
-                "leading_references": [
-                  1,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "linked_references": [
-                  6,
-                  7
-                ],
-                "marker": 45,
-                "node_id": 7,
-                "numeric_values": null,
-                "schema": "type38",
-                "sha256": "bc2ecf29d6c60ce2daaa4f4c42240f059b17c8c8e97a37ea237508ac6f8ef080",
-                "state_references": [
-                  15,
-                  14,
-                  13
-                ],
-                "stream_ordinal": 0,
-                "xmt": 12
-              }
-            ],
-            "parasolid_deltas_records": [
-              {
-                "byte_len": 30,
-                "family": "INTERSECTION_DATA",
-                "id": "nx:s0:deltas-record#145-12",
-                "inflated_offset": 145,
-                "kind": 90,
-                "node_id": null,
-                "position": null,
-                "references": [
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  6,
-                  6,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "stream_ordinal": 0,
-                "xmt": 12
-              }
-            ],
-            "parasolid_deltas_residual_spans": [
-              {
-                "byte_len": 67,
-                "id": "nx:s0:deltas-residual#0",
-                "inflated_offset": 0,
-                "sha256": "b01e0f1bbecc6116af143073421185dfbddb9b35ec76aa1c8958391ab066efa3",
-                "stream_ordinal": 0
-              }
-            ],
-            "parasolid_deltas_terminal_null_references": [
-              {
-                "byte_len": 8,
-                "id": "nx:s0:deltas-terminal-null-references#167",
-                "inflated_offset": 167,
-                "references": [
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "sha256": "9d523143304148a2b2d887da817f10830e37f50d7689ca5a9e69f10d7b2eb31f",
-                "stream_ordinal": 0
-              }
-            ],
-            "parasolid_intersection_records": [
-              {
-                "construction_references": [
-                  6,
-                  6,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "delta_twin": true,
-                "header_references": [
-                  1,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "id": "nx:s0:intersection-record#12",
-                "inflated_offset": 145,
-                "sense": true,
-                "stream_ordinal": 0,
-                "xmt": 12
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0"
-              }
-            ]
-          },
-          "version": 189
+          "parasolid_deltas_inline_schema_declarations": [
+            {
+              "byte_len": 78,
+              "id": "nx:s0:deltas-inline-schema#67",
+              "inflated_offset": 67,
+              "leading_references": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "linked_references": [
+                6,
+                7
+              ],
+              "marker": 45,
+              "node_id": 7,
+              "numeric_values": null,
+              "schema": "type38",
+              "sha256": "bc2ecf29d6c60ce2daaa4f4c42240f059b17c8c8e97a37ea237508ac6f8ef080",
+              "state_references": [
+                15,
+                14,
+                13
+              ],
+              "stream_ordinal": 0,
+              "xmt": 12
+            }
+          ],
+          "parasolid_deltas_records": [
+            {
+              "byte_len": 30,
+              "family": "INTERSECTION_DATA",
+              "id": "nx:s0:deltas-record#145-12",
+              "inflated_offset": 145,
+              "kind": 90,
+              "node_id": null,
+              "position": null,
+              "references": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                6,
+                6,
+                1,
+                1,
+                1,
+                1
+              ],
+              "stream_ordinal": 0,
+              "xmt": 12
+            }
+          ],
+          "parasolid_deltas_residual_spans": [
+            {
+              "byte_len": 67,
+              "id": "nx:s0:deltas-residual#0",
+              "inflated_offset": 0,
+              "sha256": "b01e0f1bbecc6116af143073421185dfbddb9b35ec76aa1c8958391ab066efa3",
+              "stream_ordinal": 0
+            }
+          ],
+          "parasolid_deltas_terminal_null_references": [
+            {
+              "byte_len": 8,
+              "id": "nx:s0:deltas-terminal-null-references#167",
+              "inflated_offset": 167,
+              "references": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "sha256": "9d523143304148a2b2d887da817f10830e37f50d7689ca5a9e69f10d7b2eb31f",
+              "stream_ordinal": 0
+            }
+          ],
+          "parasolid_intersection_records": [
+            {
+              "construction_references": [
+                6,
+                6,
+                1,
+                1,
+                1,
+                1
+              ],
+              "delta_twin": true,
+              "header_references": [
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "id": "nx:s0:intersection-record#12",
+              "inflated_offset": 145,
+              "sense": true,
+              "stream_ordinal": 0,
+              "xmt": 12
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0"
+            }
+          ]
         }
       },
       "source": {
@@ -172,9 +169,29 @@
           "footer_offset": "219",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "0",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@76",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -188,6 +205,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@76",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -199,12 +237,20 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 219, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999"
+        "SPLMSSTR container: file tag 0, footer offset 219, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -260,12 +306,32 @@
           "sha256": "ec9cffde234b5a03b17aa90a16ed75b56ad929ec0c20b30373ed0fbd02658796",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@76",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -302,10 +368,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 219, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999"
+      "SPLMSSTR container: file tag 0, footer offset 219, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

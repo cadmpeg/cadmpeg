@@ -47,45 +47,79 @@ pub(crate) struct PropertySection<'a> {
 pub(crate) struct Property<'a> {
     pub(crate) id: u32,
     pub(crate) name: Option<String>,
-    pub(crate) type_code: Option<u16>,
     pub(crate) value: PropertyValue<'a>,
     pub(crate) raw: View<'a>,
 }
 
 #[derive(Debug)]
 pub(crate) enum PropertyValue<'a> {
-    Empty,
-    Signed(i64),
-    Unsigned(u64),
-    Float(f64),
-    Bool(bool),
-    Filetime(u64),
-    String(String),
-    Guid([u8; 16]),
-    Binary(View<'a>),
-    Clipboard { format: u32, data: View<'a> },
-    Vector(Vec<PropertyValue<'a>>),
+    Empty {
+        type_code: u16,
+    },
+    Signed {
+        type_code: u16,
+        value: i64,
+    },
+    Unsigned {
+        type_code: u16,
+        value: u64,
+    },
+    Float {
+        type_code: u16,
+        value: f64,
+    },
+    Bool {
+        type_code: u16,
+        value: bool,
+    },
+    Filetime {
+        type_code: u16,
+        value: u64,
+    },
+    String {
+        type_code: u16,
+        value: String,
+    },
+    Guid {
+        type_code: u16,
+        value: [u8; 16],
+    },
+    Binary {
+        type_code: u16,
+        value: View<'a>,
+    },
+    Clipboard {
+        type_code: u16,
+        format: u32,
+        data: View<'a>,
+    },
+    Vector {
+        type_code: u16,
+        values: Vec<PropertyValue<'a>>,
+    },
     Dictionary,
-    Unknown,
+    Unknown {
+        type_code: u16,
+    },
 }
 
 impl PropertyValue<'_> {
     pub(crate) fn scalar_text(&self) -> Option<String> {
         match self {
-            Self::Signed(value) => Some(value.to_string()),
-            Self::Unsigned(value) => Some(value.to_string()),
-            Self::Float(value) if value.is_finite() => Some(value.to_string()),
-            Self::Bool(value) => Some(value.to_string()),
-            Self::Filetime(value) => Some(value.to_string()),
-            Self::String(value) => Some(value.clone()),
-            Self::Guid(value) => Some(hex(value)),
-            Self::Empty
-            | Self::Float(_)
-            | Self::Binary(_)
+            Self::Signed { value, .. } => Some(value.to_string()),
+            Self::Unsigned { value, .. } => Some(value.to_string()),
+            Self::Float { value, .. } if value.is_finite() => Some(value.to_string()),
+            Self::Bool { value, .. } => Some(value.to_string()),
+            Self::Filetime { value, .. } => Some(value.to_string()),
+            Self::String { value, .. } => Some(value.clone()),
+            Self::Guid { value, .. } => Some(hex(value)),
+            Self::Empty { .. }
+            | Self::Float { .. }
+            | Self::Binary { .. }
             | Self::Clipboard { .. }
-            | Self::Vector(_)
+            | Self::Vector { .. }
             | Self::Dictionary
-            | Self::Unknown => None,
+            | Self::Unknown { .. } => None,
         }
     }
 }
@@ -303,16 +337,14 @@ fn parse_section<'a>(
         let raw = source
             .child(source.start() + start, source.start() + end)
             .ok_or_else(|| CodecError::Malformed("OLE property view is invalid".into()))?;
-        let (type_code, value) = if id == 0 {
-            (None, PropertyValue::Dictionary)
+        let value = if id == 0 {
+            PropertyValue::Dictionary
         } else {
-            let (type_code, value) = parse_typed_value(ctx, raw, code_page)?;
-            (Some(type_code), value)
+            parse_typed_value(ctx, raw, code_page)?
         };
         properties.push(Property {
             id,
             name: names.get(&id).cloned(),
-            type_code,
             value,
             raw,
         });
@@ -378,7 +410,7 @@ fn parse_typed_value<'a>(
     ctx: &DecodeContext<'_>,
     raw: View<'a>,
     code_page: Option<u16>,
-) -> Result<(u16, PropertyValue<'a>), CodecError> {
+) -> Result<PropertyValue<'a>, CodecError> {
     let mut cursor = Cursor::new(raw, "OLE typed property");
     let type_code = cursor.u16("type")?;
     if cursor.u16("type padding")? != 0 {
@@ -392,7 +424,7 @@ fn parse_typed_value<'a>(
         parse_scalar(ctx, raw, &mut cursor, type_code, code_page, true)?
     };
     cursor.zero_finish()?;
-    Ok((type_code, value))
+    Ok(value)
 }
 
 fn parse_vector<'a>(
@@ -433,7 +465,10 @@ fn parse_vector<'a>(
         }
     }
     cursor.align4("vector padding")?;
-    Ok(PropertyValue::Vector(values))
+    Ok(PropertyValue::Vector {
+        type_code: element_type | VT_VECTOR,
+        values,
+    })
 }
 
 fn parse_scalar<'a>(
@@ -445,12 +480,27 @@ fn parse_scalar<'a>(
     padded: bool,
 ) -> Result<PropertyValue<'a>, CodecError> {
     let value = match type_code {
-        0x0000 | 0x0001 => PropertyValue::Empty,
-        0x0002 => PropertyValue::Signed(cursor.i16("VT_I2")? as i64),
-        0x0003 | 0x0016 | 0x000a => PropertyValue::Signed(cursor.i32("VT_I4")? as i64),
-        0x0004 => PropertyValue::Float(f32::from_bits(cursor.u32("VT_R4")?) as f64),
-        0x0005 | 0x0007 => PropertyValue::Float(f64::from_bits(cursor.u64("VT_R8")?)),
-        0x0006 | 0x0014 => PropertyValue::Signed(cursor.i64("VT_I8")?),
+        0x0000 | 0x0001 => PropertyValue::Empty { type_code },
+        0x0002 => PropertyValue::Signed {
+            type_code,
+            value: cursor.i16("VT_I2")? as i64,
+        },
+        0x0003 | 0x0016 | 0x000a => PropertyValue::Signed {
+            type_code,
+            value: cursor.i32("VT_I4")? as i64,
+        },
+        0x0004 => PropertyValue::Float {
+            type_code,
+            value: f32::from_bits(cursor.u32("VT_R4")?) as f64,
+        },
+        0x0005 | 0x0007 => PropertyValue::Float {
+            type_code,
+            value: f64::from_bits(cursor.u64("VT_R8")?),
+        },
+        0x0006 | 0x0014 => PropertyValue::Signed {
+            type_code,
+            value: cursor.i64("VT_I8")?,
+        },
         0x000b => {
             let value = cursor.i16("VT_BOOL")?;
             if !matches!(value, 0 | -1) {
@@ -458,31 +508,55 @@ fn parse_scalar<'a>(
                     "OLE VT_BOOL is neither false nor true".into(),
                 ));
             }
-            PropertyValue::Bool(value != 0)
+            PropertyValue::Bool {
+                type_code,
+                value: value != 0,
+            }
         }
-        0x0010 => PropertyValue::Signed(cursor.u8("VT_I1")? as i8 as i64),
-        0x0011 => PropertyValue::Unsigned(cursor.u8("VT_UI1")? as u64),
-        0x0012 => PropertyValue::Unsigned(cursor.u16("VT_UI2")? as u64),
-        0x0013 | 0x0017 => PropertyValue::Unsigned(cursor.u32("VT_UI4")? as u64),
-        0x0015 => PropertyValue::Unsigned(cursor.u64("VT_UI8")?),
+        0x0010 => PropertyValue::Signed {
+            type_code,
+            value: cursor.u8("VT_I1")? as i8 as i64,
+        },
+        0x0011 => PropertyValue::Unsigned {
+            type_code,
+            value: cursor.u8("VT_UI1")? as u64,
+        },
+        0x0012 => PropertyValue::Unsigned {
+            type_code,
+            value: cursor.u16("VT_UI2")? as u64,
+        },
+        0x0013 | 0x0017 => PropertyValue::Unsigned {
+            type_code,
+            value: cursor.u32("VT_UI4")? as u64,
+        },
+        0x0015 => PropertyValue::Unsigned {
+            type_code,
+            value: cursor.u64("VT_UI8")?,
+        },
         0x001e | 0x0008 => {
             let size = cursor.count("code-page string size", MAX_STREAM_SIZE)?;
             let value = cursor.code_page_string(ctx, size, code_page, "string")?;
             cursor.align4("string padding")?;
-            PropertyValue::String(value)
+            PropertyValue::String { type_code, value }
         }
         0x001f => {
             let count = cursor.count("Unicode string length", MAX_STREAM_SIZE / 2)?;
             let value = cursor.unicode_string(ctx, count, "Unicode string")?;
             cursor.align4("Unicode string padding")?;
-            PropertyValue::String(value)
+            PropertyValue::String { type_code, value }
         }
-        0x0040 => PropertyValue::Filetime(cursor.u64("FILETIME")?),
+        0x0040 => PropertyValue::Filetime {
+            type_code,
+            value: cursor.u64("FILETIME")?,
+        },
         0x0041 | 0x0046 => {
             let size = cursor.count("BLOB size", MAX_STREAM_SIZE)?;
             let start = cursor.position();
             cursor.take(size, "BLOB")?;
-            let value = PropertyValue::Binary(child(raw, start, cursor.position(), "BLOB")?);
+            let value = PropertyValue::Binary {
+                type_code,
+                value: child(raw, start, cursor.position(), "BLOB")?,
+            };
             cursor.align4("BLOB padding")?;
             value
         }
@@ -497,16 +571,20 @@ fn parse_scalar<'a>(
             let start = cursor.position();
             cursor.take(size - 4, "clipboard data")?;
             let value = PropertyValue::Clipboard {
+                type_code,
                 format,
                 data: child(raw, start, cursor.position(), "clipboard data")?,
             };
             cursor.align4("clipboard padding")?;
             value
         }
-        0x0048 => PropertyValue::Guid(cursor.array("CLSID")?),
+        0x0048 => PropertyValue::Guid {
+            type_code,
+            value: cursor.array("CLSID")?,
+        },
         _ => {
             cursor.skip_to_end();
-            PropertyValue::Unknown
+            PropertyValue::Unknown { type_code }
         }
     };
     if padded && !matches!(type_code, 0x0000 | 0x0001) {
@@ -779,11 +857,11 @@ mod tests {
         assert_eq!(section.code_page, Some(1200));
         assert!(matches!(
             &section.properties[1].value,
-            PropertyValue::String(value) if value == "Synthetic title"
+            PropertyValue::String { value, .. } if value == "Synthetic title"
         ));
         assert!(matches!(
             &section.properties[2].value,
-            PropertyValue::Binary(value) if value.window().starts_with(b"\x89PNG\r\n\x1a\n")
+            PropertyValue::Binary { value, .. } if value.window().starts_with(b"\x89PNG\r\n\x1a\n")
         ));
     }
 

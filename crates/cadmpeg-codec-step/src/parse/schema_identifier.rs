@@ -25,6 +25,7 @@
 /// The header classifies each identifier once and keeps the result. The
 /// decoded text is owned: it comes from a string decode that has no home in the
 /// header record, so a borrow would have nothing to point at.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum AdmittedSchemaIdentifier {
     /// The schema name and the optional object identifier are both valid.
     Valid {
@@ -68,6 +69,22 @@ impl AdmittedSchemaIdentifier {
         match self {
             Self::Valid { text } | Self::ObjectIdentifierOutOfRange { text, .. } => text,
         }
+    }
+
+    /// Numeric object-identifier components, with registered root names mapped
+    /// to their assigned number.
+    pub(super) fn numeric_object_identifier(&self) -> Option<Vec<u64>> {
+        let (_, object_identifier) = split_schema_identifier(self.text())?;
+        let mut components = object_identifier?.split_whitespace();
+        let root = u64::from(schema_oid_root_number(components.next()?)?);
+        let mut numbers = vec![root];
+        for component in components {
+            let ComponentForm::Number(number) = schema_oid_component_form(component) else {
+                return None;
+            };
+            numbers.push(number.parse().ok()?);
+        }
+        (numbers.len() >= 2).then_some(numbers)
     }
 }
 

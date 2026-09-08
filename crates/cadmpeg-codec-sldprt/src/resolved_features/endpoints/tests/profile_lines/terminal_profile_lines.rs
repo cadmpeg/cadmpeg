@@ -39,8 +39,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         marker("first", 0, SketchInputKind::Point, Some([1.0, 2.0])),

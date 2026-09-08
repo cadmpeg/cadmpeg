@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,14 +42,11 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        },
-        "version": 1
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {
@@ -58,7 +55,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "123",
-        "layout": "ND",
         "section.0.length": "47",
         "section.0.name": "VisibGeom",
         "section.0.offset": "76",
@@ -67,6 +63,17 @@
         "section_count": "1",
         "srf_array_count": "7",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:nd",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -443,6 +450,17 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:nd",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
@@ -526,7 +544,6 @@
         "sha256": "71955a72de7405b26ead15824d5bc97cd760c1c94b4a32a0148eae8d8979c261",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

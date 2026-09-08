@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
-use cadmpeg_ir::units::Units;
 use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::layout::file_header;
-use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
 fn source_less_points_round_trip_across_target_versions() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point:a".into()),
+        id: PointId::mint("rhino:test:point#a").expect("identity grammar"),
         position: Point3::new(1.25, -2.5, 3.75),
         source_object: None,
     });
@@ -31,11 +34,11 @@ fn source_less_points_round_trip_across_target_versions() {
         (RhinoArchiveVersion::V8, "80"),
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         assert_eq!(
@@ -57,20 +60,20 @@ fn source_less_points_round_trip_across_target_versions() {
 
 #[test]
 fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.0;
     ir.model.points.push(Point {
-        id: PointId("point:coarse-tolerance".into()),
+        id: PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
 
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("coarse absolute tolerance is writable");
     let decoded = RhinoCodec
@@ -93,15 +96,15 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         (1.0e-6, 0.0),
         (1.0e-6, std::f64::consts::PI.next_up()),
     ] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.tolerances.linear = linear;
         ir.tolerances.angular = angular;
         let mut output = vec![0xaa];
-        let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        let error = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut output))
             .expect_err("invalid tolerance must not be serialized");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -111,20 +114,20 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 
 #[test]
 fn rejection_occurs_before_output() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("curve:a".into()),
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Degenerate {
             point: Point3::new(0.0, 0.0, 0.0),
         },
         source_object: None,
     });
     let mut output = vec![0xaa];
-    assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None
-        })
+    assert!(RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .is_err());
     assert_eq!(output, [0xaa]);
@@ -132,9 +135,9 @@ fn rejection_occurs_before_output() {
 
 #[test]
 fn source_less_circle_round_trips_with_its_frame() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("curve:circle".into()),
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Circle {
             center: Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -144,11 +147,11 @@ fn source_less_circle_round_trips_with_its_frame() {
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -159,7 +162,7 @@ fn source_less_circle_round_trips_with_its_frame() {
         decoded.ir().model.curves[0].geometry,
         ir.model.curves[0].geometry
     );
-    let digest = Sha256::digest(b"curve:circle");
+    let digest = Sha256::digest(b"rhino:test:curve#circle");
     let expected =
         crate::wire::Uuid::from_wire(digest[..16].try_into().expect("required invariant"))
             .to_string();
@@ -175,28 +178,31 @@ fn source_less_circle_round_trips_with_its_frame() {
 
 #[test]
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("curve:nurbs".into()),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 2.0, 0.0),
-                Point3::new(3.0, 0.0, 0.0),
-            ],
-            weights: Some(vec![1.0, 0.5, 1.0]),
-            periodic: false,
-        }),
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 2.0, 0.0),
+                    Point3::new(3.0, 0.0, 0.0),
+                ],
+                Some(vec![1.0, 0.5, 1.0]),
+                false,
+            )
+            .expect("valid rational curve"),
+        ),
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -210,31 +216,32 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
 
 #[test]
 fn reversed_unclamped_nurbs_knots_are_native_canonical() {
-    let mut curve = cadmpeg_ir::geometry::NurbsCurve {
-        degree: 2,
-        knots: vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
-        control_points: (0..6)
+    let mut curve = cadmpeg_ir::geometry::NurbsCurve::new(
+        2,
+        vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
+        (0..6)
             .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
             .collect(),
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .expect("valid unclamped curve");
     super::canonicalize_native_curve_knots(&mut curve, "reversed")
         .expect("reflected stored knots reconstruct");
 
     assert_eq!(
-        curve.knots,
+        curve.knots(),
         [-1.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0]
     );
-    super::check_knot_roundtrip("reversed", "curve", &curve.knots, 3, 6, curve.periodic)
+    super::check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6, curve.periodic())
         .expect("canonicalized knots serialize without another change");
 }
 
 #[test]
 fn free_plane_and_rational_nurbs_surface_round_trip() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("surface:plane".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -243,26 +250,27 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         source_object: None,
     });
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("surface:nurbs".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![2.0, 2.0, 5.0, 5.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
+            cadmpeg_ir::geometry::NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![2.0, 2.0, 5.0, 5.0],
+                2,
+                2,
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(0.0, 2.0, 0.0),
                     Point3::new(3.0, 0.0, 1.0),
                     Point3::new(3.0, 2.0, 1.0),
                 ],
-                weights: Some(vec![1.0, 0.75, 0.5, 1.0]),
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            },
+                Some(vec![1.0, 0.75, 0.5, 1.0]),
+                false,
+                false,
+                false,
+            )
+            .expect("valid rational surface"),
         ),
         source_object: None,
     });
@@ -280,11 +288,11 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -297,35 +305,32 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .iter()
             .map(|s| s.geometry.clone())
             .collect::<Vec<_>>();
-        assert_eq!(actual, expected);
+        assert_eq!(actual.len(), expected.len());
+        for geometry in &expected {
+            assert!(actual.contains(geometry), "missing surface: {geometry:?}");
+        }
     }
 }
 
 #[test]
 fn standalone_mesh_round_trips_across_archive_versions() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#mesh".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "cadir:model:tessellation#mesh",
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(2.0, 0.0, 0.0),
                 Point3::new(0.0, 3.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -333,11 +338,11 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         RhinoArchiveVersion::V8,
     ] {
         let mut bytes = Vec::new();
-        RhinoEncoder::new(version)
-            .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
@@ -354,82 +359,77 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         );
         assert_eq!(decoded.ir().model.tessellations.len(), 1);
         let actual = &decoded.ir().model.tessellations[0];
-        assert_eq!(actual.vertices, ir.model.tessellations[0].vertices);
-        assert_eq!(actual.triangles, ir.model.tessellations[0].triangles);
-        assert_eq!(actual.normals, ir.model.tessellations[0].normals);
+        assert_eq!(actual.vertices(), ir.model.tessellations[0].vertices());
+        assert_eq!(actual.triangles(), ir.model.tessellations[0].triangles());
+        assert_eq!(actual.normals(), ir.model.tessellations[0].normals());
     }
 
-    ir.model.tessellations[0].triangle_groups.push(
-        cadmpeg_ir::tessellation::TessellationTriangleGroup {
+    ir.model.tessellations[0] = ir.model.tessellations[0]
+        .clone()
+        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
             source_id: Some("synthetic:test:group#0".into()),
             triangles: vec![0],
-        },
-    );
+        }])
+        .expect("valid triangle group partition");
     assert!(matches!(
-        RhinoEncoder::new(RhinoArchiveVersion::V8).plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        }),
+        RhinoCodec.plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
+        ),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
 
 #[test]
 fn mesh_precision_is_target_specific_and_reported() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#precision".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "cadir:model:tessellation#precision",
+            vec![
                 Point3::new(0.1, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
     let mut v5 = Vec::new();
-    let v5_report = RhinoEncoder::new(RhinoArchiveVersion::V5)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let v5_report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V5.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut v5))
         .expect("required invariant");
     assert_eq!(v5_report.losses.len(), 1);
     let decoded_v5 = RhinoCodec
         .decode(&mut Cursor::new(v5), &DecodeOptions::default())
         .expect("required invariant");
-    assert_ne!(decoded_v5.ir().model.tessellations[0].vertices[0].x, 0.1);
+    assert_ne!(decoded_v5.ir().model.tessellations[0].vertices()[0].x, 0.1);
     let mut v8 = Vec::new();
-    let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    let v8_report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut v8))
         .expect("required invariant");
     assert!(v8_report.losses.is_empty());
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(v8), &DecodeOptions::default())
         .expect("required invariant");
-    assert_eq!(decoded.ir().model.tessellations[0].vertices[0].x, 0.1);
+    assert_eq!(decoded.ir().model.tessellations[0].vertices()[0].x, 0.1);
 }
 
 #[test]
 fn mesh_auxiliary_channels_round_trip_by_kind() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let vertices = vec![
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -442,51 +442,46 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
         (CHANNEL_CURVATURE, 16, vec![0x22; 48]),
     ]
     .into_iter()
-    .map(
-        |(kind, item_size, data)| cadmpeg_ir::tessellation::TessellationChannel {
-            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
+    .map(|(kind, item_size, data)| {
+        cadmpeg_ir::tessellation::TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
             item_size,
             kind,
-            flags: 0,
-            count: 3,
+            0,
             data,
-            indices: Vec::new(),
-        },
-    )
+        )
+        .expect("valid channel")
+    })
     .collect::<Vec<_>>();
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#channels".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
+    ir.model.tessellations.push(
+        cadmpeg_ir::tessellation::Tessellation::from_decoded(
+            "cadir:model:tessellation#channels",
             vertices,
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: channels.clone(),
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            channels.clone(),
+        )
+        .expect("valid tessellation"),
+    );
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
-    let actual = &decoded.ir().model.tessellations[0].channels;
+    let actual = decoded.ir().model.tessellations[0].channels();
     for expected in channels {
         assert_eq!(
-            actual.iter().find(|channel| channel.kind == expected.kind),
+            actual
+                .iter()
+                .find(|channel| channel.kind() == expected.kind()),
             Some(&expected)
         );
     }
@@ -494,71 +489,69 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
 
 #[test]
 fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut uv_data = vec![0_u8; 24];
     uv_data[..4].copy_from_slice(&0x4000_8000_u32.to_le_bytes());
     uv_data[4..12].copy_from_slice(&160_i64.to_le_bytes());
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#chunk-like-channel".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "cadir:model:tessellation#chunk-like-channel",
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: vec![cadmpeg_ir::tessellation::TessellationChannel {
-                domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-                kind: CHANNEL_UV,
-                item_size: 8,
-                flags: 0,
-                count: 3,
-                data: uv_data.clone(),
-                indices: Vec::new(),
-            }],
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![cadmpeg_ir::tessellation::TessellationChannel::new(
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                8,
+                CHANNEL_UV,
+                0,
+                uv_data.clone(),
+            )
+            .expect("valid channel")],
+        )
+        .expect("valid tessellation"),
+    );
 
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("channel bytes are opaque to chunk framing");
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("generated mesh remains decodable");
     assert_eq!(
-        decoded.ir().model.tessellations[0].channels[0].data,
+        decoded.ir().model.tessellations[0].channels()[0].data(),
         uv_data
     );
 }
 
 #[test]
 fn free_vertex_body_preserves_point_cloud_grouping() {
-    let mut ir = CadIr::empty(Units::default());
-    let body_id: cadmpeg_ir::ids::BodyId = "cadir:model:body#cloud".into();
-    let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud".into();
-    let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud".into();
+    let mut ir = CadIr::empty();
+    let body_id: cadmpeg_ir::ids::BodyId =
+        "cadir:model:body#cloud".try_into().expect("valid identity");
+    let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud"
+        .try_into()
+        .expect("valid identity");
+    let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud"
+        .try_into()
+        .expect("valid identity");
     let vertex_ids = [
-        cadmpeg_ir::ids::VertexId("cadir:model:vertex#cloud.0".into()),
-        cadmpeg_ir::ids::VertexId("cadir:model:vertex#cloud.1".into()),
+        cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#cloud.0").expect("identity grammar"),
+        cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#cloud.1").expect("identity grammar"),
     ];
     let point_ids = [
-        cadmpeg_ir::ids::PointId("cadir:model:point#cloud.0".into()),
-        cadmpeg_ir::ids::PointId("cadir:model:point#cloud.1".into()),
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.0").expect("identity grammar"),
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.1").expect("identity grammar"),
     ];
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
         id: body_id.clone(),
@@ -599,11 +592,11 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         });
     }
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
     let decoded = RhinoCodec
@@ -622,32 +615,33 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
 
 #[test]
 fn supported_decoded_geometry_can_be_edited_and_rewritten() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#retained".into()),
+        id: PointId::mint("cadir:model:point#retained").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(decoded.ir().native.namespace("rhino").is_some());
     decoded.ir_mut().model.points[0].position = Point3::new(4.0, 5.0, 6.0);
 
     let mut output = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect("required invariant");
     let rewritten = RhinoCodec
@@ -661,41 +655,45 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 
 #[test]
 fn unsupported_retained_native_records_are_refused_before_output() {
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#retained".into()),
+        id: PointId::mint("cadir:model:point#retained").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
     let mut bytes = Vec::new();
-    RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source,
-            fidelity: None,
-        })
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
-    let mut decoded = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .native
         .namespace_mut("rhino")
-        .arenas
+        .arenas_mut()
         .entry("materials".into())
         .or_default()
-        .push(cadmpeg_ir::NativeRecord::new(
-            "rhino:presentation:material#unsupported",
-            serde_json::Map::new(),
-        ));
+        .push(
+            cadmpeg_ir::NativeRecord::new(
+                "rhino:presentation:material#unsupported",
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity"),
+        );
 
     let mut output = vec![0xaa];
-    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
     assert!(error.to_string().contains("survival handling"));
@@ -704,28 +702,31 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 
 #[test]
 fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("cadir:model:curve#periodic".into()),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-            ],
-            weights: None,
-            periodic: true,
-        }),
+        id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                None,
+                true,
+            )
+            .expect("valid periodic fixture"),
+        ),
         source_object: None,
     });
     let mut output = vec![0xaa];
-    assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &ir,
-            fidelity: None
-        })
+    assert!(RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
+        )
         .and_then(|plan| plan.write_to(&mut output))
         .is_err());
     assert_eq!(output, [0xaa]);

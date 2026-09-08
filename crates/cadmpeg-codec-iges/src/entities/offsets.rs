@@ -281,13 +281,20 @@ pub(super) fn project(
             ));
             continue;
         }
-        let source_id = CurveId(format!("iges:model:curve#D{source_sequence}"));
+        let source_id = CurveId::mint(format!("iges:model:curve#D{source_sequence}"))
+            .expect("identity grammar");
         let Some(source_geometry) = ir
             .model
             .curves
             .iter()
             .find(|curve| curve.id == source_id)
-            .map(|curve| curve.geometry.clone())
+            .map(|curve| {
+                curve
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&curve.geometry)
+                    .clone()
+            })
         else {
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
@@ -370,10 +377,11 @@ pub(super) fn project(
                 continue;
             };
             normal = placed_normal;
-            offset_source_id = CurveId(format!(
+            offset_source_id = CurveId::mint(format!(
                 "iges:model:curve#D{}-placed-source",
                 entry.sequence
-            ));
+            ))
+            .expect("identity grammar");
             offset_source_geometry = placed_source_geometry.clone();
         }
         let start = parameter_map.to_neutral(native_start);
@@ -547,17 +555,13 @@ pub(super) fn project(
                     distances,
                     control_range,
                 };
-                (
-                    distances[0],
-                    Some(law),
-                    CurveGeometry::Nurbs(NurbsCurve {
-                        degree: 1,
-                        knots: vec![start, start, end, end],
-                        control_points: controls,
-                        weights: None,
-                        periodic: false,
-                    }),
-                )
+                let Ok(offset_nurbs) =
+                    NurbsCurve::new(1, vec![start, start, end, end], controls, None, false)
+                else {
+                    losses.push(entity_loss(entry, "linear offset carrier is inconsistent"));
+                    continue;
+                };
+                (distances[0], Some(law), CurveGeometry::Nurbs(offset_nurbs))
             }
             3 => {
                 let Some(function_sequence) = record
@@ -593,20 +597,25 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let function_id = CurveId(format!("iges:model:curve#D{function_sequence}"));
+                let function_id = CurveId::mint(format!("iges:model:curve#D{function_sequence}"))
+                    .expect("identity grammar");
                 let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
                 else {
                     losses.push(entity_loss(entry, "offset function curve is missing"));
                     continue;
                 };
-                let CurveGeometry::Nurbs(function_nurbs) = &function.geometry else {
+                let CurveGeometry::Nurbs(function_nurbs) = function
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&function.geometry)
+                else {
                     losses.push(entity_loss(
                         entry,
                         "offset function has no polynomial NURBS carrier",
                     ));
                     continue;
                 };
-                if function_nurbs.weights.is_some() || function_nurbs.degree == 0 {
+                if function_nurbs.weights().is_some() || function_nurbs.degree() == 0 {
                     losses.push(entity_loss(
                         entry,
                         "offset function is rational or degree zero",
@@ -639,14 +648,14 @@ pub(super) fn project(
                 };
                 let function_range = independent_range
                     .map(|value| function_parameter_offset + function_parameter_scale * value);
-                let degree = function_nurbs.degree as usize;
-                let Some(domain_start) = function_nurbs.knots.get(degree).copied() else {
+                let degree = function_nurbs.degree() as usize;
+                let Some(domain_start) = function_nurbs.knots().get(degree).copied() else {
                     losses.push(entity_loss(entry, "offset function knot domain is missing"));
                     continue;
                 };
                 let Some(domain_end) = function_nurbs
-                    .knots
-                    .get(function_nurbs.knots.len().saturating_sub(degree + 1))
+                    .knots()
+                    .get(function_nurbs.knots().len().saturating_sub(degree + 1))
                     .copied()
                 else {
                     losses.push(entity_loss(entry, "offset function knot domain is missing"));
@@ -666,11 +675,11 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal.cross(*direction);
-                let mut controls = Vec::with_capacity(function_nurbs.control_points.len());
+                let mut controls = Vec::with_capacity(function_nurbs.control_points().len());
                 for (index, function_control) in
-                    function_nurbs.control_points.iter().copied().enumerate()
+                    function_nurbs.control_points().iter().copied().enumerate()
                 {
-                    let Some(function_parameter) = greville(&function_nurbs.knots, degree, index)
+                    let Some(function_parameter) = greville(function_nurbs.knots(), degree, index)
                     else {
                         losses.push(entity_loss(
                             entry,
@@ -693,7 +702,7 @@ pub(super) fn project(
                     };
                     controls.push(base.translated(offset_direction, distance));
                 }
-                if controls.len() != function_nurbs.control_points.len() {
+                if controls.len() != function_nurbs.control_points().len() {
                     losses.push(entity_loss(
                         entry,
                         "offset function controls cannot be composed",
@@ -701,13 +710,17 @@ pub(super) fn project(
                     continue;
                 }
                 let knots = function_nurbs
-                    .knots
+                    .knots()
                     .iter()
                     .map(|value| source_parameter(inverse_parameter(*value)))
                     .collect();
-                let Some(function_start) =
-                    cadmpeg_ir::eval::curve_point(&function.geometry, function_range[0])
-                else {
+                let Some(function_start) = cadmpeg_ir::eval::curve_point(
+                    function
+                        .geometry
+                        .solved_cache()
+                        .unwrap_or(&function.geometry),
+                    function_range[0],
+                ) else {
                     losses.push(entity_loss(
                         entry,
                         "offset function start cannot be evaluated",
@@ -725,17 +738,16 @@ pub(super) fn project(
                     function_parameter_offset,
                     function_parameter_scale,
                 };
-                (
-                    distance,
-                    Some(law),
-                    CurveGeometry::Nurbs(NurbsCurve {
-                        degree: function_nurbs.degree,
-                        knots,
-                        control_points: controls,
-                        weights: None,
-                        periodic: false,
-                    }),
-                )
+                let Ok(offset_nurbs) =
+                    NurbsCurve::new(function_nurbs.degree(), knots, controls, None, false)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset-function carrier is inconsistent",
+                    ));
+                    continue;
+                };
+                (distance, Some(law), CurveGeometry::Nurbs(offset_nurbs))
             }
             _ => {
                 losses.push(entity_loss(entry, "offset curve form is unsupported"));
@@ -756,12 +768,18 @@ pub(super) fn project(
             ));
             continue;
         };
-        let curve_id = CurveId(format!("iges:model:curve#D{}", entry.sequence));
-        let start_point = PointId(format!("iges:model:point#D{}:start", entry.sequence));
-        let end_point = PointId(format!("iges:model:point#D{}:end", entry.sequence));
-        let start_vertex = VertexId(format!("iges:model:vertex#D{}:start", entry.sequence));
-        let end_vertex = VertexId(format!("iges:model:vertex#D{}:end", entry.sequence));
-        let edge_id = EdgeId(format!("iges:model:edge#D{}", entry.sequence));
+        let curve_id = CurveId::mint(format!("iges:model:curve#D{}", entry.sequence))
+            .expect("identity grammar");
+        let start_point = PointId::mint(format!("iges:model:point#D{}:start", entry.sequence))
+            .expect("identity grammar");
+        let end_point = PointId::mint(format!("iges:model:point#D{}:end", entry.sequence))
+            .expect("identity grammar");
+        let start_vertex = VertexId::mint(format!("iges:model:vertex#D{}:start", entry.sequence))
+            .expect("identity grammar");
+        let end_vertex = VertexId::mint(format!("iges:model:vertex#D{}:end", entry.sequence))
+            .expect("identity grammar");
+        let edge_id =
+            EdgeId::mint(format!("iges:model:edge#D{}", entry.sequence)).expect("identity grammar");
         if offset_source_id != source_id {
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
@@ -806,20 +824,27 @@ pub(super) fn project(
             param_range: Some([start, end]),
             tolerance: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId(format!("iges:model:procedural-curve#D{}", entry.sequence)),
-            curve: curve_id,
-            definition: ProceduralCurveDefinition::Offset {
-                source: offset_source_id,
-                distance,
-                support: None,
-                direction: None,
-                normal: Some(normal),
-                parameter_range: Some([start, end]),
-                distance_law,
-            },
-            cache_fit_tolerance: None,
-        });
+        let _attached = ir.model.add_procedural_curve(
+            curve_id,
+            ProceduralCurve::new(
+                ProceduralCurveId::mint(format!("iges:model:procedural-curve#D{}", entry.sequence))
+                    .expect("identity grammar"),
+                ProceduralCurveDefinition::Offset {
+                    source: offset_source_id,
+                    distance,
+                    side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
+                    range: Some(match distance_law {
+                        Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+                            parameter_range: [start, end],
+                            distance_law,
+                        },
+                        None => cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                            parameter_range: [start, end],
+                        },
+                    }),
+                },
+            ),
+        );
         wire_edges.push(edge_id);
         decoded.insert(entry.sequence);
     }

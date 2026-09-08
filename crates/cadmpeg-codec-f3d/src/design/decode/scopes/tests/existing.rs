@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
-    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 
 use super::{
     exact_coil_placement, exact_hole_construction, exact_hole_face_selection,
@@ -19,11 +17,11 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
-use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
-    DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignWorkPointInputCarrier, DesignWorkPointRule,
+use crate::records::feature::{
+    DesignCoilExtent, DesignCoilSelection, DesignExtrudeOperation, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignWorkPointRule,
 };
+use crate::records::{ConstructionRecipe, ConstructionRecipeKind, DesignRecordHeader};
 use std::collections::HashMap;
 
 const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
@@ -118,8 +116,12 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         bytes[25..29].copy_from_slice(&1u32.to_le_bytes());
         bytes[30..34].fill(0xff);
 
-        let mut scope = DesignParameterScope::empty("generated:loft#20", "Loft", 20);
-        scope.class_tag = class_tag.into();
+        let mut scope = DesignParameterScope::empty(
+            "generated:loft#20",
+            crate::records::feature::DesignFeatureKind::Loft,
+            20,
+        );
+        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope.frame_length = 64;
         let construction = exact_path_feature_construction(
             &bytes,
@@ -130,10 +132,10 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         .expect("compact Loft operation");
         assert_eq!(
             construction,
-            DesignPathFeatureConstruction::Loft {
+            DesignPathFeatureConstruction::Loft(crate::records::feature::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 25,
-            }
+            })
         );
 
         bytes[24] = 0;
@@ -192,11 +194,11 @@ fn compact_coil_placement_fixture(
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        "CoilPrimitive",
+        crate::records::feature::DesignFeatureKind::CoilPrimitive,
         42,
     );
     scope.frame_length = 442;
-    scope.reference_members = vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         selection_record_index,
         transform_record_index,
         300,
@@ -205,7 +207,7 @@ fn compact_coil_placement_fixture(
         303,
         304,
         305,
-    ];
+    ]);
     (bytes, scope, transform_start)
 }
 
@@ -287,8 +289,8 @@ fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usi
         scope.record_index,
     );
     indexed_header(&mut bytes, *b"259", 200);
-    scope.class_tag = "353".into();
-    scope.paired_class_tag = "259".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("353".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.frame_length = 427;
     (bytes, scope, transform_start)
 }
@@ -384,8 +386,8 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
         scope.record_index,
     );
     indexed_header(&mut bytes, *b"258", 200);
-    scope.class_tag = "393".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("393".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 427;
     (bytes, scope, transform_start)
 }
@@ -393,8 +395,20 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
 fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     scope.frame_length = 411;
-    scope.reference_members.pop();
-    scope.coil_extent = Some(DesignCoilExtent::Spiral);
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.pop();
+        crate::records::ReferenceRun::unlocated(values)
+    };
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).coil_extent =
+            Some(crate::records::RecordedValue {
+                value: DesignCoilExtent::Spiral,
+                offset: None,
+            });
+    }
     (bytes, scope, transform_start)
 }
 
@@ -444,11 +458,11 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
     let stream = "f3d:Design/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        "CoilPrimitive",
+        crate::records::feature::DesignFeatureKind::CoilPrimitive,
         42,
     );
     scope.frame_length = 432;
-    scope.reference_members = vec![
+    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
         selection_record_index,
         transform_record_index,
         300,
@@ -457,15 +471,19 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         303,
         304,
         305,
-    ];
+    ]);
     let recipes = vec![ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
         byte_offset: recipe_byte_offset as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Face,
-        design_id: Some("body".into()),
-        design_id_offset: None,
-        design_selector: None,
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "body".into(),
+                offset: None,
+            },
+            selector: None,
+        }),
         recipe_index: 0,
         record_index: 103,
     }];
@@ -494,20 +512,28 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
         assert_eq!(
             placement.selection,
             DesignCoilSelection::Persistent {
-                asset_id: "11111111-1111-4111-8111-111111111111".into(),
-                context_id: "22222222-2222-4222-8222-222222222222".into(),
+                asset_id: "11111111-1111-4111-8111-111111111111"
+                    .to_owned()
+                    .try_into()
+                    .expect("GUID"),
+                context_id: "22222222-2222-4222-8222-222222222222"
+                    .to_owned()
+                    .try_into()
+                    .expect("GUID"),
                 identity_record_index: 103,
                 primary_identity: 1331,
-                secondary_identity: Some(183),
-                curve_secondary_identity: None,
+                secondary: Some(crate::records::DesignSecondaryIdentity {
+                    identity: 183,
+                    curve_identity: None
+                }),
             }
         );
         assert_eq!(
-            placement.transform_offset,
+            placement.explicit_transform.map(|matrix| matrix.offset),
             expected_offset.map(|offset| (transform_start + offset) as u64)
         );
         assert_eq!(
-            placement.transform,
+            *placement.transform(),
             matrix.unwrap_or([
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -524,11 +550,11 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
     let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
         .expect("modern Coil matrix placement");
     assert_eq!(placement.selection_record_index, 100);
-    assert_eq!(placement.selection_class_tag, "286");
+    assert_eq!(placement.selection_class_tag.as_str(), "286");
     assert_eq!(placement.transform_record_index, 200);
-    assert_eq!(placement.transform_class_tag, "450");
+    assert_eq!(placement.transform_class_tag.as_str(), "450");
     assert_eq!(
-        placement.transform,
+        *placement.transform(),
         [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, -1.0, 0.0, 0.0],
@@ -537,7 +563,7 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
         ]
     );
     assert_eq!(
-        placement.transform_offset,
+        placement.explicit_transform.map(|matrix| matrix.offset),
         Some((transform_start + coil_modern_matrix::MATRIX) as u64)
     );
 }
@@ -572,7 +598,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
         .expect("owner-referenced compact Coil placement");
     assert_eq!(
-        placement.transform,
+        *placement.transform(),
         [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -580,7 +606,10 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
-    assert_eq!(placement.transform_offset, None);
+    assert_eq!(
+        placement.explicit_transform.map(|matrix| matrix.offset),
+        None
+    );
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
@@ -594,13 +623,16 @@ fn legacy_coil_placement_accepts_identity_frame() {
         .expect("legacy Coil placement");
     assert_eq!(placement.selection_record_index, 100);
     assert_eq!(placement.transform_record_index, 200);
-    assert_eq!(placement.transform_offset, None);
+    assert_eq!(
+        placement.explicit_transform.map(|matrix| matrix.offset),
+        None
+    );
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
     );
     assert_eq!(
-        placement.transform,
+        *placement.transform(),
         [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -620,7 +652,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
     );
 
     let (bytes, mut scope, _) = legacy_coil_placement_identity_fixture();
-    scope.class_tag = "432".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("432".to_owned()).unwrap();
     assert_eq!(
         exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
         None
@@ -650,7 +682,15 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
 #[test]
 fn compact_coil_seven_reference_form_requires_spiral_extent() {
     let (bytes, mut scope, _) = compact_coil_spiral_placement_fixture();
-    scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).coil_extent =
+            Some(crate::records::RecordedValue {
+                value: DesignCoilExtent::RevolutionsHeight,
+                offset: None,
+            });
+    }
     assert_eq!(
         exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
         None
@@ -700,14 +740,22 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
     assert_eq!(
         placement.selection,
         DesignCoilSelection::FaceRecipe {
-            asset_id: "11111111-1111-4111-8111-111111111111".into(),
-            context_id: "22222222-2222-4222-8222-222222222222".into(),
+            asset_id: "11111111-1111-4111-8111-111111111111"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
+            context_id: "22222222-2222-4222-8222-222222222222"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             recipe_record_index: 103,
             recipe_record_byte_offset: recipes[0].byte_offset - 15,
             recipe_id: recipes[0].id.clone(),
-            recipe_kind: ConstructionRecipeKind::Face,
-            design_id: Some("body".into()),
-            design_selector: None,
+            recipe_kind: crate::records::feature::DesignFaceRecipeKind::Face,
+            design: Some(crate::records::ConstructionRecipeDesign {
+                id: "body".into(),
+                selector: None
+            }),
         }
     );
 }
@@ -844,11 +892,17 @@ fn work_point_stream(
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "427".into(),
+        class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("WorkPoint scope");
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("WorkPoint scope");
     (bytes, scope, position_at)
 }
 
@@ -893,8 +947,16 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
     bytes.extend_from_slice(b"259");
     bytes.extend_from_slice(&55u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
-    scope.reference_members.push(55);
+    let mut scope = DesignParameterScope::empty(
+        "generated:hole#0",
+        crate::records::feature::DesignFeatureKind::Hole,
+        12,
+    );
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(55);
+        crate::records::ReferenceRun::unlocated(values)
+    };
     (bytes, scope, position_at, input_reference_at)
 }
 
@@ -918,18 +980,35 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     assert_eq!(construction.direction_offset, (position_at + 24) as u64);
     assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data_prefix, Some(0x7f));
+    assert_eq!(
+        construction
+            .tangent_point_data
+            .as_ref()
+            .map(|tangent| tangent.prefix),
+        Some(0x7f)
+    );
     assert_f64_array(
         construction
             .tangent_point_data
             .as_ref()
-            .copied()
+            .map(|tangent| tangent.data.value)
             .expect("version-four tangent point data"),
         [-1.0, -1.0, -1.0],
     );
-    assert_eq!(construction.input_record_indices, [378]);
     assert_eq!(
-        construction.input_record_offsets,
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [378]
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
         [(input_reference_at + 1) as u64]
     );
 }
@@ -952,12 +1031,35 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
     assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
     assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data_prefix, None);
-    assert_eq!(construction.tangent_point_data, None);
-    assert_eq!(construction.tangent_point_data_offset, None);
-    assert_eq!(construction.input_record_indices, [378]);
     assert_eq!(
-        construction.input_record_offsets,
+        construction
+            .tangent_point_data
+            .as_ref()
+            .map(|tangent| tangent.prefix),
+        None
+    );
+    assert_eq!(construction.tangent_point_data, None);
+    assert_eq!(
+        construction
+            .tangent_point_data
+            .as_ref()
+            .map(|tangent| tangent.data.offset),
+        None
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [378]
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
         [(input_reference_at + 1) as u64]
     );
 }
@@ -986,8 +1088,16 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     let next_at = bytes.len();
     indexed_header(&mut bytes, *b"311", 104);
 
-    let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
-    scope.reference_members.push(100);
+    let mut scope = DesignParameterScope::empty(
+        "generated:hole#0",
+        crate::records::feature::DesignFeatureKind::Hole,
+        12,
+    );
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(100);
+        crate::records::ReferenceRun::unlocated(values)
+    };
     let selection = exact_hole_face_selection(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -997,9 +1107,15 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     .expect("direct Hole face selection");
 
     assert_eq!(selection.record_index, 100);
-    assert_eq!(selection.class_tag, "333");
-    assert_eq!(selection.asset_id, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
-    assert_eq!(selection.context_id, "8e685642-4d68-4909-96d0-0dd4437491b6");
+    assert_eq!(selection.class_tag.as_str(), "333");
+    assert_eq!(
+        selection.asset_id.as_str(),
+        "53aa8ab4-194a-434b-bd52-8c6d761dc147"
+    );
+    assert_eq!(
+        selection.context_id.as_str(),
+        "8e685642-4d68-4909-96d0-0dd4437491b6"
+    );
     assert_eq!(selection.identity_record_index, 103);
     assert_eq!(selection.identity_record_offset, identity_at as u64);
     assert_eq!(selection.primary_identity, 246);
@@ -1195,14 +1311,19 @@ fn work_point_rule_codes_select_typed_input_arities() {
         .expect("work point frame");
         assert_eq!(frame.rule.reference_type(), reference_type);
         assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
-        assert!(match frame.rule {
-            DesignWorkPointRule::CircleCenter { .. } => reference_type == 5,
-            DesignWorkPointRule::TwoEdgeIntersection { .. } => reference_type == 7,
-            DesignWorkPointRule::ThreePlaneIntersection { .. } => reference_type == 8,
-            DesignWorkPointRule::Vertex { .. } => reference_type == 10,
-            DesignWorkPointRule::EdgePlaneIntersection { .. } => reference_type == 14,
-            DesignWorkPointRule::DistanceOnEdge { .. } => reference_type == 20,
-            DesignWorkPointRule::Native { .. } => false,
+        assert!(match frame.rule.form() {
+            crate::records::feature::DesignWorkPointRuleForm::CircleCenter { .. } =>
+                reference_type == 5,
+            crate::records::feature::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } =>
+                reference_type == 7,
+            crate::records::feature::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } =>
+                reference_type == 8,
+            crate::records::feature::DesignWorkPointRuleForm::Vertex { .. } => reference_type == 10,
+            crate::records::feature::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } =>
+                reference_type == 14,
+            crate::records::feature::DesignWorkPointRuleForm::DistanceOnEdge { .. } =>
+                reference_type == 20,
+            crate::records::feature::DesignWorkPointRuleForm::Native { .. } => false,
         });
     }
 }
@@ -1219,8 +1340,8 @@ fn work_point_rule_code_with_wrong_arity_remains_native() {
     .expect("work point frame");
 
     assert!(matches!(
-        frame.rule,
-        DesignWorkPointRule::Native {
+        frame.rule.form(),
+        crate::records::feature::DesignWorkPointRuleForm::Native {
             reference_type: 5,
             ref inputs,
         } if inputs.len() == 2
@@ -1230,19 +1351,19 @@ fn work_point_rule_code_with_wrong_arity_remains_native() {
 #[test]
 fn work_point_rule_rejects_an_incompatible_input_carrier() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
-    let mut frame = exact_work_point_construction(
+    let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
         &HashMap::new(),
     )
     .expect("work point frame");
-    assert!(frame.rule.carriers_are_compatible());
+    let mut wire = serde_json::to_value(&frame.rule).expect("serialize valid rule");
 
-    frame.rule.inputs_mut()[1].carrier = Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
-        operand_id: "f3d:native:edge-operand#wrong-role".into(),
-    }));
-    assert!(!frame.rule.carriers_are_compatible());
+    wire["inputs"][1]["carrier"] = serde_json::json!({
+        "kind": "edge_recipe", "operand_id": "f3d:native:edge-operand#wrong-role"
+    });
+    assert!(serde_json::from_value::<DesignWorkPointRule>(wire).is_err());
 }
 
 fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {

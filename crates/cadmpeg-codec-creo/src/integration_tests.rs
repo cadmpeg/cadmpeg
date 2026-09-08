@@ -2,15 +2,16 @@
 //! End-to-end contracts over synthesized Creo PSB byte images.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::sketches::SketchConstraintDefinition;
 
-use crate::container::role;
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -70,7 +71,7 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
     let summary = CreoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("Creo inspection");
-    assert_eq!(summary.format, "creo");
+    assert_eq!(summary.format(), "creo");
     assert_eq!(summary.container_kind, "psb");
     assert_eq!(summary.entries.len(), 3);
     assert!(summary.notes.iter().any(|note| note.contains("layout: ND")));
@@ -81,7 +82,7 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
     assert!(summary
         .entries
         .iter()
-        .any(|entry| entry.role == role::THUMBNAIL));
+        .any(|entry| entry.role == ContainerRole::Thumbnail));
 }
 
 #[test]
@@ -92,7 +93,7 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Cylinder { radius, .. } if radius == 1.0)
     }));
@@ -206,7 +207,7 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
           \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
     );
     let result = decode(build_prt("integration", &[("FeatDefs", payload)]));
-    let sketches = &result.ir().native.namespace("creo").unwrap().arenas["sketches"];
+    let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
     let fields = sketches[0].fields();
     let headers = fields["table_headers"].as_array().unwrap();
@@ -240,8 +241,8 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             },
         )
         .expect("container-only Creo decode");
-    assert!(result.report().container_only);
-    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only());
+    assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 2);

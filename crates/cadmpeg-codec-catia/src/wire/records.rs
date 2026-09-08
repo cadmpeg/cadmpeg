@@ -15,11 +15,25 @@ use std::{collections::HashSet, ops::Range};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
+use serde::{Deserialize, Serialize};
 
 use crate::layout::a_family_frame as a_frame;
 use crate::layout::b_family_frame as b_frame;
 
 use super::bytes::{compact_int, f64_le};
+
+/// One knot of a degree-5 consolidated UV jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsolidatedPcurveSite {
+    /// Global parameter at this site.
+    pub knot: f64,
+    /// UV position.
+    pub point: [f64; 2],
+    /// UV first derivative.
+    pub first_derivatives: [f64; 2],
+    /// UV second derivative.
+    pub second_derivatives: [f64; 2],
+}
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
@@ -28,22 +42,40 @@ pub struct ConsolidatedPcurve {
     pub pos: usize,
     /// Referenced support-surface identifier.
     pub support_id: u32,
-    /// Parametric curve degree.
-    pub degree: u32,
     /// Number of leading extrapolation sites encoded by the array marker.
     pub extrapolation_sites: u32,
-    /// Global parameters at the stored sites.
-    pub knots: Vec<f64>,
-    /// UV positions at the stored sites.
-    pub points: Vec<[f64; 2]>,
-    /// UV first derivatives at the stored sites.
-    pub first_derivatives: Vec<[f64; 2]>,
-    /// UV second derivatives at the stored sites.
-    pub second_derivatives: Vec<[f64; 2]>,
+    /// Knot-aligned UV jet samples.
+    pub sites: Vec<ConsolidatedPcurveSite>,
     /// Native parameter range.
     pub range: [f64; 2],
     /// Bytes following the native range inside the framed record.
     pub tail: Vec<u8>,
+}
+
+impl ConsolidatedPcurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
+
+    pub fn points(&self) -> Vec<[f64; 2]> {
+        self.sites.iter().map(|site| site.point).collect()
+    }
+
+    pub fn first_derivatives(&self) -> Vec<[f64; 2]> {
+        self.sites
+            .iter()
+            .map(|site| site.first_derivatives)
+            .collect()
+    }
+
+    pub fn second_derivatives(&self) -> Vec<[f64; 2]> {
+        self.sites
+            .iter()
+            .map(|site| site.second_derivatives)
+            .collect()
+    }
 }
 
 pub(crate) fn parse_consolidated_pcurve(
@@ -130,15 +162,146 @@ pub(crate) fn parse_consolidated_pcurve(
     Some(ConsolidatedPcurve {
         pos,
         support_id,
-        degree,
         extrapolation_sites,
-        knots,
-        points: u.into_iter().zip(v).map(|p| [p.0, p.1]).collect(),
-        first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),
-        second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),
+        sites: knots
+            .into_iter()
+            .zip(u.into_iter().zip(v))
+            .zip(du.into_iter().zip(dv))
+            .zip(ddu.into_iter().zip(ddv))
+            .map(
+                |(((knot, (u, v)), (du, dv)), (ddu, ddv))| ConsolidatedPcurveSite {
+                    knot,
+                    point: [u, v],
+                    first_derivatives: [du, dv],
+                    second_derivatives: [ddu, ddv],
+                },
+            )
+            .collect(),
         range,
         tail: data[at..end].to_vec(),
     })
+}
+
+/// Header-token width of a length-closed A/B-family frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ConsolidatedFrameWidth {
+    /// One-byte header token.
+    One,
+    /// Two-byte header token.
+    Two,
+    /// Three-byte header token.
+    Three,
+}
+
+impl From<ConsolidatedFrameWidth> for u8 {
+    fn from(value: ConsolidatedFrameWidth) -> Self {
+        match value {
+            ConsolidatedFrameWidth::One => 1,
+            ConsolidatedFrameWidth::Two => 2,
+            ConsolidatedFrameWidth::Three => 3,
+        }
+    }
+}
+
+impl ConsolidatedFrameWidth {
+    fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x01 => Some(Self::One),
+            0x02 => Some(Self::Two),
+            0x03 => Some(Self::Three),
+            _ => None,
+        }
+    }
+}
+
+impl TryFrom<u8> for ConsolidatedFrameWidth {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::from_byte(value).ok_or_else(|| format!("width {value} is not 1..=3"))
+    }
+}
+
+/// Independent framing flag of a length-closed A/B-family frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ConsolidatedFrameFlag {
+    /// Flag `0x03`.
+    Flag03,
+    /// Flag `0x13`.
+    Flag13,
+    /// Flag `0x83`.
+    Flag83,
+}
+
+impl From<ConsolidatedFrameFlag> for u8 {
+    fn from(value: ConsolidatedFrameFlag) -> Self {
+        match value {
+            ConsolidatedFrameFlag::Flag03 => 0x03,
+            ConsolidatedFrameFlag::Flag13 => 0x13,
+            ConsolidatedFrameFlag::Flag83 => 0x83,
+        }
+    }
+}
+
+impl ConsolidatedFrameFlag {
+    fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x03 => Some(Self::Flag03),
+            0x13 => Some(Self::Flag13),
+            0x83 => Some(Self::Flag83),
+            _ => None,
+        }
+    }
+}
+
+impl TryFrom<u8> for ConsolidatedFrameFlag {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::from_byte(value).ok_or_else(|| format!("flag {value:#x} is not 0x03, 0x13, or 0x83"))
+    }
+}
+
+/// Length-closed A/B-family frame shared by edge-definition and descriptor records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsolidatedRawFrame<Offset = usize> {
+    /// Record byte offset.
+    #[serde(rename = "byte_offset")]
+    pub pos: Offset,
+    /// Header-token width in bytes.
+    pub width: ConsolidatedFrameWidth,
+    /// Independent framing flag.
+    pub flag: ConsolidatedFrameFlag,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Complete class-specific payload.
+    pub payload: Vec<u8>,
+}
+
+impl ConsolidatedRawFrame {
+    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Self {
+        Self {
+            pos: record.range.start,
+            width: record.width,
+            flag: record.flag,
+            header_token: record.header_token,
+            payload,
+        }
+    }
+}
+
+impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
+    fn from(frame: ConsolidatedRawFrame) -> Self {
+        Self {
+            pos: frame.pos as u64,
+            width: frame.width,
+            flag: frame.flag,
+            header_token: frame.header_token,
+            payload: frame.payload,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -170,9 +333,9 @@ pub struct ConsolidatedRecord {
     /// Record family.
     pub family: ConsolidatedFamily,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent flag byte (`0x03`, `0x13`, or `0x83`).
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Record class byte.
     pub class: u8,
     /// Little-endian width-coded header token.
@@ -346,7 +509,7 @@ fn parse_spanning_consolidated_record(
     let first = source_byte(source_start)?;
     let (family, width, header_len, length) = if let Some(width) = first
         .checked_sub(0xa4)
-        .filter(|width| (1..=3).contains(width))
+        .and_then(ConsolidatedFrameWidth::from_byte)
     {
         let length_bytes = [
             source_byte(source_start.checked_add(3)?)?,
@@ -360,7 +523,7 @@ fn parse_spanning_consolidated_record(
     } else {
         let width = first
             .checked_sub(0xb1)
-            .filter(|width| (1..=3).contains(width))?;
+            .and_then(ConsolidatedFrameWidth::from_byte)?;
         (
             ConsolidatedFamily::B,
             width,
@@ -370,13 +533,11 @@ fn parse_spanning_consolidated_record(
             )?),
         )
     };
-    let flag = source_byte(source_start.checked_add(a_frame::FLAG)?)?;
+    let flag =
+        ConsolidatedFrameFlag::from_byte(source_byte(source_start.checked_add(a_frame::FLAG)?)?)?;
     let class = source_byte(source_start.checked_add(a_frame::CLASS)?)?;
-    if ![0x03, 0x13, 0x83].contains(&flag) {
-        return None;
-    }
     let token_at = source_start.checked_add(header_len)?;
-    let payload_start = token_at.checked_add(usize::from(width))?;
+    let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let source_end = payload_start.checked_add(length)?;
     if source_end > source_length {
         return None;
@@ -390,7 +551,7 @@ fn parse_spanning_consolidated_record(
     if !crosses_extent {
         return None;
     }
-    let header_token = (0..usize::from(width)).try_fold(0u32, |value, relative| {
+    let header_token = (0..usize::from(u8::from(width))).try_fold(0u32, |value, relative| {
         Some(value | (u32::from(source_byte(token_at.checked_add(relative)?)?) << (8 * relative)))
     })?;
     let mut logical_start = 0usize;
@@ -424,11 +585,10 @@ fn parse_consolidated_record(
     pos: usize,
     source_end: usize,
 ) -> Option<ConsolidatedRecord> {
-    let flags = [0x03, 0x13, 0x83];
     let (family, width, token_at, length) = if let Some(width) = data
         .get(pos)
         .and_then(|byte| byte.checked_sub(0xa4))
-        .filter(|width| (1..=3).contains(width))
+        .and_then(ConsolidatedFrameWidth::from_byte)
     {
         let length = View::u32_le_at(data, pos.checked_add(a_frame::PAYLOAD_LEN)?)
             .and_then(|value| usize::try_from(value).ok())?;
@@ -442,7 +602,7 @@ fn parse_consolidated_record(
         let width = data
             .get(pos)
             .and_then(|byte| byte.checked_sub(0xb1))
-            .filter(|width| (1..=3).contains(width))?;
+            .and_then(ConsolidatedFrameWidth::from_byte)?;
         (
             ConsolidatedFamily::B,
             width,
@@ -450,12 +610,9 @@ fn parse_consolidated_record(
             usize::from(*data.get(pos.checked_add(b_frame::PAYLOAD_LEN)?)?),
         )
     };
-    let flag = *data.get(pos.checked_add(a_frame::FLAG)?)?;
+    let flag = ConsolidatedFrameFlag::from_byte(*data.get(pos.checked_add(a_frame::FLAG)?)?)?;
     let class = *data.get(pos.checked_add(a_frame::CLASS)?)?;
-    if !flags.contains(&flag) {
-        return None;
-    }
-    let payload_start = token_at.checked_add(usize::from(width))?;
+    let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let end = payload_start.checked_add(length)?;
     if end > source_end {
         return None;
@@ -573,6 +730,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn frame_states_admit_only_defined_widths_and_flags() {
+        for byte in u8::MIN..=u8::MAX {
+            let width = serde_json::from_value::<ConsolidatedFrameWidth>(serde_json::json!(byte));
+            assert_eq!(width.is_ok(), matches!(byte, 1..=3));
+            if let Ok(width) = width {
+                assert_eq!(
+                    serde_json::to_value(width).expect("serialize frame width"),
+                    serde_json::json!(byte)
+                );
+            }
+            let flag = serde_json::from_value::<ConsolidatedFrameFlag>(serde_json::json!(byte));
+            assert_eq!(flag.is_ok(), matches!(byte, 0x03 | 0x13 | 0x83));
+            if let Ok(flag) = flag {
+                assert_eq!(
+                    serde_json::to_value(flag).expect("serialize frame flag"),
+                    serde_json::json!(byte)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn record_walk_does_not_rescan_a_wide_header_token() {
         let mut bytes = vec![0xa7, 0x03, 0x20];
         bytes.extend_from_slice(&8u32.to_le_bytes());
@@ -639,8 +818,8 @@ mod tests {
             source_range: 0..4,
             physically_contiguous: true,
             family: ConsolidatedFamily::A,
-            width: 1,
-            flag: 0x03,
+            width: ConsolidatedFrameWidth::One,
+            flag: ConsolidatedFrameFlag::Flag03,
             class: 0x20,
             header_token: 0,
             range: 0..4,

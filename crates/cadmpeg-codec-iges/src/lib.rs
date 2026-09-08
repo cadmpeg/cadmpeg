@@ -3,15 +3,18 @@
 //! version-specific envelope rules; semantic rules are verified for versions
 //! 5.1, 5.2, and 5.3.
 //!
-//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-//! for the declared Fixed ASCII mechanical/document envelope, with Compressed
-//! ASCII and Binary read normalization. Bounded
+//! <!-- generated: capability iges -->
+//! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)).
+//! <!-- /generated: capability iges -->
+//!
+//! Compressed ASCII and Binary read normalization is provided. Bounded
 //! semantic writing and independent-producer acceptance are part of the
 //! verified profile.
 
 mod binary;
 mod card;
 mod compressed;
+mod dialect;
 mod directory;
 mod entities;
 mod error;
@@ -25,27 +28,28 @@ mod parameter;
 mod profile;
 mod reader;
 mod representation;
+mod version;
 mod writer;
 
 #[doc(hidden)]
 pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{
-    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
-};
+use cadmpeg_core::target::TargetDescriptor;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::ContainerSummary;
 use std::io::Cursor;
 
 pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
 /// IGES specification version selected for semantic output.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IgesVersion {
     /// IGES 5.3 Fixed ASCII.
-    #[default]
     V5_3,
     /// IGES 5.2 Fixed ASCII.
     V5_2,
@@ -57,33 +61,56 @@ pub enum IgesVersion {
     V4_0,
 }
 
+macro_rules! writer_vocabulary {
+    ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
+        $(#[$all_meta])*
+        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        /// The generic encoder view projected from [`Self::ALL`].
+        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+            $(Self::$variant.descriptor()),+
+        ];
+    };
+}
+
 impl IgesVersion {
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::V4_0 => "4.0",
-            Self::V5_0 => "5.0",
-            Self::V5_1 => "5.1",
-            Self::V5_2 => "5.2",
-            Self::V5_3 => "5.3",
+    writer_vocabulary!(
+        /// Every version this writer can emit, in registry order.
+        ///
+        /// The same invocation projects the generic encoder catalog, so adding
+        /// a typed version cannot omit its target descriptor. The writer emits
+        /// only the verified Fixed ASCII rows. Each bare version is an alias,
+        /// and 5.3 is the cross-format default.
+        5;
+        V4_0,
+        V5_0,
+        V5_1,
+        V5_2,
+        V5_3
+    );
+
+    /// The typed write-target catalog row for this version.
+    #[must_use]
+    pub const fn descriptor(self) -> TargetDescriptor {
+        let aliases = match self {
+            Self::V4_0 => &["4.0"].as_slice(),
+            Self::V5_0 => &["5.0"].as_slice(),
+            Self::V5_1 => &["5.1"].as_slice(),
+            Self::V5_2 => &["5.2"].as_slice(),
+            Self::V5_3 => &["5.3"].as_slice(),
+        };
+        TargetDescriptor {
+            id: dialect::fixed_ascii_id(self),
+            aliases,
         }
+    }
+
+    pub(crate) const fn name(self) -> &'static str {
+        version::VersionFlag::from_write_version(self).name()
     }
 
     pub(crate) const fn global_flag(self) -> u8 {
-        match self {
-            Self::V4_0 => 6,
-            Self::V5_0 => 8,
-            Self::V5_1 => 9,
-            Self::V5_2 => 10,
-            Self::V5_3 => 11,
-        }
+        version::VersionFlag::from_write_version(self).value() as u8
     }
-}
-
-/// Options controlling a semantic IGES write.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct IgesWriteOptions {
-    /// Target specification version.
-    pub version: IgesVersion,
 }
 
 /// Codec for IGES files.
@@ -95,11 +122,9 @@ pub(crate) fn document_digest(ir: &CadIr) -> String {
 }
 
 impl CodecBackend for IgesCodec {
-    fn id(&self) -> &'static str {
-        "iges"
-    }
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         representation::confidence(prefix)
     }
 
@@ -109,95 +134,54 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
-        match representation::classify(&mut reader)? {
+        let representation = representation::classify(&mut reader)?
+            .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
+        match representation {
             representation::Representation::FixedAscii => {
-                reader::inspect(ctx, root.window(), "fixed-ascii", root.window().len())
+                reader::inspect(ctx, root.window(), representation, root.window().len())
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), Some(ctx))?;
-                reader::inspect(ctx, &normalized, "compressed-ascii", root.window().len())
+                let normalized = compressed::normalize(root.window(), ctx)?;
+                reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), Some(ctx))?;
-                reader::inspect(ctx, &normalized, "binary", root.window().len())
+                let normalized = binary::normalize(root.window(), ctx)?;
+                reader::inspect(ctx, &normalized, representation, root.window().len())
             }
-            representation::Representation::Unknown => Err(CodecError::WrongFormat(
-                "unrecognized IGES representation".into(),
-            )),
         }
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut source = Cursor::new(root.window());
-        match representation::classify(&mut source)? {
-            representation::Representation::FixedAscii => reader::decode(
-                root.window(),
-                root.window(),
-                "fixed-ascii",
-                DecodeOptions {
-                    container_only: ctx.container_only(),
-                    policy: *ctx.policy(),
-                },
-                ctx,
-            ),
+        let representation = representation::classify(&mut source)?
+            .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
+        match representation {
+            representation::Representation::FixedAscii => {
+                reader::decode(root.window(), root.window(), representation, ctx)
+            }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), Some(ctx))?;
-                reader::decode(
-                    &normalized,
-                    root.window(),
-                    "compressed-ascii",
-                    DecodeOptions {
-                        container_only: ctx.container_only(),
-                        policy: *ctx.policy(),
-                    },
-                    ctx,
-                )
+                let normalized = compressed::normalize(root.window(), ctx)?;
+                reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), Some(ctx))?;
-                reader::decode(
-                    &normalized,
-                    root.window(),
-                    "binary",
-                    DecodeOptions {
-                        container_only: ctx.container_only(),
-                        policy: *ctx.policy(),
-                    },
-                    ctx,
-                )
+                let normalized = binary::normalize(root.window(), ctx)?;
+                reader::decode(&normalized, root.window(), representation, ctx)
             }
-            representation::Representation::Unknown => Err(CodecError::WrongFormat(
-                "unrecognized IGES representation".into(),
-            )),
         }
     }
 }
 
-/// IGES encoder with explicit target-version options.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct IgesEncoder {
-    options: IgesWriteOptions,
-}
+impl EncoderBackend for IgesCodec {
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 
-impl IgesEncoder {
-    /// Construct an encoder for `options`.
-    #[must_use]
-    pub const fn new(options: IgesWriteOptions) -> Self {
-        Self { options }
-    }
-}
-
-impl Encoder for IgesEncoder {
-    fn id(&self) -> &'static str {
-        "iges"
-    }
-
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input, self.options)
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(input, &target)
     }
 }
 

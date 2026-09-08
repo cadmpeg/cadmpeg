@@ -3,7 +3,7 @@
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_utf16_bounded};
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
-use crate::records::{
+use crate::records::feature::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
 };
 use cadmpeg_core::decode::View;
@@ -132,7 +132,6 @@ pub(crate) fn exact_symmetric_extrude_prologue(
     }
 
     Some(DesignExtrudePrologue::LegacyShifted {
-        operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,

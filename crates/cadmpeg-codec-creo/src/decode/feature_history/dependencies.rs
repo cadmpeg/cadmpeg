@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature dependency graphs, affected ids, and link reconciliation.
 
-use super::super::sketch_transfer::current_feature_recipe_parent;
 use super::super::surfaces::unique_surface_prototype_associations;
 use super::surface_transition_dependencies;
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::current_feature_recipe_parent;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
@@ -31,7 +31,8 @@ pub(in super::super) fn feature_dependencies(
     )
     .into_iter()
     .filter_map(|dependency| {
-        let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
+        let id = IrFeatureId::mint(format!("creo:model:feature#{dependency}"))
+            .expect("identity grammar");
         ir.model
             .features
             .iter()
@@ -86,14 +87,14 @@ pub(in super::super) fn feature_output_surface_dependencies(
 ) -> Vec<u32> {
     let owned_entities = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 67)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 67)
         .flat_map(|table| &table.entries)
-        .filter(|entry| entry.class_id == 200 && entry.source_entity_id == Some(feature_id))
+        .filter(|entry| entry.class_id == 200 && entry.source_entity_id() == Some(feature_id))
         .map(|entry| entry.entity_id)
         .collect::<BTreeSet<_>>();
     tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 100)
         .flat_map(|table| &table.entries)
         .filter(|entry| owned_entities.contains(&entry.entity_id))
         .filter_map(|entry| {
@@ -114,7 +115,7 @@ pub(in super::super) fn feature_entity_dependencies(
 ) -> Vec<u32> {
     let mut dependencies = Vec::new();
     for table in tables {
-        if table.feature_id != Some(feature_id) || table.table_class_id != 100 {
+        if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
         for entry in &table.entries {
@@ -140,7 +141,7 @@ fn feature_entity_producers(
     tables
         .iter()
         .filter_map(|table| {
-            let owner = table.feature_id?;
+            let owner = table.feature_id;
             table
                 .entries
                 .iter()
@@ -162,7 +163,7 @@ pub(in super::super) fn preceding_feature_entity_producers(
 ) -> Vec<u32> {
     tables
         .iter()
-        .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
+        .map(|table| (table.feature_id, table))
         .flat_map(|(owner, table)| {
             table.entries.iter().filter_map(move |entry| {
                 (entry.class_id == 200
@@ -422,6 +423,7 @@ pub(in super::super) fn reconcile_feature_links(
         .iter()
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
+    let mut regeneration_edges = Vec::new();
     for feature in &mut ir.model.features {
         let Some(feature_id) = feature
             .id
@@ -446,7 +448,9 @@ pub(in super::super) fn reconcile_feature_links(
                 .map_or(&[], Vec::as_slice),
         )
         .into_iter()
-        .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
+        .map(|dependency| {
+            IrFeatureId::mint(format!("creo:model:feature#{dependency}")).expect("identity grammar")
+        })
         .filter(|dependency| emitted.contains(dependency))
         .filter(|dependency| *dependency != feature.id);
         let generated_dependencies = feature_generated_dependencies(&feature.definition);
@@ -456,12 +460,29 @@ pub(in super::super) fn reconcile_feature_links(
             native_dependencies.chain(generated_dependencies),
             &emitted,
         );
-        if feature.parent.is_none() {
-            feature.parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
-                .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
-                .filter(|parent| *parent != feature.id && emitted.contains(parent));
+        let parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
+            .map(|parent| {
+                IrFeatureId::mint(format!("creo:model:feature#{parent}")).expect("identity grammar")
+            })
+            .filter(|parent| *parent != feature.id && emitted.contains(parent));
+        if let Some(parent) = parent {
+            regeneration_edges.push((feature.id.clone(), parent));
         }
     }
+    for (child, parent) in regeneration_edges {
+        let _ = ir.model.set_feature_regeneration_parent(child, parent);
+    }
+    let parent_by_child = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            Some((
+                feature.id.clone(),
+                ir.model.feature_parent(&feature.id)?.clone(),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut remaining = (0..ir.model.features.len()).collect::<Vec<_>>();
     let mut ordered = Vec::with_capacity(remaining.len());
     let mut preceding = BTreeSet::new();
@@ -471,7 +492,7 @@ pub(in super::super) fn reconcile_feature_links(
             feature
                 .dependencies
                 .iter()
-                .chain(feature.parent.iter())
+                .chain(parent_by_child.get(&feature.id))
                 .all(|required| !emitted.contains(required) || preceding.contains(required))
         }) else {
             break;

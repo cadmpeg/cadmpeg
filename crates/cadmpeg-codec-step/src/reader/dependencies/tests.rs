@@ -150,7 +150,7 @@ fn bind_entity_reference(
     if resource_uri.is_empty() || anchor_name.is_empty() {
         return Err("reference has an incomplete resource identity");
     }
-    if crate::reader::schema_identifiers(root) != crate::reader::schema_identifiers(target) {
+    if root.schema_identifiers() != target.schema_identifiers() {
         return Err("resource schemas differ");
     }
     let root_units = unit_signatures(root);
@@ -200,7 +200,7 @@ fn unit_signatures(exchange: &crate::parse::Exchange) -> Vec<Vec<crate::parse::P
                 .iter()
                 .any(|partial| partial.name == "LENGTH_UNIT" || partial.name == "PLANE_ANGLE_UNIT")
         })
-        .map(|record| record.partials.clone())
+        .map(|record| record.partials.to_vec())
         .collect()
 }
 
@@ -216,7 +216,7 @@ fn context_signature(
                 .iter()
                 .any(|partial| partial.name == "GEOMETRIC_REPRESENTATION_CONTEXT")
         })
-        .map(|record| record.partials.clone())
+        .map(|record| record.partials.to_vec())
 }
 
 #[test]
@@ -255,7 +255,6 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
     let target_result = StepCodec::default()
         .decode(&mut Cursor::new(target_bytes), &DecodeOptions::default())
         .expect("decode target independently");
-    assert_eq!(root_result.ir().units, target_result.ir().units);
     assert!(root_result
         .ir()
         .model
@@ -524,7 +523,7 @@ fn compose_part26_point(
     if source.mapping_edition != "ISO/TS 10303-26:2011" {
         return Part26Composition::Unbound("Part 26 mapping edition is not selected");
     }
-    if source.schema_id != crate::reader::schema_identifiers(target).join(",") {
+    if source.schema_id != target.schema_identifiers().join(",") {
         return Part26Composition::Unbound("resource schemas differ");
     }
     if source.unit_signature != part21_unit_signature(target) {
@@ -792,7 +791,7 @@ fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
     let signed_exchange = crate::parse::parse(signed_resource)
         .expect("parse signed resource")
         .0;
-    assert_eq!(signed_exchange.signature_sections.len(), 1);
+    assert_eq!(signed_exchange.signatures.len(), 1);
 
     let population = exchange
         .header
@@ -851,10 +850,10 @@ fn complex_document_dependency_records_use_inherited_fields() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| {
-            record.id.0 == "step:data:document#2"
-                || record.id.0 == "step:data:document_file#2"
-                || record.id.0 == "step:data:applied_document_reference#3"
-                || record.id.0 == "step:data:document_reference#3"
+            record.id.as_str() == "step:data:document#2"
+                || record.id.as_str() == "step:data:document_file#2"
+                || record.id.as_str() == "step:data:applied_document_reference#3"
+                || record.id.as_str() == "step:data:document_reference#3"
         }));
 }
 

@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
+
+use cadmpeg_core::dialect::{DialectId, DialectLayers};
+
+use crate::SourceProvenance;
+
 use super::*;
 
 #[test]
@@ -16,9 +22,75 @@ fn loss_code_serializes_as_namespaced_object() {
     assert_eq!(value["code"]["kind"], "topology_not_transferred");
     assert!(value["code"].get("strict_floor").is_none());
     assert_eq!(
-        note.code.as_str(),
+        note.code.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/topology_not_transferred")
     );
+}
+
+#[test]
+fn shared_loss_deserialization_rejects_a_code_that_disagrees_with_its_taxonomy() {
+    let error = serde_json::from_value::<LossKind>(serde_json::json!({
+        "namespace": "shared",
+        "code": "geometry_not_transferred",
+        "kind": "topology_not_transferred"
+    }))
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("LossKind.code"));
+    assert!(error.contains("topology_not_transferred"));
+}
+
+#[test]
+fn loss_taxonomy_static_names_match_the_serde_wire_names() {
+    for taxonomy in [
+        LossTaxonomy::MissingGeometryStream,
+        LossTaxonomy::TopologyNotTransferred,
+        LossTaxonomy::SourceTopologyInvalid,
+        LossTaxonomy::GeometryNotTransferred,
+        LossTaxonomy::ReferenceGraphNotClosed,
+        LossTaxonomy::TopologyGaugeSubstituted,
+        LossTaxonomy::CarrierAxisInferred,
+        LossTaxonomy::CarrierSummary,
+        LossTaxonomy::MaterialNotTransferred,
+        LossTaxonomy::MetadataNotTransferred,
+        LossTaxonomy::AttributesNotTransferred,
+        LossTaxonomy::FeatureHistoryRetained,
+        LossTaxonomy::AssemblyComponentsExternal,
+        LossTaxonomy::AssemblyPlacementsNotTransferred,
+        LossTaxonomy::RecordNotTyped,
+        LossTaxonomy::DecodeDiagnostic,
+        LossTaxonomy::IntegrityFailure,
+        LossTaxonomy::NoncanonicalSourceSyntax,
+        LossTaxonomy::SourceDialectUnverified,
+        LossTaxonomy::SourceDialectDisplaced,
+        LossTaxonomy::MeshVertexPrecision,
+        LossTaxonomy::ObjectRecordsUntransferred,
+        LossTaxonomy::UnsupportedObjectFamily,
+        LossTaxonomy::AssetNotTransferred,
+        LossTaxonomy::NoExportableSolids,
+        LossTaxonomy::HiddenBodyOmitted,
+        LossTaxonomy::BodyTransformNotApplied,
+        LossTaxonomy::AnalyticSurfaceNormalized,
+        LossTaxonomy::EllipticalConeReduced,
+        LossTaxonomy::CurvelessEdgeOmitted,
+        LossTaxonomy::UnknownSurfaceFaceOmitted,
+        LossTaxonomy::PcurveOmitted,
+        LossTaxonomy::SubdOmitted,
+        LossTaxonomy::TessellationOmitted,
+        LossTaxonomy::PmiOmitted,
+        LossTaxonomy::SourceAssociationOmitted,
+        LossTaxonomy::PassthroughRecordOmitted,
+        LossTaxonomy::ProceduralReduced,
+        LossTaxonomy::ParametricRecordOmitted,
+        LossTaxonomy::AppearanceReduced,
+        LossTaxonomy::PreservedSourceUnavailable,
+    ] {
+        assert_eq!(
+            serde_json::to_value(taxonomy).unwrap(),
+            serde_json::Value::String(taxonomy.as_str().to_owned())
+        );
+    }
 }
 
 #[test]
@@ -61,7 +133,7 @@ fn assembly_losses_belong_to_the_product_domain() {
         LossCategory::Product
     );
     assert_eq!(
-        LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).as_str(),
+        LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/assembly_placements_not_transferred")
     );
 }
@@ -70,7 +142,7 @@ fn assembly_losses_belong_to_the_product_domain() {
 fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
     let kind = LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax);
     assert_eq!(
-        kind.as_str(),
+        kind.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/noncanonical_source_syntax")
     );
     assert_eq!(kind.category(), LossCategory::Other);
@@ -86,7 +158,7 @@ fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
 fn integrity_failure_is_a_strict_rejectable_error() {
     let kind = LossKind::shared(LossTaxonomy::IntegrityFailure);
     assert_eq!(
-        kind.as_str(),
+        kind.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/integrity_failure")
     );
     assert_eq!(kind.category(), LossCategory::Other);
@@ -124,14 +196,10 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         "geometry was retained as metadata",
     )
     .with_severity(Severity::Warning)
-    .with_provenance(SourceProvenance {
-        format: "rhino".into(),
-        stream: String::new(),
-        offset: 42,
-        tag: Some(
-            "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020".into(),
-        ),
-    });
+    .with_provenance(
+        SourceProvenance::root("rhino", 42)
+            .with_tag("OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"),
+    );
     let json = serde_json::to_value(&note).unwrap();
     assert_eq!(json["provenance"]["format"], "rhino");
     assert_eq!(json["provenance"]["stream"], "");
@@ -139,5 +207,216 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
     assert_eq!(
         json["provenance"]["tag"],
         "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"
+    );
+}
+
+/// The dialect fields are part of the wire format: a report that named nothing
+/// says so with `null`, rather than by omitting the key.
+/// Reports written before the fields existed still read back.
+#[test]
+fn unclassified_reports_serialize_empty_dialect_keys() {
+    let decode = DecodeReport::unclassified(
+        "rhino",
+        DecodeTransfer::full(true),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+    let rendered = serde_json::to_string(&decode).unwrap();
+    assert!(rendered.contains("\"dialects\":null"), "{rendered}");
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
+        decode
+    );
+
+    // A report persisted before the field existed omits the key entirely.
+    let legacy = rendered.replace(",\"dialects\":null", "");
+    assert!(!legacy.contains("dialects"), "{legacy}");
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&legacy).unwrap(),
+        decode
+    );
+
+    let export = ExportReport::cadir(
+        EntityCensus {
+            basis: CensusBasis::TargetRecords,
+            counts: BTreeMap::new(),
+        },
+        crate::codec::write::WritePath::Synthesized {
+            consumption: crate::codec::write::Consumption::NotConsumed,
+        },
+        false,
+        Vec::new(),
+        Vec::new(),
+    );
+    let rendered = serde_json::to_string(&export).unwrap();
+    assert!(rendered.contains("\"target\":null"), "{rendered}");
+    assert_eq!(
+        serde_json::from_str::<ExportReport>(&rendered).unwrap(),
+        export
+    );
+
+    // An export report persisted before the field existed omits the key.
+    let legacy = rendered.replace(",\"target\":null", "");
+    assert!(!legacy.contains("\"target\":"), "{legacy}");
+    assert_eq!(
+        serde_json::from_str::<ExportReport>(&legacy).unwrap(),
+        export
+    );
+}
+
+#[test]
+fn native_export_report_derives_its_format_from_the_target() {
+    let report = ExportReport::native(
+        DialectId::pinned("step:ap242-e3"),
+        EntityCensus {
+            basis: CensusBasis::TargetRecords,
+            counts: BTreeMap::new(),
+        },
+        crate::codec::write::WritePath::Synthesized {
+            consumption: crate::codec::write::Consumption::NotConsumed,
+        },
+        false,
+        Vec::new(),
+        Vec::new(),
+    );
+
+    assert_eq!(report.format(), "step");
+    assert_eq!(
+        report.target().map(DialectId::as_str),
+        Some("step:ap242-e3")
+    );
+    let rendered = serde_json::to_value(&report).unwrap();
+    assert_eq!(rendered["format"], "step");
+    assert_eq!(rendered["target"], "step:ap242-e3");
+}
+
+#[test]
+fn export_report_wire_rejects_a_foreign_target_namespace() {
+    let malformed = serde_json::json!({
+        "format": "rhino",
+        "census": { "basis": "target_records", "counts": {} },
+        "fidelity": { "status": "not_provided" },
+        "write_path": "synthesized",
+        "losses": [],
+        "notes": [],
+        "target": "step:ap242-e3",
+    });
+
+    let error = serde_json::from_value::<ExportReport>(malformed)
+        .expect_err("a native target must belong to the report format");
+    assert!(
+        error
+            .to_string()
+            .contains("format \"rhino\" does not match classified payload format \"step\""),
+        "{error}"
+    );
+}
+
+#[test]
+fn native_export_without_a_target_is_rejected() {
+    let legacy = serde_json::json!({
+        "format": "rhino",
+        "census": { "basis": "target_records", "counts": {} },
+        "fidelity": { "status": "not_provided" },
+        "write_path": "synthesized",
+        "losses": [],
+        "notes": [],
+    });
+
+    let error = serde_json::from_value::<ExportReport>(legacy)
+        .expect_err("a native export report requires a target");
+    assert!(
+        error
+            .to_string()
+            .contains("native export report for format \"rhino\" requires a target"),
+        "{error}"
+    );
+}
+
+#[test]
+fn cadir_export_wire_rejects_a_native_target() {
+    let malformed = serde_json::json!({
+        "format": "cadir",
+        "census": { "basis": "ir_arenas", "counts": {} },
+        "fidelity": { "status": "not_provided" },
+        "write_path": "synthesized",
+        "losses": [],
+        "notes": [],
+        "target": "step:ap242-e3",
+    });
+
+    let error = serde_json::from_value::<ExportReport>(malformed)
+        .expect_err("CADIR has no native dialect target");
+    assert!(
+        error
+            .to_string()
+            .contains("CADIR export report cannot name native dialect \"step:ap242-e3\""),
+        "{error}"
+    );
+}
+
+#[test]
+fn classified_report_wire_requires_its_primary_format() {
+    let report = DecodeReport::classified(
+        DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            DialectId::pinned("rhino:archive-80"),
+        )),
+        DecodeTransfer::full(true),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+    let golden = serde_json::to_string(&report).unwrap();
+    assert_eq!(
+        golden,
+        r#"{"format":"rhino","container_only":false,"geometry_transferred":true,"losses":[],"notes":[],"dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&golden).unwrap(),
+        report
+    );
+
+    let contradictory = golden.replacen("\"container_only\":false", "\"container_only\":true", 1);
+    let error = serde_json::from_str::<DecodeReport>(&contradictory)
+        .expect_err("container-only reports cannot claim geometry transfer");
+    assert_eq!(
+        error.to_string(),
+        "container-only decode report cannot claim geometry transfer"
+    );
+
+    let mismatched = golden.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
+    let error = serde_json::from_str::<DecodeReport>(&mismatched)
+        .expect_err("the report and its primary layer must name the same format");
+    assert!(
+        error
+            .to_string()
+            .contains("format \"step\" does not match classified payload format \"rhino\""),
+        "{error}"
+    );
+}
+
+#[test]
+fn container_only_report_wire_preserves_the_coherent_transfer_state() {
+    let report = DecodeReport::unclassified(
+        "test",
+        DecodeTransfer::ContainerOnly,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        TransferLedger::default(),
+    );
+
+    let rendered = serde_json::to_string(&report).unwrap();
+    assert!(rendered.contains("\"container_only\":true"), "{rendered}");
+    assert!(
+        rendered.contains("\"geometry_transferred\":false"),
+        "{rendered}"
+    );
+    assert_eq!(
+        serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
+        report
     );
 }

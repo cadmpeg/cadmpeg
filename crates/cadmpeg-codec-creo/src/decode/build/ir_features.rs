@@ -5,12 +5,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, UnresolvedFamily,
 };
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
+use crate::feature::schema::SchemaClass;
 
 use super::super::curve_expressions::transfer_curve_expression_features;
 use super::super::feature_history::{
@@ -24,12 +25,12 @@ use super::super::feature_history::{
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;
-use super::super::sketch_transfer::{
-    close_sketch_constraint_parameter_references, current_feature_operation,
-    current_feature_recipe, current_feature_recipe_parent, feature_schema_class,
-    row_feature_schema_classes,
-};
 use super::super::uniqueness::unique_feature_datum_plane;
+use crate::decode::sketch_transfer::constraints::close_sketch_constraint_parameter_references;
+use crate::decode::sketch_transfer::recipe::{
+    current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
+    feature_schema_class, row_feature_schema_classes,
+};
 
 fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
     let output_updates = ir
@@ -67,6 +68,7 @@ pub(super) fn emit_model_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
         .features
@@ -78,7 +80,8 @@ pub(super) fn emit_model_features(
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
-        let id = IrFeatureId(format!("creo:model:feature#{}", datum.feature_id));
+        let id = IrFeatureId::mint(format!("creo:model:feature#{}", datum.feature_id))
+            .expect("identity grammar");
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -95,7 +98,6 @@ pub(super) fn emit_model_features(
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -105,9 +107,11 @@ pub(super) fn emit_model_features(
             definition: if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id)
                 .is_some()
             {
-                datum_plane_feature_definition(datum)
+                datum_plane_feature_definition(&datum.plane)
             } else {
-                IrFeatureDefinition::DatumPlaneUnresolved
+                IrFeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPlane,
+                }
             },
             native_ref: None,
         });
@@ -116,7 +120,8 @@ pub(super) fn emit_model_features(
     let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
-        let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
+        let id = IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
+            .expect("identity grammar");
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -133,7 +138,6 @@ pub(super) fn emit_model_features(
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -146,7 +150,7 @@ pub(super) fn emit_model_features(
                 .iter()
                 .any(|round| round.feature_id == feature_id)
             {
-                schema_feature_definition(scan, ir, feature_id, 913, "Fillet")
+                schema_feature_definition(scan, ir, feature_id, Some(SchemaClass::Round), "Fillet")
             } else {
                 IrFeatureDefinition::StoredGeometry
             },
@@ -157,12 +161,15 @@ pub(super) fn emit_model_features(
     }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
-        let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
+        let id = IrFeatureId::mint(format!("creo:model:feature#{}", operation.feature_id))
+            .expect("identity grammar");
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
-        if let Some(prefix) = current_operation.and_then(|operation| operation.stored_name_prefix) {
+        if let Some(prefix) =
+            current_operation.and_then(crate::feature::FeatureOperation::stored_name_prefix)
+        {
             source_properties.insert(
                 "mdl_stored_name_prefix".to_string(),
                 char::from(prefix).to_string(),
@@ -178,8 +185,8 @@ pub(super) fn emit_model_features(
                             scan,
                             ir,
                             operation.feature_id,
-                            0,
-                            &operation.kind,
+                            None,
+                            operation.kind.as_str(),
                         )
                     })
                     .or_else(|| {
@@ -188,7 +195,7 @@ pub(super) fn emit_model_features(
                                 scan,
                                 ir,
                                 operation.feature_id,
-                                &operation.kind,
+                                operation.kind.as_str(),
                             )
                         })
                     })
@@ -196,9 +203,8 @@ pub(super) fn emit_model_features(
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: current_operation
                             .map_or("Native Feature", |operation| operation.kind.as_str())
-                            .to_string(),
+                            .into(),
                         parameters: parameters.clone(),
-                        properties: BTreeMap::new(),
                     })
             },
             |schema_class| {
@@ -206,8 +212,8 @@ pub(super) fn emit_model_features(
                     scan,
                     ir,
                     operation.feature_id,
-                    schema_class,
-                    &operation.kind,
+                    Some(schema_class),
+                    operation.kind.as_str(),
                 )
             },
         );
@@ -220,13 +226,17 @@ pub(super) fn emit_model_features(
         );
         let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
-                let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
+                let parent = IrFeatureId::mint(format!("creo:model:feature#{parent_feature_id}"))
+                    .expect("identity grammar");
                 ir.model
                     .features
                     .iter()
                     .any(|feature| feature.id == parent)
                     .then_some(parent)
             });
+        if let Some(parent) = parent {
+            regeneration_edges.push((id.clone(), parent));
+        }
         let operation_section = scan
             .framing
             .sections
@@ -237,13 +247,13 @@ pub(super) fn emit_model_features(
             })
             .map_or("MdlStatus", |section| section.name.as_str());
         let name = current_operation.and_then(|operation| {
-            operation.display_name_stored.then_some(())?;
-            let stored_name = operation.stored_name.as_deref()?;
+            operation.display_name_stored().then_some(())?;
+            let stored_name = operation.stored_name()?;
             Some(
                 operation
-                    .stored_name_prefix
+                    .stored_name_prefix()
                     .and_then(|prefix| stored_name.strip_prefix(char::from(prefix)))
-                    .unwrap_or(stored_name)
+                    .unwrap_or(&stored_name)
                     .to_string(),
             )
         });
@@ -269,9 +279,6 @@ pub(super) fn emit_model_features(
             if name.is_some() {
                 existing.name = name;
             }
-            if existing.parent.is_none() {
-                existing.parent = parent;
-            }
             for dependency in dependencies {
                 if !existing.dependencies.contains(&dependency) {
                     existing.dependencies.push(dependency);
@@ -294,7 +301,7 @@ pub(super) fn emit_model_features(
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
             ("feature_operation_state_consensus", Exactness::Derived)
-        } else if operation.display_name_stored {
+        } else if operation.display_name_stored() {
             ("feature_operation_name", Exactness::ByteExact)
         } else {
             ("feature_recipe", Exactness::ByteExact)
@@ -312,7 +319,6 @@ pub(super) fn emit_model_features(
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
             suppressed: Some(false),
-            parent,
             dependencies,
             source_properties,
             source_tag,
@@ -325,7 +331,8 @@ pub(super) fn emit_model_features(
         refresh_feature_outputs(scan, ir);
     }
     for feature_id in row_feature_ids {
-        let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
+        let id = IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
+            .expect("identity grammar");
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -341,6 +348,7 @@ pub(super) fn emit_model_features(
             continue;
         };
         let reference_name = feature_reference_name(scan, feature_id);
+        let reference_name = reference_name.as_deref();
         let kind = reference_name.unwrap_or_else(|| {
             schema_class
                 .and_then(schema_operation_kind)
@@ -361,12 +369,13 @@ pub(super) fn emit_model_features(
                 named_feature_definition(scan, ir, feature_id, kind)
                     .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
-                        kind: kind.to_string(),
+                        kind: kind.into(),
                         parameters: parameters.clone(),
-                        properties: BTreeMap::new(),
                     })
             },
-            |schema_class| schema_feature_definition(scan, ir, feature_id, schema_class, kind),
+            |schema_class| {
+                schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind)
+            },
         );
         let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
         if schema_class.is_none() {
@@ -385,7 +394,7 @@ pub(super) fn emit_model_features(
                 "featdefs_row_schema_classes".to_string(),
                 row_schema_classes
                     .iter()
-                    .map(u32::to_string)
+                    .map(SchemaClass::to_string)
                     .collect::<Vec<_>>()
                     .join(","),
             );
@@ -398,7 +407,6 @@ pub(super) fn emit_model_features(
                 reference_name.map_or_else(|| format!("{kind} id {feature_id}"), str::to_string),
             ),
             suppressed: Some(false),
-            parent: None,
             dependencies: feature_dependencies(
                 scan,
                 ir,
@@ -415,6 +423,9 @@ pub(super) fn emit_model_features(
         });
         refresh_feature_outputs(scan, ir);
     }
+    for (child, parent) in regeneration_edges {
+        let _ = ir.model.set_feature_regeneration_parent(child, parent);
+    }
     geometry_generator_feature_count
 }
 
@@ -422,7 +433,7 @@ pub(super) fn finish_feature_transfers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    coverage: &mut BTreeMap<String, usize>,
+    coverage: &mut cadmpeg_ir::Coverage,
 ) -> (usize, usize) {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     link_feature_sketch_history(scan, ir);
@@ -510,20 +521,23 @@ pub(super) fn finish_feature_transfers(
         let decoded_curve_expression_solve_variable_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
-            .map(|block| block.variables.len())
+            .map(|block| block.unknowns.len())
             .sum::<usize>();
         let evaluated_curve_expression_solve_block_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
             .filter(|block| {
-                !block.solutions.is_empty() && block.solutions.iter().all(Option::is_some)
+                block
+                    .unknowns
+                    .iter()
+                    .all(|unknown| unknown.solution.is_some())
             })
             .count();
         let evaluated_curve_expression_solve_variable_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
-            .flat_map(|block| &block.solutions)
-            .filter(|solution| solution.is_some())
+            .flat_map(|block| &block.unknowns)
+            .filter(|unknown| unknown.solution.is_some())
             .count();
         let unresolved_curve_expression_solve_control_count = active_expressions
             .clone()
@@ -544,85 +558,85 @@ pub(super) fn finish_feature_transfers(
                 .filter(|assignment| assignment.activation == activation)
                 .count()
         };
-        coverage.insert(
-            "decoded_active_curve_expression_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             decoded_curve_expression_assignment_count,
         );
-        coverage.insert(
-            "transferred_curve_expression_parameter_count".to_string(),
+        coverage.record(
+            crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT,
             transferred_curve_expression_parameter_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_table_cell_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT,
             decoded_curve_expression_table_cell_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_scoped_symbol_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_scoped_symbol_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_system_symbol_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_system_symbol_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_function_write_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT,
             decoded_curve_expression_function_write_assignment_count,
         );
-        coverage.insert(
-            "evaluated_active_curve_expression_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             evaluated_curve_expression_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_solve_block_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             decoded_curve_expression_solve_block_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_simultaneous_equation_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT,
             decoded_curve_expression_simultaneous_equation_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_solve_assignment_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT,
             decoded_curve_expression_solve_assignment_count,
         );
-        coverage.insert(
-            "decoded_active_curve_expression_solve_variable_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             decoded_curve_expression_solve_variable_count,
         );
-        coverage.insert(
-            "evaluated_active_curve_expression_solve_block_count".to_string(),
+        coverage.record(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             evaluated_curve_expression_solve_block_count,
         );
-        coverage.insert(
-            "evaluated_active_curve_expression_solve_variable_count".to_string(),
+        coverage.record(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             evaluated_curve_expression_solve_variable_count,
         );
-        coverage.insert(
-            "unresolved_active_curve_expression_solve_control_count".to_string(),
+        coverage.record(
+            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT,
             unresolved_curve_expression_solve_control_count,
         );
-        coverage.insert(
-            "prohibited_active_curve_expression_record_count".to_string(),
+        coverage.record(
+            crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
             prohibited_curve_expression_record_count,
         );
-        coverage.insert(
-            "prohibited_active_curve_expression_kind_count".to_string(),
+        coverage.record(
+            crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
             prohibited_curve_expression_kind_count,
         );
-        for (name, activation) in [
-            ("active", crate::curve::CurveExpressionActivation::Active),
+        for (key, activation) in [
             (
-                "inactive",
+                crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
+                crate::curve::CurveExpressionActivation::Active,
+            ),
+            (
+                crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
                 crate::curve::CurveExpressionActivation::Inactive,
             ),
             (
-                "conditional",
+                crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.insert(
-                format!("{name}_curve_expression_assignment_count"),
-                activation_count(activation),
-            );
+            coverage.record(key, activation_count(activation));
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .features
@@ -633,23 +647,23 @@ pub(super) fn finish_feature_transfers(
             .fold((0usize, 0usize), |(decoded, resolved), dimension| {
                 (
                     decoded + 1,
-                    resolved + usize::from(dimension.value.is_some()),
+                    resolved + usize::from(dimension.value.resolved().is_some()),
                 )
             });
-        coverage.insert(
-            "decoded_feature_dimension_count".to_string(),
+        coverage.record(
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
             decoded_dimension_count,
         );
-        coverage.insert(
-            "transferred_feature_dimension_parameter_count".to_string(),
+        coverage.record(
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT,
             transferred_feature_dimension_count,
         );
-        coverage.insert(
-            "resolved_feature_dimension_value_count".to_string(),
+        coverage.record(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             resolved_dimension_count,
         );
-        coverage.insert(
-            "unresolved_feature_dimension_value_count".to_string(),
+        coverage.record(
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             decoded_dimension_count.saturating_sub(resolved_dimension_count),
         );
     }

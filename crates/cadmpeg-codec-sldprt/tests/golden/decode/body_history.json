@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -83,14 +83,18 @@
                   "kind": "profile_plane"
                 }
               },
-              "suppressed": false
+              "evaluation": {
+                "kind": "active"
+              }
             },
             "sldprt:model:feature#247:1": {
               "definition": {
                 "definition": "native",
                 "kind": "EquationDrivenCurve"
               },
-              "suppressed": false
+              "evaluation": {
+                "kind": "active"
+              }
             }
           },
           "id": "sldprt:model:configuration#partition:0",
@@ -319,102 +323,99 @@
     },
     "native": {
       "sldprt": {
-        "arenas": {
-          "configurations": [
-            {
-              "id": "sldprt:history:configuration#247:0",
-              "material": "Steel",
-              "name": "Default",
-              "ordinal": 0,
-              "parent": "sldprt:history:feature-history#247",
-              "properties": {
-                "DisplayState": "Shaded"
+        "configurations": [
+          {
+            "id": "sldprt:history:configuration#247:0",
+            "material": "Steel",
+            "name": "Default",
+            "ordinal": 0,
+            "parent": "sldprt:history:feature-history#247",
+            "properties": {
+              "DisplayState": "Shaded"
+            }
+          }
+        ],
+        "feature_histories": [
+          {
+            "configurations": [],
+            "content": [
+              {
+                "kind": "configuration",
+                "value": "sldprt:history:configuration#247:0"
+              },
+              {
+                "kind": "feature",
+                "value": "sldprt:history:feature#247:0"
               }
-            }
-          ],
-          "feature_histories": [
-            {
-              "configurations": [],
-              "content": [
-                {
-                  "kind": "configuration",
-                  "value": "sldprt:history:configuration#247:0"
-                },
-                {
-                  "kind": "feature",
-                  "value": "sldprt:history:feature#247:0"
-                }
-              ],
-              "features": [],
-              "id": "sldprt:history:feature-history#247",
-              "part_name": "Bracket"
-            }
-          ],
-          "feature_input_body_selections": [],
-          "feature_input_classes": [],
-          "feature_input_edge_selections": [],
-          "feature_input_generated_surface_identities": [],
-          "feature_input_lanes": [],
-          "feature_input_names": [],
-          "feature_input_references": [],
-          "feature_input_relation_bindings": [],
-          "feature_input_relation_instances": [],
-          "feature_input_scalars": [],
-          "feature_input_surface_selections": [],
-          "features": [
-            {
-              "content": [
-                {
-                  "kind": "dimension",
-                  "value": "Depth"
-                },
-                {
-                  "kind": "feature",
-                  "value": "sldprt:history:feature#247:1"
-                }
-              ],
-              "id": "sldprt:history:feature#247:0",
-              "kind": "BossExtrude",
-              "name": "Boss",
-              "ordinal": 0,
-              "parameters": {
-                "Depth": "12.5mm"
+            ],
+            "features": [],
+            "id": "sldprt:history:feature-history#247",
+            "part_name": "Bracket"
+          }
+        ],
+        "feature_input_body_selections": [],
+        "feature_input_classes": [],
+        "feature_input_edge_selections": [],
+        "feature_input_generated_surface_identities": [],
+        "feature_input_lanes": [],
+        "feature_input_names": [],
+        "feature_input_references": [],
+        "feature_input_relation_bindings": [],
+        "feature_input_relation_instances": [],
+        "feature_input_scalars": [],
+        "feature_input_surface_selections": [],
+        "features": [
+          {
+            "content": [
+              {
+                "kind": "dimension",
+                "value": "Depth"
               },
-              "parent": "sldprt:history:feature-history#247",
-              "properties": {
-                "Scope": "Body1"
-              },
-              "source_id": "7",
-              "suppressed": false,
-              "xml_tag": "Extrusion"
+              {
+                "kind": "feature",
+                "value": "sldprt:history:feature#247:1"
+              }
+            ],
+            "id": "sldprt:history:feature#247:0",
+            "kind": "BossExtrude",
+            "name": "Boss",
+            "ordinal": 0,
+            "parameters": {
+              "Depth": "12.5mm"
             },
-            {
-              "id": "sldprt:history:feature#247:1",
-              "kind": "EquationDrivenCurve",
-              "name": "Profile",
-              "ordinal": 1,
-              "parameters": {},
-              "parent": "sldprt:history:feature-history#247",
-              "parent_source_id": "7",
-              "properties": {},
-              "source_id": "8",
-              "suppressed": false,
-              "tree_parent": "sldprt:history:feature#247:0",
-              "xml_tag": "EquationDrivenCurve"
-            }
-          ],
-          "pmi_dimensions": [],
-          "sketch_input_entities": [],
-          "unknowns": [
-            {
-              "id": "sldprt:file:block#247"
+            "parent": "sldprt:history:feature-history#247",
+            "properties": {
+              "Scope": "Body1"
             },
-            {
-              "id": "sldprt:file:block#8"
-            }
-          ]
-        },
-        "version": 13
+            "source_id": "7",
+            "suppressed": false,
+            "xml_tag": "Extrusion"
+          },
+          {
+            "id": "sldprt:history:feature#247:1",
+            "kind": "EquationDrivenCurve",
+            "name": "Profile",
+            "ordinal": 1,
+            "parameters": {},
+            "parent": "sldprt:history:feature-history#247",
+            "parent_source_id": "7",
+            "properties": {},
+            "source_id": "8",
+            "suppressed": false,
+            "tree_parent": "sldprt:history:feature#247:0",
+            "xml_tag": "EquationDrivenCurve"
+          }
+        ],
+        "pmi_dimensions": [],
+        "sketch_input_entities": [],
+        "unknowns": [
+          {
+            "id": "sldprt:file:block#247"
+          },
+          {
+            "id": "sldprt:file:block#8"
+          }
+        ]
       }
     },
     "source": {
@@ -442,6 +443,24 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@8:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown",
+          "format": "sldprt"
+        }
+      },
       "format": "sldprt"
     },
     "tolerances": {
@@ -454,6 +473,24 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@8:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown",
+        "format": "sldprt"
+      }
+    },
     "format": "sldprt",
     "geometry_transferred": true,
     "losses": [
@@ -464,6 +501,15 @@
           "namespace": "sldprt"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt"
+        },
+        "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
       },
       {
@@ -695,7 +741,6 @@
         "sha256": "52a19bd6256b0ea4031bc5e68a18d071fac1b3a555fe33b2f475b2e1d11b5dd5",
         "stream": "sldprt"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

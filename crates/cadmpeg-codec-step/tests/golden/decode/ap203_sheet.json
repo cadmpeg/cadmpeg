@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -313,10 +313,7 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": []
-        },
-        "version": 1
+        "unknowns": []
       }
     },
     "source": {
@@ -328,6 +325,18 @@
         "data_sections": "1",
         "entity_instances": "37",
         "schema": "CONFIG_CONTROL_DESIGN"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
+            "implementation_level": "2;1"
+          },
+          "dialect": "step:ap203-e1",
+          "format": "step"
+        }
       },
       "format": "step"
     },
@@ -341,6 +350,18 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap203-e1",
+        "format": "step"
+      }
+    },
     "format": "step",
     "geometry_transferred": true,
     "losses": [
@@ -359,7 +380,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

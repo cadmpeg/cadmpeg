@@ -27,7 +27,7 @@ fn with_source(data: &[u8], run: impl FnOnce(&DecodeContext<'_>, cadmpeg_core::d
 pub fn database(data: &[u8]) {
     with_source(data, |ctx, _| {
         let _ = crate::database::parse_database(ctx, data);
-        let _ = crate::database::parse_registry(ctx, data, crate::database::RseSchema::SCHEMA_31);
+        let _ = crate::database::parse_registry(ctx, data);
         let _ = crate::database::parse_revisions(ctx, data);
     });
 }

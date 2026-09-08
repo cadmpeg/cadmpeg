@@ -28,37 +28,23 @@ pub(crate) fn named_scalars(
             let object_id = View::u32_le_at(payload, trailer_offset + 3)?;
             let role = scalar_role(payload, trailer_offset);
             let operands = scalar_operands(payload, trailer_offset, parent);
-            let entity_indices = operands
-                .iter()
-                .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
-                .map(|operand| operand.entity_index)
-                .collect();
-            value.is_finite().then_some((
-                name,
-                value_offset,
-                object_id,
-                value,
-                role,
-                entity_indices,
-                operands,
-            ))
+            value
+                .is_finite()
+                .then_some((name, value_offset, object_id, value, role, operands))
         })
         .enumerate()
         .map(
-            |(ordinal, (name, offset, object_id, value, role, entity_indices, operands))| {
-                FeatureInputScalar {
-                    id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
-                    parent: parent.to_string(),
-                    feature_ref: None,
-                    ordinal: ordinal as u32,
-                    offset: offset as u64,
-                    object_id,
-                    name: name.id.clone(),
-                    value,
-                    role,
-                    entity_indices,
-                    operands,
-                }
+            |(ordinal, (name, offset, object_id, value, role, operands))| FeatureInputScalar {
+                id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
+                parent: parent.to_string(),
+                feature_ref: None,
+                ordinal: ordinal as u32,
+                offset: offset as u64,
+                object_id,
+                name: name.id.clone(),
+                value,
+                role,
+                operands,
             },
         )
         .collect()
@@ -107,7 +93,6 @@ pub(crate) fn scalar_indices_match(
                 && actual.name == expected.name
                 && ulp_distance(actual.value, expected.value) <= 4
                 && actual.role == expected.role
-                && actual.entity_indices == expected.entity_indices
                 && actual.operands == expected.operands
         })
 }

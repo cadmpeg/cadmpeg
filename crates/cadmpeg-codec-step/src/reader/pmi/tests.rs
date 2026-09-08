@@ -15,12 +15,13 @@ use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
-    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+    use cadmpeg_ir::pmi::{DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
     let bytes = include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21");
-    let mut result = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 semantic PMI");
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
 
     assert_eq!(result.ir().model.pmi.len(), 5);
     assert!(!result
@@ -36,29 +37,33 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         .find(|annotation| annotation.name.as_deref() == Some("width"))
         .unwrap();
     let PmiDefinition::Dimension {
-        nominal,
-        lower_deviation,
-        upper_deviation,
-        ref limits_and_fits,
+        nominal: Some(nominal),
+        tolerance:
+            Some(DimensionTolerance::PlusMinusFit {
+                lower,
+                upper,
+                ref fit,
+            }),
         ..
     } = dimension.definition
     else {
         panic!("width is not a dimension")
     };
-    assert_eq!(nominal.unwrap().value, 12.0);
-    assert_eq!(lower_deviation.unwrap().value, -0.1);
-    assert_eq!(upper_deviation.unwrap().value, 0.2);
-    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
-        annotation.definition,
-        PmiDefinition::Dimension {
-            dimension: cadmpeg_ir::pmi::DimensionKind::Diameter,
-            ..
-        }
-    )));
-    let fit = limits_and_fits.as_ref().expect("limits and fits");
+    assert_eq!(nominal.value, 12.0);
+    assert_eq!(lower.value, -0.1);
+    assert_eq!(upper.value, 0.2);
     assert_eq!(fit.form_variance, "H");
+    assert_eq!(fit.zone_variance, "");
     assert_eq!(fit.grade, "7");
     assert_eq!(fit.source, "ISO 286");
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Dimension {
+            dimension: cadmpeg_ir::pmi::DimensionKind::Diameter,
+            nominal: None,
+            tolerance: Some(DimensionTolerance::PlusMinus { .. }),
+        }
+    )));
     let tolerance = result
         .ir()
         .model
@@ -77,7 +82,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         &datum_system.definition,
         PmiDefinition::DatumSystem { references }
             if references.len() == 1
-                && references[0].precedence == 1
+                && references[0].precedence.get() == 1
                 && references[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
     ));
     assert!(matches!(
@@ -96,7 +101,8 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
-        id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
+        id: cadmpeg_ir::ids::PmiId::mint("test:model:pmi#test:pmi:presentation")
+            .expect("identity grammar"),
         name: Some("width note".into()),
         visible: Some(false),
         targets: Vec::new(),
@@ -106,12 +112,14 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
             semantics: vec![semantic],
         },
     });
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
     let mut output = Vec::new();
-    let report = write_step(result.ir(), &mut output, &options).expect("write semantic PMI");
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write semantic PMI");
     assert!(!report
         .losses
         .iter()
@@ -119,7 +127,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written semantic PMI");
-    assert_eq!(roundtrip.ir().model.pmi.len(), 6);
+    assert_eq!(roundtrip.ir().model.pmi.len(), result.ir().model.pmi.len());
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
@@ -149,8 +157,11 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
                 value: 12.0,
                 quantity: PmiQuantity::Length,
             }),
-            lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
-            upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
+            tolerance: Some(DimensionTolerance::PlusMinusFit {
+                lower: cadmpeg_ir::PmiValue { value: -0.1, .. },
+                upper: cadmpeg_ir::PmiValue { value: 0.2, .. },
+                ..
+            }),
             ..
         }
     )));
@@ -165,7 +176,11 @@ fn complex_datum_feature_remains_a_dimension_target() {
 #5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
 #6=(COMPOSITE_SHAPE_ASPECT() DATUM_FEATURE() SHAPE_ASPECT('feature','',#5,.T.));
 #10=DIMENSIONAL_SIZE(#6,'width');
-#99=UNRESOLVED_PRODUCT();",
+#99=UNRESOLVED_PRODUCT();
+#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);
+#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);
+#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#1002);",
     );
     let dimension = result
         .ir()
@@ -196,7 +211,12 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
 #7=DATUM_TARGET('datum target','',#5,.T.,'A');
 #10=DIMENSIONAL_SIZE(#6,'composite width');
 #11=DIMENSIONAL_SIZE(#7,'target width');
-#99=UNRESOLVED_PRODUCT();",
+#99=UNRESOLVED_PRODUCT();
+#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);
+#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);
+#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#1002);
+#1004=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#11,#1002);",
     );
     for (name, source_id) in [("composite width", "#6"), ("target width", "#7")] {
         let dimension = result
@@ -450,10 +470,8 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write complex geometric tolerance units");
     let output = String::from_utf8(output).expect("STEP output is UTF-8");
@@ -553,7 +571,7 @@ fn geometric_tolerance_kind_uses_exact_leaf_and_retains_abstract_base_opaque() {
             .native_unknowns("step")
             .expect("STEP unknown records")
             .iter()
-            .any(|record| record.id.0 == "step:data:geometric_tolerance#13"));
+            .any(|record| record.id.as_str() == "step:data:geometric_tolerance#13"));
     }
     assert!(!canonical
         .report()
@@ -640,7 +658,8 @@ fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
         let mut ir = base.clone();
         ir.model.pmi.clear();
         let mut annotation = template.clone();
-        annotation.id = PmiId(format!("test:pmi:tolerance#{ordinal}"));
+        annotation.id =
+            PmiId::mint(format!("test:pmi:tolerance#{ordinal}")).expect("identity grammar");
         let PmiDefinition::GeometricTolerance {
             tolerance,
             datum_system,
@@ -665,10 +684,8 @@ fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
         write_step(
             &ir,
             &mut output,
-            &StepWriteOptions {
-                schema: StepSchema::Ap242Edition3,
-                ..StepWriteOptions::default()
-            },
+            StepSchema::Ap242Edition3,
+            &StepWriteOptions::default(),
         )
         .expect("write geometric tolerance leaf");
         let output = String::from_utf8(output).expect("STEP output is UTF-8");
@@ -700,7 +717,7 @@ fn annotation_text_requires_one_reachable_carrier() {
         .native_unknowns("step")
         .expect("STEP unknown records")
         .iter()
-        .any(|record| record.id.0.ends_with("#1")));
+        .any(|record| record.id.as_str().ends_with("#1")));
 
     let first = decode(include_bytes!("tests/data/ap04_composite_text_first.p21"));
     let reordered = decode(include_bytes!(
@@ -724,7 +741,7 @@ fn annotation_text_requires_one_reachable_carrier() {
             assert!(
                 unknowns
                     .iter()
-                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                    .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
                 "ambiguous text carrier #{id} was not retained"
             );
         }
@@ -769,7 +786,7 @@ fn composite_presentation_placement_does_not_depend_on_set_order() {
             assert!(
                 unknowns
                     .iter()
-                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                    .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
                 "ambiguous presentation carrier #{id} was not retained"
             );
         }
@@ -800,9 +817,9 @@ fn associated_curve_placement_does_not_create_presentation_ambiguity() {
     };
     assert_eq!(text.as_deref(), Some("note"));
     let transform = placement.as_ref().expect("text placement");
-    assert!((transform.rows[0][3] - 10.0).abs() < EPS_PLACEMENT_COORDINATE);
-    assert!((transform.rows[1][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
-    assert!((transform.rows[2][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows()[0][3] - 10.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows()[1][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows()[2][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PresentationAnnotationPlacementAmbiguous.kind()
     }));
@@ -847,10 +864,8 @@ fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
     write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write coaxiality tolerance");
     assert!(String::from_utf8(output)
@@ -911,10 +926,8 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
     let report = crate::write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write complex geometric tolerance with report policy");
     assert!(!report.losses.iter().any(|loss| loss.code
@@ -963,18 +976,20 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
     };
     assert_eq!(text.as_deref(), Some("inspect surface"));
     let transform = placement.as_ref().unwrap();
-    assert_eq!(transform.rows[0][3], 10.0);
-    assert_eq!(transform.rows[1][3], 20.0);
-    assert_eq!(transform.rows[2][3], 30.0);
+    assert_eq!(transform.rows()[0][3], 10.0);
+    assert_eq!(transform.rows()[1][3], 20.0);
+    assert_eq!(transform.rows()[2][3], 30.0);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
-    let options = StepWriteOptions {
-        schema: StepSchema::Ap242Edition3,
-        ..StepWriteOptions::default()
-    };
     let mut output = Vec::new();
-    let report = write_step(result.ir(), &mut output, &options).expect("write presentation PMI");
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write presentation PMI");
     assert!(!report
         .losses
         .iter()
@@ -990,9 +1005,9 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
             placement: Some(transform),
             ..
         } if text == "inspect surface"
-            && transform.rows[0][3] == 10.0
-            && transform.rows[1][3] == 20.0
-            && transform.rows[2][3] == 30.0
+            && transform.rows()[0][3] == 10.0
+            && transform.rows()[1][3] == 20.0
+            && transform.rows()[2][3] == 30.0
     ));
 }
 
@@ -1021,13 +1036,27 @@ fn annotation_occurrence_with_leader_line_visibility_is_transferred() {
         .native_unknowns("step")
         .expect("STEP unknown records")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#2"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#2"));
 }
 
 #[test]
 fn malformed_zero_partial_pmi_reference_is_non_panicking() {
-    let result = decode_inline("#5=();\n#10=ANNOTATION_OCCURRENCE('',(),#5);");
-    assert!(result.ir().model.pmi.len() <= 1);
+    let source = b"ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('test'),'2;1');
+FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');
+FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));
+ENDSEC;
+DATA;
+#5=();
+#10=ANNOTATION_OCCURRENCE('',(),#5);
+ENDSEC;
+END-ISO-10303-21;
+";
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect_err("an entity must contain at least one partial record");
+    assert!(error.to_string().contains("expected name"));
 }
 
 #[test]
@@ -1048,10 +1077,10 @@ pub(crate) fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            lower_deviation: None,
-            upper_deviation: Some(cadmpeg_ir::PmiValue { value, .. }),
+            nominal: None,
+            tolerance: None,
             ..
-        } if (value - 0.2).abs() < 1.0e-12
+        }
     )));
 }
 
@@ -1145,7 +1174,8 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     .enumerate()
     {
         let mut annotation = template.clone();
-        annotation.id = PmiId(format!("test:pmi:dimension#{ordinal}"));
+        annotation.id =
+            PmiId::mint(format!("test:pmi:dimension#{ordinal}")).expect("identity grammar");
         annotation.name = Some(format!("dimension {ordinal}"));
         let PmiDefinition::Dimension { dimension, .. } = &mut annotation.definition else {
             unreachable!()
@@ -1154,7 +1184,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
         ir.model.pmi.push(annotation);
     }
     let mut unsupported = template;
-    unsupported.id = PmiId("test:pmi:tolerance#other".into());
+    unsupported.id = PmiId::mint("test:pmi:tolerance#other").expect("identity grammar");
     unsupported.definition = PmiDefinition::GeometricTolerance {
         tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
         magnitude: cadmpeg_ir::PmiValue {
@@ -1173,10 +1203,8 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     let report = write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write dimensions");
     let text = String::from_utf8(output.clone()).unwrap();
@@ -1190,12 +1218,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     let location = exchange
         .records
         .values()
-        .find(|record| {
-            record
-                .partials
-                .first()
-                .is_some_and(|partial| partial.name == "DIMENSIONAL_LOCATION")
-        })
+        .find(|record| record.partials.first().name == "DIMENSIONAL_LOCATION")
         .expect("dimensional location");
     assert_eq!(location.partials[0].parameters.len(), 4);
     assert!(matches!(
@@ -1235,7 +1258,7 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         .cloned()
         .expect("datum A");
     let mut datum_b = datum_a.clone();
-    datum_b.id = PmiId("test:model:pmi#datum-b".into());
+    datum_b.id = PmiId::mint("test:model:pmi#datum-b").expect("identity grammar");
     datum_b.definition = PmiDefinition::Datum {
         identification: "B".into(),
     };
@@ -1253,13 +1276,13 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     *references = vec![
         DatumReference {
             datum: datum_a.id,
-            precedence: 1,
+            precedence: std::num::NonZeroU32::MIN,
             common_group: Some(7),
             modifiers: modifiers.clone(),
         },
         DatumReference {
             datum: datum_b.id,
-            precedence: 1,
+            precedence: std::num::NonZeroU32::MIN,
             common_group: Some(7),
             modifiers: vec!["least_material_requirement".into()],
         },
@@ -1271,10 +1294,8 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     write_step(
         &ir,
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write common datum");
     assert!(String::from_utf8_lossy(&output).contains("COMMON_DATUM_LIST(("));
@@ -1285,7 +1306,9 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
             if references.len() == 2
-                && references.iter().all(|reference| reference.precedence == 1)
+            && references
+                .iter()
+                .all(|reference| reference.precedence.get() == 1)
                 && references.iter().all(|reference| reference.common_group == Some(1))
                 && references[0].modifiers != references[1].modifiers
     )));
@@ -1386,7 +1409,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
             .expect("fixture is UTF-8")
             .replace(
                 "ENDSEC;\nEND-ISO-10303-21;",
-                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\n#54=SHAPE_ASPECT('curve feature','',#38,.T.);\n#55=DIMENSIONAL_SIZE(#54,'curve dimension');\n#56=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#54,#32,#16);\nENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\n#54=SHAPE_ASPECT('curve feature','',#38,.T.);\n#55=DIMENSIONAL_SIZE(#54,'curve dimension');\n#56=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#54,#32,#16);\n#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);\n#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);\n#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#41,#1002);\n#1004=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#52,#1002);\n#1005=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#55,#1002);\nENDSEC;\nEND-ISO-10303-21;",
             );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1409,10 +1432,10 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         source_id: "#39".into()
     }));
     assert!(dimension.targets.contains(&PmiTarget::Face {
-        face: cadmpeg_ir::ids::FaceId("step:data:face#29".into())
+        face: cadmpeg_ir::ids::FaceId::mint("step:data:face#29").expect("identity grammar")
     }));
     assert!(dimension.targets.contains(&PmiTarget::Vertex {
-        vertex: cadmpeg_ir::ids::VertexId("step:data:vertex#6".into())
+        vertex: cadmpeg_ir::ids::VertexId::mint("step:data:vertex#6").expect("identity grammar")
     }));
     assert!(!result
         .ir()
@@ -1421,7 +1444,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .iter()
         .any(|record| {
             matches!(
-                record.id.0.as_str(),
+                record.id.as_str(),
                 "step:data:geometric_item_specific_usage#43"
                     | "step:data:geometric_item_specific_usage#44"
                     | "step:data:geometric_item_specific_usage#46"
@@ -1464,7 +1487,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
         .expect("point dimension annotation");
     assert!(point_dimension.targets.contains(&PmiTarget::Point {
-        point: "step:data:point#50".into()
+        point: "step:data:point#50".try_into().expect("valid identity")
     }));
     let point = result
         .ir()
@@ -1484,17 +1507,15 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
         .expect("curve dimension annotation");
     assert!(curve_dimension.targets.contains(&PmiTarget::Curve {
-        curve: "step:data:curve#16".into()
+        curve: "step:data:curve#16".try_into().expect("valid identity")
     }));
 
     let mut output = Vec::new();
     let report = write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write geometric item usage");
     assert!(!report
@@ -1605,10 +1626,8 @@ fn datum_target_writes_and_round_trips() {
     let report = write_step(
         result.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write datum target");
     assert!(!report
@@ -1647,10 +1666,8 @@ fn datum_target_writes_and_round_trips() {
     let source_less_report = write_step(
         &source_less_ir,
         &mut source_less_output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write source-less datum target");
     assert!(!source_less_report

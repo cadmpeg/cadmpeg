@@ -33,8 +33,7 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-point regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -72,8 +71,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-arc regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -93,14 +91,39 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
-        relation.state = 0x40;
-        relation.constraint_kinds = vec![crate::records::SketchConstraintKind::Horizontal];
-        relation.unknown_constraint_bits = 0;
-        relation.members.reverse();
-        for reference in &mut relation.auxiliary_references {
+        relation.definition = crate::records::SketchRelationDefinition::new(
+            0x40,
+            relation.definition.pattern().cloned(),
+        )
+        .expect("valid relation definition");
+        relation.members = relation
+            .members
+            .iter()
+            .zip(relation.members.iter().rev())
+            .map(|(position, value)| crate::records::SketchRelationMember {
+                reference: value.reference.clone(),
+                offset: position.offset,
+                relation_ordinal: position.relation_ordinal,
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("uniform member resolution");
+        for reference in relation.auxiliary_references.values_mut() {
             *reference = reference.saturating_add(1);
         }
-        relation.return_members.reverse();
+        relation.return_members = relation
+            .return_members
+            .iter()
+            .zip(relation.return_members.iter().rev())
+            .map(
+                |(position, value)| crate::records::SketchRelationReturnMember {
+                    reference: value.reference.clone(),
+                    offset: position.offset,
+                },
+            )
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("uniform member resolution");
         (
             relation.members.clone(),
             relation.auxiliary_references.clone(),
@@ -110,20 +133,19 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-constraint regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     let native = f3d_native(round_trip.ir());
     let relation = &native.sketch_relations[0];
-    assert_eq!(relation.state, 0x40);
+    assert_eq!(relation.definition.state(), 0x40);
     assert_eq!(
-        relation.constraint_kinds,
+        relation.constraint_kinds(),
         [crate::records::SketchConstraintKind::Horizontal]
     );
-    assert_eq!(relation.unknown_constraint_bits, 0);
+    assert_eq!(relation.unknown_constraint_bits(), 0);
     assert_eq!(relation.members, expected_references.0);
     assert_eq!(relation.auxiliary_references, expected_references.1);
     assert_eq!(relation.owner_reference, expected_references.2);
@@ -141,21 +163,24 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
         let curve = &mut native.sketch_curve_identities[1];
         let Some(crate::records::SketchCurveGeometry::Nurbs {
             fit_tolerance,
-            control_points,
+            poles,
             ..
         }) = &mut curve.geometry
         else {
             panic!("generated sketch curve must be NURBS")
         };
         *fit_tolerance = 0.125;
-        control_points[1].x += 15.0;
-        control_points[1].y -= 5.0;
+        let point = poles
+            .points_mut()
+            .nth(1)
+            .expect("second spline control point");
+        point.x += 15.0;
+        point.y -= 5.0;
         curve.geometry.clone()
     });
 
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("native sketch-NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())

@@ -52,7 +52,7 @@ fn rejects_archive_relative_traversal() {
 use std::io::{Cursor, Read as _};
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -162,7 +162,7 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("inspect minimal AP242");
-    assert_eq!(summary.format, "step");
+    assert_eq!(summary.format(), "step");
     assert_eq!(summary.container_kind, "iso-10303-21-clear-text");
     assert_eq!(summary.entries.len(), 2);
     assert_eq!(summary.entries[0].name, "HEADER");
@@ -175,7 +175,7 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     assert!(summary
         .notes
         .iter()
-        .any(|note| note.contains("AP242") && note.contains("edition 2")));
+        .any(|note| note.contains("AP242") && note.contains("dialect step:ap242-e2")));
 }
 
 #[test]
@@ -245,16 +245,16 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
             .collect::<Vec<_>>(),
         ["ISO-10303.p21", "parts/child.p21", "preview.bin"]
     );
-    assert_eq!(summary.entries[0].role, "root-exchange");
-    assert_eq!(summary.entries[0].compression, "deflate");
-    assert_eq!(summary.entries[1].role, "subsidiary-exchange");
+    assert_eq!(summary.entries[0].role.as_str(), "root-exchange");
+    assert_eq!(summary.entries[0].compression.as_str(), "deflate");
+    assert_eq!(summary.entries[1].role.as_str(), "subsidiary-exchange");
     assert!(summary.entries[0].attributes["logical_sections"].contains("HEADER"));
 
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode STEP ZIP root");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.format, "step");
+    assert_eq!(source.format(), "step");
     assert_eq!(source.attributes["container_kind"], "iso-10303-21-zip");
     assert_eq!(source.attributes["archive_root"], "ISO-10303.p21");
     assert_eq!(source.attributes["archive_entries"], "3");
@@ -357,8 +357,8 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         crate::parse::Value::Resource("parts/ce02_composition_subsidiary.p21#remote_point".into())
     );
     assert_eq!(
-        crate::reader::schema_identifiers(&root_exchange),
-        crate::reader::schema_identifiers(&subsidiary_exchange)
+        root_exchange.schema_identifiers(),
+        subsidiary_exchange.schema_identifiers()
     );
 
     let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors[0].value else {
@@ -674,14 +674,13 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         .native_unknowns("step")
         .expect("STEP unknown arena");
     assert_eq!(unknown.len(), 1);
-    assert_eq!(unknown[0].id.0, "step:data:item#1");
+    assert_eq!(unknown[0].id.as_str(), "step:data:item#1");
     assert_eq!(
         result
             .source_fidelity()
-            .retained_record(&unknown[0].id.0)
+            .retained_record(unknown[0].id.as_str())
             .expect("root occurrence source fidelity")
-            .data
-            .as_deref(),
+            .data(),
         Some(b"#1=ITEM(#10,#11);".as_slice())
     );
     for note in [
@@ -898,13 +897,13 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         .expect("STEP unknown arena");
     let signature_unknown = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:file:signature#0")
+        .find(|record| record.id.as_str() == "step:file:signature#0")
         .expect("retained signature");
     assert_eq!(
         decoded
             .source_fidelity()
-            .retained_record(&signature_unknown.id.0)
-            .and_then(|record| record.data.as_deref()),
+            .retained_record(signature_unknown.id.as_str())
+            .and_then(|record| record.data()),
         Some(&bytes[signature.clone()])
     );
     assert_eq!(

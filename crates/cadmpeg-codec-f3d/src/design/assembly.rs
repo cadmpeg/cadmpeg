@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointLimits,
-    JointOperand,
+    AssemblyJoint, ExternalDocumentReference, JointConnector, JointLimits, JointOperand,
+    PairedJointKind,
 };
 
 use crate::ids::native_stream;
-use crate::records::{
-    DesignAssemblyAxialOperandTarget, DesignAssemblyLegacyOperand, DesignAssemblyLimitKind,
-    DesignAssemblyOperandQualifier, DesignComponentOccurrence, DesignParameterScope,
+use crate::records::feature::{
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
+    DesignComponentOccurrence, DesignParameterScope,
 };
 
 /// One exact generation of the legacy 421-byte `As-built` alignment grammar.
@@ -271,7 +271,10 @@ pub(crate) fn project_assembly_joints(
             continue;
         };
         occurrences
-            .entry((stream, occurrence.occurrence_guid.to_ascii_lowercase()))
+            .entry((
+                stream,
+                occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
+            ))
             .and_modify(|candidate| *candidate = None)
             .or_insert(Some(occurrence));
     }
@@ -280,30 +283,48 @@ pub(crate) fn project_assembly_joints(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(alignment) = &scope.assembly_alignment else {
+        let Some(alignment) = scope.assembly_alignment() else {
             continue;
         };
-        let Some(frames) = &alignment.operand_frames else {
-            continue;
+        let (frames, operands, limits) = match alignment.form.as_ref() {
+            Some(crate::records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers,
+                solved_frame,
+                limits,
+                ..
+            }) => (
+                carriers.frames(solved_frame),
+                carriers.selections().map(|selection| {
+                    JointOperand::root(
+                        crate::ids::neutral_assembly_legacy_object_id(selection),
+                        Vec::new(),
+                    )
+                }),
+                limits.as_ref(),
+            ),
+            Some(crate::records::feature::DesignAssemblyAlignmentForm::Qualified(operands)) => {
+                let Some(projected) = project_qualified_operands(
+                    operands.each_ref().map(|operand| &operand.qualifier),
+                    stream,
+                    &occurrences,
+                    scopes,
+                    features,
+                ) else {
+                    continue;
+                };
+                (
+                    operands.each_ref().map(|operand| operand.frame.clone()),
+                    projected,
+                    None,
+                )
+            }
+            _ => continue,
         };
-        let operands = if let Some(carriers) = alignment.legacy_operand_carriers.as_ref() {
-            project_legacy_operands(carriers)
-        } else {
-            alignment
-                .operand_qualifiers
-                .as_ref()
-                .and_then(|qualifiers| {
-                    project_qualified_operands(qualifiers, stream, &occurrences, scopes, features)
-                })
-        };
-        let Some(operands) = operands else {
-            continue;
-        };
-        let (angular_limits, linear_limits) = match alignment.limits.as_ref() {
+        let (angular_limits, linear_limits) = match limits {
             Some(limits) => {
-                let projected = JointLimits {
-                    minimum: Some(limits.minimum),
-                    maximum: Some(limits.maximum),
+                let projected = JointLimits::Both {
+                    minimum: limits.minimum,
+                    maximum: limits.maximum,
                 };
                 match limits.kind {
                     DesignAssemblyLimitKind::Angular => (Some(projected), None),
@@ -313,115 +334,108 @@ pub(crate) fn project_assembly_joints(
             None => (None, None),
         };
         let id = crate::ids::neutral_assembly_joint_id(scope);
-        joints.entry(id.0.clone()).or_insert_with(|| AssemblyJoint {
-            id,
-            kind: JointKind::Fixed,
-            operands,
-            frames: frames
-                .iter()
-                .map(|frame| neutral_transform(frame.transform))
-                .collect(),
-            offset_frames: Vec::new(),
-            suppressed: false,
-            detached: [false; 2],
-            angle: Some(alignment.angle),
-            translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
-            distance: None,
-            distance2: None,
-            angular_limits,
-            linear_limits,
-            properties: BTreeMap::new(),
-            native_ref: Some(scope.id.clone()),
+        let [first_operand, second_operand] = operands;
+        let [first_frame, second_frame] =
+            std::array::from_fn(|index| neutral_transform(frames[index].transform));
+        joints.entry(id.as_str().to_owned()).or_insert_with(|| {
+            let mut joint = AssemblyJoint::paired(
+                id,
+                PairedJointKind::Fixed {
+                    angle: Some(alignment.angle),
+                    translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
+                    angular_limits,
+                    linear_limits,
+                },
+                [
+                    JointConnector {
+                        operand: first_operand,
+                        frame: first_frame,
+                        detached: false,
+                    },
+                    JointConnector {
+                        operand: second_operand,
+                        frame: second_frame,
+                        detached: false,
+                    },
+                ],
+                None,
+            );
+            joint.native_ref = Some(scope.id.clone());
+            joint
         });
     }
     joints.into_values().collect()
 }
 
-fn project_legacy_operands(
-    carriers: &[DesignAssemblyLegacyOperand; 2],
-) -> Option<Vec<JointOperand>> {
-    carriers
-        .iter()
-        .map(|carrier| {
-            Some(JointOperand {
-                occurrence: None,
-                external_document: None,
-                object: Some(crate::ids::neutral_assembly_legacy_object_id(
-                    &carrier.selection,
-                )),
-                subelements: Vec::new(),
-            })
-        })
-        .collect()
-}
-
 fn project_qualified_operands(
-    qualifiers: &[DesignAssemblyOperandQualifier; 2],
+    qualifiers: [&DesignAssemblyOperandQualifier; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     features: &[Feature],
-) -> Option<Vec<JointOperand>> {
-    qualifiers
-        .iter()
-        .map(|qualifier| match qualifier {
-            DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-                let root_guid = path.occurrence_guids.first()?;
-                let occurrence = occurrences
-                    .get(&(stream, root_guid.to_ascii_lowercase()))
-                    .copied()
-                    .flatten();
-                if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
-                    return None;
-                }
-                Some(JointOperand {
-                    occurrence: occurrence
-                        .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
-                    external_document: occurrence.is_none().then(|| ExternalDocumentReference {
-                        path: None,
-                        document_id: path.identity_guids.first().cloned(),
-                        resolution: ExternalResolution::Unresolved,
-                    }),
-                    object: Some(root_guid.to_ascii_lowercase()),
-                    subelements: path.occurrence_guids[1..]
-                        .iter()
-                        .map(|guid| guid.to_ascii_lowercase())
-                        .collect(),
-                })
+) -> Option<[JointOperand; 2]> {
+    let projected = qualifiers.map(|qualifier| match qualifier {
+        DesignAssemblyOperandQualifier::OccurrencePath { path } => {
+            let root_guid = &path.occurrence_guids.first()?.value;
+            let occurrence = occurrences
+                .get(&(stream, root_guid.as_str().to_ascii_lowercase()))
+                .copied()
+                .flatten();
+            if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
+                return None;
             }
-            DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
-                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                    component_insert_scope_record_index,
-                    selectors,
-                    ..
-                } => {
-                    let target_scope = unique_scope(
-                        scopes,
-                        stream,
-                        *component_insert_scope_record_index,
-                        "Component Insert",
-                    )?;
-                    let feature = unique_feature(features, &target_scope.id)?;
-                    let FeatureDefinition::InsertComponent { occurrence } = &feature.definition
-                    else {
-                        return None;
-                    };
-                    Some(JointOperand {
-                        occurrence: Some(occurrence.clone()),
-                        external_document: None,
-                        object: Some(crate::ids::neutral_assembly_axial_object_id(&selectors[0])),
-                        subelements: Vec::new(),
-                    })
-                }
-                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
-                    scope_record_index,
-                } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
-            },
-            DesignAssemblyOperandQualifier::JointOrigin {
-                scope_record_index, ..
-            } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
-        })
-        .collect()
+            let object = root_guid.as_str().to_ascii_lowercase();
+            let subelements = path.occurrence_guids[1..]
+                .iter()
+                .map(|guid| guid.value.as_str().to_ascii_lowercase())
+                .collect();
+            Some(match occurrence {
+                Some(_) => JointOperand::occurrence(
+                    crate::ids::neutral_component_occurrence_id(root_guid.as_str()),
+                    object,
+                    subelements,
+                ),
+                None => JointOperand::external(
+                    ExternalDocumentReference::document_id(
+                        path.identity_guids.first()?.value.clone(),
+                    ),
+                    object,
+                    subelements,
+                ),
+            })
+        }
+        DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
+            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                component_insert_scope_record_index,
+                selectors,
+                ..
+            } => {
+                let target_scope = unique_scope(
+                    scopes,
+                    stream,
+                    *component_insert_scope_record_index,
+                    &crate::records::feature::DesignFeatureKind::ComponentInsert,
+                )?;
+                let feature = unique_feature(features, &target_scope.id)?;
+                let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
+                    return None;
+                };
+                Some(JointOperand::occurrence(
+                    occurrence.clone(),
+                    crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
+                    Vec::new(),
+                ))
+            }
+            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index } => {
+                project_joint_origin_operand(*scope_record_index, stream, scopes, features)
+            }
+        },
+        DesignAssemblyOperandQualifier::JointOrigin {
+            scope_record_index, ..
+        } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
+    });
+    let [first, second] = projected;
+    Some([first?, second?])
 }
 
 fn project_joint_origin_operand(
@@ -430,7 +444,12 @@ fn project_joint_origin_operand(
     scopes: &[DesignParameterScope],
     features: &[Feature],
 ) -> Option<JointOperand> {
-    let target_scope = unique_scope(scopes, stream, scope_record_index, "JointOrigin")?;
+    let target_scope = unique_scope(
+        scopes,
+        stream,
+        scope_record_index,
+        &crate::records::feature::DesignFeatureKind::JointOrigin,
+    )?;
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
             feature.definition,
@@ -438,27 +457,25 @@ fn project_joint_origin_operand(
         ) {
             return None;
         }
-    } else if target_scope.joint_origin_transform.is_none() {
+    } else if target_scope.joint_origin_transform().is_none() {
         return None;
     }
-    Some(JointOperand {
-        occurrence: None,
-        external_document: None,
-        object: Some(crate::ids::neutral_feature_id(target_scope).0),
-        subelements: Vec::new(),
-    })
+    Some(JointOperand::root(
+        crate::ids::neutral_feature_id(target_scope).as_str(),
+        Vec::new(),
+    ))
 }
 
 fn unique_scope<'a>(
     scopes: &'a [DesignParameterScope],
     stream: &str,
     record_index: u32,
-    kind: &str,
+    kind: &crate::records::feature::DesignFeatureKind,
 ) -> Option<&'a DesignParameterScope> {
     let mut matches = scopes.iter().filter(|scope| {
         native_stream(&scope.id) == Some(stream)
             && scope.record_index == record_index
-            && scope.kind == kind
+            && scope.kind() == *kind
     });
     let scope = matches.next()?;
     matches.next().is_none().then_some(scope)
@@ -476,19 +493,19 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
     for row in &mut transform[..3] {
         row[3] *= 10.0;
     }
-    cadmpeg_ir::transform::Transform { rows: transform }
+    cadmpeg_ir::transform::Transform::from_rows(transform).expect("affine transform")
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::records::DesignAssemblyOperandQualifier;
+    use crate::records::feature::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    use crate::records::{
+    use crate::records::feature::{
         DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity,
         DesignAssemblyLimitKind, DesignParameterScope,
     };
@@ -496,20 +513,28 @@ mod tests {
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
         DesignAssemblyAxialSelectorIdentity {
             axis_record_index: 10,
-            axis_class_tag: "316".into(),
+            axis_class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
             axis_byte_offset: 100,
-            axis_paired_class_tag: "261".into(),
+            axis_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                .unwrap(),
             axis_paired_byte_offset: 120,
             selector_record_index: 13,
-            selector_class_tag: "277".into(),
+            selector_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
             selector_byte_offset: 200,
-            selector_paired_class_tag: "261".into(),
+            selector_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                .unwrap(),
             selector_paired_byte_offset: 560,
             nested_record_index: 16,
             nested_record_index_offset: 223,
-            selector_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef".into(),
+            selector_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_asset_id_offset: 241,
-            selector_context_id: "bcdefabc-defa-4bcd-8efa-bcdefabcdefa".into(),
+            selector_context_id: "bcdefabc-defa-4bcd-8efa-bcdefabcdefa"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             selector_context_id_offset: 317,
             occurrence_reference: 1_001,
             occurrence_reference_offset: 402,
@@ -517,18 +542,21 @@ mod tests {
             external_object_reference_offset: 417,
             external_segment: 7,
             external_segment_offset: 426,
-            external_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef".into(),
+            external_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             external_asset_id_offset: 434,
             external_link_name: "component-link".into(),
             external_link_name_offset: 511,
-            external_property_key: None,
-            external_property_key_offset: None,
-            external_version_urn: None,
-            external_version_urn_offset: None,
+            external_version: None,
             role_record_index: 18,
-            role_class_tag: "298".into(),
+            role_class_tag: crate::records::DesignClassTag::try_from("298".to_owned()).unwrap(),
             role_byte_offset: 600,
-            occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into(),
+            occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+                .to_owned()
+                .try_into()
+                .expect("GUID"),
             occurrence_role_offset: 629,
         }
     }
@@ -559,11 +587,11 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
-            id: FeatureId(format!("test:model:feature#{native_ref}")),
+            id: FeatureId::mint(format!("test:model:feature#{native_ref}"))
+                .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -584,7 +612,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform).rows,
+            super::neutral_transform(transform).rows(),
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],
@@ -849,22 +877,23 @@ mod tests {
     fn axial_operands_project_component_and_document_root_qualifiers() {
         let component_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:component-insert#200",
-            "Component Insert",
+            crate::records::feature::DesignFeatureKind::ComponentInsert,
             200,
         );
         let origin_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:joint-origin#80",
-            "JointOrigin",
+            crate::records::feature::DesignFeatureKind::JointOrigin,
             80,
         );
         let mut origin_scope = origin_scope;
-        origin_scope.joint_origin_transform = Some([
+        origin_scope.with_joint_origin_transform([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ]);
-        let occurrence = OccurrenceId("test:model:occurrence#component".into());
+        let occurrence =
+            OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
         let features = [
             feature(
                 &component_scope.id,
@@ -886,11 +915,15 @@ mod tests {
             DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                 component_insert_scope_record_index: 200,
                 construction_record_index: 70,
-                construction_class_tag: "305".into(),
+                construction_class_tag: crate::records::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
                 construction_byte_offset: 1_300,
                 construction_transform_offset: 1_348,
                 axis_record_index_offsets: [1_493, 1_509],
-                construction_paired_class_tag: "261".into(),
+                construction_paired_class_tag: crate::records::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
+                .unwrap(),
                 construction_paired_byte_offset: 1_680,
                 selectors: Box::new([selector(), second_selector()]),
             },
@@ -903,7 +936,7 @@ mod tests {
             targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
         let scopes = vec![component_scope, origin_scope.clone()];
         let operands = super::project_qualified_operands(
-            &qualifiers,
+            qualifiers.each_ref(),
             "f3d:Design/BulkStream.dat",
             &BTreeMap::new(),
             &scopes,
@@ -911,21 +944,21 @@ mod tests {
         )
         .expect("complete axial operands");
 
-        assert_eq!(operands[0].occurrence, Some(occurrence));
-        assert!(operands[0].external_document.is_none());
+        assert_eq!(
+            operands[0].container,
+            cadmpeg_ir::OperandContainer::Occurrence(occurrence)
+        );
         assert!(operands[0]
             .object
-            .as_deref()
-            .is_some_and(|object| object.starts_with("f3d:feature-input:connector#")));
-        assert!(operands[1].occurrence.is_none());
-        assert!(operands[1].external_document.is_none());
+            .starts_with("f3d:feature-input:connector#"));
+        assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root);
         assert_eq!(
-            operands[1].object.as_deref(),
-            Some(crate::ids::neutral_feature_id(&origin_scope).0.as_str())
+            operands[1].object,
+            crate::ids::neutral_feature_id(&origin_scope).as_str()
         );
 
         let unlisted_operands = super::project_qualified_operands(
-            &qualifiers,
+            qualifiers.each_ref(),
             "f3d:Design/BulkStream.dat",
             &BTreeMap::new(),
             &scopes,
@@ -941,9 +974,24 @@ mod tests {
         let mut second = first.clone();
         second.occurrence_reference += 1;
         second.occurrence_reference_offset += 100;
-        second.selector_asset_id.make_ascii_uppercase();
-        second.selector_context_id.make_ascii_uppercase();
-        second.external_asset_id.make_ascii_uppercase();
+        second.selector_asset_id = second
+            .selector_asset_id
+            .as_str()
+            .to_ascii_uppercase()
+            .try_into()
+            .expect("GUID");
+        second.selector_context_id = second
+            .selector_context_id
+            .as_str()
+            .to_ascii_uppercase()
+            .try_into()
+            .expect("GUID");
+        second.external_asset_id = second
+            .external_asset_id
+            .as_str()
+            .to_ascii_uppercase()
+            .try_into()
+            .expect("GUID");
         assert!(first.selects_same_object(&second));
         assert_eq!(
             crate::ids::neutral_assembly_axial_object_id(&first),

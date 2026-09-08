@@ -6,6 +6,7 @@
 
 #![no_main]
 
+use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::frame;
 use libfuzzer_sys::fuzz_target;
 
@@ -15,6 +16,6 @@ fuzz_target!(|data: &[u8]| {
     }
     let start = 0;
     let limit = data.len();
-    let ref_width = 4;
+    let ref_width = RefWidth::Four;
     let _ = frame(data, start, limit, ref_width);
 });

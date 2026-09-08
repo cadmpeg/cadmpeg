@@ -37,7 +37,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields()["entity_id"], 0x094c);
     assert_eq!(records[0].fields()["lines"][2]["text"], "theta=w*t*360");
@@ -56,7 +56,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         axis_origin,
         axis_direction,
         radius,
-        pitch,
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
         revolutions,
         start_angle,
         clockwise,
@@ -72,7 +72,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
     assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
     assert!((radius.0 - 5.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((pitch.0 - 71.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((pitch.get().0 - 71.0).abs() <= EPS_HELIX_FEATURE);
     assert!((*revolutions - 1.0).abs() <= EPS_HELIX_FEATURE);
     assert!(start_angle.0.abs() <= EPS_HELIX_FEATURE);
     assert!(!clockwise);
@@ -145,7 +145,7 @@ fn decode_preserves_curve_expression_source_section() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
 
     assert_eq!(records.len(), 1);
     assert_annotation(
@@ -271,7 +271,7 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         ]
     );
 
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["solve_blocks"][0]["variables"][0], "width");
     assert_eq!(native.fields()["solve_blocks"][0]["variables"][1], "height");
     assert_eq!(
@@ -392,7 +392,7 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
         Some(&cadmpeg_ir::features::ParameterValue::Real(24.0))
     );
 
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
@@ -445,7 +445,7 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
         ))
     );
 
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
@@ -522,7 +522,7 @@ fn decode_retains_scoped_model_name_call_as_model_context() {
     assert_eq!(parameter.value, None);
     assert!(parameter.dependencies.is_empty());
     assert!(!parameter.properties.contains_key("external_dependencies"));
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert!(native.fields()["assignments"][0]["dependencies"]
         .as_array()
         .is_some_and(Vec::is_empty));
@@ -556,7 +556,7 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
         present.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
     );
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
         native.fields()["assignments"][0]["target"]["kind"],
         "scoped_symbol"
@@ -600,7 +600,7 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
         Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
     );
     assert_eq!(parameter.properties["external_dependencies"], "d42");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
         native.fields()["assignments"][0]["target"]["kind"],
         "system_symbol"
@@ -641,7 +641,7 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     };
 
     assert_eq!(parameter.name, "result");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(
         native.fields()["assignments"][0]["target"]["kind"],
         "function_write"
@@ -701,7 +701,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
         parameter.properties["external_dependencies"],
         "samples,row_index,column_index"
     );
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     let first = &native.fields()["assignments"][0];
     assert_eq!(first["target"]["kind"], "table_cell");
     assert_eq!(first["target"]["parameter"], "samples");
@@ -812,7 +812,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .native
         .namespace("creo")
         .expect("Creo native data")
-        .arenas["curve_expressions"][0];
+        .arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
     let coverage = result.report();
     assert_eq!(
@@ -912,7 +912,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         panic!("dimensioned copy");
     };
     assert!((copy.0 - 76.2).abs() < 1.0e-12);
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
         native.fields()["assignments"][0]["target"]["declared_unit"],
@@ -975,7 +975,7 @@ fn decode_transfers_curve_expression_conditional_activation() {
         .native
         .namespace("creo")
         .expect("Creo native data")
-        .arenas["curve_expressions"][0]
+        .arenas()["curve_expressions"][0]
         .fields();
     let native_assignments = curve_expression_fields["assignments"]
         .as_array()
@@ -1096,7 +1096,7 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .native
             .namespace("creo")
             .expect("Creo native data")
-            .arenas["curve_expressions"][0]
+            .arenas()["curve_expressions"][0]
             .fields()["assignments"]
             .as_array()
             .expect("assignments")
@@ -1127,7 +1127,7 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         pitch,
         apex_factor,
         axis,
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
@@ -1158,7 +1158,7 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
         pitch,
         axis,
         ..
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };

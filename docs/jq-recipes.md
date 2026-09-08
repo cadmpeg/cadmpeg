@@ -131,7 +131,7 @@ is identical — index the model arena, walk the native one:
 ```jq
 . as $doc
 | INDEX($doc.model.features[]?; .id) as $model
-| $doc.native.<codec>.arenas.<arena>[]?
+| $doc.native.<codec>.<arena>[]?
 | [.id, (.model_ref // "" | $model[.].id // "unlinked")]
 | @tsv
 ```

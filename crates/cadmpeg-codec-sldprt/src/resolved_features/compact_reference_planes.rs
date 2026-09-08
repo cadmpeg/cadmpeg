@@ -111,7 +111,8 @@ impl CompactReferencePlaneIndex {
             .or_else(|| self.reference_source(0, self.payload_len))
     }
 
-    fn profile_source(
+    /// Return the reference plane source for a profile.
+    pub(super) fn profile_source(
         &self,
         context_start: usize,
         profile_start: usize,
@@ -121,15 +122,6 @@ impl CompactReferencePlaneIndex {
             .or_else(|| self.reference_source(context_start, profile_end))
             .or_else(|| self.lane_source())
     }
-}
-
-pub(super) fn compact_profile_reference_plane_source(
-    index: &CompactReferencePlaneIndex,
-    context_start: usize,
-    profile_start: usize,
-    profile_end: usize,
-) -> Option<u32> {
-    index.profile_source(context_start, profile_start, profile_end)
 }
 
 fn unique_reference_plane_source(sources: impl IntoIterator<Item = u32>) -> Option<u32> {

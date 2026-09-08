@@ -216,13 +216,7 @@ pub(super) fn validate_zero_entity_support_runs(
                     let pcurve_valid = match (&support.tag, &support.pcurve) {
                         (
                             [0x21, tag @ (0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8)],
-                            Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                                degree,
-                                knots,
-                                control_points,
-                                weights,
-                                periodic: false,
-                            }),
+                            Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }),
                         ) => {
                             let (
                                 expected_degree,
@@ -240,9 +234,9 @@ pub(super) fn validate_zero_entity_support_runs(
                                 0xe8 => (3, 7, &[4, 1, 1, 1, 4], false),
                                 _ => unreachable!(),
                             };
-                            *degree == expected_degree
-                                && control_points.len() == expected_controls
-                                && knots.len() == expected_controls + expected_degree as usize + 1
+                            let knots = nurbs.knots();
+                            nurbs.degree() == expected_degree
+                                && nurbs.control_points().len() == expected_controls
                                 && knots.iter().all(|knot| knot.is_finite())
                                 && knots_nondecreasing(knots)
                                 && knots[..=expected_degree as usize]
@@ -256,16 +250,17 @@ pub(super) fn validate_zero_entity_support_runs(
                                     .chunk_by(|left, right| left == right)
                                     .map(<[f64]>::len)
                                     .eq(expected_multiplicities.iter().copied())
-                                && control_points
+                                && nurbs
+                                    .control_points()
                                     .iter()
                                     .all(|point| point.u.is_finite() && point.v.is_finite())
-                                && weights.as_ref().is_some_and(|weights| {
+                                && nurbs.weights().is_some_and(|weights| {
                                     rational
-                                        && weights.len() == expected_controls
                                         && weights
                                             .iter()
                                             .all(|weight| weight.is_finite() && *weight > 0.0)
                                 }) == rational
+                                && !nurbs.periodic()
                         }
                         ([0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8], _) => false,
                         ([0x21, _], None) => true,
@@ -396,21 +391,15 @@ fn validate_zero_entity_model_curve(
     };
     match (carrier_tag, curve) {
         (Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]), Some(CurveGeometry::Nurbs(curve))) => {
-            let Ok(degree) = usize::try_from(curve.degree) else {
-                return false;
-            };
-            curve.control_points.len() > degree
-                && curve.knots.len() == curve.control_points.len() + degree + 1
-                && curve.knots.iter().all(|knot| knot.is_finite())
-                && knots_nondecreasing(&curve.knots)
-                && curve.control_points.iter().all(finite_point)
-                && curve.weights.as_ref().is_none_or(|weights| {
-                    weights.len() == curve.control_points.len()
-                        && weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
+            curve.knots().iter().all(|knot| knot.is_finite())
+                && knots_nondecreasing(curve.knots())
+                && curve.control_points().iter().all(finite_point)
+                && curve.weights().is_none_or(|weights| {
+                    weights
+                        .iter()
+                        .all(|weight| weight.is_finite() && *weight > 0.0)
                 })
-                && !curve.periodic
+                && !curve.periodic()
         }
         (Some([0x28, 0x8a] | [0x29, 0xb8]), Some(CurveGeometry::Line { origin, direction })) => {
             finite_point(origin) && finite_vector(direction)

@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counterbore dimensions, axis placement, and source cylinder geometry.
 
+use crate::decode::axis::Axis;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Length, Termination};
+use cadmpeg_ir::features::{Length, LinearTermination};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{placed_planes, reconciled_model_plane};
 use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
 use super::super::sketch::{approximately_equal, normalized};
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
+use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 
 const EPS_COUNTERBORE_GEOMETRY: f64 = 1.0e-9;
 const EPS_COUNTERBORE_EXACT_GEOMETRY: f64 = 1.0e-12;
@@ -36,7 +37,7 @@ fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGe
     for surface in &ir.model.surfaces {
         let Some(surface_id) = surface
             .id
-            .0
+            .as_str()
             .strip_prefix("creo:visibgeom:surface#")
             .and_then(|id| id.parse::<u32>().ok())
         else {
@@ -59,7 +60,7 @@ pub fn counterbore_dimensions(
 ) -> Option<(f64, f64, f64)> {
     let table = counterbore_entity_table(scan, feature_id)?;
     let generated_cylinders = table
-        .surface_ids
+        .surface_ids()
         .iter()
         .copied()
         .filter(|surface_id| {
@@ -86,7 +87,7 @@ pub fn counterbore_dimensions(
         scan.features
             .definitions
             .iter()
-            .filter(|definition| definition.id == 911)
+            .filter(|definition| definition.identity.id() == 911)
             .filter_map(|definition| definition.dimensions.as_ref())
     };
     counterbore_dimension_values(dimension_tables(), &generated_radii).or_else(|| {
@@ -98,8 +99,7 @@ pub fn counterbore_dimensions(
                 };
                 let envelope = |id: &u32| {
                     let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *id)?;
-                    unique_surface_parameter_record(scan, row)?
-                        .type24_terminal_corner_envelope(row.type_byte)
+                    unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope()
                 };
                 paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
             })
@@ -148,7 +148,7 @@ pub fn counterbore_dimension_values<'a>(
             let [row] = rows.as_slice() else {
                 return None;
             };
-            row.value.filter(|value| value.is_finite())
+            row.value.resolved().filter(|value| value.is_finite())
         };
         let (Some(bore_radius), Some(_placement_distance), Some(depth), Some(counterbore_radius)) =
             (value(0, 2), value(1, 2), value(2, 1), value(3, 2))
@@ -271,45 +271,30 @@ pub fn counterbore_envelope_dimension_tuple(
     table: &crate::feature::FeatureDimensionTable,
 ) -> Option<(f64, f64, f64)> {
     (feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)).then_some(())?;
-    let value = |external_id, dimension_type, unit| {
+    let value = |external_id, dimension_type| {
         let rows = table
             .rows
             .iter()
-            .filter(|row| {
-                row.external_id == external_id
-                    && row.dimension_type == dimension_type
-                    && row.value_unit == unit
-            })
+            .filter(|row| row.external_id == external_id && row.dimension_type == dimension_type)
             .collect::<Vec<_>>();
         let [row] = rows.as_slice() else {
             return None;
         };
-        row.value.filter(|value| value.is_finite())
+        row.value.resolved().filter(|value| value.is_finite())
     };
-    let signed_counterbore_depth = value(0, 1, crate::feature::DimensionUnit::Millimeters)?;
-    let bore_radius = value(1, 2, crate::feature::DimensionUnit::Millimeters)?;
+    let signed_counterbore_depth = value(0, 1)?;
+    let bore_radius = value(1, 2)?;
     let (counterbore_radius, _placement_distance) = if table.rows.len() == 4 {
-        let shifted = value(2, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
-            3,
-            2,
-            crate::feature::DimensionUnit::Millimeters,
-        ));
-        let retained = value(3, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
-            4,
-            2,
-            crate::feature::DimensionUnit::Millimeters,
-        ));
+        let shifted = value(2, 2).zip(value(3, 2));
+        let retained = value(3, 2).zip(value(4, 2));
         match (shifted, retained) {
             (Some(layout), None) | (None, Some(layout)) => layout,
             _ => return None,
         }
     } else {
-        let drill_point_angle = value(2, 10, crate::feature::DimensionUnit::Radians)?;
+        let drill_point_angle = value(2, 10)?;
         (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI).then_some(())?;
-        (
-            value(3, 2, crate::feature::DimensionUnit::Millimeters)?,
-            value(4, 2, crate::feature::DimensionUnit::Millimeters)?,
-        )
+        (value(3, 2)?, value(4, 2)?)
     };
     (signed_counterbore_depth != 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
         .then_some(())?;
@@ -376,10 +361,10 @@ pub fn counterbore_cylinder_sources(
     let table = counterbore_entity_table(scan, feature_id)?;
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-        if !table.surface_ids.contains(&entry.entity_id) {
+        if !table.surface_ids().contains(&entry.entity_id) {
             continue;
         }
-        let source_id = entry.source_entity_id?;
+        let source_id = entry.source_entity_id()?;
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
         else {
             continue;
@@ -412,8 +397,7 @@ fn counterbore_source_corner_envelopes(
             };
             let envelope = |id| {
                 let row = crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
-                unique_surface_parameter_record(scan, row)?
-                    .type24_terminal_corner_envelope(row.type_byte)
+                unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope()
             };
             Some([envelope(*first_id)?, envelope(*second_id)?])
         })
@@ -428,12 +412,12 @@ pub fn counterbore_entity_table<'a>(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
         .filter(|table| {
             table.entries.iter().any(|entry| {
                 entry.class_id == 200
-                    && entry.source_entity_id.is_some()
-                    && table.surface_ids.contains(&entry.entity_id)
+                    && entry.source_entity_id().is_some()
+                    && table.surface_ids().contains(&entry.entity_id)
                     && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
                         .is_some_and(|row| {
                             row.feature_id == feature_id
@@ -479,9 +463,9 @@ pub fn counterbore_support_axis_placement(
     rows: &[crate::surface::SurfaceRow],
     frames: &[crate::surface::PlaneLocalSystem],
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
-    (table.feature_id == Some(feature_id)).then_some(())?;
+    (table.feature_id == feature_id).then_some(())?;
     let plane_ids = table
-        .surface_ids
+        .surface_ids()
         .iter()
         .copied()
         .filter(|surface_id| {
@@ -500,6 +484,7 @@ pub fn counterbore_support_axis_placement(
     let [frame] = matching_frames.as_slice() else {
         return None;
     };
+    let frame = frame.frame();
     let origin = frame
         .origin
         .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
@@ -537,7 +522,7 @@ pub fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<(Option<u32>, Point3, Vector3, Termination)> {
+) -> Option<(Option<u32>, Point3, Vector3, LinearTermination)> {
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
         counterbore_dimensions(scan, ir, feature_id)?;
     let sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -578,8 +563,7 @@ pub fn counterbore_directed_placement(
 
 #[derive(Debug, Clone, Copy)]
 pub struct CounterboreEnvelopeLayout {
-    pub axis: usize,
-    pub radial: [usize; 2],
+    pub axis: Axis,
     pub center: [f64; 3],
     pub axial_interval: [f64; 2],
 }
@@ -609,21 +593,22 @@ pub fn counterbore_source_envelope_layout(
             ]
         })
     });
-    let shared = |axis: usize| {
-        close(intervals[0][axis][0], intervals[1][axis][0])
-            && close(intervals[0][axis][1], intervals[1][axis][1])
+    let shared = |axis: Axis| {
+        close(intervals[0][axis.index()][0], intervals[1][axis.index()][0])
+            && close(intervals[0][axis.index()][1], intervals[1][axis.index()][1])
     };
-    let adjacent = |axis: usize| {
-        close(intervals[0][axis][1], intervals[1][axis][0])
-            || close(intervals[1][axis][1], intervals[0][axis][0])
+    let adjacent = |axis: Axis| {
+        close(intervals[0][axis.index()][1], intervals[1][axis.index()][0])
+            || close(intervals[1][axis.index()][1], intervals[0][axis.index()][0])
     };
-    let union = |axis: usize| {
+    let union = |axis: Axis| {
         [
-            intervals[0][axis][0].min(intervals[1][axis][0]),
-            intervals[0][axis][1].max(intervals[1][axis][1]),
+            intervals[0][axis.index()][0].min(intervals[1][axis.index()][0]),
+            intervals[0][axis.index()][1].max(intervals[1][axis.index()][1]),
         ]
     };
-    let diameter_axes = (0..3)
+    let diameter_axes = Axis::ALL
+        .into_iter()
         .filter(|axis| {
             let union = union(*axis);
             (shared(*axis) || adjacent(*axis)) && close(union[1] - union[0], diameter)
@@ -632,19 +617,20 @@ pub fn counterbore_source_envelope_layout(
     let [first_radial, second_radial] = diameter_axes.as_slice() else {
         return None;
     };
-    let axis = (0..3).find(|axis| axis != first_radial && axis != second_radial)?;
+    let axis = Axis::ALL
+        .into_iter()
+        .find(|axis| axis != first_radial && axis != second_radial)?;
     shared(axis).then_some(())?;
-    let axial_interval = intervals[0][axis];
+    let axial_interval = intervals[0][axis.index()];
     let axial_span = axial_interval[1] - axial_interval[0];
     (axial_span > 0.0 && axial_depth.is_none_or(|depth| close(axial_span, depth))).then_some(())?;
     let mut center = [0.0; 3];
     for radial_axis in [*first_radial, *second_radial] {
         let bounds = union(radial_axis);
-        center[radial_axis] = f64::midpoint(bounds[0], bounds[1]);
+        center[radial_axis.index()] = f64::midpoint(bounds[0], bounds[1]);
     }
     Some(CounterboreEnvelopeLayout {
         axis,
-        radial: [*first_radial, *second_radial],
         center,
         axial_interval,
     })
@@ -655,7 +641,7 @@ pub fn counterbore_placement_from_corner_envelopes(
     bore_diameter: f64,
     counterbore_diameter: f64,
     counterbore_depth: f64,
-) -> Option<(Point3, Vector3, Termination)> {
+) -> Option<(Point3, Vector3, LinearTermination)> {
     let assignment = counterbore_corner_assignment(
         source_corners,
         bore_diameter,
@@ -665,7 +651,7 @@ pub fn counterbore_placement_from_corner_envelopes(
     Some((
         assignment.position,
         assignment.direction,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(assignment.length),
         },
     ))
@@ -732,10 +718,11 @@ fn counterbore_corner_assignment(
     let [(bore_source, bore, counterbore)] = assignments.as_slice() else {
         return None;
     };
-    (bore.axis == counterbore.axis && bore.radial == counterbore.radial).then_some(())?;
-    bore.radial
+    (bore.axis == counterbore.axis).then_some(())?;
+    bore.axis
+        .complement()
         .iter()
-        .all(|axis| close(bore.center[*axis], counterbore.center[*axis]))
+        .all(|axis| close(bore.center[axis.index()], counterbore.center[axis.index()]))
         .then_some(())?;
     let (entry, direction_sign, length) =
         if close(counterbore.axial_interval[1], bore.axial_interval[0]) {
@@ -755,9 +742,9 @@ fn counterbore_corner_assignment(
         };
     (length > counterbore_depth && length.is_finite()).then_some(())?;
     let mut position = counterbore.center;
-    position[counterbore.axis] = entry;
+    position[counterbore.axis.index()] = entry;
     let mut direction = [0.0; 3];
-    direction[counterbore.axis] = direction_sign;
+    direction[counterbore.axis.index()] = direction_sign;
     Some(CounterboreCornerAssignment {
         bore_source: *bore_source,
         bore: *bore,
@@ -771,7 +758,7 @@ pub fn counterbore_directed_span(
     counterbore: (u32, Point3, [f64; 3]),
     bore: (u32, Point3, [f64; 3]),
     counterbore_depth: f64,
-) -> Option<(u32, Point3, Vector3, Termination)> {
+) -> Option<(u32, Point3, Vector3, LinearTermination)> {
     let delta = [
         bore.1.x - counterbore.1.x,
         bore.1.y - counterbore.1.y,
@@ -811,7 +798,7 @@ pub fn counterbore_directed_span(
         counterbore.0,
         counterbore.1,
         Vector3::new(direction[0], direction[1], direction[2]),
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(length),
         },
     ))
@@ -834,15 +821,18 @@ pub fn counterbore_source_boundary_circle(
             .into_iter()
             .filter_map(|edge| {
                 (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
+                let cylinder = std::num::NonZeroU32::new(cylinder_id)?;
                 let other = match edge.faces {
-                    [left, right] if left == cylinder_id => right,
-                    [left, right] if right == cylinder_id => left,
+                    [Some(left), Some(right)] if left == cylinder => right.get(),
+                    [Some(left), Some(right)] if right == cylinder => left.get(),
                     _ => return None,
                 };
                 let plane = rows.get(&other)?;
                 (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
-                    curve.id == CurveId(format!("creo:visibgeom:curve#{}", edge.id))
+                    curve.id
+                        == CurveId::mint(format!("creo:visibgeom:curve#{}", edge.id))
+                            .expect("identity grammar")
                 }))?;
                 let CurveGeometry::Circle {
                     center,
@@ -999,7 +989,7 @@ pub fn counterbore_source_corner_patch_geometries(
         counterbore_depth,
     )?;
     let mut ref_direction = [0.0; 3];
-    ref_direction[assignment.bore.radial[0]] = 1.0;
+    ref_direction[assignment.bore.axis.complement()[0].index()] = 1.0;
     let geometry = |radius| SurfaceGeometry::Cylinder {
         origin: assignment.position,
         axis: assignment.direction,

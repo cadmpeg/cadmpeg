@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole placement, cap outlines, and cylinder construction from envelopes.
 
-use cadmpeg_ir::features::{Length, Termination};
+use cadmpeg_ir::features::{Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -22,7 +22,7 @@ pub struct ExtrusionSpan {
 
 pub fn hole_extent_and_direction(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
-) -> Option<([f64; 3], Termination)> {
+) -> Option<([f64; 3], LinearTermination)> {
     let planes = planes.into_iter().collect::<Vec<_>>();
     let [(first_origin, first_normal), (second_origin, second_normal)] = planes.as_slice() else {
         return None;
@@ -54,7 +54,7 @@ pub fn hole_extent_and_direction(
     }
     Some((
         first_normal.map(|value| value * signed_length.signum()),
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(signed_length.abs()),
         },
     ))
@@ -62,7 +62,7 @@ pub fn hole_extent_and_direction(
 
 pub fn hole_placement(
     planes: impl IntoIterator<Item = (u32, [f64; 3], [f64; 3])>,
-) -> Option<(u32, [f64; 3], Termination)> {
+) -> Option<(u32, [f64; 3], LinearTermination)> {
     let planes = planes.into_iter().collect::<Vec<_>>();
     let [(entry_id, entry_origin, entry_normal), (_, termination_origin, termination_normal)] =
         planes.as_slice()
@@ -247,6 +247,6 @@ pub struct SimpleHoleGeometry {
     pub entry_surface_id: Option<u32>,
     pub cylinder_ids: Vec<u32>,
     pub direction: [f64; 3],
-    pub extent: Termination,
+    pub extent: LinearTermination,
     pub geometry: SurfaceGeometry,
 }

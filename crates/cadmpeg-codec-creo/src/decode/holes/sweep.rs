@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
-    ProfileRef, Termination,
+    LinearTermination, ProfileRef,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -52,13 +52,13 @@ pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Sim
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
+        .filter(|table| table.feature_id == feature_id && !table.surface_ids().is_empty())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
     };
-    let [entry_plane, termination_plane, first_cylinder, second_cylinder] =
-        table.entry_ids.as_slice()
+    let entry_ids = table.entry_ids();
+    let [entry_plane, termination_plane, first_cylinder, second_cylinder] = entry_ids.as_slice()
     else {
         return None;
     };
@@ -91,8 +91,8 @@ fn has_exact_materialized_surface_roster(
     let expected_ids = expected_ids.into_iter().collect::<Vec<_>>();
     let expected_set = expected_ids.iter().copied().collect::<BTreeSet<_>>();
     expected_ids.len() == expected_set.len()
-        && table.surface_ids.len() == expected_set.len()
-        && table.surface_ids.iter().copied().collect::<BTreeSet<_>>() == expected_set
+        && table.surface_ids().len() == expected_set.len()
+        && table.surface_ids().iter().copied().collect::<BTreeSet<_>>() == expected_set
 }
 
 pub fn compact_simple_hole_cylinder_id(
@@ -102,14 +102,14 @@ pub fn compact_simple_hole_cylinder_id(
 ) -> Option<u32> {
     let candidates = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
         .filter_map(|table| {
             let entry_ids = table
                 .entries
                 .iter()
                 .map(|entry| entry.entity_id)
                 .collect::<Vec<_>>();
-            (table.entry_ids == entry_ids).then_some(())?;
+            (table.entry_ids() == entry_ids).then_some(())?;
 
             let topology_candidates = table
                 .entries
@@ -121,13 +121,13 @@ pub fn compact_simple_hole_cylinder_id(
                     };
                     (class_204.class_id == 204
                         && class_203.class_id == 203
-                        && class_204.source_entity_id.is_none()
-                        && class_203.source_entity_id.is_none())
+                        && class_204.source_entity_id().is_none()
+                        && class_203.source_entity_id().is_none())
                     .then_some(())?;
                     let planes = pair
                         .iter()
                         .filter(|candidate| {
-                            table.surface_ids.contains(&candidate.entity_id)
+                            table.surface_ids().contains(&candidate.entity_id)
                                 && rows
                                     .iter()
                                     .filter(|row| row.id == candidate.entity_id)
@@ -148,7 +148,7 @@ pub fn compact_simple_hole_cylinder_id(
                     pair.iter()
                         .filter(|candidate| Some(candidate.entity_id) != plane)
                         .all(|candidate| {
-                            !table.surface_ids.contains(&candidate.entity_id)
+                            !table.surface_ids().contains(&candidate.entity_id)
                                 && !rows.iter().any(|row| row.id == candidate.entity_id)
                         })
                         .then_some((index, plane))
@@ -163,8 +163,8 @@ pub fn compact_simple_hole_cylinder_id(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate.class_id == 200
-                        && candidate.source_entity_id == Some(0)
-                        && !table.surface_ids.contains(&candidate.entity_id)
+                        && candidate.source_entity_id() == Some(0)
+                        && !table.surface_ids().contains(&candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
                 .collect::<Vec<_>>();
@@ -177,8 +177,8 @@ pub fn compact_simple_hole_cylinder_id(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate.class_id == 200
-                        && candidate.source_entity_id.is_none()
-                        && table.surface_ids.contains(&candidate.entity_id)
+                        && candidate.source_entity_id().is_none()
+                        && table.surface_ids().contains(&candidate.entity_id)
                         && rows
                             .iter()
                             .filter(|row| row.id == candidate.entity_id)
@@ -218,13 +218,13 @@ pub fn compact_simple_hole_geometry(
         &scan.surfaces.rows,
     )?;
     let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
-        .positional_cylinder_frame?;
+        .positional_cylinder_frame()?;
     let length = frame.length?;
     Some(SimpleHoleGeometry {
         entry_surface_id: None,
         cylinder_ids: vec![cylinder_id],
         direction: frame.axis,
-        extent: Termination::Blind {
+        extent: LinearTermination::Blind {
             length: Length(length),
         },
         geometry: SurfaceGeometry::Cylinder {
@@ -295,7 +295,7 @@ pub fn single_cap_circular_sweep_geometry(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
+        .filter(|table| table.feature_id == feature_id && !table.surface_ids().is_empty())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -304,8 +304,8 @@ pub fn single_cap_circular_sweep_geometry(
         return None;
     };
     let (rowless_cap, cap_id) = match (
-        table.surface_ids.contains(&first_cap.entity_id),
-        table.surface_ids.contains(&second_cap.entity_id),
+        table.surface_ids().contains(&first_cap.entity_id),
+        table.surface_ids().contains(&second_cap.entity_id),
     ) {
         (true, false) => (second_cap, first_cap),
         (false, true) => (first_cap, second_cap),
@@ -317,13 +317,15 @@ pub fn single_cap_circular_sweep_geometry(
         profile_id.class_id,
         cylinder_id.class_id,
     ] != [204, 203, 200, 200]
-        || profile_id.source_entity_id.is_none()
-        || cylinder_id.source_entity_id.is_some()
+        || profile_id.source_entity_id().is_none()
+        || cylinder_id.source_entity_id().is_some()
         || !has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
         || !table
-            .non_surface_entity_ids
+            .non_surface_entity_ids()
             .contains(&rowless_cap.entity_id)
-        || !table.non_surface_entity_ids.contains(&profile_id.entity_id)
+        || !table
+            .non_surface_entity_ids()
+            .contains(&profile_id.entity_id)
     {
         return None;
     }
@@ -381,15 +383,13 @@ pub fn circular_sweep_feature_definition(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
-            sweep.direction[0],
-            sweep.direction[1],
-            sweep.direction[2],
-        )),
+        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: Vector3::new(sweep.direction[0], sweep.direction[1], sweep.direction[2]),
+            source: None,
+        },
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,
-        direction_source: None,
         solid,
         face_maker: None,
         inner_wire_taper: None,
@@ -414,7 +414,7 @@ pub fn two_cap_circular_sweep_geometry(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
+        .filter(|table| table.feature_id == feature_id && !table.surface_ids().is_empty())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -424,7 +424,7 @@ pub fn two_cap_circular_sweep_geometry(
     else {
         return None;
     };
-    if table.entry_ids
+    if table.entry_ids()
         != [
             first_plane_entry.entity_id,
             second_plane_entry.entity_id,
@@ -437,10 +437,10 @@ pub fn two_cap_circular_sweep_geometry(
             profile_entry.class_id,
             cylinder_entry.class_id,
         ] != [204, 203, 200, 200]
-        || first_plane_entry.source_entity_id.is_some()
-        || second_plane_entry.source_entity_id.is_some()
-        || profile_entry.source_entity_id.is_none()
-        || cylinder_entry.source_entity_id.is_some()
+        || first_plane_entry.source_entity_id().is_some()
+        || second_plane_entry.source_entity_id().is_some()
+        || profile_entry.source_entity_id().is_none()
+        || cylinder_entry.source_entity_id().is_some()
         || !has_exact_materialized_surface_roster(
             table,
             [
@@ -449,9 +449,9 @@ pub fn two_cap_circular_sweep_geometry(
                 cylinder_entry.entity_id,
             ],
         )
-        || table.surface_ids.contains(&profile_entry.entity_id)
+        || table.surface_ids().contains(&profile_entry.entity_id)
         || !table
-            .non_surface_entity_ids
+            .non_surface_entity_ids()
             .contains(&profile_entry.entity_id)
     {
         return None;
@@ -487,7 +487,6 @@ pub fn two_cap_circular_sweep_geometry(
             side: ExtrudeSide {
                 termination,
                 draft: None,
-                offset: None,
             },
         },
         geometry: circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])?,
@@ -596,11 +595,10 @@ pub fn extrusion_extent_and_direction(
 
 pub fn blind_extrude_side(length: f64) -> ExtrudeSide {
     ExtrudeSide {
-        termination: Termination::Blind {
+        termination: LinearTermination::Blind {
             length: Length(length),
         },
         draft: None,
-        offset: None,
     }
 }
 

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design-loss and geometry-report tests for SLDPRT decode.
 
+fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::codec::DecodeBody {
+    cadmpeg_ir::codec::DecodeBody::new(geometry_transferred)
+}
+
 mod admission;
 mod body_membership;
 mod configuration;

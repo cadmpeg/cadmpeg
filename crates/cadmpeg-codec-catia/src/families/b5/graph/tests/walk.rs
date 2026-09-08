@@ -369,8 +369,8 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 
     assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
     let selection = select_object_stream_population(&[bytes], None);
-    assert!(selection.selected);
-    assert!(!selection.source.is_empty());
+    assert!(selection.selected());
+    assert!(!selection.source().is_empty());
 }
 
 #[test]
@@ -434,11 +434,11 @@ fn indexed_population_selection_preserves_records_and_census() {
     let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
     let actual = select_object_stream_population(std::slice::from_ref(&topology), Some(&budget));
 
-    assert!(actual.selected);
-    assert!(!actual.exhausted);
-    assert_eq!(actual.source, expected.source);
-    assert_eq!(actual.records, expected.records);
-    assert_eq!(actual.census_records, expected.census_records);
+    assert!(actual.selected());
+    assert!(!actual.exhausted());
+    assert_eq!(actual.source(), expected.source());
+    assert_eq!(actual.records(), expected.records());
+    assert_eq!(actual.census_records(), expected.census_records());
 }
 
 fn a8_class21_test_payload() -> Vec<u8> {
@@ -856,7 +856,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         carrier_surface: 8,
         source_surface: 10,
         distance: -1.5,
-        carrier_kind: 0x21,
+        carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
         parameter_bounds: [[-5.0, 6.0], [2.0, 9.0]],
     };
     let mut carrier_payload = vec![0x81, 0x84];
@@ -1559,9 +1559,21 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     .expect("parameter incidence");
 
     assert_eq!(incidence.object_id, 17);
-    assert_eq!(incidence.curves, [9, 10]);
-    assert_eq!(incidence.parameters, [1.25, 2.5]);
-    assert_eq!(incidence.controls, [5, 11]);
+    assert_eq!(
+        incidence.lanes,
+        [
+            B5IncidenceLane {
+                curve: 9,
+                parameter: 1.25,
+                control: 5,
+            },
+            B5IncidenceLane {
+                curve: 10,
+                parameter: 2.5,
+                control: 11,
+            },
+        ]
+    );
 }
 
 #[test]

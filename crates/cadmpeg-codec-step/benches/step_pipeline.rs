@@ -5,13 +5,13 @@ use std::hint::black_box;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_step::{write_step, StepCodec, StepWriteOptions};
+use cadmpeg_codec_step::{StepCodec, StepSchema};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
-use cadmpeg_ir::units::Units;
 
 const ENTITY_COUNT: usize = 100_000;
 
@@ -39,10 +39,10 @@ fn exchange(entity: &str) -> Vec<u8> {
 }
 
 fn ir() -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend((0..ENTITY_COUNT).map(|index| Point {
         source_object: None,
-        id: PointId(format!("point-{index}")),
+        id: PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
         position: Point3::new(index as f64, 2.0, 3.0),
     }));
     ir
@@ -102,7 +102,12 @@ fn main() {
     measure("encode points", || {
         let mut output = Vec::new();
         black_box(
-            write_step(black_box(&ir), &mut output, &StepWriteOptions::default())
+            codec
+                .plan(
+                    EncodeInput::new(black_box(&ir), None),
+                    TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+                )
+                .and_then(|plan| plan.write_to(&mut output))
                 .expect("required invariant"),
         );
         black_box(output);

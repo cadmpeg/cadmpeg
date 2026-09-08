@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural and numeric validation for [`CadIr`].
 //!
-//! Validation checks schema version, identity and arena order, references,
-//! topology rings, carrier reachability, annotations, native links, parameter
+//! Validation checks identity and arena order, references, topology rings,
+//! carrier reachability, annotations, native links, parameter
 //! domains, payload integrity, tessellation, numeric bounds, and geometric
 //! consistency (edge-curve endpoints and pcurve surface images against vertex
 //! positions). It does not evaluate interior surface membership or solid
@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::document::{CadIr, IR_VERSION};
+use crate::document::{CadIr, CensusKey};
 use crate::features::Feature;
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -19,7 +19,6 @@ use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
 use crate::topology::Coedge;
-use crate::units::LengthUnit;
 
 /// Frozen accept/reject IR builders for Phase 5 gate swaps.
 pub mod admissibility_freeze;
@@ -51,7 +50,7 @@ use geometry_consistency::{
     check_procedural_support_consistency,
 };
 use geometry_payloads::{check_bounds, check_tessellations};
-use identity_order::{check_identity_and_order, check_version, collect_native_ids};
+use identity_order::{check_identity_and_order, collect_native_ids};
 use pmi::check_pmi;
 use presentation::check_presentation;
 use products::check_products;
@@ -61,7 +60,7 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
-    check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
+    check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
     check_wire_topology,
 };
 
@@ -74,7 +73,7 @@ fn nonpositive(x: f64) -> bool {
 ///
 /// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
 /// existing `cadmpeg_ir::entity_census` call sites.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
     crate::document::entity_census(ir)
 }
 
@@ -91,15 +90,13 @@ fn validate_model_with_index(
 ) -> ValidationReport {
     let mut findings = Vec::new();
 
-    check_version(ir, &mut findings);
     check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
-    check_units(ir, &mut findings);
+    check_tolerances(ir, &mut findings);
     check_references(ir, ids, &mut findings);
     check_pmi(ir, &mut findings);
-    check_loops(ir, ids, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
@@ -183,7 +180,7 @@ pub fn validate_neutral_with_source_fidelity(
         source_fidelity
             .retained_records
             .iter()
-            .map(|record| record.id.clone()),
+            .map(|record| record.id().to_owned()),
     );
     check_annotations(
         ir,
@@ -203,21 +200,19 @@ mod tests {
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
-    use crate::units::Units;
     use crate::CadIr;
     use std::collections::BTreeMap;
 
     #[test]
     fn configuration_feature_sketch_resolves_against_model_sketches() {
-        let mut ir = CadIr::empty(Units::default());
-        let feature_id = FeatureId("test:model:feature#sketch".into());
+        let mut ir = CadIr::empty();
+        let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
         let sketch_id = SketchId("test:model:sketch#sketch".into());
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -225,8 +220,7 @@ mod tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: crate::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: crate::features::SketchFeatureBinding::Unresolved,
             },
             native_ref: None,
         });
@@ -244,26 +238,26 @@ mod tests {
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId("test:model:configuration#default".into()),
+            id: ConfigurationId::mint("test:model:configuration#default")
+                .expect("identity grammar"),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: None,
             name: "Default".into(),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
-                    suppressed: false,
+                    evaluation: crate::features::ConfigurationEvaluation::Active {
+                        outputs: Vec::new(),
+                    },
                     dependencies: Vec::new(),
-                    outputs: Vec::new(),
                     definition: FeatureDefinition::Sketch {
-                        space: crate::features::SketchSpace::Planar,
-                        sketch: Some(sketch_id),
+                        sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     },
                 },
             )]),
@@ -283,7 +277,6 @@ mod tests {
                 ordinal,
                 name: None,
                 suppressed: Some(false),
-                parent: None,
                 dependencies,
                 source_properties: BTreeMap::new(),
                 source_tag: None,
@@ -293,10 +286,10 @@ mod tests {
                 definition,
                 native_ref: None,
             };
-        let first = FeatureId("test:model:feature#plane-a".into());
-        let second = FeatureId("test:model:feature#plane-b".into());
-        let split = FeatureId("test:model:feature#split".into());
-        let mut ir = CadIr::empty(Units::default());
+        let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
+        let second = FeatureId::mint("test:model:feature#plane-b").expect("identity grammar");
+        let split = FeatureId::mint("test:model:feature#split").expect("identity grammar");
+        let mut ir = CadIr::empty();
         ir.model.features = vec![
             feature(
                 first.clone(),

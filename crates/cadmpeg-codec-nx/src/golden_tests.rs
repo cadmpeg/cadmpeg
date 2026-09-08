@@ -294,6 +294,13 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
 
+    // The legacy CFB container. Every other input here is a SPLMSSTR image, so
+    // this is the only golden that pins the `nx:legacy-cfb` row, its `cfb`
+    // container kind, and a decode that retains records without transferring
+    // geometry. The payload is uncompressed, so this snapshot pins no
+    // compressor output.
+    f.push(("legacy_cfb_with_ug_part", legacy_cfb_with_ug_part()));
+
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));
     f.push(("topology_part_prt", topology_part_prt()));
@@ -811,14 +818,14 @@ fn snapshot(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_snapshots_are_byte_identical() {
-    harness().check_inputs(&inputs(), &[Branch::new("", snapshot)]);
+    harness().check_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
 /// Guards against nondeterministic codec output (`HashMap` iteration order,
 /// timestamps): decoding the same bytes twice must produce identical JSON.
 #[test]
 fn golden_output_is_deterministic() {
-    harness().check_determinism_inputs(&inputs(), &[Branch::new("", snapshot)]);
+    harness().check_determinism_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
 /// Union of `nx`-namespace arenas the fixture set populates.
@@ -829,7 +836,7 @@ fn covered_arenas() -> BTreeSet<String> {
             continue;
         };
         if let Some(namespace) = result.ir().native.namespace("nx") {
-            for (arena, records) in &namespace.arenas {
+            for (arena, records) in namespace.arenas() {
                 if !records.is_empty() {
                     covered.insert(arena.clone());
                 }
@@ -890,15 +897,15 @@ fn catalogue_arenas_match_known_arenas() {
     assert_eq!(
         CATALOGUE
             .iter()
-            .filter(|row| row.phase == Phase::GroupA)
+            .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
             .count(),
-        122,
+        117,
         "group A family count"
     );
     assert_eq!(
         CATALOGUE
             .iter()
-            .filter(|row| row.phase == Phase::GroupB)
+            .filter(|row| matches!(&row.phase, Phase::GroupB { .. }))
             .count(),
         9,
         "group B family count"

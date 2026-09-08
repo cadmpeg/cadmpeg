@@ -16,7 +16,8 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
@@ -44,9 +45,9 @@ fn harness() -> Harness {
 /// The branches this codec pins, in golden-directory order.
 fn branches() -> [Branch; 3] {
     [
-        Branch::new("inspect", inspect_snapshot),
-        Branch::new("decode", decode_snapshot),
-        Branch::new("encode", encode_snapshot),
+        Branch::named("inspect", inspect_snapshot),
+        Branch::named("decode", decode_snapshot),
+        Branch::named("encode", encode_snapshot),
     ]
 }
 
@@ -64,7 +65,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 /// Serializes one decoded document: the IR, the decode report, and source
 /// fidelity. A decode error is frozen too. Native arena values are omitted;
-/// namespace versions, arena populations, and record identities are pinned.
+/// arena populations and record identities are pinned.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
@@ -97,7 +98,7 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
     for (format, namespace) in &native.0 {
         let mut namespace_counts = serde_json::Map::new();
         let mut namespace_shape = serde_json::Map::new();
-        for (arena, records) in &namespace.arenas {
+        for (arena, records) in namespace.arenas() {
             let mut ids = records
                 .iter()
                 .map(|record| record.id().to_owned())
@@ -113,13 +114,7 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
             );
         }
         counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
-        shape.insert(
-            format.clone(),
-            serde_json::json!({
-                "version": namespace.version,
-                "arenas": namespace_shape,
-            }),
-        );
+        shape.insert(format.clone(), serde_json::Value::Object(namespace_shape));
     }
     let shape = serde_json::Value::Object(shape);
     serde_json::json!({
@@ -164,10 +159,8 @@ fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), Stri
     let mut produced = Vec::new();
     let report = Encoder::plan(
         &FcstdCodec,
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut produced))
     .map_err(|error| error.to_string())?;
@@ -225,10 +218,8 @@ fn step_snapshot(bytes: &[u8]) -> String {
     let mut exported = Vec::new();
     match Encoder::plan(
         &StepCodec::default(),
-        EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        },
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut exported))
     {

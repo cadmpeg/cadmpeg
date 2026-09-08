@@ -40,7 +40,7 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
 
     assert!(census.records.is_empty());
     assert_eq!(census.body_revisions.len(), 1);
-    assert_eq!(census.body_revisions[0].xmt, 784);
+    assert_eq!(u32::from(census.body_revisions[0].xmt), 784);
     assert_eq!(census.body_revisions[0].node_id, 223);
     assert_eq!(
         census.body_revisions[0].references,
@@ -72,9 +72,9 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
 
     assert_eq!(census.reference_state_packets.len(), 1);
     assert_eq!(
-        census.reference_state_packets[0].frames,
-        [crate::deltas::ReferenceStateFrame {
-            references: [2, 3, 40_000, 1],
+        census.reference_state_packets[0].frames.as_slice(),
+        [crate::deltas::state_frame::ReferenceStateFrame {
+            references: [2, 3, 40_000, 1].try_into().unwrap(),
             state_words: [34, 6, 11, 22_362, 1],
             state_byte: 65,
         }]
@@ -119,7 +119,13 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
 
     let compound_census = crate::deltas::walk(&compound);
     assert_eq!(compound_census.reference_state_packets.len(), 1);
-    assert_eq!(compound_census.reference_state_packets[0].frames.len(), 2);
+    assert_eq!(
+        compound_census.reference_state_packets[0]
+            .frames
+            .as_slice()
+            .len(),
+        2
+    );
     assert!(compound_census.reference_state_packets[0].terminal);
     assert_eq!(
         compound_census.reference_state_packets[0].end,
@@ -140,8 +146,11 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
     let census = crate::deltas::walk(&packet);
 
     assert_eq!(census.reference_marker_packets.len(), 1);
-    assert_eq!(census.reference_marker_packets[0].reference, 40_000);
-    assert_eq!(census.reference_marker_packets[0].marker, 0x56);
+    assert_eq!(
+        u32::from(census.reference_marker_packets[0].reference),
+        40_000
+    );
+    assert_eq!(u8::from(census.reference_marker_packets[0].marker), 0x56);
     assert_eq!(census.reference_marker_packets[0].offset, 0);
     assert_eq!(census.reference_marker_packets[0].end, packet.len());
     assert_eq!(census.bytes_decoded, packet.len());
@@ -181,8 +190,8 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     let declaration = &census.inline_schema_declarations[0];
     assert_eq!(
         declaration.fields,
-        crate::deltas::InlineSchemaFields::Region {
-            xmt: 40_000,
+        crate::deltas::inline_schema_fields::InlineSchemaFields::Region {
+            xmt: 40_000u32.try_into().unwrap(),
             state_word: 5,
             references: [1, 3, 1, 9],
         }
@@ -191,7 +200,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     assert_eq!(declaration.end, declaration_end);
     assert_eq!(census.reference_marker_packets.len(), 1);
     assert_eq!(census.reference_marker_packets[0].offset, declaration_end);
-    assert_eq!(census.reference_marker_packets[0].reference, 7);
+    assert_eq!(u32::from(census.reference_marker_packets[0].reference), 7);
     assert_eq!(census.bytes_decoded, bytes.len());
 
     let mut truncated = bytes[..declaration_end - 1].to_vec();
@@ -223,6 +232,9 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     assert_eq!(census.body_revisions[0].end, lane_offset);
     assert_eq!(census.tagged_reference_lanes.len(), 1);
     assert_eq!(census.tagged_reference_lanes[0].offset, lane_offset);
-    assert_eq!(census.tagged_reference_lanes[0].references, [(29, 10)]);
+    assert_eq!(
+        Vec::<(u16, u32)>::from(census.tagged_reference_lanes[0].references.clone()),
+        [(29, 10)]
+    );
     assert_eq!(census.bytes_decoded, bytes.len());
 }

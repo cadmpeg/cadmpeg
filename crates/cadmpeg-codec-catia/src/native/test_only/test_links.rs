@@ -1,5 +1,6 @@
 use super::test_consolidated::valid_consolidated_plane_geometry;
 use super::*;
+use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 
 pub(super) fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
@@ -118,7 +119,7 @@ pub(super) fn validate_consolidated_edge_runs(
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
-        let token_limit = 1u32.checked_shl(u32::from(node.width) * 8);
+        let token_limit = 1u32 << (u8::from(node.width) * 8);
         let uses_valid = node.uses.as_ref().is_none_or(|uses| {
             node.curve_ref
                 .checked_sub(2)
@@ -126,71 +127,57 @@ pub(super) fn validate_consolidated_edge_runs(
                 .is_some_and(|(first, second)| {
                     uses.references == [[first, second], [second, node.curve_ref]]
                 })
-                && uses.senses == [0x88, 0x84]
                 && node.parameter_selectors == [2, 1]
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
-            let token_limit = 1u32.checked_shl(u32::from(definition.width) * 8);
-            let expected_data =
-                crate::families::consolidated::records::consolidated_edge_definition_data(
-                    definition.class,
-                    &definition.payload,
-                );
+            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.frame.width)) * 8);
             node.uses.is_some()
-                && matches!(definition.width, 1..=3)
-                && matches!(definition.flag, 0x03 | 0x13 | 0x83)
-                && matches!(definition.class, 0x23..=0x25)
-                && token_limit.is_some_and(|limit| definition.header_token < limit)
-                && !definition.payload.is_empty()
-                && definition.byte_offset < node.byte_offset
-                && definition.data == expected_data
+                && token_limit.is_some_and(|limit| definition.frame.header_token < limit)
+                && !definition.frame.payload.is_empty()
+                && definition.frame.pos < node.byte_offset
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
             let circle = circles.get(binding.circle.as_str());
             node.uses.is_some()
                 && definition.is_some_and(|definition| {
-                    definition.class == 0x23
+                    u8::from(definition.class) == 0x23
                         && matches!(
-                            definition.data,
+                            definition.data(),
                             Some(ConsolidatedEdgeDefinitionData::Scalar {
                                 ref values,
                                 ..
                             }) if values.len() == 8
                         )
                         && circle.is_some_and(|circle| {
-                            binding.descriptor.byte_offset < circle.byte_offset
-                                && circle.byte_offset < definition.byte_offset
+                            binding.descriptor.pos < circle.byte_offset
+                                && circle.byte_offset < definition.frame.pos
                         })
                 })
-                && matches!(binding.descriptor.width, 1..=3)
-                && matches!(binding.descriptor.flag, 0x03 | 0x13 | 0x83)
                 && 1u32
-                    .checked_shl(u32::from(binding.descriptor.width) * 8)
+                    .checked_shl(u32::from(u8::from(binding.descriptor.width)) * 8)
                     .is_some_and(|limit| binding.descriptor.header_token < limit)
                 && !binding.descriptor.payload.is_empty()
         });
         let class25_descriptor_valid = node.class25_descriptor.as_ref().is_none_or(|descriptor| {
             node.uses.is_some()
                 && node.definition.as_ref().is_some_and(|definition| {
-                    definition.class == 0x25
+                    u8::from(definition.class) == 0x25
                         && matches!(
-                            definition.data,
+                            definition.data(),
                             Some(
                                 ConsolidatedEdgeDefinitionData::Scalar25 { .. }
                                     | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
                             )
                         )
-                        && descriptor.byte_offset < definition.byte_offset
+                        && descriptor.byte_offset < definition.frame.pos
                 })
                 && matches!(descriptor.control, 0x02 | 0x0a)
                 && matches!(descriptor.values.len(), 2 | 3)
                 && descriptor.values.iter().all(|value| value.is_finite())
         });
         if node.id != format!("catia:consolidated:edge-node#{index}")
-            || !matches!(node.width, 1..=3)
-            || !matches!(node.flag, 0x03 | 0x13 | 0x83)
-            || token_limit.is_some_and(|limit| node.header_token >= limit)
+            || node.header_token >= token_limit
             || !uses_valid
             || !definition_valid
             || !analytic_circle_valid
@@ -289,8 +276,8 @@ pub(super) fn validate_consolidated_edge_runs(
             )));
         }
     }
-    let mut expected_nodes = nodes.to_vec();
-    let expected_identities = consolidated_vertex_identities(&mut expected_nodes);
+    let expected_nodes = nodes.to_vec();
+    let expected_identities = consolidated_vertex_identities(&expected_nodes);
     if expected_nodes != nodes || expected_identities != vertex_identities {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),
@@ -307,7 +294,11 @@ pub(super) fn validate_native_links(
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for catalog in catalogs {
-        let count_width = if catalog.declared_count <= 0x50 { 1 } else { 2 };
+        let count_width = if catalog.declared_count() <= 0x50 {
+            1
+        } else {
+            2
+        };
         let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "catalog `{}` has an overflowing extent",
@@ -388,18 +379,14 @@ pub(super) fn validate_native_links(
                 block.id, block.catalog
             )));
         };
-        if block.byte_offset.checked_add(block.byte_len) != Some(catalog.byte_offset) {
+        if block.byte_offset.checked_add(block.byte_len()) != Some(catalog.byte_offset) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` is not adjacent to catalog `{}`",
                 block.id, block.catalog
             )));
         }
-        let payload_len = u64::try_from(block.payload.len()).ok();
-        if block.declared_len.checked_add(1) != Some(block.byte_len)
-            || payload_len.and_then(|len| len.checked_add(6)) != Some(block.declared_len)
-            || value_block::tokenize(&block.payload) != block.fields
-            || value_schema_selections(&block.id, block.byte_offset, &block.fields, catalog)
-                != block.schema_selections
+        if value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog)
+            != block.schema_selections
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid derived view",
@@ -481,18 +468,20 @@ pub(super) fn validate_native_links(
         }
         for record in &graph.records {
             let expected_class = catalog.and_then(|catalog| {
-                usize::try_from(record.class_ref?).ok().and_then(|ordinal| {
-                    catalog
-                        .entries
-                        .get(ordinal)
-                        .map(|entry| (entry.id.as_str(), entry.value.as_str()))
-                })
+                usize::try_from(record.class_ref()?)
+                    .ok()
+                    .and_then(|ordinal| {
+                        catalog
+                            .entries
+                            .get(ordinal)
+                            .map(|entry| (entry.id.as_str(), entry.value.as_str()))
+                    })
             });
-            if record.class_entry.as_deref() != expected_class.map(|(entry, _)| entry)
-                || record.class_name.as_deref() != expected_class.map(|(_, value)| value)
+            if record.class_entry() != expected_class.map(|(entry, _)| entry)
+                || record.class_name() != expected_class.map(|(_, value)| value)
                 || record.repeated_reference_schema_selection
                     != repeated_reference_schema_selection(
-                        record.repeated_reference_suffix.as_ref(),
+                        record.repeated_reference_suffix().as_ref(),
                         catalog,
                     )
             {
@@ -520,7 +509,7 @@ pub(super) fn validate_native_links(
                 alias.id
             )));
         }
-        let expected = usize::from(alias.entity_record_ordinal)
+        let expected = usize::from(alias.entity_record_ordinal())
             .checked_sub(1)
             .and_then(|index| {
                 let graph = primary_graph?;

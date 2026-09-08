@@ -3,35 +3,23 @@
 //! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!
-//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! for AP242 editions 1–3 and AP203 editions 1–2/AP214.
+//! <!-- generated: capability step -->
+//! Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
+//! <!-- /generated: capability step -->
 //!
-//! [`write_step`] emits the application protocol selected by
-//! [`StepWriteOptions::schema`]. It writes product and representation context,
+//! [`StepCodec`] emits the application protocol selected through
+//! [`cadmpeg_ir::codec::write::Encoder::plan`]. It writes product and representation context,
 //! connected exact shape, product occurrences, tessellation, presentation,
 //! and PMI when the target schema carries those domains.
 //!
 //! # Export workflow
 //!
-//! Construct or decode a [`cadmpeg_ir::CadIr`], choose the header metadata in
-//! [`StepWriteOptions`], then write to any [`std::io::Write`] sink:
+//! Construct or decode a [`cadmpeg_ir::CadIr`], configure [`StepCodec`], and
+//! select a target from the codec's encoder catalog. Planning validates the
+//! request and returns the bytes with the export report.
 //!
-//! ```
-//! use cadmpeg_ir::examples::unit_cube;
-//! use cadmpeg_codec_step::{write_step, StepWriteOptions};
-//!
-//! let ir = unit_cube();
-//! let mut bytes = Vec::new();
-//! let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())?;
-//!
-//! assert!(bytes.starts_with(b"ISO-10303-21;"));
-//! assert!(report.census.total() > 0);
-//! # Ok::<(), cadmpeg_codec_step::StepError>(())
-//! ```
-//!
-//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining report-mode
-//! output. [`StepUnsupportedPolicy::Reject`] rejects all such losses before any
-//! output byte is written. Opaque records, source attributes, unsupported
+//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining output. Opaque
+//! records, source attributes, unsupported
 //! procedural definitions, and target-schema incompatibilities are reported or
 //! rejected rather than silently discarded. Body and face colors become
 //! per-face `STYLED_ITEM` presentation; direct geometry and tessellation
@@ -42,15 +30,13 @@
 //! and surfaces map to their corresponding STEP carriers. Rational and
 //! non-rational NURBS use the `*_WITH_KNOTS` entities.
 //!
-//! [`StepError`] reports [`StepError::Unsupported`] under
-//! [`StepUnsupportedPolicy::Reject`] before any output is written, and
-//! [`StepError::Io`] for output-sink failures. Because the writer streams the
-//! header and DATA section after acceptance, an I/O failure can leave partial
-//! output.
+//! Output-sink failures return [`std::io::Error`]. Because the writer streams
+//! the header and DATA section after acceptance, an I/O failure can leave
+//! partial output.
 
 mod archive;
 mod codec;
-mod error;
+mod dialect;
 mod export;
 mod geometry;
 mod ids;
@@ -61,7 +47,6 @@ mod options;
 mod parse;
 mod reader;
 mod signature;
-#[allow(dead_code)] // String helpers are part of the internal parser layer.
 mod strings;
 mod writer;
 
@@ -69,9 +54,9 @@ mod writer;
 pub mod fuzz;
 
 pub use codec::StepCodec;
-pub use error::StepError;
-pub use export::write_step;
-pub use options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+#[cfg(test)]
+pub(crate) use export::write_step;
+pub use options::{StepSchema, StepWriteOptions};
 
 #[cfg(test)]
 mod golden_tests;

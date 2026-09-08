@@ -38,7 +38,7 @@ pub struct Facts {
     pub face_color_versions: Vec<FaceColorVersion>,
     pub face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
-    pub face_atoms: Vec<super::attrib::FaceAtom>,
+    pub face_atoms: Vec<super::attrib::RawFaceAtom>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub body_modifiers: Vec<super::attrib::BodyModifier>,
 }

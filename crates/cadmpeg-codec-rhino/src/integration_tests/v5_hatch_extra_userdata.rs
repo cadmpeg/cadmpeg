@@ -84,7 +84,7 @@ fn hatch_parameters(
         .find_map(|feature| match &feature.definition {
             cadmpeg_ir::features::FeatureDefinition::Native {
                 kind, parameters, ..
-            } if kind == "hatch" => Some(parameters),
+            } if kind.as_str() == "hatch" => Some(parameters),
             _ => None,
         })
         .expect("typed hatch feature")
@@ -95,9 +95,9 @@ fn assert_object_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8])
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|value| value.id == "rhino:object:record#000000")
+        .find(|value| value.id() == "rhino:object:record#000000")
         .expect("hatch object record is retained");
-    assert_eq!(retained.data.as_deref(), Some(record));
+    assert_eq!(retained.data(), Some(record));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -43,125 +43,122 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "parasolid_attribute_class_uses": [
-              {
-                "attribute_definition": "nx:s0:attribute-definition#202",
-                "definition_xmt": 202,
-                "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:attribute-class-use#50-178",
-                "stream_ordinal": 0
-              }
-            ],
-            "parasolid_attribute_definitions": [
-              {
-                "action_codes": [
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                "field_codes": [
-                  1
-                ],
-                "field_count": 1,
-                "field_names_xmt": 1,
-                "id": "nx:s0:attribute-definition#202",
-                "identifier_inflated_offset": 70,
-                "identifier_xmt": 201,
-                "inflated_offset": 88,
-                "legal_owner_flags": [
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                "name": "ATTR_CLASS",
-                "next_definition_xmt": 1,
-                "stream_ordinal": 0,
-                "type_id": 9000,
-                "xmt": 202
-              }
-            ],
-            "parasolid_entity_51_records": [
-              {
-                "byte_len": 26,
-                "definition_xmt": 202,
-                "flags": 1,
-                "id": "nx:s0:entity-51#50-178",
-                "inflated_offset": 178,
-                "leading_references": [
-                  100,
-                  101,
-                  102,
-                  150,
-                  151
-                ],
-                "sequence": 2,
-                "stream_ordinal": 0,
-                "trailing_references": [
-                  152
-                ],
-                "xmt": 50
-              }
-            ],
-            "parasolid_entity_52_integer_records": [
-              {
-                "byte_len": 12,
-                "id": "nx:s0:entity-52-integers#101-131",
-                "inflated_offset": 131,
-                "stream_ordinal": 0,
-                "values": [
-                  7
-                ],
-                "xmt": 101
-              }
-            ],
-            "parasolid_entity_53_double_records": [
-              {
-                "byte_len": 16,
-                "id": "nx:s0:entity-53-doubles#102-143",
-                "inflated_offset": 143,
-                "stream_ordinal": 0,
-                "values": [
-                  1.5
-                ],
-                "xmt": 102
-              }
-            ],
-            "parasolid_entity_54_string_records": [
-              {
-                "byte_len": 19,
-                "id": "nx:s0:entity-54-string#100-159",
-                "inflated_offset": 159,
-                "stream_ordinal": 0,
-                "value": "ATTR_LABEL",
-                "xmt": 100
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0"
-              }
-            ]
-          },
-          "version": 189
+          "parasolid_attribute_class_uses": [
+            {
+              "attribute_definition": "nx:s0:attribute-definition#202",
+              "definition_xmt": 202,
+              "entity_51_record": "nx:s0:entity-51#50-178",
+              "id": "nx:s0:attribute-class-use#50-178",
+              "stream_ordinal": 0
+            }
+          ],
+          "parasolid_attribute_definitions": [
+            {
+              "action_codes": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "field_codes": [
+                1
+              ],
+              "field_count": 1,
+              "field_names_xmt": 1,
+              "id": "nx:s0:attribute-definition#202",
+              "identifier_inflated_offset": 70,
+              "identifier_xmt": 201,
+              "inflated_offset": 88,
+              "legal_owner_flags": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "name": "ATTR_CLASS",
+              "next_definition_xmt": 1,
+              "stream_ordinal": 0,
+              "type_id": 9000,
+              "xmt": 202
+            }
+          ],
+          "parasolid_entity_51_records": [
+            {
+              "byte_len": 26,
+              "definition_xmt": 202,
+              "flags": 1,
+              "id": "nx:s0:entity-51#50-178",
+              "inflated_offset": 178,
+              "leading_references": [
+                100,
+                101,
+                102,
+                150,
+                151
+              ],
+              "sequence": 2,
+              "stream_ordinal": 0,
+              "trailing_references": [
+                152
+              ],
+              "xmt": 50
+            }
+          ],
+          "parasolid_entity_52_integer_records": [
+            {
+              "byte_len": 12,
+              "id": "nx:s0:entity-52-integers#101-131",
+              "inflated_offset": 131,
+              "stream_ordinal": 0,
+              "values": [
+                7
+              ],
+              "xmt": 101
+            }
+          ],
+          "parasolid_entity_53_double_records": [
+            {
+              "byte_len": 16,
+              "id": "nx:s0:entity-53-doubles#102-143",
+              "inflated_offset": 143,
+              "stream_ordinal": 0,
+              "values": [
+                1.5
+              ],
+              "xmt": 102
+            }
+          ],
+          "parasolid_entity_54_string_records": [
+            {
+              "byte_len": 19,
+              "id": "nx:s0:entity-54-string#100-159",
+              "inflated_offset": 159,
+              "stream_ordinal": 0,
+              "value": "ATTR_LABEL",
+              "xmt": 100
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0"
+            }
+          ]
         }
       },
       "source": {
@@ -174,9 +171,29 @@
           "footer_offset": "247",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@76",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -190,6 +207,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@76",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -201,12 +239,20 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999"
+        "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -270,12 +316,32 @@
           "sha256": "8409b0937bfb591500bb40c1cabdcc1a32e9cf06718872f27afcb1131dea68dd",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@76",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -318,10 +384,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999"
+      "SPLMSSTR container: file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

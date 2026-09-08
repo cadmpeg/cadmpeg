@@ -118,7 +118,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     // Three vertex records → three points and three vertices.
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(result.ir().model.vertices.len(), 3);
@@ -136,7 +136,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(result.ir().model.curves.len(), 1);
     let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].id.0, "catia:payload:unknown#brep-stream");
+    assert_eq!(unknowns[0].id.as_str(), "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
         .links
         .contains(&"catia:standard:circle#0".to_string()));
@@ -195,7 +195,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(
         result
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
@@ -209,7 +209,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         result
             .report()
@@ -222,7 +222,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         result
             .report()
@@ -245,7 +245,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert!(
         result
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| {
                 key.starts_with("standard_topology_mesh_rejection_")
@@ -375,7 +375,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     assert_eq!(
         decoded
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
@@ -389,7 +389,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         decoded
             .report()
@@ -402,7 +402,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage.get(key).copied().unwrap_or(0))
+        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         decoded
             .report()
@@ -425,7 +425,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     assert_eq!(
         decoded
             .report()
-            .coverage
+            .coverage()
             .iter()
             .filter(|(key, _)| {
                 key.starts_with("standard_topology_mesh_rejection_")
@@ -504,7 +504,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "catia:standard:surf#0")
+        .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
         .expect("refined standard cylinder");
     assert!(matches!(
         surface.geometry,
@@ -546,15 +546,20 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+        .find(|curve| {
+            curve
+                .id
+                .as_str()
+                .starts_with("catia:consolidated:construction#")
+        })
         .expect("resolved consolidated construction");
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
     assert!(context.sides.iter().all(|side| side.surface.is_some()));
     let pcurve = context.sides[0].pcurve.as_ref().expect("cylinder pcurve");
-    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, 0.0).expect("pcurve start");
-    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
+    let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
+    let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [0.5, 1.0]);
 }
@@ -593,15 +598,20 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+        .find(|curve| {
+            curve
+                .id
+                .as_str()
+                .starts_with("catia:consolidated:construction#")
+        })
         .expect("resolved consolidated construction");
-    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+    let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
     assert!(context.sides.iter().all(|side| side.surface.is_some()));
     let pcurve = context.sides[0].pcurve.as_ref().expect("cone pcurve");
-    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, 0.0).expect("pcurve start");
-    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
+    let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
+    let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [1.0 / 3.0, 0.25f64.cos()]);
 }
@@ -622,9 +632,15 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .model
             .procedural_curves
             .iter()
-            .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+            .find(|curve| {
+                curve
+                    .id
+                    .as_str()
+                    .starts_with("catia:consolidated:construction#")
+            })
             .expect("resolved consolidated construction");
-        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
             panic!("two resolved support sides form an intersection");
         };
         let surface_id = context.sides[1]
@@ -632,8 +648,8 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .as_ref()
             .expect("resolved NURBS support");
         let pcurve = context.sides[1].pcurve.as_ref().expect("NURBS pcurve");
-        let start = cadmpeg_ir::eval::pcurve_uv(pcurve, 0.0).expect("pcurve start");
-        let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
+        let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
+        let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
         assert_eq!([start.u, start.v], [0.0, 0.0]);
         assert_eq!([end.u, end.v], [1.0, 0.0]);
 
@@ -652,11 +668,13 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                 .model
                 .procedural_surfaces
                 .iter()
-                .find(|surface| &surface.surface == surface_id)
+                .find(|surface| {
+                    decoded.ir().model.procedural_surface_owner(&surface.id) == Some(surface_id)
+                })
                 .expect("offset NURBS construction");
             let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
                 support, distance, ..
-            } = &construction.definition
+            } = construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
@@ -672,14 +690,12 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 fn decode_standard_transfers_exact_offset_construction() {
     let surface_bytes = a5_surface_stream();
     let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
-    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
+    let surface = &carriers[0].geometry;
     let domain = [
-        surface.u_knots[0],
-        surface.v_knots[0],
-        *surface.u_knots.last().unwrap(),
-        *surface.v_knots.last().unwrap(),
+        surface.u_knots()[0],
+        surface.v_knots()[0],
+        *surface.u_knots().last().unwrap(),
+        *surface.v_knots().last().unwrap(),
     ];
     let mut payload = surface_bytes;
     payload.extend_from_slice(&b2_offset_support_stream_for(domain));
@@ -699,9 +715,9 @@ fn decode_standard_transfers_exact_offset_construction() {
         distance,
         u_sense,
         v_sense,
-        extension_flags,
+        extension,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -713,7 +729,12 @@ fn decode_standard_transfers_exact_offset_construction() {
         .any(|surface| surface.id == *support));
     assert_eq!(*distance, 2.5);
     assert_eq!([*u_sense, *v_sense], [None, None]);
-    assert!(extension_flags.is_empty());
+    assert_eq!(
+        *extension,
+        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+        )
+    );
     let Some(bounds) = procedural.record_bounds else {
         panic!("offset parameter bounds");
     };
@@ -729,14 +750,12 @@ fn decode_standard_transfers_exact_offset_construction() {
 fn decode_standard_transfers_construction_use_offset() {
     let surface_bytes = a5_surface_stream();
     let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
-    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
+    let surface = &carriers[0].geometry;
     let domain = [
-        surface.u_knots[0],
-        surface.v_knots[0],
-        *surface.u_knots.last().unwrap(),
-        *surface.v_knots.last().unwrap(),
+        surface.u_knots()[0],
+        surface.v_knots()[0],
+        *surface.u_knots().last().unwrap(),
+        *surface.v_knots().last().unwrap(),
     ];
     let mut payload = surface_bytes;
     payload.extend_from_slice(&b2_construction_use_stream_for(domain));
@@ -752,7 +771,7 @@ fn decode_standard_transfers_construction_use_offset() {
         panic!("one offset construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -786,21 +805,25 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| {
+            decoded.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .expect("rolling-ball surface");
     assert!(matches!(
         &surface.geometry,
-        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+        SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-        degree,
-        knots,
-        multiplicities,
-        sites,
-    } = &procedural.definition
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { degree, stations } =
+        procedural.definition()
     else {
         panic!("rolling-ball jet");
     };
+    let knots: Vec<_> = stations.iter().map(|station| station.knot).collect();
+    let multiplicities: Vec<_> = stations
+        .iter()
+        .map(|station| station.multiplicity)
+        .collect();
+    let sites: Vec<_> = stations.iter().map(|station| &station.site).collect();
     assert_eq!(*degree, 5);
     assert_eq!(knots, &[0.0, 1.0]);
     assert_eq!(multiplicities, &[6, 6]);
@@ -828,12 +851,12 @@ fn standard_decode_transfers_consolidated_guide_curve() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0.starts_with("catia:guide:curve#"))
+        .find(|curve| curve.id.as_str().starts_with("catia:guide:curve#"))
         .expect("typed guide curve");
     let CurveGeometry::Nurbs(nurbs) = &guide.geometry else {
         panic!("guide curve must be NURBS");
     };
-    assert_eq!(nurbs.degree, 5);
-    assert_eq!(nurbs.control_points.first().unwrap().x, 0.0);
-    assert_eq!(nurbs.control_points.last().unwrap().z, 4.0);
+    assert_eq!(nurbs.degree(), 5);
+    assert_eq!(nurbs.control_points().first().unwrap().x, 0.0);
+    assert_eq!(nurbs.control_points().last().unwrap().z, 4.0);
 }

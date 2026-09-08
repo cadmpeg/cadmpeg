@@ -5,7 +5,53 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
+use super::features::operation_record::FeatureOperationRecord;
+use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::container::Container;
+use crate::native::features::block_reference::FeatureBlockConstructionReference;
+use crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple;
+use crate::native::features::datum_plane_header::{
+    feature_datum_plane_headers, FeatureDatumPlaneHeader,
+};
+use crate::native::features::delete::{
+    feature_delete_construction_payloads, feature_delete_reference_fields,
+    FeatureDeleteConstructionPayload, FeatureDeleteReferenceField,
+};
+use crate::native::features::extrude_32::{
+    FeatureExtrude32Construction, FeatureExtrudePayload32Branch,
+};
+use crate::native::features::fset::{
+    feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
+};
+use crate::native::features::object_frame::DataBlockObjectFrame;
+use crate::native::features::payload_name::FeaturePayloadName;
+use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
+use crate::native::features::surface_branches::{
+    feature_surface_construction_branches, FeatureSurfaceConstructionBranch,
+};
+use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
+use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
+use crate::native::features::thru_curve_branches::{
+    feature_thru_curve_construction_branch_groups, FeatureThruCurveConstructionBranchGroup,
+};
+use crate::native::om::column_row::{
+    data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows,
+    DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
+};
+use crate::native::om::compact_lane::{
+    data_block_abr_reference_lanes, data_block_counted_index_lanes, DataBlockAbrReferenceLane,
+    DataBlockCountedIndexLane,
+};
+use crate::native::om::creation_display::{
+    rm_creation_display_data_relations, RmCreationDisplayDataRelation,
+};
+use crate::native::om::display_color::{rm_display_color_assignments, RmDisplayColorAssignment};
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
+use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
+use crate::native::om::object_uuid::{object_uuid_values, ObjectUuidValue};
+use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
+use crate::native::om::state_status::OmOperationStateStatus;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;
@@ -131,15 +177,15 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
     pub(crate) feature_unlabeled_operation_records: Vec<FeatureUnlabeledOperationRecord>,
-    pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureUnlabeledOperationBodyWrite>,
+    pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_image_segment_uses: Vec<FeatureOperationBodyImageSegmentUse>,
     pub(crate) feature_operation_body_identity_segment_uses:
         Vec<FeatureOperationBodyIdentitySegmentUse>,
     pub(crate) feature_operation_body_partition_uses: Vec<FeatureOperationBodyPartitionUse>,
     pub(crate) feature_body_write_group_partition_uses: Vec<FeatureBodyWriteGroupPartitionUse>,
-    pub(crate) feature_operation_tagged_references: Vec<FeatureOperationTaggedReference>,
-    pub(crate) feature_operation_data_block_references: Vec<FeatureOperationDataBlockReference>,
+    pub(crate) feature_operation_tagged_references: Vec<FeatureOperationObjectReference>,
+    pub(crate) feature_operation_data_block_references: Vec<FeatureOperationObjectReference>,
     pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
     pub(crate) feature_operation_terminal_discriminators:
         Vec<FeatureOperationTerminalDiscriminator>,
@@ -160,36 +206,35 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_body_references: Vec<FeatureBodyReference>,
     pub(crate) feature_body_segment_uses: Vec<FeatureBodySegmentUse>,
     pub(crate) feature_body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
-    pub(crate) feature_body_reference_occurrences: Vec<FeatureBodyReferenceOccurrence>,
+    pub(crate) feature_body_reference_occurrences: Vec<FeatureBodyReference>,
     pub(crate) feature_input_blocks: Vec<FeatureInputBlock>,
     pub(crate) feature_input_block_identity_groups: Vec<FeatureInputBlockIdentityGroup>,
     pub(crate) feature_datum_csys_constructions: Vec<FeatureDatumCsysConstruction>,
     pub(crate) feature_datum_csys_column_row_uses: Vec<FeatureDatumCsysColumnRowUse>,
     pub(crate) feature_datum_csys_payloads: Vec<FeatureDatumCsysPayload>,
-    pub(crate) feature_datum_csys_payload_scalar_pairs: Vec<FeatureDatumCsysPayloadScalarPair>,
+    pub(crate) feature_datum_csys_payload_scalar_pairs: Vec<FeaturePayloadScalarPair>,
     pub(crate) feature_datum_csys_payload_fixed_pairs: Vec<FeatureDatumCsysPayloadFixedPair>,
-    pub(crate) feature_datum_csys_payload_scalars: Vec<FeatureDatumCsysPayloadScalar>,
+    pub(crate) feature_datum_csys_payload_scalars: Vec<FeaturePayloadScalar>,
     pub(crate) feature_datum_csys_descriptors: Vec<FeatureDatumCsysDescriptor>,
     pub(crate) feature_datum_plane_headers: Vec<FeatureDatumPlaneHeader>,
     pub(crate) feature_datum_plane_block_uses: Vec<FeatureDatumPlaneBlockUse>,
     pub(crate) feature_datum_plane_payloads: Vec<FeatureDatumPlanePayload>,
-    pub(crate) feature_datum_plane_payload_scalar_pairs: Vec<FeatureDatumPlanePayloadScalarPair>,
+    pub(crate) feature_datum_plane_payload_scalar_pairs: Vec<FeaturePayloadScalarPair>,
     pub(crate) feature_datum_plane_descriptors: Vec<FeatureDatumPlaneDescriptor>,
     pub(crate) feature_datum_plane_csys_identity_uses: Vec<FeatureDatumPlaneCsysIdentityUse>,
     pub(crate) feature_datum_csys_block_uses: Vec<FeatureDatumCsysBlockUse>,
     pub(crate) feature_sketch_references: Vec<FeatureSketchReference>,
     pub(crate) feature_projected_curve_references: Vec<FeatureProjectedCurveReference>,
-    pub(crate) feature_projected_curve_construction_payloads:
-        Vec<FeatureProjectedCurveConstructionPayload>,
+    pub(crate) feature_projected_curve_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_projected_curve_construction_strings:
         Vec<FeatureProjectedCurveConstructionString>,
     pub(crate) feature_fset_reference_graphs: Vec<FeatureFsetReferenceGraph>,
-    pub(crate) feature_fset_construction_payloads: Vec<FeatureFsetConstructionPayload>,
+    pub(crate) feature_fset_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_delete_reference_fields: Vec<FeatureDeleteReferenceField>,
     pub(crate) feature_delete_construction_payloads: Vec<FeatureDeleteConstructionPayload>,
     pub(crate) feature_pattern_references: Vec<FeaturePatternReference>,
     pub(crate) feature_pattern_counted_reference_lanes: Vec<FeaturePatternCountedReferenceLane>,
-    pub(crate) feature_pattern_construction_payloads: Vec<FeaturePatternConstructionPayload>,
+    pub(crate) feature_pattern_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
     pub(crate) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
     pub(crate) feature_pattern_transform_lanes: Vec<FeaturePatternTransformLane>,
@@ -199,7 +244,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_point_construction_scalar_lanes: Vec<FeaturePointConstructionScalarLane>,
     pub(crate) feature_draft_construction_references: Vec<FeatureDraftConstructionReference>,
     pub(crate) feature_draft_construction_index_lanes: Vec<FeatureDraftConstructionIndexLane>,
-    pub(crate) feature_draft_construction_payloads: Vec<FeatureDraftConstructionPayload>,
+    pub(crate) feature_draft_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_draft_construction_graph_payloads: Vec<FeatureDraftConstructionGraphPayload>,
     pub(crate) feature_draft_construction_fixed_lanes: Vec<FeatureDraftConstructionFixedLane>,
     pub(crate) feature_draft_construction_binary32_lanes: Vec<FeatureDraftConstructionBinary32Lane>,
@@ -209,7 +254,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_draft_construction_terminal_lanes: Vec<FeatureDraftConstructionTerminalLane>,
     pub(crate) feature_surface_construction_references: Vec<FeatureSurfaceConstructionReference>,
     pub(crate) feature_surface_construction_payloads: Vec<FeatureSurfaceConstructionPayload>,
-    pub(crate) feature_surface_construction_scalar_pairs: Vec<FeatureSurfaceConstructionScalarPair>,
+    pub(crate) feature_surface_construction_scalar_pairs: Vec<FeaturePayloadScalarPair>,
     pub(crate) feature_surface_construction_strings: Vec<FeatureSurfaceConstructionString>,
     pub(crate) feature_surface_construction_branches: Vec<FeatureSurfaceConstructionBranch>,
     pub(crate) feature_swp104_leading_branches: Vec<FeatureSwp104LeadingBranch>,
@@ -228,21 +273,21 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_extrude_32_constructions: Vec<FeatureExtrude32Construction>,
     pub(crate) feature_block_construction_references: Vec<FeatureBlockConstructionReference>,
     pub(crate) feature_block_constructions: Vec<FeatureBlockConstruction>,
-    pub(crate) feature_block_construction_payloads: Vec<FeatureBlockConstructionPayload>,
-    pub(crate) feature_block_payload_scalars: Vec<FeatureBlockPayloadScalar>,
-    pub(crate) feature_block_payload_names: Vec<FeatureBlockPayloadName>,
+    pub(crate) feature_block_construction_payloads: Vec<FeatureConstructionPayload>,
+    pub(crate) feature_block_payload_scalars: Vec<FeaturePayloadScalar>,
+    pub(crate) feature_block_payload_names: Vec<FeaturePayloadName>,
     pub(crate) feature_block_payload_named_records: Vec<FeatureBlockPayloadNamedRecord>,
     pub(crate) feature_block_payload_points: Vec<FeatureBlockPayloadPoint>,
     pub(crate) feature_block_payload_point_groups: Vec<FeatureBlockPayloadPointGroup>,
     pub(crate) feature_sketch_records: Vec<FeatureSketchRecord>,
     pub(crate) feature_sketch_construction_inputs: Vec<FeatureSketchConstructionInputs>,
-    pub(crate) feature_sketch_construction_payloads: Vec<FeatureSketchConstructionPayload>,
-    pub(crate) feature_sketch_payload_coordinate_pairs: Vec<FeatureSketchPayloadCoordinatePair>,
+    pub(crate) feature_sketch_construction_payloads: Vec<FeatureConstructionPayload>,
+    pub(crate) feature_sketch_payload_coordinate_pairs: Vec<FeaturePayloadScalarPair>,
     pub(crate) feature_sketch_payload_fixed_pairs: Vec<FeatureSketchPayloadFixedPair>,
     pub(crate) feature_sketch_payload_mixed_pairs: Vec<FeatureSketchPayloadMixedPair>,
-    pub(crate) feature_sketch_payload_scalars: Vec<FeatureSketchPayloadScalar>,
+    pub(crate) feature_sketch_payload_scalars: Vec<FeaturePayloadScalar>,
     pub(crate) feature_sketch_payload_scalar_lanes: Vec<FeatureSketchPayloadScalarLane>,
-    pub(crate) feature_sketch_payload_names: Vec<FeatureSketchPayloadName>,
+    pub(crate) feature_sketch_payload_names: Vec<FeaturePayloadName>,
     pub(crate) feature_sketch_payload_named_records: Vec<FeatureSketchPayloadNamedRecord>,
     pub(crate) feature_sketch_fixed_points: Vec<FeatureSketchFixedPoint>,
     pub(crate) feature_sketch_points: Vec<FeatureSketchPoint>,
@@ -339,7 +384,7 @@ pub(crate) struct SegmentLineage {
     pub(crate) data_blocks: Vec<DataBlock>,
     pub(crate) inputs: Vec<FeatureInputBlock>,
     pub(crate) body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
-    pub(crate) body_reference_occurrences: Vec<FeatureBodyReferenceOccurrence>,
+    pub(crate) body_reference_occurrences: Vec<FeatureBodyReference>,
     pub(crate) members: Vec<FeatureOperationBodyMember>,
     pub(crate) operands: Vec<FeatureOperationBodyOperand>,
     pub(crate) booleans: Vec<FeatureBooleanOperation>,
@@ -407,7 +452,7 @@ pub(crate) fn terminal_feature_body_ids(
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = emitted
             .iter()
-            .filter(|body| body.0.starts_with(&prefix))
+            .filter(|body| body.as_str().starts_with(&prefix))
             .cloned()
             .collect::<Vec<_>>();
         if stream_bodies.is_empty() {
@@ -460,7 +505,7 @@ impl NativeModel {
         let segment_stream_links = segment_stream_links(container, streams);
         let linked_deltas = segment_stream_links
             .iter()
-            .filter(|link| link.stream_kind == "deltas")
+            .filter(|link| link.stream_kind == crate::parasolid::StreamKind::Deltas)
             .map(|link| link.stream_ordinal as usize)
             .collect::<BTreeSet<_>>();
         let delta_pairs = pair_stream_indices(
@@ -568,9 +613,14 @@ impl NativeModel {
             &parasolid_group_records,
             &parasolid_group_members,
         );
-        let feature_operation_tagged_references = feature_operation_tagged_references(container);
-        let feature_operation_data_block_references =
-            feature_operation_data_block_references(container);
+        let feature_operation_tagged_references = feature_operation_object_references(
+            container,
+            crate::om::direct_reference::ReferenceFieldKind::Tagged17,
+        );
+        let feature_operation_data_block_references = feature_operation_object_references(
+            container,
+            crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        );
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(container);
@@ -1333,3 +1383,53 @@ impl NativeModel {
         super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }
 }
+
+use crate::native::features::draft::feature_draft_construction_binary32_lanes;
+use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_graph_payloads;
+use crate::native::features::draft::feature_draft_construction_graph_strings;
+use crate::native::features::draft::feature_draft_construction_identity_frames;
+use crate::native::features::draft::feature_draft_construction_index_lanes;
+use crate::native::features::draft::feature_draft_construction_payloads;
+use crate::native::features::draft::feature_draft_construction_references;
+use crate::native::features::draft::feature_draft_construction_terminal_lanes;
+use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
+use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
+use crate::native::features::draft::FeatureDraftConstructionGraphString;
+use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
+use crate::native::features::draft::FeatureDraftConstructionIndexLane;
+use crate::native::features::draft::FeatureDraftConstructionReference;
+use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
+use crate::native::features::pattern::feature_identical_instance_output_lanes;
+use crate::native::features::pattern::feature_multi_instance_output_lanes;
+use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
+use crate::native::features::pattern::feature_pattern_construction_payloads;
+use crate::native::features::pattern::feature_pattern_construction_strings;
+use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
+use crate::native::features::pattern::feature_pattern_references;
+use crate::native::features::pattern::feature_pattern_transform_lanes;
+use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
+use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
+use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionString;
+use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
+use crate::native::features::pattern::FeaturePatternReference;
+use crate::native::features::pattern::FeaturePatternTransformLane;
+
+use crate::native::features::holes::feature_hole_package_construction_group_lanes;
+use crate::native::features::holes::feature_hole_package_construction_group_uses;
+use crate::native::features::holes::feature_simple_hole_construction_groups;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
+use crate::native::features::holes::feature_simple_hole_templates;
+use crate::native::features::holes::feature_symbolic_threads;
+use crate::native::features::holes::feature_threaded_hole_templates;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
+use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
+use crate::native::features::holes::FeatureSimpleHoleTemplate;
+use crate::native::features::holes::FeatureSymbolicThread;
+use crate::native::features::holes::FeatureThreadedHoleTemplate;

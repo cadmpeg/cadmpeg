@@ -3,7 +3,7 @@
 //! per boundary component.
 
 use super::sketch::IndexedRecordOffsets;
-use crate::records::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+use crate::records::feature::{DesignPatchContinuity, DesignSurfacePatchBoundary};
 use cadmpeg_core::decode::View;
 
 /// Payload offset of the record's class level, past the indexed header of a

@@ -1140,6 +1140,42 @@ pub(crate) mod paramesh_texture_table_prefix {
     pub(crate) const FLAGS_MAP_COUNT: usize = 21;
 }
 
+/// Byte offsets for the `paramesh_texture_flags_entry` record.
+///
+/// Spec §3.1. Record length 44 B.
+///
+/// ```text
+/// Offsets are relative to one flags-map entry. The GUID count is 36.
+/// ```
+pub(crate) mod paramesh_texture_flags_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `guid_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_COUNT: usize = 0;
+    /// Offset of `resource_guid` (`bytes[36]`). Spec §3.1.
+    pub(crate) const RESOURCE_GUID: usize = 4;
+    /// Offset of `flags` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FLAGS: usize = 40;
+}
+
+/// Byte offsets for the `paramesh_texture_filename_entry` record.
+///
+/// Spec §3.1. Record length 51 B.
+///
+/// ```text
+/// Offsets are relative to one filename-map entry. The GUID count is 36.
+/// ```
+pub(crate) mod paramesh_texture_filename_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 51;
+    /// Offset of `guid_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_COUNT: usize = 0;
+    /// Offset of `resource_guid` (`bytes[36]`). Spec §3.1.
+    pub(crate) const RESOURCE_GUID: usize = 4;
+    /// Offset of `filename_record_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FILENAME_RECORD_REFERENCE: usize = 40;
+}
+
 /// Byte offsets for the `paramesh_texture_filename_prefix` record.
 ///
 /// Spec §3.1. Record length 25 B.
@@ -6466,4 +6502,130 @@ pub(crate) mod derived_instance_relation_310_57 {
     pub(crate) const SCOPE_MARKER_VALUE: u8 = 1;
     /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
+}
+
+/// Byte offsets for the `canvas_geometry_payload` record.
+///
+/// Spec §3.1. Record length 77 B.
+///
+/// ```text
+/// Offsets are relative to the Canvas geometry payload at geometry-record offset 69.
+/// ```
+pub(crate) mod canvas_geometry_payload {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 77;
+    /// Offset of `opacity` (`f32`, little-endian). Spec §3.1.
+    pub(crate) const OPACITY: usize = 0;
+    /// Offset of `reserved_zero` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 4;
+    /// Offset of `origin_centimetres` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const ORIGIN_CENTIMETRES: usize = 5;
+    /// Offset of `u_axis` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const U_AXIS: usize = 29;
+    /// Offset of `v_axis` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const V_AXIS: usize = 53;
+}
+
+/// Byte offsets for the `canvas_geometry_prologue` record.
+///
+/// Spec §3.1. Record length 15 B.
+pub(crate) mod canvas_geometry_prologue {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 0;
+    /// Offset of `first_flag` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_FLAG: usize = 10;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 11;
+    /// Offset of `visibility` (`u8`). Spec §3.1.
+    pub(crate) const VISIBILITY: usize = 14;
+}
+
+/// Byte offsets for the `canvas_geometry_prefix` record.
+///
+/// Spec §3.1. Record length 217 B.
+pub(crate) mod canvas_geometry_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 217;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `geometry_prologue` (`bytes[15]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PROLOGUE: usize = 11;
+    /// Offset of `first_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_BOUNDARY: usize = 26;
+    /// Offset of `plane_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PLANE_REFERENCE: usize = 58;
+    /// Offset of `geometry_payload` (`bytes[77]`). Spec §3.1.
+    pub(crate) const GEOMETRY_PAYLOAD: usize = 69;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 146;
+    /// Offset of `component_reference` (`bytes[12]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 157;
+    /// Offset of `asset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ASSET_REFERENCE: usize = 169;
+    /// Offset of `second_boundary_present` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY_PRESENT: usize = 180;
+    /// Offset of `second_boundary` (`f64[4]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_BOUNDARY: usize = 181;
+    /// Offset of `label_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 213;
+}
+
+/// Byte offsets for the `canvas_geometry_base` record.
+///
+/// Spec §3.1. Record length 30 B.
+pub(crate) mod canvas_geometry_base {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `component_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 19;
+}
+
+/// Byte offsets for the `canvas_image_asset_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod canvas_image_asset_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `name_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NAME_CODE_UNIT_COUNT: usize = 21;
+}
+
+/// Byte offsets for the `canvas_scope_compact_prefix` record.
+///
+/// Spec §3.1. Record length 26 B.
+pub(crate) mod canvas_scope_compact_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 26;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `geometry_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const GEOMETRY_REFERENCE: usize = 21;
+}
+
+/// Byte offsets for the `canvas_scope_expanded_prefix` record.
+///
+/// Spec §3.1. Record length 30 B.
+pub(crate) mod canvas_scope_expanded_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `null_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE: usize = 20;
+    /// Offset of `geometry_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const GEOMETRY_REFERENCE: usize = 25;
 }

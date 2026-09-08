@@ -11,9 +11,12 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -21,21 +24,17 @@ use crate::F3dCodec;
 #[test]
 fn generated_source_less_unit_cube_writes_body_transform() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let expected = cadmpeg_ir::transform::Transform {
-        rows: [
-            [0.0, -1.0, 0.0, 20.0],
-            [1.0, 0.0, 0.0, -30.0],
-            [0.0, 0.0, 1.0, 40.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let expected = cadmpeg_ir::transform::Transform::from_rows([
+        [0.0, -1.0, 0.0, 20.0],
+        [1.0, 0.0, 0.0, -30.0],
+        [0.0, 0.0, 1.0, 40.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     source_less.model.bodies[0].transform = Some(expected);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less transformed cube encode");
     let round_trip = F3dCodec
@@ -70,10 +69,7 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less colored cube encode");
     let round_trip = F3dCodec
@@ -101,10 +97,7 @@ fn generated_source_less_rejects_translucent_direct_color() {
     });
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -139,19 +132,19 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![
         PersistentDesignLink {
-            id: "generated:persistent-design-link#0".into(),
+            id: "f3d:generated:persistent-design-link#0".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "311".into(),
-            entity_kind: 3,
+
             design_reference: 7,
             ordinal: 0,
             is_current: false,
         },
         PersistentDesignLink {
-            id: "generated:persistent-design-link#1".into(),
+            id: "f3d:generated:persistent-design-link#1".into(),
             target: AttributeTarget::Body(body_id.clone()),
             design_id: "322".into(),
-            entity_kind: 3,
+
             design_reference: 8,
             ordinal: 1,
             is_current: true,
@@ -159,7 +152,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     ];
     native.persistent_subentity_tags = vec![
         PersistentSubentityTag {
-            id: "generated:persistent-subentity-tag#0".into(),
+            id: "f3d:generated:persistent-subentity-tag#0".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 1,
             token: "8".into(),
@@ -167,7 +160,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "generated:persistent-subentity-tag#1".into(),
+            id: "f3d:generated:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Edge(edge_id.clone()),
             selector: 2,
             token: "-1".into(),
@@ -175,7 +168,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "generated:persistent-subentity-tag#2".into(),
+            id: "f3d:generated:persistent-subentity-tag#2".into(),
             target: AttributeTarget::Face(face_id.clone()),
             selector: 3,
             token: "42".into(),
@@ -184,7 +177,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         },
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
-        id: "generated:sketch-curve-link#0".into(),
+        id: "f3d:generated:sketch-curve-link#0".into(),
         target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
         ref_b: 0,
@@ -202,7 +195,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     .into_iter()
     .enumerate()
     .map(|(ordinal, (target, unix_microseconds))| CreationTimestamp {
-        id: format!("generated:creation-timestamp#{ordinal}"),
+        id: format!("f3d:generated:creation-timestamp#{ordinal}"),
         target,
         record_index: 0,
         unix_microseconds,
@@ -212,10 +205,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
     let round_trip = F3dCodec
@@ -232,7 +222,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         }
 
         fn attribute_index(attribute: &SourceAttribute) -> i64 {
-            suffix_index(&attribute.id.0)
+            suffix_index(attribute.id.as_str())
         }
 
         fn reference_index(value: &AttributeValue) -> i64 {
@@ -307,7 +297,6 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let native = f3d_native(round_trip.ir());
     assert_eq!(native.persistent_design_links.len(), 2);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
-    assert_eq!(native.persistent_design_links[0].entity_kind, 3);
     assert_eq!(native.persistent_design_links[0].design_reference, 7);
     assert_eq!(native.persistent_design_links[1].design_id, "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
@@ -351,10 +340,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         .creation_timestamps
         .push(duplicate);
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate generated timestamp target must be rejected");
     assert!(error
@@ -372,17 +358,17 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     let coedge = source_less.model.coedges[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![PersistentDesignLink {
-        id: "generated:persistent-design-link#0".into(),
+        id: "f3d:generated:persistent-design-link#0".into(),
         target: AttributeTarget::Body(body),
         design_id: "311".into(),
-        entity_kind: 3,
+
         design_reference: 7,
         ordinal: 1,
         is_current: false,
     }];
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
-            id: format!("generated:sketch-curve-link#{ordinal}"),
+            id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
             target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
             ref_b: 0,
@@ -394,10 +380,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     drop(native);
 
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate sketch links must not be collapsed");
     assert!(error
@@ -406,10 +389,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 
     f3d_native_mut(&mut source_less).sketch_curve_links.pop();
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("noncanonical persistent link order must not be rewritten");
     assert!(error
@@ -428,7 +408,9 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         let mut native = f3d_native_mut(&mut source_less);
         native.edge_continuities = [0, 1]
             .map(|ordinal| EdgeContinuity {
-                id: format!("f3d:asm:edge-continuity#generated-{ordinal}"),
+                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
                 edge: edge.clone(),
                 record_index: ordinal,
                 sense: cadmpeg_ir::topology::Sense::Forward,
@@ -437,10 +419,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             .into();
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate edge metadata must not collapse");
     assert!(error
@@ -451,7 +430,9 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         let mut native = f3d_native_mut(&mut source_less);
         native.edge_continuities.truncate(1);
         native.tolerant_vertex_tails = vec![TolerantVertexTail {
-            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             vertex,
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
@@ -460,10 +441,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
         }];
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("tolerant metadata on an ordinary vertex must not be dropped");
     assert!(error
@@ -480,14 +458,15 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         .replace("synthetic:cube:", "synthetic:cube_two:");
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second cube IR");
-    second.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    second.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     source_less.model.bodies.append(&mut second.model.bodies);
     source_less.model.regions.append(&mut second.model.regions);
     source_less.model.shells.append(&mut second.model.shells);
@@ -508,10 +487,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-body encode");
     let round_trip = F3dCodec
@@ -527,7 +503,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         round_trip.ir().model.bodies[1]
             .transform
             .expect("second body transform")
-            .rows[0][3],
+            .rows()[0][3],
         30.0
     );
     let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
@@ -547,24 +523,20 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less history encode");
     let mut preambleless = source_less.clone();
     {
         let mut native = f3d_native_mut(&mut preambleless);
-        native.asm_histories[0].stream_size = None;
-        native.asm_histories[0].history_entry_count = None;
+        native.asm_histories[0].preamble = None;
     }
     let mut preambleless_bytes = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &preambleless,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&preambleless, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut preambleless_bytes))
         .expect("source-less preambleless history encode");
     let preambleless_round_trip = F3dCodec
@@ -574,36 +546,21 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         )
         .expect("source-less preambleless history round trip");
     assert_eq!(
-        f3d_native(preambleless_round_trip.ir()).asm_histories[0].stream_size,
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].stream_size(),
         None
     );
     assert_eq!(
-        f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count,
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count(),
         None
     );
-    f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
-        .kind = crate::history_records::AsmEntityChangeKind::Delete;
-    let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("inconsistent generated history change kind must be rejected");
-    assert!(error
-        .to_string()
-        .contains("kind inconsistent with its references"));
     {
         let mut native = f3d_native_mut(&mut source_less);
-        native.asm_histories[0].states[0].bulletin_boards[0].changes[0].kind =
-            crate::history_records::AsmEntityChangeKind::Update;
-        native.asm_histories[0].stream_size = Some(3);
+        if let Some(preamble) = &mut native.asm_histories[0].preamble {
+            preamble.stream_size = 3;
+        }
     }
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("incoherent generated history preamble must be rejected");
     assert!(error
@@ -613,14 +570,14 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less history round trip");
     let actual = &f3d_native(round_trip.ir()).asm_histories[0];
-    assert_eq!(actual.stream_size, expected.stream_size);
-    assert_eq!(actual.history_entry_count, expected.history_entry_count);
+    assert_eq!(actual.stream_size(), expected.stream_size());
+    assert_eq!(actual.history_entry_count(), expected.history_entry_count());
     assert_eq!(actual.states.len(), expected.states.len());
     assert_eq!(actual.states[0].state_id, expected.states[0].state_id);
     assert_eq!(actual.states[0].bulletin_boards.len(), 1);
     assert_eq!(actual.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(actual.states[0].records.len(), 1);
-    assert_eq!(actual.states[0].records[0].name, "history_payload");
+    assert_eq!(actual.states[0].records[0].name(), "history_payload");
 }
 
 #[test]
@@ -635,17 +592,15 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let orphan = &mut orphaned
         .native
         .namespace_mut("f3d")
-        .arenas
+        .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
-    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
+    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
+        .expect("valid native identity");
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &orphaned,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("orphan history records must not be discarded");
     assert!(error
@@ -658,15 +613,12 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let states = duplicate
         .native
         .namespace_mut("f3d")
-        .arenas
+        .arenas_mut()
         .get_mut("asm_delta_states")
         .expect("delta-state arena");
     states.push(states[0].clone());
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &duplicate,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&duplicate, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate history identities must not multiply children");
     assert!(error
@@ -678,10 +630,10 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     broken_chain.set_native_unknowns("f3d", &[]).unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
     let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &broken_chain,
-            fidelity: None,
-        })
+        .plan(
+            EncodeInput::new(&broken_chain, None),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unresolved history links must be rejected");
     assert!(error

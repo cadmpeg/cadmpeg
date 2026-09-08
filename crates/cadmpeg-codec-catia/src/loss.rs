@@ -24,11 +24,10 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CatiaLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CatiaLossCode {
-    /// Container-only decode skipped entity transfer.
-    ContainerOnlyDecode,
+    /// The storage layout matched no declared dialect's structural invariants.
+    SourceDialectUnverified,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -39,6 +38,8 @@ pub enum CatiaLossCode {
     GeometryPlaneParametersInvalid,
     /// Analytic surface records had a non-finite or out-of-range payload.
     GeometryAnalyticPayloadInvalid,
+    /// Equivalent support charts produce non-finite pcurve coordinates.
+    GeometryPcurveRechartNonFinite,
     /// Face-local free-form carriers retain identity without aliased geometry.
     GeometryFaceLocalFreeformNotTransferred,
     /// Revolution carriers retain profile identity without bound directrices.
@@ -88,12 +89,13 @@ pub enum CatiaLossCode {
 impl CatiaLossCode {
     /// Every code, in declaration order.
     pub const ALL: &'static [CatiaLossCode] = &[
-        Self::ContainerOnlyDecode,
+        Self::SourceDialectUnverified,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
         Self::GeometryPlaneParametersInvalid,
         Self::GeometryAnalyticPayloadInvalid,
+        Self::GeometryPcurveRechartNonFinite,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
         Self::GeometryLineProfileNotTransferred,
@@ -122,12 +124,13 @@ impl CatiaLossCode {
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Self::ContainerOnlyDecode => "container.decode-only",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
             Self::GeometryPlaneParametersInvalid => "geometry.plane-parameters-invalid",
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
+            Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
             }
@@ -165,7 +168,7 @@ impl CatiaLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::GeometryCarrierSummary | Self::ContainerOnlyDecode => Severity::Info,
+            Self::GeometryCarrierSummary => Severity::Info,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::TopologyBoundaryGraphNotEmitted
@@ -187,12 +190,13 @@ impl CatiaLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ContainerOnlyDecode => LossTaxonomy::ContainerOnly,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
+            | Self::GeometryPcurveRechartNonFinite
             | Self::GeometryFaceLocalFreeformNotTransferred
             | Self::GeometryRevolutionProfileUnbound
             | Self::GeometryLineProfileNotTransferred => LossTaxonomy::GeometryNotTransferred,
@@ -246,12 +250,13 @@ mod tests {
         assert_eq!(
             codes,
             [
-                "container.decode-only",
+                "source.dialect-unverified",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
                 "geometry.plane-parameters-invalid",
                 "geometry.analytic-payload-invalid",
+                "geometry.pcurve-rechart-non-finite",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
                 "geometry.line-profile-not-transferred",

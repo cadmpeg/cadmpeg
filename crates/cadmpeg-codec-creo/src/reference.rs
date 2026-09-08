@@ -64,13 +64,42 @@ pub struct ReferenceCircle {
     pub offset: usize,
 }
 
+/// Native conic discriminator, with the ellipse code classified explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConicType {
+    Ellipse,
+    Other(OtherConicType),
+}
+
+/// A conic code other than the ellipse discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OtherConicType(u32);
+
+impl From<u32> for ConicType {
+    fn from(value: u32) -> Self {
+        match value {
+            30 => Self::Ellipse,
+            value => Self::Other(OtherConicType(value)),
+        }
+    }
+}
+
+impl serde::Serialize for ConicType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u32(match self {
+            Self::Ellipse => 30,
+            Self::Other(value) => value.0,
+        })
+    }
+}
+
 /// One named model-reference conic record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceConic {
     /// Entity identifier in the conic list.
     pub entity_id: u32,
     /// Stored conic type discriminator.
-    pub type_id: u32,
+    pub type_id: ConicType,
     /// Stored orientation selector.
     pub flip: u32,
     /// First stored endpoint in model coordinates.
@@ -117,7 +146,7 @@ pub struct ReferenceEllipse {
 pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
     let mut result = Vec::new();
     for conic in conics {
-        if conic.type_id != 30 {
+        if conic.type_id != ConicType::Ellipse {
             continue;
         }
         let Some(frame) = conic.local_system else {
@@ -597,7 +626,7 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
         }
         result.push(ReferenceConic {
             entity_id,
-            type_id,
+            type_id: ConicType::from(type_id),
             flip,
             start,
             end,
@@ -688,7 +717,7 @@ fn positional_conic_body(
         .then_some(())?;
     Some(ReferenceConic {
         entity_id,
-        type_id,
+        type_id: ConicType::from(type_id),
         flip,
         start: endpoints[0],
         end: endpoints[1],

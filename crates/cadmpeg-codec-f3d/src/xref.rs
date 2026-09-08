@@ -8,6 +8,8 @@
 //! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
 //! whose model is the placement of its XREF targets.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::HashSet;
 
 use serde::Deserialize;
@@ -16,19 +18,17 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
+    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
 };
 
 use crate::bytes::{
     is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded,
     take_reference,
 };
-use crate::container::role;
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
-use crate::records::{
-    DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
-};
+use crate::records::feature::{DesignComponentInsertConstruction, DesignParameterScope};
+use crate::records::{XrefDesign, XrefReference};
 
 const EPS_XREF_DECODE_RIGID_MATRIX_E8: f64 = 1.0e-8;
 
@@ -55,7 +55,14 @@ pub struct XrefTable {
     pub(crate) placement_failures: Vec<u32>,
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
-    pub(crate) placement_overrides: Vec<(u32, usize)>,
+    pub(crate) placement_overrides: Vec<PlacementOverride>,
+}
+
+/// One XREF ordinal whose structured placements were superseded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlacementOverride {
+    pub(crate) ordinal: u32,
+    pub(crate) count: usize,
 }
 
 /// The `docstruct` document-type declaration of a JSON `Properties.dat`.
@@ -292,28 +299,18 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                     reference.occurrence_ordinal,
                 ),
                 prototype: PrototypeReference::External {
-                    document: ExternalDocumentReference {
-                        path: Some(reference.relative_path.clone()),
-                        document_id: None,
-                        resolution: ExternalResolution::Unresolved,
-                    },
+                    document: ExternalDocumentReference::path(reference.relative_path.clone()),
                     object: None,
                 },
                 parent: OccurrenceParent::Root,
                 ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
-                transform: cadmpeg_ir::transform::Transform { rows: transform },
-                prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+                transform: cadmpeg_ir::transform::Transform::from_rows(transform)
+                    .expect("affine transform"),
+                linked_prototype: None,
                 scale: [1.0; 3],
                 name: None,
-                linked_subelements: Vec::new(),
                 visible: None,
-                element_component: None,
-                claim_child: None,
-                copy_on_change: None,
-                copy_on_change_source: None,
-                copy_on_change_group: None,
-                copy_on_change_touched: None,
-                link_transform: None,
+                link: None,
                 native_ref: Some(reference.id.clone()),
             }
         })
@@ -327,12 +324,12 @@ pub fn bind_component_insert_features(
     table: &XrefTable,
 ) {
     for scope in scopes {
-        let Some(construction) = &scope.component_insert_construction else {
+        let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
         let mut matches = table.references.iter().filter(|reference| {
             reference.neutron_role == construction.neutron_role
-                && reference.transform == Some(construction.transform)
+                && reference.transform == Some(*construction.transform())
         });
         let Some(reference) = matches.next() else {
             continue;
@@ -368,7 +365,7 @@ fn bind_occurrences(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let meta_name = entry
@@ -405,7 +402,7 @@ fn bind_occurrences(
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
-                    let construction = scope.component_insert_construction.as_ref()?;
+                    let construction = scope.component_insert_construction()?;
                     Some((stream, construction))
                 }),
                 stream,
@@ -414,7 +411,10 @@ fn bind_occurrences(
             let structured_count =
                 superseded_placement_count(&direct, placements, &reference.neutron_role);
             if !direct.is_empty() && structured_count != 0 {
-                placement_overrides.push((reference.ordinal, structured_count));
+                placement_overrides.push(PlacementOverride {
+                    ordinal: reference.ordinal,
+                    count: structured_count,
+                });
             }
             occurrences.extend(occurrence_transforms_with_precedence(
                 direct,
@@ -427,7 +427,7 @@ fn bind_occurrences(
                 let direct = select_component_insert_transforms(
                     scopes.iter().filter_map(|scope| {
                         let stream = crate::ids::native_stream(&scope.id)?;
-                        let construction = scope.component_insert_construction.as_ref()?;
+                        let construction = scope.component_insert_construction()?;
                         Some((stream, construction))
                     }),
                     stream,
@@ -480,7 +480,7 @@ where
         .filter(|(construction_stream, construction)| {
             *construction_stream == stream && construction.neutron_role == role
         })
-        .map(|(_, construction)| construction.transform)
+        .map(|(_, construction)| *construction.transform())
         .collect()
 }
 
@@ -524,9 +524,10 @@ fn typed_occurrence_placement_offsets(
         .filter(|design_type| {
             design_type
                 .type_guid
+                .as_str()
                 .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
         })
-        .flat_map(|design_type| design_type.entity_ids.iter().copied())
+        .flat_map(|design_type| design_type.entities.values().copied())
         .collect::<HashSet<_>>();
     meta.records
         .iter()
@@ -596,8 +597,6 @@ struct OccurrencePlacement {
     /// Cross-document link names carried by the path elements, in path order.
     /// The role-bearing element is not necessarily the first.
     link_names: Vec<String>,
-    /// Instance discriminator of each path element, in path order.
-    discriminators: Vec<u32>,
     /// `None` is the stored identity form, which carries no matrix.
     transform: Option<[[f64; 4]; 4]>,
 }
@@ -650,7 +649,7 @@ fn occurrence_placements_with_failures(
             };
             if let Some(placement) = occurrence_placement(body, serializer_magic) {
                 placements.push(placement);
-            } else if let Some((link_names, _, _)) = occurrence_path(body) {
+            } else if let Some((link_names, _)) = occurrence_path(body) {
                 failures.push(OccurrencePlacementFailure { link_names });
             } else if let Some(link_name) = legacy_occurrence_role(body) {
                 failures.push(OccurrencePlacementFailure {
@@ -673,7 +672,7 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
                 grouped_component_insert_identity(body, 0, body.len(), record_index)?;
             Some(OccurrencePlacement {
                 link_names: vec![link_name],
-                discriminators: vec![1],
+
                 transform: None,
             })
         })
@@ -682,21 +681,24 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
 /// Parse the placement generation that repeats the target identity after the
 /// standard path and stores the identity flag beside that repeated target.
 fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
-    repeated_target_occurrence_placement_details(body).map(|details| details.placement)
+    repeated_target_occurrence_placement_details(body).map(|details| OccurrencePlacement {
+        link_names: details.link_names,
+        transform: details.transform.map(|(_, matrix)| matrix),
+    })
 }
 
 struct RepeatedTargetPlacementDetails {
-    placement: OccurrencePlacement,
+    link_names: Vec<String>,
     role: String,
     role_offset: usize,
-    transform_offset: Option<usize>,
+    transform: Option<(usize, [[f64; 4]; 4])>,
 }
 
 fn repeated_target_occurrence_placement_details(
     body: &[u8],
 ) -> Option<RepeatedTargetPlacementDetails> {
     const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
-    let (link_names, discriminators, mut at) = occurrence_path(body)?;
+    let (link_names, mut at) = occurrence_path(body)?;
     if !matches!(View::u32_le_at(body, at)?, 1..=6) {
         return None;
     }
@@ -737,7 +739,6 @@ fn repeated_target_occurrence_placement_details(
         return None;
     }
     at += 1;
-    let mut transform_offset = None;
     let transform = match *body.get(at)? {
         1 => {
             at += 1;
@@ -745,10 +746,10 @@ fn repeated_target_occurrence_placement_details(
         }
         0 => {
             at += 1;
-            transform_offset = Some(at);
+            let offset = at;
             let matrix = decode_rigid_matrix(body, at)?;
             at = at.checked_add(128)?;
-            Some(matrix)
+            Some((offset, matrix))
         }
         _ => return None,
     };
@@ -767,14 +768,10 @@ fn repeated_target_occurrence_placement_details(
     at += 1;
     take_reference(body, &mut at)?;
     (at == body.len()).then_some(RepeatedTargetPlacementDetails {
-        placement: OccurrencePlacement {
-            link_names,
-            discriminators,
-            transform,
-        },
+        link_names,
+        transform,
         role,
         role_offset: role_offset + 4,
-        transform_offset,
     })
 }
 
@@ -792,19 +789,22 @@ pub(crate) fn repeated_target_component_insert(
         return None;
     }
     let details = repeated_target_occurrence_placement_details(body)?;
-    let transform = details.placement.transform.unwrap_or([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]);
+    let transform = details.transform.map_or(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        |(_, matrix)| matrix,
+    );
     if transform != expected_transform {
         return None;
     }
     Some((
         details.role,
         carrier_at + details.role_offset,
-        details.transform_offset.map(|offset| carrier_at + offset),
+        details.transform.map(|(offset, _)| carrier_at + offset),
     ))
 }
 
@@ -1036,7 +1036,7 @@ fn modern_occurrence_placement(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Option<OccurrencePlacement> {
-    let (link_names, discriminators, at) = occurrence_path(body)?;
+    let (link_names, at) = occurrence_path(body)?;
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -1065,7 +1065,7 @@ fn modern_occurrence_placement(
         if placement_tail(body, cursor, serializer_magic).is_some() {
             return Some(OccurrencePlacement {
                 link_names,
-                discriminators,
+
                 transform,
             });
         }
@@ -1081,7 +1081,7 @@ fn modern_occurrence_placement(
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
 fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
-    let (discriminator, mut at) = legacy_occurrence_prefix(body)?;
+    let mut at = legacy_occurrence_prefix(body)?;
     let identity_marker = *body.get(at)?;
     at += 1;
     let transform = match identity_marker {
@@ -1108,7 +1108,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
     at += 12;
     (at == body.len()).then_some(OccurrencePlacement {
         link_names: vec![link_name],
-        discriminators: vec![discriminator],
+
         transform,
     })
 }
@@ -1119,7 +1119,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
 /// so the caller can report an undecoded typed placement against the correct
 /// external reference instead of treating it as an unrelated record.
 fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
-    let (_, mut at) = legacy_occurrence_prefix(body)?;
+    let mut at = legacy_occurrence_prefix(body)?;
     match *body.get(at)? {
         1 => at += 1,
         0 => at = at.checked_add(129)?,
@@ -1134,7 +1134,7 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<String> {
 }
 
 /// Parse the shared prefix of the legacy identity and matrix forms.
-fn legacy_occurrence_prefix(body: &[u8]) -> Option<(u32, usize)> {
+fn legacy_occurrence_prefix(body: &[u8]) -> Option<usize> {
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
     let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
@@ -1148,7 +1148,7 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<(u32, usize)> {
     }
     at += 4;
     take_legacy_occurrence_reference(body, &mut at)?;
-    let discriminator = View::u32_le_at(body, at)?;
+    View::u32_le_at(body, at)?;
     at += 4;
     if View::u32_le_at(body, at)? != 1 {
         return None;
@@ -1174,7 +1174,7 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<(u32, usize)> {
     }
     at += 1;
     take_legacy_occurrence_reference(body, &mut at)?;
-    Some((discriminator, at))
+    Some(at)
 }
 
 /// Consume one legacy occurrence target reference.
@@ -1206,7 +1206,7 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
 }
 
 /// Parse the target-path prefix shared by every occurrence-placement form.
-fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, Vec<u32>, usize)> {
+fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
@@ -1223,20 +1223,19 @@ fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, Vec<u32>, usize)> {
     }
     at += 4;
     let mut link_names = Vec::new();
-    let mut discriminators = Vec::with_capacity(count);
     for _ in 0..count {
         let element = take_reference(body, &mut at)?;
-        if let Some(link_name) = element.link_name {
-            link_names.push(link_name);
+        if let Some(link_name) = element.link_name() {
+            link_names.push(link_name.to_owned());
         }
-        discriminators.push(View::u32_le_at(body, at)?);
+        View::u32_le_at(body, at)?;
         at += 4;
     }
     if body.get(at) != Some(&0) {
         return None;
     }
     at += 1;
-    Some((link_names, discriminators, at))
+    Some((link_names, at))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`

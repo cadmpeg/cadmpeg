@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use std::io::Cursor;
 
@@ -104,7 +104,7 @@ fn aggregates_object_classes_after_table_entries() {
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("required invariant");
     assert_eq!(summary.entries.len(), 5);
-    assert_eq!(summary.entries[3].role, "object-class");
+    assert_eq!(summary.entries[3].role.as_str(), "object-class");
     assert_eq!(
         summary.entries[3].attributes.get("count"),
         Some(&"1".to_string())
@@ -141,8 +141,8 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
         assert_eq!(result.ir().ir_version(), IR_VERSION);
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
-        assert!(result.report().container_only);
-        assert_eq!(result.report().format, "rhino");
+        assert!(result.report().container_only());
+        assert_eq!(result.report().format(), "rhino");
     }
 }
 
@@ -172,7 +172,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
         assert_eq!(result.ir().ir_version(), IR_VERSION);
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
-        assert!(result.report().container_only);
+        assert!(result.report().container_only());
     }
 }
 
@@ -208,7 +208,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
             },
         )
         .expect("V2 container-only decode");
-    assert!(container_only.report().container_only);
+    assert!(container_only.report().container_only());
     assert!(container_only.ir().model.points.is_empty());
 
     let decoded = RhinoCodec
@@ -222,23 +222,107 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
 }
 
 #[test]
-fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
-    for version in ["5", "999"] {
-        let bytes = header(version);
-        let summary = RhinoCodec
-            .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
-            .expect("required invariant");
-        assert!(summary.entries.is_empty());
-        assert_eq!(summary.container_kind, "3dm-chunks");
-        let result = RhinoCodec.decode(
+fn archive_word_5_uses_the_four_byte_chunk_scan() {
+    let archive = ArchiveVersion::LegacyV5;
+    let bytes = minimal_document(
+        "5",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+        .expect("archive word 5 uses the chunked scan");
+    assert!(!summary.entries.is_empty());
+    assert_eq!(
+        summary
+            .dialects()
+            .as_ref()
+            .expect("Rhino inspection reports dialect layers")
+            .primary()
+            .admission(),
+        &cadmpeg_core::dialect::Admission::Admitted
+    );
+
+    let decoded = RhinoCodec
+        .decode(
             &mut Cursor::new(bytes),
             &DecodeOptions {
                 container_only: true,
                 ..Default::default()
             },
-        );
-        assert!(matches!(result, Err(CodecError::NotImplemented(_))));
-    }
+        )
+        .expect("archive word 5 reaches chunked container decode");
+    assert!(decoded.report().container_only());
+    assert_eq!(
+        decoded
+            .report()
+            .dialects()
+            .as_ref()
+            .expect("Rhino decode reports dialect layers")
+            .primary()
+            .admission(),
+        &cadmpeg_core::dialect::Admission::Admitted
+    );
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::RhinoLossCode::SourceDialectUnverified.kind() }));
+}
+
+#[test]
+fn an_undeclared_archive_word_scans_and_reports_an_unverified_admission() {
+    // The residual row runs the chunked route, not a header-only stop: the
+    // scan reaches the tables without claiming a declared row was substituted.
+    let archive = ArchiveVersion::from_word(100);
+    let bytes = minimal_document(
+        "100",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(
+                archive,
+                0x1000_0013,
+                &[object_record(archive, 0x20, [0; 16])],
+            ),
+        ],
+    );
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("an undeclared word scans like the band it shares a grammar with");
+    assert!(
+        !summary.entries.is_empty(),
+        "the scan reached the table sequence"
+    );
+    let matched = summary
+        .dialects()
+        .as_ref()
+        .expect("Rhino inspection reports dialect layers")
+        .primary();
+    assert_eq!(
+        matched.admission(),
+        &cadmpeg_core::dialect::Admission::Residual
+    );
+    assert_eq!(matched.declared()["archive_version"], "100");
+}
+
+#[test]
+fn an_undeclared_word_over_broken_framing_fails_structurally() {
+    // The attempt is self-limiting: an undeclared word buys the chunked scan,
+    // not a recovery of bytes the scan cannot frame.
+    let error = RhinoCodec
+        .decode(&mut Cursor::new(header("100")), &DecodeOptions::default())
+        .expect_err("a header with no chunk sequence cannot be framed");
+    assert!(
+        !matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
+        ),
+        "the residual row is attempted, so its failure is structural: {error}"
+    );
 }
 
 #[test]

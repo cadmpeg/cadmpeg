@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::ids::UnknownId;
-use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
+use crate::tessellation::{ChannelAddressing, TessellationChannel};
 use crate::unknown::UnknownRecord;
 
 fn assert_base64_round_trip_and_rejection<T>(value: &T, field: &str)
@@ -24,26 +24,17 @@ where
 #[test]
 fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     assert_base64_round_trip_and_rejection(
-        &UnknownRecord {
-            id: UnknownId("synthetic:test:unknown#0".into()),
-            offset: 0,
-            byte_len: 3,
-            sha256: "00".repeat(32),
-            data: Some(vec![1, 2, 3]),
-            links: Vec::new(),
-        },
+        &UnknownRecord::retained(
+            UnknownId::mint("synthetic:test:unknown#0").expect("valid identity"),
+            0,
+            vec![1, 2, 3],
+            Vec::new(),
+        ),
         "data",
     );
     assert_base64_round_trip_and_rejection(
-        &TessellationChannel {
-            domain: TessellationChannelDomain::default(),
-            item_size: 3,
-            kind: 0,
-            flags: 0,
-            count: 1,
-            data: vec![1, 2, 3],
-            indices: Vec::new(),
-        },
+        &TessellationChannel::new(ChannelAddressing::Vertex, 3, 0, 0, vec![1, 2, 3])
+            .expect("valid channel"),
         "data",
     );
 }

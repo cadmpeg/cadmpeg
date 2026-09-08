@@ -1,13 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
+#[cfg(test)]
+use crate::decode::feature_completeness;
+
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::om::control_leading_value::ControlLeadingValue;
+use crate::om::reference_value::{DirectReference, RecordReference};
+use crate::om::state_message::StateMessage;
+use crate::om::state_table::StateTableEntry;
+use crate::printable_string::PrintableString;
+pub(crate) mod journal_group;
+pub(crate) mod material_texture;
+pub(crate) mod object_uuid;
+mod reference_wire;
+mod state_index_wire;
+use journal_group::OmOperationStateJournalGroup;
+use material_texture::MaterialTextureAsset;
 
-use cadmpeg_core::decode::View;
+pub(crate) mod column_row;
+pub(crate) mod compact_lane;
+pub(crate) mod creation_display;
+pub(crate) mod display_color;
+use column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
+mod membership_wire;
+use crate::container::extref_handles::ExtrefHandles;
+use crate::container::extref_slot::ExtrefSlot;
+use crate::container::membership::ObjectIdMembers;
+use crate::om::color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
+mod color_wire;
+pub(crate) mod column_index;
+use column_index::ColumnIndexRows;
 
 use crate::native::segments::segment_om_links;
-use crate::om::TypeDefinition as OmTypeDefinition;
+use crate::om::parameter_name::ParameterName;
+pub(crate) mod roll_forward;
+use crate::om::IndexedStore;
+use roll_forward::OmRollForwardStateGroup;
+pub(crate) mod state_slot_lane;
+use state_slot_lane::OmOperationStateSlotLane;
+pub(crate) mod state_status;
+use state_status::OmOperationStateStatus;
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +73,7 @@ pub struct OmRecordArea {
     /// Three exact little-endian control words.
     pub control_words: [u32; 3],
     /// Exact printable product/version string.
-    pub product_version: String,
+    pub product_version: crate::om::product::ProductText<String>,
     /// Exact record-area byte length.
     pub byte_len: u64,
     /// SHA-256 of the complete pointed record area.
@@ -50,84 +84,58 @@ pub struct OmRecordArea {
 
 /// One complete row retained from an audit-trail record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "state_index_wire::OmAuditTrailRowWire",
+    into = "state_index_wire::OmAuditTrailRowWire"
+)]
 pub struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
     pub id: String,
     /// Owning audit-trail section link.
     pub section_link: String,
-    /// Monotone row ordinal.
-    pub ordinal: u32,
-    /// Exact serialized ordinal token.
-    pub raw_ordinal: Vec<u8>,
-    /// Optional selector in the `04 05 selector 00` envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frame_selector: Option<u8>,
-    /// Big-endian row timestamp.
-    pub timestamp: u32,
-    /// Tagged row-value marker.
-    pub value_marker: u8,
-    /// Decoded tagged row value.
-    pub value: u32,
-    /// Exact serialized tagged row value.
-    pub raw_value: Vec<u8>,
-    /// Exact complete row bytes.
-    pub raw: Vec<u8>,
+    /// Exact framed audit content.
+    record: crate::om::audit::AuditRecord,
     /// Directory entry containing the audit-trail section.
     pub source_entry: String,
     /// Absolute file offset of the row's opening `04` marker.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the tagged value.
-    pub end_offset: u64,
+    source_offset: u64,
 }
 
-/// One row from the feature-history state journal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateJournalRow {
-    /// Big-endian Unix timestamp stored by the journal.
-    pub timestamp: u32,
-    /// Tagged schema-value marker.
-    pub value_marker: u8,
-    /// Decoded tagged schema value.
-    pub value: u32,
-    /// Exact tagged schema-value token.
-    pub raw_value: Vec<u8>,
-    /// Journal schema identifier.
-    pub schema_id: u32,
-    /// Exact schema-identifier token.
-    pub raw_schema_id: Vec<u8>,
-    /// Monotone state-counter ordinal.
-    pub state_ordinal: u32,
-    /// Exact state-ordinal token.
-    pub raw_state_ordinal: Vec<u8>,
-    /// Absolute file offset of the row's `e0` marker.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the `13` terminator.
-    pub end_offset: u64,
-}
+impl OmAuditTrailRow {
+    fn new(
+        id: String,
+        section_link: String,
+        record: crate::om::audit::AuditRecord,
+        source_entry: String,
+        source_offset: u64,
+    ) -> Option<Self> {
+        source_offset.checked_add(record.byte_len() as u64)?;
+        Some(Self {
+            id,
+            section_link,
+            record,
+            source_entry,
+            source_offset,
+        })
+    }
 
-/// One anchored state-journal group from a feature-history section.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateJournalGroup {
-    /// Globally unique group identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based group ordinal in serialized order.
-    pub ordinal: u32,
-    /// Exact two-byte group selector.
-    pub selector: [u8; 2],
-    /// Ordered journal rows.
-    pub rows: Vec<OmOperationStateJournalRow>,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the `04` group opener.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the final row.
-    pub end_offset: u64,
+    pub fn record(&self) -> crate::om::audit::AuditRecord {
+        self.record
+    }
+    pub fn source_offset(&self) -> u64 {
+        self.source_offset
+    }
+    pub fn end_offset(&self) -> u64 {
+        self.source_offset + self.record.byte_len() as u64
+    }
 }
 
 /// One row from the feature-history operation-state counter map.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "state_index_wire::OmOperationStateCounterWire",
+    into = "state_index_wire::OmOperationStateCounterWire"
+)]
 pub struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
     pub id: String,
@@ -135,104 +143,10 @@ pub struct OmOperationStateCounter {
     pub section_link: String,
     /// Zero-based row ordinal within the section's counter map.
     pub ordinal: u32,
-    /// Serialized counter-row kind (`01` or `02`).
-    pub row_kind: u8,
-    /// Object carrying the introduced/last-modified state pair.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
-    /// State-journal ordinal at object introduction.
-    pub introduced_state: u8,
-    /// State-journal ordinal at the object's last modification.
-    pub modified_state: u8,
-    /// Absolute file offset of the object-index token.
-    pub object_index_source_offset: u64,
+    /// Complete counter row with derived index position.
+    pub frame: crate::om::state_counter::StateCounter,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
-    /// Absolute file offset of the row's `05` marker.
-    pub source_offset: u64,
-}
-
-/// One typed member in an `m_rollForwardStates` group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OmRollForwardStateRow {
-    /// Ordered feature-record member from a `4a` list row.
-    List {
-        /// Zero-based position within the group list.
-        ordinal: u32,
-        /// Ordered feature-history object index.
-        object_index: u32,
-        /// Exact serialized object-index token.
-        raw_object_index: Vec<u8>,
-        /// Serialized list position.
-        position: u32,
-        /// Exact serialized position token.
-        raw_position: Vec<u8>,
-        /// Absolute file offset of the `4a` row marker.
-        source_offset: u64,
-    },
-    /// Relation member from a `4f` or `48` pair row.
-    Pair {
-        /// Zero-based position within the group row list.
-        ordinal: u32,
-        /// Schema-generation relation tag.
-        tag: u8,
-        /// First relation endpoint.
-        first: u32,
-        /// Exact serialized first endpoint token.
-        raw_first: Vec<u8>,
-        /// Second relation endpoint.
-        second: u32,
-        /// Exact serialized second endpoint token.
-        raw_second: Vec<u8>,
-        /// Absolute file offset of the relation tag.
-        source_offset: u64,
-    },
-}
-
-/// One counted `m_rollForwardStates` group from a feature-history section.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmRollForwardStateGroup {
-    /// Globally unique group identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based group ordinal within the table.
-    pub ordinal: u32,
-    /// Exact two-byte group opener.
-    pub opener: [u8; 2],
-    /// Whether the count used the nonempty `01 count` form.
-    pub count_prefix: Option<u8>,
-    /// Serialized member count including the implicit owner slot.
-    pub declared_count: u8,
-    /// Ordered typed rows in the group.
-    pub rows: Vec<OmRollForwardStateRow>,
-    /// Exact bytes between the final group and the counter-map boundary.
-    pub table_trailing_bytes: Vec<u8>,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the group opener.
-    pub source_offset: u64,
-    /// Absolute file offset of the counter-map boundary.
-    pub table_end_offset: u64,
-}
-
-/// Typed high-byte outcome of an operation-state diagnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OmOperationStateMessageSeverity {
-    /// Non-fatal update alert.
-    Alert,
-    /// Failed update outcome.
-    Failure,
-}
-
-fn operation_state_message_severity(word: u16) -> Option<OmOperationStateMessageSeverity> {
-    match word >> 8 {
-        0x01 => Some(OmOperationStateMessageSeverity::Alert),
-        0x03 => Some(OmOperationStateMessageSeverity::Failure),
-        _ => None,
-    }
 }
 
 /// One standalone operation-state message record.
@@ -244,121 +158,13 @@ pub struct OmOperationStateMessage {
     pub section_link: String,
     /// Zero-based message ordinal within the bounded state block.
     pub ordinal: u32,
-    /// Serialized length byte.
-    pub declared_length: u8,
-    /// Exact Part Navigator diagnostic text.
-    pub text: String,
-    /// Tagged value marker following the four zero bytes.
-    pub value_marker: u8,
-    /// Decoded tagged value.
-    pub value: u32,
-    /// Exact serialized tagged value.
-    pub raw_value: Vec<u8>,
-    /// Big-endian count or severity word.
-    pub count_or_severity: u16,
-    /// Typed high-byte severity when the word uses a known outcome class.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub severity: Option<OmOperationStateMessageSeverity>,
+    /// Diagnostic payload.
+    #[serde(flatten)]
+    pub body: StateMessage<String>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the opening `03` marker.
     pub source_offset: u64,
-}
-
-/// Native payload retained by one operation-state status row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OmOperationStateStatusPayload {
-    /// Normal built/healthy state marker.
-    Plain,
-    /// Status carrying one linked object index.
-    Linked {
-        /// Serialized link discriminator.
-        link_code: u8,
-        /// Linked object index.
-        object_index: u32,
-        /// Exact linked object-index token.
-        raw_object_index: Vec<u8>,
-    },
-    /// Status carrying an inline diagnostic message.
-    Diagnostic {
-        /// Serialized message length byte.
-        declared_length: u8,
-        /// Exact diagnostic text.
-        text: String,
-        /// Tagged value marker.
-        value_marker: u8,
-        /// Decoded tagged value.
-        value: u32,
-        /// Exact tagged value token.
-        raw_value: Vec<u8>,
-        /// Big-endian count or severity word.
-        count_or_severity: u16,
-        /// Typed high-byte severity when the word uses a known outcome class.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        severity: Option<OmOperationStateMessageSeverity>,
-    },
-    /// Typed status whose payload grammar is not assigned.
-    Opaque {
-        /// Exact bounded payload bytes.
-        raw: Vec<u8>,
-    },
-}
-
-/// One per-object operation-state status row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateStatus {
-    /// Globally unique status-row identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based row ordinal within the status table.
-    pub ordinal: u32,
-    /// Decoded non-null status-code value.
-    pub status_code: u32,
-    /// Exact serialized status-code token.
-    pub raw_status_code: Vec<u8>,
-    /// Decoded non-null object carrying the status.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
-    /// Exact typed status payload.
-    pub payload: OmOperationStateStatusPayload,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the status-code token.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset of the row.
-    pub end_offset: u64,
-}
-
-/// One serialized feature-record slot in an operation-state slot lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateSlot {
-    /// Zero-based slot ordinal.
-    pub ordinal: u32,
-    /// Decoded object index; null slots remain null.
-    pub object_index: Option<u32>,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
-}
-
-/// One `02 01 11 ... 02 11` operation-state slot lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateSlotLane {
-    /// Globally unique slot-lane identity.
-    pub id: String,
-    /// Owning feature-history section link.
-    pub section_link: String,
-    /// Zero-based lane ordinal within the status table.
-    pub ordinal: u32,
-    /// Ordered null or object-index slots.
-    pub slots: Vec<OmOperationStateSlot>,
-    /// Directory entry containing the feature-history section.
-    pub source_entry: String,
-    /// Absolute file offset of the lane prefix.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the lane terminator.
-    pub end_offset: u64,
 }
 
 /// Decode internally pointed record areas from linked OM sections.
@@ -381,7 +187,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 .1
                 .clone();
             let header = section.record_area_header()?;
-            let bytes = section.record_area?;
+            let bytes = section.record_area?.bytes;
             let entry_offset = link.section_offset.checked_sub(section.offset as u64)?;
             let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(OmRecordArea {
@@ -389,7 +195,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 section_link: link.id,
                 schema_role: link.schema_role,
                 control_words: header.control_words,
-                product_version: header.product.value.to_string(),
+                product_version: header.product.value.into_owned(),
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                 source_offset: entry_offset + header.offset as u64,
@@ -423,22 +229,15 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
             let section_key = format!("{section_ordinal:010}");
             rows.into_iter()
                 .filter_map(move |row| {
-                    let ordinal = row.ordinal.value?;
-                    Some(OmAuditTrailRow {
-                        id: format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        raw_ordinal: row.ordinal.raw.to_vec(),
-                        frame_selector: row.frame_selector,
-                        timestamp: row.timestamp,
-                        value_marker: row.value.marker,
-                        value: row.value.value,
-                        raw_value: row.value.raw.to_vec(),
-                        raw: row.raw.to_vec(),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
-                        end_offset: entry_offset + row.end_offset as u64,
-                    })
+                    let record = row.record();
+                    let ordinal = record.ordinal.value();
+                    OmAuditTrailRow::new(
+                        format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
+                        link.id.clone(),
+                        record,
+                        entry.name.clone(),
+                        entry_offset.checked_add(row.offset() as u64)?,
+                    )
                 })
                 .collect()
         })
@@ -467,8 +266,7 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            map.rows
-                .into_iter()
+            map.into_rows()
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
@@ -478,14 +276,8 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        row_kind: row.row_kind,
-                        object_index: row.object_index.value?,
-                        raw_object_index: row.object_index.raw.to_vec(),
-                        introduced_state: row.introduced_state,
-                        modified_state: row.modified_state,
-                        object_index_source_offset: entry_offset + row.object_index.offset as u64,
+                        frame: row.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
                     })
                 })
                 .collect()
@@ -520,35 +312,14 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group
-                        .rows
-                        .into_iter()
-                        .map(|row| {
-                            Some(OmOperationStateJournalRow {
-                                timestamp: row.timestamp,
-                                value_marker: row.value.marker,
-                                value: row.value.value,
-                                raw_value: row.value.raw.to_vec(),
-                                schema_id: row.schema_id.value?,
-                                raw_schema_id: row.schema_id.raw.to_vec(),
-                                state_ordinal: row.ordinal.value?,
-                                raw_state_ordinal: row.ordinal.raw.to_vec(),
-                                source_offset: entry_offset + row.offset as u64,
-                                end_offset: entry_offset + row.end_offset as u64,
-                            })
-                        })
-                        .collect::<Option<Vec<_>>>()?;
                     Some(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        selector: group.selector,
-                        rows,
+                        frame: group.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.offset as u64,
-                        end_offset: entry_offset + group.end_offset as u64,
                     })
                 })
                 .collect()
@@ -578,62 +349,24 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
+            let table_end_offset = entry_offset + table.end_offset() as u64;
+            let table_footer = table.footer();
             table
-                .groups
+                .into_groups()
                 .into_iter()
                 .enumerate()
                 .filter_map(move |(ordinal, group)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let rows = group
-                        .rows
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(row_ordinal, row)| {
-                            let ordinal = u32::try_from(row_ordinal).ok()?;
-                            match row {
-                                crate::om::OperationStateGroupRow::List {
-                                    offset,
-                                    object_index,
-                                    position,
-                                } => Some(OmRollForwardStateRow::List {
-                                    ordinal,
-                                    object_index: object_index.value?,
-                                    raw_object_index: object_index.raw.to_vec(),
-                                    position: position.value?,
-                                    raw_position: position.raw.to_vec(),
-                                    source_offset: entry_offset + offset as u64,
-                                }),
-                                crate::om::OperationStateGroupRow::Pair {
-                                    offset,
-                                    tag,
-                                    first,
-                                    second,
-                                } => Some(OmRollForwardStateRow::Pair {
-                                    ordinal,
-                                    tag,
-                                    first: first.value?,
-                                    raw_first: first.raw.to_vec(),
-                                    second: second.value?,
-                                    raw_second: second.raw.to_vec(),
-                                    source_offset: entry_offset + offset as u64,
-                                }),
-                            }
-                        })
-                        .collect();
                     Some(OmRollForwardStateGroup {
                         id: format!(
                             "nx:feature-history:roll-forward-state-group#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        opener: group.opener,
-                        count_prefix: group.count_prefix,
-                        declared_count: group.declared_count,
-                        rows,
-                        table_trailing_bytes: table.trailing_bytes.to_vec(),
+                        frame: group.into_absolute(entry_offset)?,
+                        table_footer,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + group.offset as u64,
-                        table_end_offset: entry_offset + table.end_offset as u64,
+                        table_end_offset,
                     })
                 })
                 .collect()
@@ -674,15 +407,9 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        declared_length: message.declared_length,
-                        text: message.text.to_string(),
-                        value_marker: message.value.marker,
-                        value: message.value.value,
-                        raw_value: message.value.raw.to_vec(),
-                        count_or_severity: message.count_or_severity,
-                        severity: operation_state_message_severity(message.count_or_severity),
+                        body: message.body().into_owned(),
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + message.offset as u64,
+                        source_offset: entry_offset + message.offset() as u64,
                     })
                 })
                 .collect()
@@ -713,57 +440,24 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             table
-                .rows
-                .into_iter()
+                .into_entries()
+                .filter_map(|(offset, entry)| match entry {
+                    StateTableEntry::Status(row) => Some((offset, row)),
+                    StateTableEntry::Slots(_) => None,
+                })
                 .enumerate()
-                .filter_map(move |(ordinal, row)| {
+                .filter_map(move |(ordinal, (offset, row))| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let status_code = row.status_code.value?;
-                    let object_index = row.object_index.value?;
-                    let payload = match row.payload {
-                        crate::om::OperationStateStatusPayload::Plain => {
-                            OmOperationStateStatusPayload::Plain
-                        }
-                        crate::om::OperationStateStatusPayload::Linked {
-                            link_code,
-                            object_index,
-                        } => OmOperationStateStatusPayload::Linked {
-                            link_code,
-                            object_index: object_index.value?,
-                            raw_object_index: object_index.raw.to_vec(),
-                        },
-                        crate::om::OperationStateStatusPayload::Diagnostic { message } => {
-                            OmOperationStateStatusPayload::Diagnostic {
-                                declared_length: message.declared_length,
-                                text: message.text.to_string(),
-                                value_marker: message.value.marker,
-                                value: message.value.value,
-                                raw_value: message.value.raw.to_vec(),
-                                count_or_severity: message.count_or_severity,
-                                severity: operation_state_message_severity(
-                                    message.count_or_severity,
-                                ),
-                            }
-                        }
-                        crate::om::OperationStateStatusPayload::Opaque { raw } => {
-                            OmOperationStateStatusPayload::Opaque { raw: raw.to_vec() }
-                        }
-                    };
-                    Some(OmOperationStateStatus {
-                        id: format!(
+                    OmOperationStateStatus::new(
+                        format!(
                             "nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"
                         ),
-                        section_link: link.id.clone(),
+                        link.id.clone(),
                         ordinal,
-                        status_code,
-                        raw_status_code: row.status_code.raw.to_vec(),
-                        object_index,
-                        raw_object_index: row.object_index.raw.to_vec(),
-                        payload,
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.offset as u64,
-                        end_offset: entry_offset + row.end_offset as u64,
-                    })
+                        row.into_owned(),
+                        entry.name.clone(),
+                        entry_offset.checked_add(offset as u64)?,
+                    )
                 })
                 .collect()
         })
@@ -793,31 +487,22 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             table
-                .slot_lanes
-                .into_iter()
+                .into_entries()
+                .filter_map(|(offset, entry)| match entry {
+                    StateTableEntry::Status(_) => None,
+                    StateTableEntry::Slots(slots) => Some((offset, slots)),
+                })
                 .enumerate()
-                .filter_map(move |(ordinal, lane)| {
+                .filter_map(move |(ordinal, (offset, slots))| {
                     let ordinal = u32::try_from(ordinal).ok()?;
-                    let slots = lane
-                        .slots
-                        .into_iter()
-                        .enumerate()
-                        .map(|(slot_ordinal, slot)| OmOperationStateSlot {
-                            ordinal: u32::try_from(slot_ordinal).expect("slot ordinal fits u32"),
-                            object_index: slot.value,
-                            raw_object_index: slot.raw.to_vec(),
-                        })
-                        .collect();
                     Some(OmOperationStateSlotLane {
                         id: format!(
                             "nx:feature-history:operation-state-slot-lane#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        slots,
+                        frame: crate::om::state_slot_lane::StateSlotLane::new(entry_offset.checked_add(offset as u64)?, slots).ok()?,
                         source_entry: entry.name.clone(),
-                        source_offset: entry_offset + lane.offset as u64,
-                        end_offset: entry_offset + lane.end_offset as u64,
                     })
                 })
                 .collect()
@@ -871,6 +556,10 @@ pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> 
 
 /// Named parameter declaration in a bounded NX expression object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ExpressionDeclarationWire",
+    into = "ExpressionDeclarationWire"
+)]
 pub struct ExpressionDeclaration {
     /// Globally unique declaration identity.
     pub id: String,
@@ -879,12 +568,7 @@ pub struct ExpressionDeclaration {
     /// Owning entry in the native OM record directory.
     pub record: String,
     /// Exact NX parameter name.
-    pub name: String,
-    /// Decimal source parameter identifier following `p`.
-    pub parameter_index: u32,
-    /// Qualified role following the parameter identifier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub qualifier: Option<String>,
+    pub name: ParameterName<String, u32>,
     /// Independently framed constant numeric expression in the declaration record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub literal: Option<String>,
@@ -894,24 +578,79 @@ pub struct ExpressionDeclaration {
     pub source_offset: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ExpressionDeclarationWire {
+    /// Globally unique declaration identity.
+    id: String,
+    /// Persistent OM object identifier.
+    object_id: u32,
+    /// Owning entry in the native OM record directory.
+    record: String,
+    /// Exact NX parameter name.
+    name: String,
+    /// Decimal source parameter identifier following `p`.
+    parameter_index: u32,
+    /// Qualified role following the parameter identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    qualifier: Option<String>,
+    /// Independently framed constant numeric expression in the declaration record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    literal: Option<String>,
+    /// Directory entry containing the declaration record.
+    source_entry: String,
+    /// Absolute file offset of the declaration-name marker.
+    source_offset: u64,
+}
+
+impl From<ExpressionDeclaration> for ExpressionDeclarationWire {
+    fn from(value: ExpressionDeclaration) -> Self {
+        Self {
+            parameter_index: value.name.index(),
+            qualifier: value.name.qualifier().map(str::to_string),
+            name: value.name.into_spelling(),
+            id: value.id,
+            object_id: value.object_id,
+            record: value.record,
+            literal: value.literal,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
+    type Error = String;
+    fn try_from(wire: ExpressionDeclarationWire) -> Result<Self, Self::Error> {
+        let name = ParameterName::<_, u32>::parse(wire.name)
+            .ok_or("name must use canonical parameter syntax")?;
+        if name.index() != wire.parameter_index || name.qualifier() != wire.qualifier.as_deref() {
+            return Err("parameter_index and qualifier must match name".into());
+        }
+        Ok(Self {
+            name,
+            id: wire.id,
+            object_id: wire.object_id,
+            record: wire.record,
+            literal: wire.literal,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 /// Explicit numeric expression serialized in one NX OM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ExpressionWire", into = "ExpressionWire")]
 pub struct Expression {
     /// Globally unique native-record identity.
     pub id: String,
-    /// Persistent OM object identifier.
-    pub object_id: Option<u32>,
-    /// Owning entry in the native OM record directory, when externally bounded.
-    pub record: Option<String>,
+    /// Externally bounded OM record and its persistent identity.
+    pub owner: Option<ExpressionOwner>,
     /// Exact-name declaration record for this parameter, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declaration: Option<String>,
     /// NX parameter name.
-    pub name: String,
-    /// Decimal source parameter identifier following the leading `p`.
-    pub parameter_index: Option<u32>,
-    /// Qualified role following the parameter identifier.
-    pub qualifier: Option<String>,
+    pub name: ParameterName<String>,
     /// Declared native unit.
     pub unit: ExpressionUnit,
     /// Exact serialized expression text.
@@ -927,6 +666,95 @@ pub struct Expression {
     pub source_table: String,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpressionOwner {
+    pub object_id: u32,
+    pub record: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExpressionWire {
+    /// Globally unique native-record identity.
+    id: String,
+    /// Persistent OM object identifier.
+    object_id: Option<u32>,
+    /// Owning entry in the native OM record directory, when externally bounded.
+    record: Option<String>,
+    /// Exact-name declaration record for this parameter, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    declaration: Option<String>,
+    /// NX parameter name.
+    name: String,
+    /// Decimal source parameter identifier following the leading `p`.
+    parameter_index: Option<u32>,
+    /// Qualified role following the parameter identifier.
+    qualifier: Option<String>,
+    /// Declared native unit.
+    unit: ExpressionUnit,
+    /// Exact serialized expression text.
+    expression: String,
+    /// Finite numeric value after context-free and dependency-graph evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    value: Option<f64>,
+    /// Directory entry containing the OM section.
+    source_entry: String,
+    /// Self-contained expression table selected by the nearest preceding table marker.
+    #[serde(default)]
+    source_table: String,
+    /// Absolute file offset of the expression text.
+    source_offset: u64,
+}
+
+impl From<Expression> for ExpressionWire {
+    fn from(value: Expression) -> Self {
+        let (object_id, record) = value.owner.map_or((None, None), |owner| {
+            (Some(owner.object_id), Some(owner.record))
+        });
+        Self {
+            object_id,
+            record,
+            id: value.id,
+            declaration: value.declaration,
+            parameter_index: value.name.index(),
+            qualifier: value.name.qualifier().map(str::to_string),
+            name: value.name.into_spelling(),
+            unit: value.unit,
+            expression: value.expression,
+            value: value.value,
+            source_entry: value.source_entry,
+            source_table: value.source_table,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ExpressionWire> for Expression {
+    type Error = String;
+    fn try_from(wire: ExpressionWire) -> Result<Self, Self::Error> {
+        let name = ParameterName::new(wire.name);
+        if name.index() != wire.parameter_index || name.qualifier() != wire.qualifier.as_deref() {
+            return Err("parameter_index and qualifier must match name".into());
+        }
+        let owner = match (wire.object_id, wire.record) {
+            (None, None) => None,
+            (Some(object_id), Some(record)) => Some(ExpressionOwner { object_id, record }),
+            _ => return Err("object_id and record are present together".into()),
+        };
+        Ok(Self {
+            owner,
+            id: wire.id,
+            declaration: wire.declaration,
+            name,
+            unit: wire.unit,
+            expression: wire.expression,
+            value: wire.value,
+            source_entry: wire.source_entry,
+            source_table: wire.source_table,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Return exact `p<decimal>[_qualifier]` references in formula occurrence order.
@@ -984,11 +812,12 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
         end += 1;
     }
     let name = std::str::from_utf8(bytes.get(at..end)?).ok()?;
-    crate::om::parameter_name_parts(name).map(|_| end)
+    ParameterName::<_, u32>::parse(name).map(|_| end)
 }
 
 /// Length-framed class definition from an NX OM type registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ClassDefinitionWire", into = "ClassDefinitionWire")]
 pub struct ClassDefinition {
     /// Globally unique native-record identity.
     pub id: String,
@@ -998,28 +827,9 @@ pub struct ClassDefinition {
     pub ordinal: u32,
     /// First registry-token byte serialized after the class name (legacy field name).
     pub trailing_code: u8,
-    /// Decoded storage token from the complete class registry tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_storage_code: Option<u32>,
-    /// One-based base-class ordinal from the complete class registry tail.
-    /// Zero denotes the registry root.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_base_class: Option<u32>,
-    /// One-based reference-list ordinal from the complete class registry tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_reference: Option<u32>,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
-    /// Variable-width prefix of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub layout_prefix: Vec<u8>,
-    /// Stable eight-byte class fingerprint in a framed registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema_fingerprint: Option<[u8; 8]>,
-    /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section base.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1028,8 +838,118 @@ pub struct ClassDefinition {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ClassDefinitionWire {
+    /// Globally unique native-record identity.
+    id: String,
+    /// Registered `UGS::` class name.
+    name: String,
+    /// Zero-based declaration ordinal used as class identity.
+    ordinal: u32,
+    /// First registry-token byte serialized after the class name (legacy field name).
+    trailing_code: u8,
+    /// Decoded storage token from the complete class registry tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_storage_code: Option<u32>,
+    /// One-based base-class ordinal from the complete class registry tail.
+    /// Zero denotes the registry root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_base_class: Option<u32>,
+    /// One-based reference-list ordinal from the complete class registry tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_reference: Option<u32>,
+    /// Exact bytes between this declaration core and the next class declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    registry_suffix: Vec<u8>,
+    /// Variable-width prefix of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    layout_prefix: Vec<u8>,
+    /// Stable eight-byte class fingerprint in a framed registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_fingerprint: Option<[u8; 8]>,
+    /// Terminal byte of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout_terminal: Option<u8>,
+    /// Absolute file offset of the containing OM section base.
+    section_offset: u64,
+    /// Directory entry containing the OM section.
+    source_entry: String,
+    /// Absolute file offset of the definition's length byte.
+    source_offset: u64,
+}
+
+impl From<ClassDefinition> for ClassDefinitionWire {
+    fn from(value: ClassDefinition) -> Self {
+        let tail: Vec<_> = std::iter::once(value.trailing_code)
+            .chain(value.registry_suffix.iter().copied())
+            .collect();
+        let registry = crate::om::registry::class_registry_layout(&tail);
+        let layout = registry_layout(&tail[1..]);
+        Self {
+            id: value.id,
+            name: value.name,
+            ordinal: value.ordinal,
+            trailing_code: value.trailing_code,
+            registry_storage_code: registry.map(|layout| layout.storage_code.value()),
+            registry_base_class: registry
+                .map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
+            registry_reference: registry.map(|layout| layout.reference.get()),
+            registry_suffix: value.registry_suffix,
+            layout_prefix: layout
+                .as_ref()
+                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()),
+            schema_fingerprint: registry
+                .map(|layout| layout.schema_fingerprint)
+                .or_else(|| layout.as_ref().map(|layout| layout.fingerprint)),
+            layout_terminal: layout.as_ref().map(|layout| layout.terminal),
+            section_offset: value.section_offset,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ClassDefinitionWire> for ClassDefinition {
+    type Error = String;
+    fn try_from(wire: ClassDefinitionWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            name: wire.name,
+            ordinal: wire.ordinal,
+            trailing_code: wire.trailing_code,
+            registry_suffix: wire.registry_suffix,
+            section_offset: wire.section_offset,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        };
+        let expected = ClassDefinitionWire::from(value.clone());
+        if wire.registry_storage_code != expected.registry_storage_code {
+            return Err(
+                "ClassDefinition registry_storage_code disagrees with registry bytes".into(),
+            );
+        }
+        if wire.registry_base_class != expected.registry_base_class {
+            return Err("ClassDefinition registry_base_class disagrees with registry bytes".into());
+        }
+        if wire.registry_reference != expected.registry_reference {
+            return Err("ClassDefinition registry_reference disagrees with registry bytes".into());
+        }
+        if wire.layout_prefix != expected.layout_prefix {
+            return Err("ClassDefinition layout_prefix disagrees with registry bytes".into());
+        }
+        if wire.schema_fingerprint != expected.schema_fingerprint {
+            return Err("ClassDefinition schema_fingerprint disagrees with registry bytes".into());
+        }
+        if wire.layout_terminal != expected.layout_terminal {
+            return Err("ClassDefinition layout_terminal disagrees with registry bytes".into());
+        }
+        Ok(value)
+    }
+}
+
 /// Member declaration from an NX OM field registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FieldDefinitionWire", into = "FieldDefinitionWire")]
 pub struct FieldDefinition {
     /// Globally unique declaration identity.
     pub id: String,
@@ -1039,24 +959,9 @@ pub struct FieldDefinition {
     pub ordinal: u32,
     /// First registry-token byte serialized immediately after the name (legacy field name).
     pub trailing_code: u8,
-    /// Decoded storage token from the complete member registry head.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_storage_code: Option<u32>,
-    /// One-based declaring-class ordinal from the complete member registry head.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry_owner_class: Option<u32>,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
-    /// Variable-width prefix of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub layout_prefix: Vec<u8>,
-    /// Stable eight-byte field fingerprint in a framed registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema_fingerprint: Option<[u8; 8]>,
-    /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section signature.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1065,16 +970,114 @@ pub struct FieldDefinition {
     pub source_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct FieldDefinitionWire {
+    /// Globally unique declaration identity.
+    id: String,
+    /// Registered `m_` member name.
+    name: String,
+    /// Zero-based declaration ordinal within its section.
+    ordinal: u32,
+    /// First registry-token byte serialized immediately after the name (legacy field name).
+    trailing_code: u8,
+    /// Decoded storage token from the complete member registry head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_storage_code: Option<u32>,
+    /// One-based declaring-class ordinal from the complete member registry head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    registry_owner_class: Option<u32>,
+    /// Exact bytes between this declaration core and the next member declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    registry_suffix: Vec<u8>,
+    /// Variable-width prefix of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    layout_prefix: Vec<u8>,
+    /// Stable eight-byte field fingerprint in a framed registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_fingerprint: Option<[u8; 8]>,
+    /// Terminal byte of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    layout_terminal: Option<u8>,
+    /// Absolute file offset of the containing OM section signature.
+    section_offset: u64,
+    /// Directory entry containing the OM section.
+    source_entry: String,
+    /// Absolute file offset of the declaration length byte.
+    source_offset: u64,
+}
+
+impl From<FieldDefinition> for FieldDefinitionWire {
+    fn from(value: FieldDefinition) -> Self {
+        let tail: Vec<_> = std::iter::once(value.trailing_code)
+            .chain(value.registry_suffix.iter().copied())
+            .collect();
+        let registry = crate::om::registry::field_registry_layout(&tail);
+        let layout = registry_layout(&tail[1..]);
+        Self {
+            id: value.id,
+            name: value.name,
+            ordinal: value.ordinal,
+            trailing_code: value.trailing_code,
+            registry_storage_code: registry.map(|layout| layout.storage_code.value()),
+            registry_owner_class: registry.map(|layout| layout.owner_class.get()),
+            registry_suffix: value.registry_suffix,
+            layout_prefix: layout
+                .as_ref()
+                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()),
+            schema_fingerprint: layout.as_ref().map(|layout| layout.fingerprint),
+            layout_terminal: layout.as_ref().map(|layout| layout.terminal),
+            section_offset: value.section_offset,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FieldDefinitionWire> for FieldDefinition {
+    type Error = String;
+    fn try_from(wire: FieldDefinitionWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            id: wire.id,
+            name: wire.name,
+            ordinal: wire.ordinal,
+            trailing_code: wire.trailing_code,
+            registry_suffix: wire.registry_suffix,
+            section_offset: wire.section_offset,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        };
+        let expected = FieldDefinitionWire::from(value.clone());
+        if wire.registry_storage_code != expected.registry_storage_code {
+            return Err(
+                "FieldDefinition registry_storage_code disagrees with registry bytes".into(),
+            );
+        }
+        if wire.registry_owner_class != expected.registry_owner_class {
+            return Err(
+                "FieldDefinition registry_owner_class disagrees with registry bytes".into(),
+            );
+        }
+        if wire.layout_prefix != expected.layout_prefix {
+            return Err("FieldDefinition layout_prefix disagrees with registry bytes".into());
+        }
+        if wire.schema_fingerprint != expected.schema_fingerprint {
+            return Err("FieldDefinition schema_fingerprint disagrees with registry bytes".into());
+        }
+        if wire.layout_terminal != expected.layout_terminal {
+            return Err("FieldDefinition layout_terminal disagrees with registry bytes".into());
+        }
+        Ok(value)
+    }
+}
+
 /// Directory entry for one externally bounded NX OM entity record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
 pub struct ObjectRecord {
     /// Globally unique record identity.
     pub id: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
-    /// Absolute file offset of the paired object-id table word.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_id_source_offset: Option<u64>,
+    /// Persistent OM object identifier and the offset of its table word.
+    pub object_id: Option<(u32, u64)>,
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
@@ -1098,6 +1101,82 @@ pub struct ObjectRecord {
     pub source_entry: String,
     /// Absolute file offset of the record start.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ObjectRecordWire {
+    id: String,
+    object_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_id_source_offset: Option<u64>,
+    section_ordinal: u32,
+    record_ordinal: u32,
+    section_offset: u64,
+    byte_len: u64,
+    sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stable_identity: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dependencies: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dependents: Vec<String>,
+    source_entry: String,
+    source_offset: u64,
+}
+
+impl From<ObjectRecord> for ObjectRecordWire {
+    fn from(value: ObjectRecord) -> Self {
+        let (object_id, object_id_source_offset) = match value.object_id {
+            Some((id, offset)) => (Some(id), Some(offset)),
+            None => (None, None),
+        };
+        Self {
+            id: value.id,
+            object_id,
+            object_id_source_offset,
+            section_ordinal: value.section_ordinal,
+            record_ordinal: value.record_ordinal,
+            section_offset: value.section_offset,
+            byte_len: value.byte_len,
+            sha256: value.sha256,
+            stable_identity: value.stable_identity,
+            dependencies: value.dependencies,
+            dependents: value.dependents,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ObjectRecordWire> for ObjectRecord {
+    type Error = String;
+
+    fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let object_id = match (wire.object_id, wire.object_id_source_offset) {
+            (None, None) => None,
+            (Some(id), Some(offset)) => Some((id, offset)),
+            _ => {
+                return Err(
+                    "object record object_id and object_id_source_offset are present together"
+                        .to_owned(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            object_id,
+            section_ordinal: wire.section_ordinal,
+            record_ordinal: wire.record_ordinal,
+            section_offset: wire.section_offset,
+            byte_len: wire.byte_len,
+            sha256: wire.sha256,
+            stable_identity: wire.stable_identity,
+            dependencies: wire.dependencies,
+            dependents: wire.dependents,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Return a content-backed identity for one indexed OM object record.
@@ -1127,18 +1206,15 @@ pub(crate) fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) ->
 /// serialized bytes: no cross-record owner relation proves that they are
 /// position-independent. A shared finite work budget returns no identity when
 /// canonicalization would exceed the decoder's bounded resource policy.
-fn stable_object_record_identities(
-    source_entry: &str,
-    records: &[crate::om::EntityRecord<'_>],
-) -> Vec<Option<String>> {
+fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec<Option<String>> {
     const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
 
     let references = records
         .iter()
-        .map(|record| {
-            crate::om::counted_record_references(record.bytes, 0, records.len())
+        .map(|bytes| {
+            crate::om::counted_record_references(bytes, 0, records.len())
                 .into_iter()
-                .map(|reference| (reference.offset, reference.value as usize))
+                .map(|reference| (reference.offset, usize::from(reference.value)))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -1147,10 +1223,7 @@ fn stable_object_record_identities(
     (0..records.len())
         .map(|root| {
             if references[root].is_empty() {
-                return Some(stable_object_record_identity(
-                    source_entry,
-                    records[root].bytes,
-                ));
+                return Some(stable_object_record_identity(source_entry, records[root]));
             }
             stable_object_record_graph_identity(
                 source_entry,
@@ -1184,7 +1257,7 @@ const STABLE_GRAPH_NODE_START: u8 = 0xf0;
 /// Encode one rooted object-record graph without depending on local ordinals.
 fn stable_object_record_graph_identity(
     source_entry: &str,
-    records: &[crate::om::EntityRecord<'_>],
+    records: &[&[u8]],
     references: &[Vec<(usize, usize)>],
     root: usize,
     graph_work: &mut usize,
@@ -1225,7 +1298,7 @@ fn stable_object_record_graph_identity(
             let frame = stack.get(frame_index)?;
             (frame.record, frame.next_reference, frame.raw_cursor)
         };
-        let record_bytes = records.get(record)?.bytes;
+        let record_bytes = *records.get(record)?;
         let record_references = references.get(record)?;
         if let Some(&(reference_offset, target)) = record_references.get(next_reference) {
             let reference_end = reference_offset.checked_add(3)?;
@@ -1283,13 +1356,15 @@ fn stable_object_record_graph_identity(
 
 /// Counted active-object membership table from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "membership_wire::TableWire",
+    into = "membership_wire::TableWire"
+)]
 pub struct RmFastLoadObjectIdTable {
     /// Globally unique table identity.
     pub id: String,
     /// Ordered members in the native `rmfastload_object_ids` arena.
-    pub members: Vec<String>,
-    /// Exact serialized little-endian member-count word.
-    pub raw_count: [u8; 4],
+    pub members: ObjectIdMembers<String>,
     /// Directory entry containing the table.
     pub source_entry: String,
     /// Absolute file offset of the `UGS::Solid::Topol` registry marker.
@@ -1300,6 +1375,10 @@ pub struct RmFastLoadObjectIdTable {
 
 /// One fixed-width active-object membership word from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "membership_wire::MemberWire",
+    into = "membership_wire::MemberWire"
+)]
 pub struct RmFastLoadObjectId {
     /// Globally unique member identity.
     pub id: String,
@@ -1312,10 +1391,19 @@ pub struct RmFastLoadObjectId {
     /// Record-order-independent identity when the value is unique in the table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
-    /// Exact serialized little-endian object-id word.
-    pub raw: [u8; 4],
     /// Absolute file offset of the four-byte object-id word.
     pub source_offset: u64,
+}
+
+impl RmFastLoadObjectIdTable {
+    pub fn raw_count(&self) -> [u8; 4] {
+        self.members.count().to_le_bytes()
+    }
+}
+impl RmFastLoadObjectId {
+    pub fn raw(&self) -> [u8; 4] {
+        self.value.to_le_bytes()
+    }
 }
 
 /// One externally bounded block in an NX OM offset-only column store.
@@ -1345,15 +1433,24 @@ pub struct DataBlock {
 }
 
 /// Admitted complete grammar selected for one offset-store control block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataBlockControlFormKind {
-    ZeroPrefixed,
-    ProductAnchored,
+    ZeroPrefixed {
+        value_count: std::num::NonZeroU32,
+    },
+    ProductAnchored {
+        leading: Option<ControlLeadingValue>,
+        value_count: std::num::NonZeroU32,
+        byte_len: std::num::NonZeroU64,
+    },
 }
 
 /// Atomic classification of one complete offset-store control lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DataBlockControlFormWire",
+    into = "DataBlockControlFormWire"
+)]
 pub struct DataBlockControlForm {
     /// Globally unique control-form identity.
     pub id: String,
@@ -1361,18 +1458,119 @@ pub struct DataBlockControlForm {
     pub data_block: String,
     /// Selected complete control grammar.
     pub kind: DataBlockControlFormKind,
-    /// Number of values in the admitted control array.
-    pub value_count: u32,
-    /// Byte width of the compact leading value before a product-anchored array.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub leading_value_width: Option<u8>,
-    /// Compact leading little-endian value before a product-anchored array.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub leading_value: Option<u32>,
-    /// Exact serialized opening control-block length.
-    pub byte_len: u64,
     /// Absolute file offset of the control block.
     pub source_offset: u64,
+}
+
+impl DataBlockControlFormKind {
+    pub fn value_count(self) -> u32 {
+        match self {
+            Self::ZeroPrefixed { value_count } | Self::ProductAnchored { value_count, .. } => {
+                value_count.get()
+            }
+        }
+    }
+
+    pub fn byte_len(self) -> u64 {
+        match self {
+            Self::ZeroPrefixed { value_count } => u64::from(value_count.get()) * 4,
+            Self::ProductAnchored { byte_len, .. } => byte_len.get(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockControlFormWire {
+    id: String,
+    data_block: String,
+    kind: DataBlockControlFormKindWire,
+    value_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leading_value_width: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leading_value: Option<u32>,
+    byte_len: u64,
+    source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DataBlockControlFormKindWire {
+    ZeroPrefixed,
+    ProductAnchored,
+}
+
+impl From<DataBlockControlForm> for DataBlockControlFormWire {
+    fn from(value: DataBlockControlForm) -> Self {
+        let (kind, leading_value_width, leading_value) = match value.kind {
+            DataBlockControlFormKind::ZeroPrefixed { .. } => {
+                (DataBlockControlFormKindWire::ZeroPrefixed, None, None)
+            }
+            DataBlockControlFormKind::ProductAnchored { leading, .. } => (
+                DataBlockControlFormKindWire::ProductAnchored,
+                leading.map(ControlLeadingValue::width),
+                leading.map(ControlLeadingValue::value),
+            ),
+        };
+        Self {
+            id: value.id,
+            data_block: value.data_block,
+            kind,
+            value_count: value.kind.value_count(),
+            leading_value_width,
+            leading_value,
+            byte_len: value.kind.byte_len(),
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
+    type Error = String;
+
+    fn try_from(wire: DataBlockControlFormWire) -> Result<Self, Self::Error> {
+        let value_count = std::num::NonZeroU32::new(wire.value_count)
+            .ok_or("control-form value_count must be nonzero")?;
+        let byte_len = std::num::NonZeroU64::new(wire.byte_len)
+            .ok_or("control-form byte_len must be nonzero")?;
+        let kind = match (wire.kind, wire.leading_value_width, wire.leading_value) {
+            (DataBlockControlFormKindWire::ZeroPrefixed, None, None) => {
+                let kind = DataBlockControlFormKind::ZeroPrefixed { value_count };
+                if kind.byte_len() != byte_len.get() {
+                    return Err(
+                        "control-form byte_len must equal four times value_count".to_owned()
+                    );
+                }
+                kind
+            }
+            (DataBlockControlFormKindWire::ProductAnchored, None, None) => {
+                DataBlockControlFormKind::ProductAnchored {
+                    leading: None,
+                    value_count,
+                    byte_len,
+                }
+            }
+            (DataBlockControlFormKindWire::ProductAnchored, Some(width), Some(value)) => {
+                DataBlockControlFormKind::ProductAnchored {
+                    leading: Some(ControlLeadingValue::from_wire(width, value)?),
+                    value_count,
+                    byte_len,
+                }
+            }
+            _ => {
+                return Err(
+                    "control-form leading value is present only for product-anchored forms"
+                        .to_owned(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            data_block: wire.data_block,
+            kind,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Ordered value from a zero-prefixed offset-only OM store control array.
@@ -1385,7 +1583,7 @@ pub struct DataBlockControlValue {
     /// Zero-based word order in the complete control block.
     pub ordinal: u32,
     /// Unsigned 24-bit value serialized after the zero byte.
-    pub value: u32,
+    pub value: crate::om::control_word::ControlWord24,
     /// Absolute file offset of the four-byte word.
     pub source_offset: u64,
 }
@@ -1410,6 +1608,10 @@ pub struct DataBlockControlIndexValue {
 
 /// Registered class selected by the leading lane of an offset-store control block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DataBlockControlClassReferenceWire",
+    into = "DataBlockControlClassReferenceWire"
+)]
 pub struct DataBlockControlClassReference {
     /// Globally unique class-reference identity.
     pub id: String,
@@ -1419,21 +1621,96 @@ pub struct DataBlockControlClassReference {
     pub ordinal: u32,
     /// Zero-based ordinal in the store's class registry.
     pub class_ordinal: u32,
-    /// Target in the native `class_definitions` arena when that registry slot
-    /// has a retained declaration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_definition: Option<String>,
-    /// Exact registered class name when that registry slot has a retained
-    /// declaration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
+    /// Retained class definition and name when that registry slot exists.
+    pub class: Option<DataBlockControlClassRef>,
     /// Absolute file offset of the four-byte control word.
     pub source_offset: u64,
 }
 
+/// Retained class-definition identity and registered name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataBlockControlClassRef {
+    pub definition: String,
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockControlClassReferenceWire {
+    id: String,
+    data_block: String,
+    ordinal: u32,
+    class_ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_definition: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_name: Option<String>,
+    source_offset: u64,
+}
+
+impl From<DataBlockControlClassReference> for DataBlockControlClassReferenceWire {
+    fn from(value: DataBlockControlClassReference) -> Self {
+        let (class_definition, class_name) = match value.class {
+            Some(class) => (Some(class.definition), Some(class.name)),
+            None => (None, None),
+        };
+        Self {
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            class_ordinal: value.class_ordinal,
+            class_definition,
+            class_name,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassReference {
+    type Error = String;
+
+    fn try_from(wire: DataBlockControlClassReferenceWire) -> Result<Self, Self::Error> {
+        let class = match (wire.class_definition, wire.class_name) {
+            (None, None) => None,
+            (Some(definition), Some(name)) => Some(DataBlockControlClassRef { definition, name }),
+            _ => {
+                return Err(
+                    "control class reference definition and name are present together".to_owned(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            data_block: wire.data_block,
+            ordinal: wire.ordinal,
+            class_ordinal: wire.class_ordinal,
+            class,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DataBlockReferenceWire", into = "DataBlockReferenceWire")]
 pub struct DataBlockReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based reference order within the block.
+    pub ordinal: u32,
+    /// Referenced persistent OM object ID.
+    pub object: crate::om::reference_index::FeatureReferenceToken,
+    /// Uniquely resolved object record in the same directory entry.
+    pub target_record: Option<String>,
+    /// Uniquely resolved parameter declaration carrying this object ID.
+    pub target_expression_declaration: Option<String>,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockReferenceWire {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning block in the native `data_blocks` arena.
@@ -1454,260 +1731,55 @@ pub struct DataBlockReference {
     pub source_offset: u64,
 }
 
-/// Complete counted block-index lane carried by one offset-store block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockCountedIndexLane {
-    /// Globally unique lane identity.
-    pub id: String,
-    /// Owning block in the native `data_blocks` arena.
-    pub data_block: String,
-    /// Zero-based lane order within the block.
-    pub ordinal: u32,
-    /// Serialized count including the anchor and terminal slot.
-    pub declared_count: u8,
-    /// Decoded anchoring block index.
-    pub anchor_index: u32,
-    /// Exact serialized anchor token.
-    pub raw_anchor_index: Vec<u8>,
-    /// Same-section block addressed by the anchor.
-    pub anchor_data_block: String,
-    /// Ordered decoded member block indices.
-    pub member_indices: Vec<u32>,
-    /// Exact serialized member tokens in lane order.
-    pub raw_member_indices: Vec<Vec<u8>>,
-    /// Ordered same-section blocks addressed by the members.
-    pub member_data_blocks: Vec<String>,
-    /// Absolute file offset of the opening `01` marker.
-    pub source_offset: u64,
-    /// Absolute file offset of the anchoring compact index.
-    pub anchor_source_offset: u64,
-    /// Ordered absolute file offsets of member compact indices.
-    pub member_source_offsets: Vec<u64>,
+impl From<DataBlockReference> for DataBlockReferenceWire {
+    fn from(value: DataBlockReference) -> Self {
+        Self {
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            object_id: value.object.value(),
+            raw_object_id: value.object.raw().to_vec(),
+            target_record: value.target_record,
+            target_expression_declaration: value.target_expression_declaration,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
-/// Fixed-width nullable `ABR` block-reference lane in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockAbrReferenceLane {
-    /// Globally unique lane identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based lane order within the section's column storage.
-    pub ordinal: u32,
-    /// Sixteen ordered nullable serialized block indices.
-    pub slot_indices: Vec<Option<u32>>,
-    /// Exact compact-index tokens in slot order.
-    pub raw_slot_indices: Vec<Vec<u8>>,
-    /// Sixteen ordered nullable same-section block identities.
-    pub slot_data_blocks: Vec<Option<String>>,
-    /// Absolute file offsets of the sixteen compact-index tokens.
-    pub slot_source_offsets: Vec<u64>,
-    /// Directory entry containing the offset-only store.
-    pub source_entry: String,
-    /// Absolute file offset of the opening `11` marker.
-    pub source_offset: u64,
-}
-
-/// Self-framed index row in contiguous offset-store column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockIndexRow {
-    /// Globally unique row identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
-    /// First non-null compact index.
-    pub first_index: u32,
-    /// Exact serialized leading-index token.
-    pub raw_first_index: Vec<u8>,
-    /// Serialized `03` or `07` row flag.
-    pub flag: u8,
-    /// Four ordered non-null compact indices after the row flag.
-    pub indices: [u32; 4],
-    /// Exact serialized four-index tokens in row order.
-    pub raw_indices: [Vec<u8>; 4],
-    /// Four same-section blocks addressed by the compact indices.
-    pub data_blocks: [String; 4],
-    /// Directory entry containing the offset-only store.
-    pub source_entry: String,
-    /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
-    /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
-    /// Absolute file offset of the opening discriminator.
-    pub source_offset: u64,
-    /// Absolute file offset of the first compact index.
-    pub first_index_source_offset: u64,
-    /// Four ordered absolute file offsets of the compact indices.
-    pub index_source_offsets: [u64; 4],
-}
-
-/// Self-framed linked index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockLinkedIndexRow {
-    /// Globally unique row identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
-    /// Unresolved leading compact index.
-    pub first_index: u32,
-    /// Exact serialized leading-index token.
-    pub raw_first_index: Vec<u8>,
-    /// Serialized `16`, `17`, or `18` discriminator.
-    pub discriminator: u8,
-    /// Target compact block index.
-    pub target_index: u32,
-    /// Exact serialized target-index token.
-    pub raw_target_index: Vec<u8>,
-    /// Three compact block indices after `ff ff 90 fe`.
-    pub indices: [u32; 3],
-    /// Exact serialized post-marker tokens in row order.
-    pub raw_indices: [Vec<u8>; 3],
-    /// Target block followed by the three post-marker blocks.
-    pub data_blocks: [String; 4],
-    /// Serialized `03` or `07` flag.
-    pub flag: u8,
-    /// Serialized `04` or `07` mode.
-    pub mode: u8,
-    /// Directory entry containing the store.
-    pub source_entry: String,
-    /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
-    /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
-    /// Absolute file offset of the opening discriminator.
-    pub source_offset: u64,
-    /// Absolute file offset of the leading compact index.
-    pub first_index_source_offset: u64,
-    /// Absolute file offset of the target compact index.
-    pub target_index_source_offset: u64,
-    /// Absolute file offsets of the three post-marker indices.
-    pub index_source_offsets: [u64; 3],
-}
-
-/// Self-framed target-index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockTargetIndexRow {
-    /// Globally unique row identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
-    /// Target compact block index.
-    pub target_index: u32,
-    /// Exact serialized target-index token.
-    pub raw_target_index: Vec<u8>,
-    /// Three compact block indices after `ff ff 90 fe`.
-    pub indices: [u32; 3],
-    /// Exact serialized post-marker tokens in row order.
-    pub raw_indices: [Vec<u8>; 3],
-    /// Target block followed by the three post-marker blocks.
-    pub data_blocks: [String; 4],
-    /// Serialized `04` or `07` mode.
-    pub mode: u8,
-    /// Directory entry containing the store.
-    pub source_entry: String,
-    /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
-    /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
-    /// Absolute file offset of the opening discriminator.
-    pub source_offset: u64,
-    /// Absolute file offset of the target compact index.
-    pub target_index_source_offset: u64,
-    /// Absolute file offsets of the three post-marker indices.
-    pub index_source_offsets: [u64; 3],
-}
-
-/// Exact row encoding that selects `UGS::RM_creation_display_data` in an
-/// `RMFastLoad` record area.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RmCreationDisplayDataEncoding {
-    /// Self-framed index row whose fourth post-flag index selects the class.
-    Index {
-        flag: u8,
-        indices: [u32; 4],
-        raw_indices: [Vec<u8>; 4],
-        index_source_offsets: [u64; 4],
-    },
-    /// Self-framed linked row whose third post-marker index selects the class.
-    Linked {
-        discriminator: u8,
-        target_index: u32,
-        raw_target_index: Vec<u8>,
-        target_index_source_offset: u64,
-        indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
-        index_source_offsets: [u64; 3],
-        flag: u8,
-        mode: u8,
-    },
-    /// Self-framed target row whose third post-marker index selects the class.
-    Target {
-        target_index: u32,
-        raw_target_index: Vec<u8>,
-        target_index_source_offset: u64,
-        indices: [u32; 3],
-        raw_indices: [Vec<u8>; 3],
-        index_source_offsets: [u64; 3],
-        mode: u8,
-    },
-}
-
-/// Lossless class-selected creation-display relation in `RMFastLoad`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RmCreationDisplayDataRelation {
-    /// Globally unique relation identity.
-    pub id: String,
-    /// Zero-based relation order in ascending source order.
-    pub ordinal: u32,
-    /// Leading compact index when the row encoding carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_index: Option<u32>,
-    /// Exact serialized leading-index token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw_first_index: Option<Vec<u8>>,
-    /// Absolute file offset of the leading compact index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_index_source_offset: Option<u64>,
-    /// Exact registered class name.
-    pub class_name: String,
-    /// Target in the native `class_definitions` arena.
-    pub class_definition: String,
-    /// Exact admitted row encoding.
-    pub encoding: RmCreationDisplayDataEncoding,
-    /// Member addressed by the target index when the row carries one and the
-    /// index resolves in the `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_object_id: Option<String>,
-    /// Directory entry containing the relation.
-    pub source_entry: String,
-    /// Absolute file offset of the opening row discriminator.
-    pub source_offset: u64,
+impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
+    type Error = String;
+    fn try_from(value: DataBlockReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                value.object_id,
+                &value.raw_object_id,
+            )
+            .map_err(|error| format!("object_id/raw_object_id: {error}"))?,
+            target_record: value.target_record,
+            target_expression_declaration: value.target_expression_declaration,
+            source_offset: value.source_offset,
+        })
+    }
 }
 
 /// Complete named NX part palette for color indices 1 through 216.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "color_wire::PartColorTableWire",
+    into = "color_wire::PartColorTableWire"
+)]
 pub struct PartColorTable {
     /// Globally unique table identity.
     pub id: String,
     /// Registered `UGS::COLOR_table` declaration in `class_definitions`.
     pub class_definition: String,
-    /// Name of the separately encoded background color.
-    pub background_name: String,
-    /// Normalized background RGB components.
-    pub background_rgb: [f32; 3],
-    /// Exact serialized background component atoms.
-    pub raw_background_components: [Vec<u8>; 3],
-    /// Absolute file offsets of the background component atoms.
-    pub background_component_source_offsets: [u64; 3],
+    /// Exact background components and their absolute file offsets.
+    pub background: [(ColorComponent, u64); 3],
     /// Ordered entries in the native `part_color_definitions` arena.
-    pub definitions: Vec<String>,
+    pub definitions: [String; PALETTE_SIZE],
     /// Directory entry containing the table.
     pub source_entry: String,
     /// Absolute file offset of the counted name roster.
@@ -1716,102 +1788,23 @@ pub struct PartColorTable {
 
 /// One named RGB entry from an NX part palette.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "color_wire::PartColorDefinitionWire",
+    into = "color_wire::PartColorDefinitionWire"
+)]
 pub struct PartColorDefinition {
     /// Globally unique color-definition identity.
     pub id: String,
     /// Owning table in the native `part_color_tables` arena.
     pub color_table: String,
     /// One-based NX color index.
-    pub color_index: u16,
+    pub color_index: PaletteIndex,
     /// Serialized color name.
     pub name: String,
-    /// Normalized RGB components.
-    pub rgb: [f32; 3],
-    /// Exact serialized index token.
-    pub raw_color_index: Vec<u8>,
-    /// Exact serialized component atoms.
-    pub raw_components: [Vec<u8>; 3],
+    /// Exact normalized components and their absolute file offsets.
+    pub components: [(ColorComponent, u64); 3],
     /// Absolute file offset of the opening `05` marker.
     pub source_offset: u64,
-    /// Absolute file offsets of the three component atoms.
-    pub component_source_offsets: [u64; 3],
-}
-
-/// Exact row encoding carrying one `RMFastLoad` display-color assignment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RmDisplayColorAssignmentEncoding {
-    /// Linked row with an unresolved leading object identity.
-    Linked {
-        /// Unresolved leading object identity.
-        object_index: u32,
-        /// Exact leading-object token.
-        raw_object_index: Vec<u8>,
-        /// Absolute leading-object token offset.
-        object_index_source_offset: u64,
-        /// Row discriminator.
-        discriminator: u8,
-        /// Target index.
-        target_index: u32,
-        /// Exact target-index token.
-        raw_target_index: Vec<u8>,
-        /// Absolute target-index token offset.
-        target_index_source_offset: u64,
-        /// Three post-marker indices.
-        indices: [u32; 3],
-        /// Exact post-marker index tokens.
-        raw_indices: [Vec<u8>; 3],
-        /// Absolute post-marker token offsets.
-        index_source_offsets: [u64; 3],
-        /// Row flag.
-        flag: u8,
-        /// Row mode.
-        mode: u8,
-    },
-    /// Target-index row without a leading object identity.
-    Target {
-        /// Target index.
-        target_index: u32,
-        /// Exact target-index token.
-        raw_target_index: Vec<u8>,
-        /// Absolute target-index token offset.
-        target_index_source_offset: u64,
-        /// Three post-marker indices.
-        indices: [u32; 3],
-        /// Exact post-marker index tokens.
-        raw_indices: [Vec<u8>; 3],
-        /// Absolute post-marker token offsets.
-        index_source_offsets: [u64; 3],
-        /// Row mode.
-        mode: u8,
-    },
-}
-
-/// Explicit color assignment carried by one complete `RMFastLoad` row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RmDisplayColorAssignment {
-    /// Globally unique assignment identity.
-    pub id: String,
-    /// Zero-based source order.
-    pub ordinal: u32,
-    /// Complete self-framed row carrying the color token.
-    pub encoding: RmDisplayColorAssignmentEncoding,
-    /// Member addressed by the row target index when it resolves in the
-    /// `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_object_id: Option<String>,
-    /// One-based part palette index.
-    pub color_index: u16,
-    /// Target in `part_color_definitions`.
-    pub color_definition: String,
-    /// Exact color-index token.
-    pub raw_color_index: Vec<u8>,
-    /// Owning directory entry.
-    pub source_entry: String,
-    /// Absolute color-token offset.
-    pub source_offset: u64,
-    /// Absolute row-opener offset.
-    pub row_source_offset: u64,
 }
 
 /// Complete composite table spanning linked and target-index row grammars.
@@ -1823,14 +1816,9 @@ pub struct DataBlockColumnIndexTable {
     pub section_ordinal: u32,
     /// Leading mode-7 linked row.
     pub opening_linked_row: String,
-    /// Consecutive target-index rows in ascending source order.
-    pub target_rows: Vec<String>,
-    /// Consecutive mode-4 linked rows in ascending source order.
-    pub linked_rows: Vec<String>,
-    /// First and greatest target block ordinal.
-    pub first_target_index: u32,
-    /// Last and least target block ordinal.
-    pub last_target_index: u32,
+    /// Consecutive target and linked rows with their checked index interval.
+    #[serde(flatten)]
+    pub rows: ColumnIndexRows,
     /// Directory entry containing the store.
     pub source_entry: String,
     /// Absolute source offset of the opening linked row.
@@ -1847,7 +1835,7 @@ pub struct StoreHeader {
     /// Persistent object identity when the header belongs to an ID-bounded record.
     pub object_id: Option<u32>,
     /// Exact printable product/version text.
-    pub version: String,
+    pub version: crate::om::product::ProductText<String>,
     /// Directory entry containing the OM store.
     pub source_entry: String,
     /// Absolute file offset of the `04 01` marker.
@@ -1898,40 +1886,31 @@ pub struct StringValue {
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: PrintableString<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the `66 32 03` marker.
     pub source_offset: u64,
 }
 
-/// Canonical UUID text spanning one or more contiguous bounded OM records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ObjectUuidValue {
-    /// Globally unique value identity.
-    pub id: String,
-    /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
-    /// Exact UUID text.
-    pub uuid: String,
-    /// Bounded OM records intersected by the complete UUID frame.
-    pub records: Vec<String>,
-    /// Directory entry containing the OM section.
-    pub source_entry: String,
-    /// Absolute file offset of the `03 26` marker.
-    pub source_offset: u64,
-}
+#[cfg(test)]
+mod printable_value_wire_tests {
+    use super::StringValue;
 
-/// Tagged reference family serialized in an NX OM record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ObjectReferenceKind {
-    /// `e0` marker followed by a 32-bit persistent handle.
-    PersistentHandle,
-    /// Four-byte `0xC?` tagged 28-bit reference.
-    Tagged28,
-    /// Count-framed `90` reference to a record ordinal in the same section.
-    RecordOrdinal16,
+    #[test]
+    fn retained_printable_value_preserves_spaces_and_rejects_invalid_text() {
+        let json = r#"{"id":"value","record":"record","object_id":null,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
+        let value: StringValue = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for invalid in ["", "\n", "μ"] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire["value"] = invalid.into();
+            assert!(serde_json::from_value::<StringValue>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("value"));
+        }
+    }
 }
 
 /// Ordered tagged-reference occurrence owned by one NX OM record.
@@ -1945,12 +1924,9 @@ pub struct ObjectReference {
     pub object_id: Option<u32>,
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
-    /// Tagged reference family.
-    pub kind: ObjectReferenceKind,
-    /// Reference value without marker/tag bits.
-    pub value: u32,
-    /// Resolved target in the native OM record directory.
-    pub target_record: Option<String>,
+    /// Typed reference and its same-section target when present.
+    #[serde(flatten, with = "reference_wire")]
+    pub reference: RecordReference<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the reference marker.
@@ -1987,10 +1963,9 @@ pub struct DataBlockControlReference {
     pub data_block: String,
     /// Zero-based retained-reference order within the control block.
     pub ordinal: u32,
-    /// Tagged reference family.
-    pub kind: ObjectReferenceKind,
-    /// Reference value without marker or tag bits.
-    pub value: u32,
+    /// Self-identifying reference payload.
+    #[serde(flatten)]
+    pub reference: DirectReference,
     /// Absolute file offset of the reference marker.
     pub source_offset: u64,
 }
@@ -2134,12 +2109,9 @@ pub struct ExternalReferenceRecord {
     pub declared_count: u16,
     /// Four uninterpreted little-endian ID slots.
     pub id_slots: [u32; 4],
-    /// Non-decreasing persistent handles; only the serialized closing duplicate is omitted.
-    pub handles: Vec<u32>,
-    /// Whether the final serialized handle repeats the preceding handle.
-    pub closing_duplicate: bool,
-    /// Length of the decoded record prefix.
-    pub prefix_byte_len: u64,
+    /// Ordered encoded handle tokens with derived closing and length fields.
+    #[serde(flatten)]
+    pub handles: ExtrefHandles,
     /// Length after the decoded handle-set prefix and before the next record or string table.
     pub tail_byte_len: u64,
     /// Directory entry containing the external-reference stream.
@@ -2171,7 +2143,7 @@ pub struct ExternalReferenceTailReferencePair {
     /// Persistent handle from the `e0 + u32 BE` token.
     pub persistent_handle: u32,
     /// Low 28 bits of the following four-byte `0xC?` reference.
-    pub tagged_reference: u32,
+    pub tagged_reference: crate::om::reference_value::Tagged28,
     /// Absolute file offset of the `e0` marker.
     pub source_offset: u64,
 }
@@ -2184,7 +2156,7 @@ pub struct ExternalReferenceRecordStringUse {
     /// Owning record in the native `external_reference_records` arena.
     pub external_record: String,
     /// Zero-based slot in the record's four-value lane.
-    pub slot: u8,
+    pub slot: ExtrefSlot,
     /// Serialized string-table index.
     pub string_index: u32,
     /// Target in the native `external_references` arena.
@@ -2206,29 +2178,6 @@ pub struct ExternalReferenceRecordChild {
     pub directory_reference: String,
 }
 
-/// Embedded NX material texture stored as a TIFF stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MaterialTextureAsset {
-    /// Globally unique native-record identity.
-    pub id: String,
-    /// Texture stream leaf name carried by the directory path.
-    pub name: String,
-    /// TIFF byte order: `little_endian` or `big_endian`.
-    pub byte_order: String,
-    /// TIFF format version. NX material textures use version 42.
-    pub version: u16,
-    /// Absolute byte offset of the first TIFF image-file directory, relative to the asset payload.
-    pub first_ifd_offset: u32,
-    /// Exact texture payload length.
-    pub byte_len: u64,
-    /// SHA-256 digest of the exact TIFF payload.
-    pub sha256: String,
-    /// Directory entry containing the texture.
-    pub source_entry: String,
-    /// Absolute file offset of the TIFF header.
-    pub source_offset: u64,
-}
-
 /// Exact QAF catalog mapping for one embedded material texture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialTextureCatalogEntry {
@@ -2248,44 +2197,6 @@ pub struct MaterialTextureCatalogEntry {
     pub source_entry: String,
     /// Absolute file offset of the `folderProperties` element.
     pub source_offset: u64,
-}
-
-/// Decode every strictly framed TIFF material-texture directory entry.
-pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsset> {
-    let mut assets = container
-        .entries
-        .iter()
-        .filter_map(|entry| {
-            let name = entry.name.strip_prefix("/Root/materialsTif/")?;
-            (!name.is_empty()).then_some(())?;
-            let (offset, size) = entry.file_span?;
-            let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-            let payload = container.data.get(start..start.checked_add(size)?)?;
-            let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, ..] => ("little_endian", 42, View::u32_le_at(payload, 4)?),
-                [b'M', b'M', 0, 42, ..] => ("big_endian", 42, View::u32_be_at(payload, 4)?),
-                _ => return None,
-            };
-            let first_ifd = usize::try_from(first_ifd_offset).ok()?;
-            (first_ifd >= 8 && first_ifd < payload.len()).then_some(())?;
-            Some(MaterialTextureAsset {
-                id: String::new(),
-                name: name.to_string(),
-                byte_order: byte_order.to_string(),
-                version,
-                first_ifd_offset,
-                byte_len: size as u64,
-                sha256: sha256_hex(payload),
-                source_entry: entry.name.clone(),
-                source_offset: offset,
-            })
-        })
-        .collect::<Vec<_>>();
-    assets.sort_by(|first, second| first.source_entry.cmp(&second.source_entry));
-    for (ordinal, asset) in assets.iter_mut().enumerate() {
-        asset.id = format!("nx:container:material-texture#{ordinal}");
-    }
-    assets
 }
 
 /// Join QAF material paths to embedded TIFF streams by exact stored path.
@@ -2336,8 +2247,8 @@ fn parse_material_texture_catalog(
     (root.tag_name().name() == "folderContents").then_some(())?;
     let assets_by_path = assets
         .iter()
-        .map(|asset| Some((asset.source_entry.strip_prefix("/Root/")?, asset)))
-        .collect::<Option<BTreeMap<_, _>>>()?;
+        .map(|asset| (asset.storage_path(), asset))
+        .collect::<BTreeMap<_, _>>();
     let mut catalog = Vec::new();
     let mut seen_assets = BTreeSet::new();
     for node in root.children().filter(roxmltree::Node::is_element) {
@@ -2416,8 +2327,6 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
                 declared_count: record.declared_count,
                 id_slots: record.id_slots,
                 handles: record.handles,
-                closing_duplicate: record.closing_duplicate,
-                prefix_byte_len: record.prefix_byte_len as u64,
                 tail_byte_len: record.tail_byte_len as u64,
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + record.offset as u64,
@@ -2492,7 +2401,9 @@ pub fn external_reference_tail_reference_pairs(
     records
         .iter()
         .flat_map(|record| {
-            let Some(source_offset) = record.source_offset.checked_add(record.prefix_byte_len)
+            let Some(source_offset) = record
+                .source_offset
+                .checked_add(record.handles.prefix_byte_len() as u64)
             else {
                 return Vec::new();
             };
@@ -2539,7 +2450,11 @@ pub fn external_reference_record_string_uses(
     records
         .iter()
         .flat_map(|record| {
-            if record.source_offset.checked_add(19).is_none() {
+            if record
+                .source_offset
+                .checked_add(ExtrefSlot::Fourth.offset())
+                .is_none()
+            {
                 return Vec::new();
             }
             let resolved = record
@@ -2554,21 +2469,24 @@ pub fn external_reference_record_string_uses(
             let Some(resolved) = resolved else {
                 return Vec::new();
             };
-            resolved
+            ExtrefSlot::ALL
                 .into_iter()
-                .enumerate()
+                .zip(resolved)
                 .map(|(slot, reference)| {
                     let record_key = record
                         .id
                         .split_once('#')
                         .map_or(record.id.as_str(), |(_, key)| key);
                     ExternalReferenceRecordStringUse {
-                        id: format!("nx:external-reference:record-string-use#{record_key}-{slot}"),
+                        id: format!(
+                            "nx:external-reference:record-string-use#{record_key}-{}",
+                            u8::from(slot)
+                        ),
                         external_record: record.id.clone(),
-                        slot: slot as u8,
-                        string_index: record.id_slots[slot],
+                        slot,
+                        string_index: record.id_slots[slot.index()],
                         external_reference: reference.id.clone(),
-                        source_offset: record.source_offset + 7 + slot as u64 * 4,
+                        source_offset: record.source_offset + slot.offset(),
                     }
                 })
                 .collect()
@@ -2600,7 +2518,7 @@ pub fn external_reference_record_children(
             let [slot0, slot1, slot2, slot3] = record_uses.as_slice() else {
                 return None;
             };
-            if [slot0.slot, slot1.slot, slot2.slot, slot3.slot] != [0, 1, 2, 3] {
+            if [slot0.slot, slot1.slot, slot2.slot, slot3.slot] != ExtrefSlot::ALL {
                 return None;
             }
             let resolved = record_uses
@@ -2818,28 +2736,17 @@ fn xml_stream_text(payload: &[u8]) -> Option<&str> {
 pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            let registry_fields = class_registry_fields(&definition);
             definitions.insert(
                 (entry_index, definition.offset),
                 ClassDefinition {
                     id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
-                    registry_storage_code: registry_fields.storage_code,
-                    registry_base_class: registry_fields.base_class,
-                    registry_reference: registry_fields.reference,
-                    registry_suffix: definition.registry_suffix.to_vec(),
-                    layout_prefix: registry_fields.layout_prefix,
-                    schema_fingerprint: registry_fields.schema_fingerprint,
-                    layout_terminal: registry_fields.layout_terminal,
+                    trailing_code: definition.registry_tail[0],
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -2848,29 +2755,18 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         }
     }
     for (entry, section) in container.indexed_om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            let registry_fields = class_registry_fields(&definition);
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| ClassDefinition {
                     id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
-                    registry_storage_code: registry_fields.storage_code,
-                    registry_base_class: registry_fields.base_class,
-                    registry_reference: registry_fields.reference,
-                    registry_suffix: definition.registry_suffix.to_vec(),
-                    layout_prefix: registry_fields.layout_prefix,
-                    schema_fingerprint: registry_fields.schema_fingerprint,
-                    layout_terminal: registry_fields.layout_terminal,
+                    trailing_code: definition.registry_tail[0],
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -2880,72 +2776,41 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     definitions.into_values().collect()
 }
 
-fn registry_layout_fields(suffix: &[u8]) -> (Vec<u8>, Option<[u8; 8]>, Option<u8>) {
+struct RegistryLayout<'a> {
+    prefix: &'a [u8],
+    fingerprint: [u8; 8],
+    terminal: u8,
+}
+
+fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
     if !(11..=14).contains(&suffix.len()) {
-        return (Vec::new(), None, None);
+        return None;
     }
     let fingerprint_start = suffix.len() - 9;
-    (
-        suffix[..fingerprint_start].to_vec(),
-        suffix[fingerprint_start..fingerprint_start + 8]
+    Some(RegistryLayout {
+        prefix: &suffix[..fingerprint_start],
+        fingerprint: suffix[fingerprint_start..fingerprint_start + 8]
             .try_into()
-            .ok(),
-        suffix.last().copied(),
-    )
-}
-
-struct ClassRegistryFields {
-    layout_prefix: Vec<u8>,
-    schema_fingerprint: Option<[u8; 8]>,
-    layout_terminal: Option<u8>,
-    storage_code: Option<u32>,
-    base_class: Option<u32>,
-    reference: Option<u32>,
-}
-
-fn class_registry_fields(definition: &OmTypeDefinition<'_>) -> ClassRegistryFields {
-    let (layout_prefix, legacy_fingerprint, layout_terminal) =
-        registry_layout_fields(definition.registry_suffix);
-    let registry = definition.class_registry_layout();
-    ClassRegistryFields {
-        layout_prefix,
-        schema_fingerprint: registry
-            .map(|layout| layout.schema_fingerprint)
-            .or(legacy_fingerprint),
-        layout_terminal,
-        storage_code: registry.map(|layout| layout.storage_code.value),
-        base_class: registry.map(|layout| layout.base_class),
-        reference: registry.map(|layout| layout.reference),
-    }
+            .ok()?,
+        terminal: suffix[fingerprint_start + 8],
+    })
 }
 
 /// Decode member definitions from every framed OM section.
 pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
-            let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(definition.registry_suffix);
-            let registry = definition.field_registry_layout();
             definitions.insert(
                 (entry_index, definition.offset),
                 FieldDefinition {
                     id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
-                    registry_storage_code: registry.map(|layout| layout.storage_code.value),
-                    registry_owner_class: registry.map(|layout| layout.owner_class),
-                    registry_suffix: definition.registry_suffix.to_vec(),
-                    layout_prefix,
-                    schema_fingerprint,
-                    layout_terminal,
+                    trailing_code: definition.registry_tail[0],
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -2954,30 +2819,18 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         }
     }
     for (entry, section) in container.indexed_om_sections() {
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
-            let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(definition.registry_suffix);
-            let registry = definition.field_registry_layout();
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| FieldDefinition {
                     id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.trailing_code,
-                    registry_storage_code: registry.map(|layout| layout.storage_code.value),
-                    registry_owner_class: registry.map(|layout| layout.owner_class),
-                    registry_suffix: definition.registry_suffix.to_vec(),
-                    layout_prefix,
-                    schema_fingerprint,
-                    layout_terminal,
+                    trailing_code: definition.registry_tail[0],
+                    registry_suffix: definition.registry_tail[1..].to_vec(),
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -2993,23 +2846,23 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_none())
-        {
+        let Some(records) = section.as_fixed() else {
             continue;
-        }
+        };
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
-        let stable_identities = stable_object_record_identities(&entry.name, &section.records);
+        let record_bytes = records
+            .iter()
+            .map(|record| record.bytes)
+            .collect::<Vec<_>>();
+        let stable_identities = stable_object_record_identities(&entry.name, &record_bytes);
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
         for (source, _, _, reference) in section.references() {
-            if reference.kind != crate::om::ReferenceKind::RecordOrdinal16 {
+            let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                 continue;
-            }
-            let target = reference.value as usize;
+            };
+            let target = usize::from(ordinal);
             let outgoing = dependencies.entry(source).or_default();
             if !outgoing.contains(&target) {
                 outgoing.push(target);
@@ -3019,7 +2872,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 incoming.push(source);
             }
         }
-        for (record_ordinal, record) in section.records.iter().cloned().enumerate() {
+        for (record_ordinal, record) in records.iter().cloned().enumerate() {
             let record_id =
                 |ordinal| format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}");
             candidates.push((
@@ -3075,10 +2928,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 });
                 ObjectRecord {
                     id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: record.object_id,
-                    object_id_source_offset: record
-                        .object_id_offset
-                        .map(|offset| entry_offset + offset as u64),
+                    object_id: Some((record.object_id.0, entry_offset + record.object_id.1)),
                     section_ordinal: section_ordinal as u32,
                     record_ordinal: record_ordinal as u32,
                     section_offset,
@@ -3104,6 +2954,7 @@ pub fn rmfastload_object_id_table(
     let table_id = "nx:rmfastload:object-id-table#0".to_string();
     let mut object_ids = table
         .object_ids
+        .into_vec()
         .into_iter()
         .enumerate()
         .map(|(ordinal, object_id)| RmFastLoadObjectId {
@@ -3112,18 +2963,19 @@ pub fn rmfastload_object_id_table(
             ordinal: ordinal as u32,
             value: object_id.value,
             stable_identity: None,
-            raw: object_id.raw,
             source_offset: entry_offset + object_id.offset as u64,
         })
         .collect::<Vec<_>>();
     assign_rmfastload_object_id_identities(&mut object_ids);
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
-        members: object_ids
-            .iter()
-            .map(|object_id| object_id.id.clone())
-            .collect(),
-        raw_count: table.raw_count,
+        members: ObjectIdMembers::new(
+            object_ids
+                .iter()
+                .map(|object_id| object_id.id.clone())
+                .collect(),
+        )
+        .ok()?,
         source_entry: entry.name.clone(),
         registry_source_offset: entry_offset + table.registry_offset as u64,
         source_offset: entry_offset + table.count_offset as u64,
@@ -3151,39 +3003,37 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_some())
-        {
+        let Some((control, _, records)) = section.as_offset_only() else {
             continue;
-        }
+        };
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
-        if let Some(control) = section.control {
-            candidates.push((
-                section_ordinal,
-                0usize,
-                DataBlockRole::Control,
-                entry.name.clone(),
-                section_offset,
-                entry_offset,
-                control,
-            ));
-        }
-        candidates.extend(section.records.iter().cloned().enumerate().map(
-            |(record_ordinal, block)| {
-                (
-                    section_ordinal,
-                    record_ordinal + 1,
-                    DataBlockRole::Column,
-                    entry.name.clone(),
-                    section_offset,
-                    entry_offset,
-                    block,
-                )
-            },
+        candidates.push((
+            section_ordinal,
+            0usize,
+            DataBlockRole::Control,
+            entry.name.clone(),
+            section_offset,
+            entry_offset,
+            control.clone(),
         ));
+        candidates.extend(
+            records
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(record_ordinal, block)| {
+                    (
+                        section_ordinal,
+                        record_ordinal + 1,
+                        DataBlockRole::Column,
+                        entry.name.clone(),
+                        section_offset,
+                        entry_offset,
+                        block,
+                    )
+                }),
+        );
     }
 
     let mut identity_counts = BTreeMap::<String, usize>::new();
@@ -3231,42 +3081,29 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
         .into_iter()
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
-            let control = section.control?;
-            let (kind, leading_value_width, leading_value, value_count) =
-                match crate::om::offset_store_control_form(
-                    control.bytes,
-                    section.records.first().map(|record| record.bytes),
-                )? {
-                    crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => (
-                        DataBlockControlFormKind::ZeroPrefixed,
-                        None,
-                        None,
-                        values.len(),
-                    ),
-                    crate::om::OffsetStoreControlForm::ProductAnchored {
-                        leading_value,
-                        values,
-                    } => {
-                        let (leading_value_width, leading_value) = match leading_value {
-                            Some((width, value)) => (Some(u8::try_from(width).ok()?), Some(value)),
-                            None => (None, None),
-                        };
-                        (
-                            DataBlockControlFormKind::ProductAnchored,
-                            leading_value_width,
-                            leading_value,
-                            values.len(),
-                        )
+            let (control, _, records) = section.as_offset_only()?;
+            let kind = match crate::om::offset_store_control_form(
+                control.bytes,
+                records.first().map(|record| record.bytes),
+            )? {
+                crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
+                    DataBlockControlFormKind::ZeroPrefixed {
+                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
                     }
-                };
+                }
+                crate::om::OffsetStoreControlForm::ProductAnchored {
+                    leading_value,
+                    values,
+                } => DataBlockControlFormKind::ProductAnchored {
+                    leading: leading_value,
+                    value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
+                    byte_len: std::num::NonZeroU64::new(control.bytes.len() as u64)?,
+                },
+            };
             Some(DataBlockControlForm {
                 id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
                 data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
                 kind,
-                value_count: u32::try_from(value_count).ok()?,
-                leading_value_width,
-                leading_value,
-                byte_len: control.bytes.len() as u64,
                 source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
                     + control.offset as u64,
             })
@@ -3281,13 +3118,13 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
             let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
                 crate::om::offset_store_control_form(
                     control.bytes,
-                    section.records.first().map(|record| record.bytes),
+                    records.first().map(|record| record.bytes),
                 )
             else {
                 return Vec::new();
@@ -3320,13 +3157,13 @@ pub fn data_block_control_class_references(
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
             if !matches!(
                 crate::om::offset_store_control_form(
                     control.bytes,
-                    section.records.first().map(|record| record.bytes),
+                    records.first().map(|record| record.bytes),
                 ),
                 Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
             ) {
@@ -3336,13 +3173,13 @@ pub fn data_block_control_class_references(
             for definition in container
                 .om_sections()
                 .into_iter()
-                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .filter(|(candidate, _)| candidate.index() == entry.index())
                 .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
                         .indexed_om_sections()
                         .into_iter()
-                        .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                        .filter(|(candidate, _)| candidate.index() == entry.index())
                         .flat_map(|(_, section)| {
                             std::sync::Arc::as_ref(&section.types).to_owned()
                         }),
@@ -3355,11 +3192,7 @@ pub fn data_block_control_class_references(
             else {
                 return Vec::new();
             };
-            let entry_index = container
-                .entries
-                .iter()
-                .position(|candidate| std::ptr::eq(candidate, entry))
-                .expect("indexed entry belongs to container");
+            let entry_index = entry.index();
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             ordinals
@@ -3376,10 +3209,13 @@ pub fn data_block_control_class_references(
                         data_block: data_block.clone(),
                         ordinal: ordinal as u32,
                         class_ordinal,
-                        class_definition: definition.map(|definition| {
-                            format!("nx:om-entry-{entry_index}:class#{}", definition.offset)
+                        class: definition.map(|definition| DataBlockControlClassRef {
+                            definition: format!(
+                                "nx:om-entry-{entry_index}:class#{}",
+                                definition.offset
+                            ),
+                            name: definition.name.to_string(),
                         }),
-                        class_name: definition.map(|definition| definition.name.to_string()),
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
                     }
                 })
@@ -3395,7 +3231,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
             let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
@@ -3403,15 +3239,15 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                 values,
             }) = crate::om::offset_store_control_form(
                 control.bytes,
-                section.records.first().map(|record| record.bytes),
+                records.first().map(|record| record.bytes),
             )
             else {
                 return Vec::new();
             };
-            let leading_value_width = leading_value.map_or(0, |(width, _)| width);
+            let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            let block_count = section.records.len() + 1;
+            let block_count = records.len() + 1;
             values
                 .into_iter()
                 .enumerate()
@@ -3475,14 +3311,13 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(control) = section.control else {
+            let Some((control, _, _)) = section.as_offset_only() else {
                 return Vec::new();
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             crate::om::references(control.bytes, control.offset)
                 .into_iter()
-                .filter(|reference| reference.kind != crate::om::ReferenceKind::RecordOrdinal16)
                 .enumerate()
                 .map(|(ordinal, reference)| DataBlockControlReference {
                     id: format!(
@@ -3491,14 +3326,7 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
                     ),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
-                    kind: match reference.kind {
-                        crate::om::ReferenceKind::PersistentHandle => {
-                            ObjectReferenceKind::PersistentHandle
-                        }
-                        crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
-                        crate::om::ReferenceKind::RecordOrdinal16 => unreachable!("filtered"),
-                    },
-                    value: reference.value,
+                    reference: reference.value,
                     source_offset: entry_offset + reference.offset as u64,
                 })
                 .collect()
@@ -3510,30 +3338,29 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
 pub fn data_block_control_handle_pairs(
     references: &[DataBlockControlReference],
 ) -> Vec<DataBlockControlHandlePair> {
-    let mut by_block = BTreeMap::<&str, Vec<&DataBlockControlReference>>::new();
-    for reference in references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
+    let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
+    for reference in references {
+        let DirectReference::PersistentHandle(handle) = reference.reference else {
+            continue;
+        };
         by_block
             .entry(reference.data_block.as_str())
             .or_default()
-            .push(reference);
+            .push((reference, handle));
     }
     let mut pairs = Vec::new();
     for (data_block, mut block_references) in by_block {
-        block_references.sort_by_key(|reference| reference.source_offset);
+        block_references.sort_by_key(|(reference, _)| reference.source_offset);
         let mut at = 0;
         while at < block_references.len() {
             let start = at;
-            while block_references
-                .get(at + 1)
-                .is_some_and(|next| next.source_offset == block_references[at].source_offset + 5)
-            {
+            while block_references.get(at + 1).is_some_and(|next| {
+                next.0.source_offset == block_references[at].0.source_offset + 5
+            }) {
                 at += 1;
             }
             let run = &block_references[start..=at];
-            if let [first, second] = run {
+            if let [(first, first_handle), (second, second_handle)] = run {
                 pairs.push(DataBlockControlHandlePair {
                     id: format!(
                         "nx:om-data-block-control:handle-pair#{}",
@@ -3542,8 +3369,8 @@ pub fn data_block_control_handle_pairs(
                     data_block: data_block.to_string(),
                     first_reference: first.id.clone(),
                     second_reference: second.id.clone(),
-                    first_handle: first.value,
-                    second_handle: second.value,
+                    first_handle: *first_handle,
+                    second_handle: *second_handle,
                     source_offset: first.source_offset,
                 });
             }
@@ -3559,12 +3386,12 @@ pub fn data_block_references(
     object_records: &[ObjectRecord],
     expression_declarations: &[ExpressionDeclaration],
 ) -> Vec<DataBlockReference> {
-    let mut records = BTreeMap::<(String, u32), Vec<String>>::new();
+    let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
-        let Some(object_id) = record.object_id else {
+        let Some((object_id, _)) = record.object_id else {
             continue;
         };
-        records
+        target_records
             .entry((record.source_entry.clone(), object_id))
             .or_default()
             .push(record.id.clone());
@@ -3581,19 +3408,13 @@ pub fn data_block_references(
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_some())
-            {
+            let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
-            }
+            };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let mut source_blocks = Vec::with_capacity(section.records.len() + 1);
-            if let Some(control) = section.control {
-                source_blocks.push(control);
-            }
-            source_blocks.extend(section.records.iter().cloned());
+            let mut source_blocks = Vec::with_capacity(records.len() + 1);
+            source_blocks.push(control.clone());
+            source_blocks.extend(records.iter().cloned());
             source_blocks
                 .into_iter()
                 .enumerate()
@@ -3602,7 +3423,7 @@ pub fn data_block_references(
                         .into_iter()
                         .enumerate()
                         .map(|(ordinal, reference)| {
-                            let key = (entry.name.clone(), reference.object_index);
+                            let key = (entry.name.clone(), reference.object_index.value());
                             let unique = |candidates: Option<&Vec<String>>| {
                                 let [target] = candidates?.as_slice() else {
                                     return None;
@@ -3617,9 +3438,8 @@ pub fn data_block_references(
                                     "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
                                 ),
                                 ordinal: ordinal as u32,
-                                object_id: reference.object_index,
-                                raw_object_id: reference.raw_object_index,
-                                target_record: unique(records.get(&key)),
+                                object: reference.object_index,
+                                target_record: unique(target_records.get(&key)),
                                 target_expression_declaration: unique(declarations.get(&key)),
                                 source_offset: entry_offset
                                     + block.offset as u64
@@ -3633,467 +3453,6 @@ pub fn data_block_references(
         .collect()
 }
 
-/// Decode complete in-range counted block-index lanes from offset-only stores.
-pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCountedIndexLane> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_some())
-            {
-                return Vec::new();
-            }
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let block_count = section.records.len() + 1;
-            section
-                .records
-                .iter()
-                .cloned()
-                .enumerate()
-                .flat_map(|(record_ordinal, block)| {
-                    let block_ordinal = record_ordinal + 1;
-                    crate::om::offset_store_counted_index_lanes(block.bytes)
-                        .into_iter()
-                        .filter_map(|lane| {
-                            let anchor_data_block = control_index_data_block(
-                                section_ordinal,
-                                block_count,
-                                lane.anchor,
-                            )?;
-                            let member_data_blocks = lane
-                                .members
-                                .iter()
-                                .map(|(value, _)| {
-                                    control_index_data_block(
-                                        section_ordinal,
-                                        block_count,
-                                        *value,
-                                    )
-                                })
-                                .collect::<Option<Vec<_>>>()?;
-                            let source_base = entry_offset + block.offset as u64;
-                            Some((lane, anchor_data_block, member_data_blocks, source_base))
-                        })
-                        .enumerate()
-                        .map(
-                            |(
-                                ordinal,
-                                (lane, anchor_data_block, member_data_blocks, source_base),
-                            )| DataBlockCountedIndexLane {
-                                id: format!(
-                                    "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
-                                ),
-                                data_block: format!(
-                                    "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
-                                ),
-                                ordinal: ordinal as u32,
-                                declared_count: lane.declared_count,
-                                anchor_index: lane.anchor,
-                                raw_anchor_index: lane.raw_anchor,
-                                anchor_data_block,
-                                member_indices: lane
-                                    .members
-                                    .iter()
-                                    .map(|(value, _)| *value)
-                                    .collect(),
-                                raw_member_indices: lane.raw_members,
-                                member_data_blocks,
-                                source_offset: source_base + lane.offset as u64,
-                                anchor_source_offset: source_base + lane.anchor_offset as u64,
-                                member_source_offsets: lane
-                                    .members
-                                    .iter()
-                                    .map(|(_, offset)| source_base + *offset as u64)
-                                    .collect(),
-                            },
-                        )
-                        .collect::<Vec<_>>()
-                })
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode complete in-range `ABR` reference lanes from offset-store column storage.
-pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbrReferenceLane> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let source_base = entry_offset + storage_offset as u64;
-            let block_count = section.records.len() + 1;
-            crate::om::offset_store_abr_reference_lanes(storage)
-                .into_iter()
-                .filter_map(|lane| {
-                    let slot_data_blocks = lane
-                        .slots
-                        .iter()
-                        .map(|(value, _)| {
-                            value.map_or(Some(None), |value| {
-                                control_index_data_block(section_ordinal, block_count, value)
-                                    .map(Some)
-                            })
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some((lane, slot_data_blocks))
-                })
-                .enumerate()
-                .map(
-                    |(ordinal, (lane, slot_data_blocks))| DataBlockAbrReferenceLane {
-                        id: format!(
-                            "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        ordinal: ordinal as u32,
-                        slot_indices: lane.slots.iter().map(|(value, _)| *value).collect(),
-                        raw_slot_indices: lane.raw_slots,
-                        slot_data_blocks,
-                        slot_source_offsets: lane
-                            .slots
-                            .iter()
-                            .map(|(_, offset)| source_base + *offset as u64)
-                            .collect(),
-                        source_entry: entry.name.clone(),
-                        source_offset: source_base + lane.offset as u64,
-                    },
-                )
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
-/// Decode complete index rows from offset-store column storage.
-pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = section.records.len() + 1;
-            crate::om::offset_store_index_rows(storage)
-                .into_iter()
-                .filter_map(|row| {
-                    let data_blocks = row
-                        .indices
-                        .iter()
-                        .map(|(index, _)| {
-                            control_index_data_block(section_ordinal, block_count, *index)
-                        })
-                        .collect::<Option<Vec<_>>>()
-                        .and_then(|blocks| blocks.try_into().ok())?;
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        &section.records,
-                        storage_offset + row.offset,
-                    )?;
-                    Some((row, data_blocks, opening))
-                })
-                .enumerate()
-                .map(|(ordinal, (row, data_blocks, opening))| DataBlockIndexRow {
-                    id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    first_index: row.first_index,
-                    raw_first_index: row.raw_first_index,
-                    flag: row.flag,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    data_blocks,
-                    source_entry: entry.name.clone(),
-                    opening_data_block: opening.0,
-                    opening_block_offset: opening.1,
-                    source_offset: source_base + row.offset as u64,
-                    first_index_source_offset: source_base + row.first_index_offset as u64,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                })
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode complete in-range linked index rows from column storage.
-pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinkedIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = section.records.len() + 1;
-            crate::om::offset_store_linked_index_rows(storage)
-                .into_iter()
-                .filter_map(|row| {
-                    let values = std::iter::once(row.target_index.0)
-                        .chain(row.indices.iter().map(|(index, _)| *index));
-                    let data_blocks = values
-                        .map(|index| control_index_data_block(section_ordinal, block_count, index))
-                        .collect::<Option<Vec<_>>>()
-                        .and_then(|blocks| blocks.try_into().ok())?;
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        &section.records,
-                        storage_offset + row.offset,
-                    )?;
-                    Some((row, data_blocks, opening))
-                })
-                .enumerate()
-                .map(
-                    |(ordinal, (row, data_blocks, opening))| DataBlockLinkedIndexRow {
-                        id: format!(
-                            "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        ordinal: ordinal as u32,
-                        first_index: row.first_index.0,
-                        raw_first_index: row.raw_first_index,
-                        discriminator: row.discriminator,
-                        target_index: row.target_index.0,
-                        raw_target_index: row.raw_target_index,
-                        indices: row.indices.map(|(index, _)| index),
-                        raw_indices: row.raw_indices,
-                        data_blocks,
-                        flag: row.flag,
-                        mode: row.mode,
-                        source_entry: entry.name.clone(),
-                        opening_data_block: opening.0,
-                        opening_block_offset: opening.1,
-                        source_offset: source_base + row.offset as u64,
-                        first_index_source_offset: source_base + row.first_index.1 as u64,
-                        target_index_source_offset: source_base + row.target_index.1 as u64,
-                        index_source_offsets: row
-                            .indices
-                            .map(|(_, offset)| source_base + offset as u64),
-                    },
-                )
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode complete in-range target-index rows from column storage.
-pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTargetIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(storage) = section.column_storage else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = section.records.len() + 1;
-            crate::om::offset_store_target_index_rows(storage)
-                .into_iter()
-                .filter_map(|row| {
-                    let values = std::iter::once(row.target_index.0)
-                        .chain(row.indices.iter().map(|(index, _)| *index));
-                    let data_blocks = values
-                        .map(|index| control_index_data_block(section_ordinal, block_count, index))
-                        .collect::<Option<Vec<_>>>()
-                        .and_then(|blocks| blocks.try_into().ok())?;
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        &section.records,
-                        storage_offset + row.offset,
-                    )?;
-                    Some((row, data_blocks, opening))
-                })
-                .enumerate()
-                .map(
-                    |(ordinal, (row, data_blocks, opening))| DataBlockTargetIndexRow {
-                        id: format!(
-                            "nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        ordinal: ordinal as u32,
-                        target_index: row.target_index.0,
-                        raw_target_index: row.raw_target_index,
-                        indices: row.indices.map(|(index, _)| index),
-                        raw_indices: row.raw_indices,
-                        data_blocks,
-                        mode: row.mode,
-                        source_entry: entry.name.clone(),
-                        opening_data_block: opening.0,
-                        opening_block_offset: opening.1,
-                        source_offset: source_base + row.offset as u64,
-                        target_index_source_offset: source_base + row.target_index.1 as u64,
-                        index_source_offsets: row
-                            .indices
-                            .map(|(_, offset)| source_base + offset as u64),
-                    },
-                )
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode class-selected creation-display relations from `RMFastLoad` record
-/// areas. The compact indices remain uninterpreted until their object roles are
-/// established independently.
-pub fn rm_creation_display_data_relations(
-    container: &Container,
-    object_ids: &[RmFastLoadObjectId],
-) -> Vec<RmCreationDisplayDataRelation> {
-    const CLASS_NAME: &str = "UGS::RM_creation_display_data";
-
-    let mut relations = Vec::new();
-    for (entry, section) in container
-        .om_sections()
-        .into_iter()
-        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
-    {
-        let Some(record_area) = section.record_area else {
-            continue;
-        };
-        let Some(record_area_offset) = section.record_area_offset else {
-            continue;
-        };
-        let Some((class_ordinal, definition)) = section
-            .types
-            .iter()
-            .enumerate()
-            .find(|(_, definition)| definition.name == CLASS_NAME)
-        else {
-            continue;
-        };
-        let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
-            continue;
-        };
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("OM entry belongs to container");
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        let source_base = entry_offset + record_area_offset as u64;
-        let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
-
-        for row in crate::om::offset_store_index_rows(record_area) {
-            if row.indices[3].0 != class_ordinal {
-                continue;
-            }
-            relations.push(RmCreationDisplayDataRelation {
-                id: String::new(),
-                ordinal: 0,
-                first_index: Some(row.first_index),
-                raw_first_index: Some(row.raw_first_index),
-                first_index_source_offset: Some(source_base + row.first_index_offset as u64),
-                class_name: CLASS_NAME.to_string(),
-                class_definition: class_definition.clone(),
-                encoding: RmCreationDisplayDataEncoding::Index {
-                    flag: row.flag,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                },
-                target_object_id: None,
-                source_entry: entry.name.clone(),
-                source_offset: source_base + row.offset as u64,
-            });
-        }
-        for row in crate::om::offset_store_linked_index_rows(record_area) {
-            if row.indices[2].0 != class_ordinal {
-                continue;
-            }
-            relations.push(RmCreationDisplayDataRelation {
-                id: String::new(),
-                ordinal: 0,
-                first_index: Some(row.first_index.0),
-                raw_first_index: Some(row.raw_first_index),
-                first_index_source_offset: Some(source_base + row.first_index.1 as u64),
-                class_name: CLASS_NAME.to_string(),
-                class_definition: class_definition.clone(),
-                encoding: RmCreationDisplayDataEncoding::Linked {
-                    discriminator: row.discriminator,
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                    flag: row.flag,
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
-                source_entry: entry.name.clone(),
-                source_offset: source_base + row.offset as u64,
-            });
-        }
-        for row in crate::om::offset_store_target_index_rows(record_area) {
-            if row.indices[2].0 != class_ordinal {
-                continue;
-            }
-            relations.push(RmCreationDisplayDataRelation {
-                id: String::new(),
-                ordinal: 0,
-                first_index: None,
-                raw_first_index: None,
-                first_index_source_offset: None,
-                class_name: CLASS_NAME.to_string(),
-                class_definition: class_definition.clone(),
-                encoding: RmCreationDisplayDataEncoding::Target {
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
-                source_entry: entry.name.clone(),
-                source_offset: source_base + row.offset as u64,
-            });
-        }
-    }
-
-    relations.sort_by_key(|relation| relation.source_offset);
-    for (ordinal, relation) in relations.iter_mut().enumerate() {
-        relation.ordinal = ordinal as u32;
-        relation.id = format!("nx:rm-creation-display-data-relations:relation#{ordinal}");
-    }
-    relations
-}
-
 /// Decode complete part-local color tables from class-declaring offset stores.
 pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
     const CLASS_NAME: &str = "UGS::COLOR_table";
@@ -4103,10 +3462,10 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
     {
-        let Some(storage) = section.column_storage else {
+        let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
         };
-        let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+        let Some(storage_offset) = records.first().map(|record| record.offset) else {
             continue;
         };
         let Some(class) = section
@@ -4120,50 +3479,36 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
         let [table] = parsed_tables.as_slice() else {
             continue;
         };
-        let entry_index = container
-            .entries
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, entry))
-            .expect("indexed entry belongs to container");
+        let entry_index = entry.index();
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + storage_offset as u64;
         let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
-        let definition_ids = table
-            .definitions
-            .iter()
-            .map(|definition| {
-                format!(
+        let parsed_definitions = PaletteIndex::all().map(|color_index| {
+            let definition = &table.definitions[usize::from(color_index.value()) - 1];
+            PartColorDefinition {
+                id: format!(
                     "nx:part-color-definitions-{section_ordinal}:color#{}",
-                    definition.color_index
-                )
-            })
-            .collect::<Vec<_>>();
-        definitions.extend(table.definitions.iter().zip(&definition_ids).map(
-            |(definition, id)| {
-                PartColorDefinition {
-                    id: id.clone(),
-                    color_table: table_id.clone(),
-                    color_index: definition.color_index,
-                    name: definition.name.to_string(),
-                    rgb: definition.rgb,
-                    raw_color_index: definition.raw_color_index.clone(),
-                    raw_components: definition.raw_components.clone(),
-                    source_offset: source_base + definition.offset as u64,
-                    component_source_offsets: definition
-                        .component_offsets
-                        .map(|offset| source_base + offset as u64),
-                }
-            },
-        ));
+                    color_index.value()
+                ),
+                color_table: table_id.clone(),
+                color_index,
+                name: definition.name.to_string(),
+                components: definition
+                    .components
+                    .map(|(component, offset)| (component, source_base + offset as u64)),
+                source_offset: source_base + definition.offset as u64,
+            }
+        });
+        let definition_ids = parsed_definitions
+            .each_ref()
+            .map(|definition| definition.id.clone());
+        definitions.extend(parsed_definitions);
         tables.push(PartColorTable {
             id: table_id,
             class_definition: format!("nx:om-entry-{entry_index}:class#{}", class.offset),
-            background_name: table.background_name.to_string(),
-            background_rgb: table.background_rgb,
-            raw_background_components: table.raw_background_components.clone(),
-            background_component_source_offsets: table
-                .background_component_offsets
-                .map(|offset| source_base + offset as u64),
+            background: table
+                .background
+                .map(|(component, offset)| (component, source_base + offset as u64)),
             definitions: definition_ids,
             source_entry: entry.name.clone(),
             source_offset: source_base + table.offset as u64,
@@ -4171,111 +3516,6 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
     }
 
     (tables, definitions)
-}
-
-/// Decode explicit display-color assignments from `RMFastLoad` linked rows.
-pub fn rm_display_color_assignments(
-    container: &Container,
-    color_definitions: &[PartColorDefinition],
-    object_ids: &[RmFastLoadObjectId],
-) -> Vec<RmDisplayColorAssignment> {
-    let mut assignments = Vec::new();
-    for (entry, section) in container
-        .om_sections()
-        .into_iter()
-        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
-    {
-        let (Some(record_area), Some(record_area_offset)) =
-            (section.record_area, section.record_area_offset)
-        else {
-            continue;
-        };
-        let source_base =
-            entry.file_span.map_or(0, |(offset, _)| offset) + record_area_offset as u64;
-        for row in crate::om::offset_store_linked_index_rows(record_area) {
-            let Some(color) = crate::om::linked_row_color_index(record_area, &row) else {
-                continue;
-            };
-            let mut matches = color_definitions
-                .iter()
-                .filter(|definition| definition.color_index == color.color_index);
-            let Some(definition) = matches.next() else {
-                continue;
-            };
-            if matches.next().is_some() {
-                continue;
-            }
-            assignments.push(RmDisplayColorAssignment {
-                id: String::new(),
-                ordinal: 0,
-                encoding: RmDisplayColorAssignmentEncoding::Linked {
-                    object_index: row.first_index.0,
-                    raw_object_index: row.raw_first_index,
-                    object_index_source_offset: source_base + row.first_index.1 as u64,
-                    discriminator: row.discriminator,
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                    flag: row.flag,
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
-                color_index: color.color_index,
-                color_definition: definition.id.clone(),
-                raw_color_index: color.raw_color_index,
-                source_entry: entry.name.clone(),
-                source_offset: source_base + color.offset as u64,
-                row_source_offset: source_base + row.offset as u64,
-            });
-        }
-        for row in crate::om::offset_store_target_index_rows(record_area) {
-            let Some(color) = crate::om::target_row_color_index(record_area, &row) else {
-                continue;
-            };
-            let mut matches = color_definitions
-                .iter()
-                .filter(|definition| definition.color_index == color.color_index);
-            let Some(definition) = matches.next() else {
-                continue;
-            };
-            if matches.next().is_some() {
-                continue;
-            }
-            assignments.push(RmDisplayColorAssignment {
-                id: String::new(),
-                ordinal: 0,
-                encoding: RmDisplayColorAssignmentEncoding::Target {
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                    mode: row.mode,
-                },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
-                color_index: color.color_index,
-                color_definition: definition.id.clone(),
-                raw_color_index: color.raw_color_index,
-                source_entry: entry.name.clone(),
-                source_offset: source_base + color.offset as u64,
-                row_source_offset: source_base + row.offset as u64,
-            });
-        }
-    }
-    assignments.sort_by_key(|assignment| assignment.source_offset);
-    for (ordinal, assignment) in assignments.iter_mut().enumerate() {
-        assignment.ordinal = ordinal as u32;
-        assignment.id = format!("nx:rm-display-color-assignments:assignment#{ordinal}");
-    }
-    assignments
 }
 
 fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -> Option<String> {
@@ -4308,26 +3548,33 @@ pub fn data_block_column_index_tables(
             let targets = targets_by_section.remove(&section_ordinal)?;
             let (opening, suffix) = linked.split_first()?;
             let (last_target, target_prefix) = targets.split_last()?;
-            if opening.mode != 7
+            if opening.frame.mode() != crate::om::discriminators::IndexRowMode::Form07
                 || suffix.is_empty()
-                || suffix.iter().any(|row| row.mode != 4)
-                || last_target.mode != 4
-                || target_prefix.iter().any(|row| row.mode != 7)
+                || suffix
+                    .iter()
+                    .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form04)
+                || last_target.frame.mode() != crate::om::discriminators::IndexRowMode::Form04
+                || target_prefix
+                    .iter()
+                    .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form07)
             {
                 return None;
             }
-            let ordered = std::iter::once((opening.target_index, opening.source_offset))
-                .chain(
-                    targets
-                        .iter()
-                        .map(|row| (row.target_index, row.source_offset)),
-                )
-                .chain(
-                    suffix
-                        .iter()
-                        .map(|row| (row.target_index, row.source_offset)),
-                )
-                .collect::<Vec<_>>();
+            let ordered = std::iter::once((
+                opening.frame.target_index().atom.value(),
+                opening.frame.offset(),
+            ))
+            .chain(
+                targets
+                    .iter()
+                    .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
+            )
+            .chain(
+                suffix
+                    .iter()
+                    .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
+            )
+            .collect::<Vec<_>>();
             if ordered
                 .windows(2)
                 .any(|pair| pair[0].0.checked_sub(1) != Some(pair[1].0) || pair[0].1 >= pair[1].1)
@@ -4344,12 +3591,14 @@ pub fn data_block_column_index_tables(
                 id: format!("nx:om-data-block-column-index-tables:table#{section_ordinal}"),
                 section_ordinal,
                 opening_linked_row: opening.id.clone(),
-                target_rows: targets.iter().map(|row| row.id.clone()).collect(),
-                linked_rows: suffix.iter().map(|row| row.id.clone()).collect(),
-                first_target_index: opening.target_index,
-                last_target_index: ordered.last().expect("nonempty column table").0,
+                rows: ColumnIndexRows::new(
+                    opening.frame.target_index().atom.value(),
+                    targets.iter().map(|row| row.id.clone()).collect(),
+                    suffix.iter().map(|row| row.id.clone()).collect(),
+                )
+                .ok()?,
                 source_entry: opening.source_entry.clone(),
-                source_offset: opening.source_offset,
+                source_offset: opening.frame.offset(),
             })
         })
         .collect()
@@ -4363,22 +3612,36 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .control
-                .iter()
-                .chain(section.records.iter())
-                .find_map(|record| {
+            match &section.store {
+                IndexedStore::Fixed { records } => records.iter().find_map(|record| {
                     crate::om::store_version(record.bytes, record.offset).map(|version| {
                         StoreHeader {
                             id: format!("nx:om-store-headers:store#{section_ordinal}"),
                             section_ordinal: section_ordinal as u32,
-                            object_id: record.object_id,
-                            version: version.value.to_string(),
+                            object_id: Some(record.object_id.0),
+                            version: version.value.into_owned(),
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + version.offset as u64,
                         }
                     })
-                })
+                }),
+                IndexedStore::OffsetOnly {
+                    control, records, ..
+                } => std::iter::once(control)
+                    .chain(records.iter())
+                    .find_map(|record| {
+                        crate::om::store_version(record.bytes, record.offset).map(|version| {
+                            StoreHeader {
+                                id: format!("nx:om-store-headers:store#{section_ordinal}"),
+                                section_ordinal: section_ordinal as u32,
+                                object_id: None,
+                                version: version.value.into_owned(),
+                                source_entry: entry.name.clone(),
+                                source_offset: entry_offset + version.offset as u64,
+                            }
+                        })
+                    }),
+            }
         })
         .collect()
 }
@@ -4390,11 +3653,7 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_none())
-            {
+            if section.as_fixed().is_none() {
                 return Vec::new();
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -4412,88 +3671,10 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         record,
                         object_id,
                         ordinal: value_ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
                     }
-                })
-                .collect()
-        })
-        .collect()
-}
-
-/// Decode canonical UUID frames across the contiguous storage of ID-bounded
-/// OM records. A value retains every physical record intersected by its frame.
-pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
-    const FRAME_LEN: usize = 2 + 36 + 1;
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(first) = section.records.first() else {
-                return Vec::new();
-            };
-            let Some(last) = section.records.last() else {
-                return Vec::new();
-            };
-            if first.object_id.is_none()
-                || section.records.windows(2).any(|records| {
-                    records[0].offset.checked_add(records[0].bytes.len()) != Some(records[1].offset)
-                })
-            {
-                return Vec::new();
-            }
-            let Some(end) = last.offset.checked_add(last.bytes.len()) else {
-                return Vec::new();
-            };
-            let Some((entry_offset, _)) = entry.file_span else {
-                return Vec::new();
-            };
-            let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {
-                return Vec::new();
-            };
-            let Some(storage_start) = entry_offset_usize.checked_add(first.offset) else {
-                return Vec::new();
-            };
-            let Some(storage_end) = entry_offset_usize.checked_add(end) else {
-                return Vec::new();
-            };
-            let Some(storage) = container.data.get(storage_start..storage_end) else {
-                return Vec::new();
-            };
-            crate::om::uuid_string_values(storage, first.offset)
-                .into_iter()
-                .filter_map(|value| {
-                    let frame_end = value.offset.checked_add(FRAME_LEN)?;
-                    let records = section
-                        .records
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, record)| {
-                            record.offset < frame_end
-                                && record
-                                    .offset
-                                    .checked_add(record.bytes.len())
-                                    .is_some_and(|record_end| value.offset < record_end)
-                        })
-                        .map(|(record_ordinal, _)| {
-                            format!(
-                                "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    (!records.is_empty()).then(|| ObjectUuidValue {
-                        id: format!(
-                            "nx:om-object-uuid-values-{section_ordinal}:value#{}",
-                            value.offset
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        uuid: value.value.to_owned(),
-                        records,
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + value.offset as u64,
-                    })
                 })
                 .collect()
         })
@@ -4507,11 +3688,7 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_none())
-            {
+            if section.as_fixed().is_none() {
                 return Vec::new();
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -4531,24 +3708,13 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                             record,
                             object_id,
                             ordinal: reference_ordinal as u32,
-                            kind: match reference.kind {
-                                crate::om::ReferenceKind::PersistentHandle => {
-                                    ObjectReferenceKind::PersistentHandle
-                                }
-                                crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
-                                crate::om::ReferenceKind::RecordOrdinal16 => {
-                                    ObjectReferenceKind::RecordOrdinal16
-                                }
+                            reference: match reference.value {
+                                RecordReference::Direct(value) => RecordReference::Direct(value),
+                                RecordReference::RecordOrdinal16 { ordinal, .. } => RecordReference::RecordOrdinal16 {
+                                    ordinal,
+                                    target: format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}"),
+                                },
                             },
-                            value: reference.value,
-                            target_record: (reference.kind
-                                == crate::om::ReferenceKind::RecordOrdinal16)
-                                .then(|| {
-                                    format!(
-                                        "nx:om-record-directory-{section_ordinal}:entry#{}",
-                                        reference.value
-                                    )
-                                }),
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + reference.offset as u64,
                         }
@@ -4561,38 +3727,39 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
 
 /// Join maximal two-token adjacent persistent-handle runs within object records.
 pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
-    let mut by_record = BTreeMap::<&str, Vec<&ObjectReference>>::new();
-    for reference in references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
+    let mut by_record = BTreeMap::<&str, Vec<(&ObjectReference, u32)>>::new();
+    for reference in references {
+        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
+            reference.reference
+        else {
+            continue;
+        };
         by_record
             .entry(reference.record.as_str())
             .or_default()
-            .push(reference);
+            .push((reference, handle));
     }
     let mut pairs = Vec::new();
     for (record, mut record_references) in by_record {
-        record_references.sort_by_key(|reference| reference.source_offset);
+        record_references.sort_by_key(|(reference, _)| reference.source_offset);
         let mut at = 0;
         while at < record_references.len() {
             let start = at;
-            while record_references
-                .get(at + 1)
-                .is_some_and(|next| next.source_offset == record_references[at].source_offset + 5)
-            {
+            while record_references.get(at + 1).is_some_and(|next| {
+                next.0.source_offset == record_references[at].0.source_offset + 5
+            }) {
                 at += 1;
             }
             let run = &record_references[start..=at];
-            if let [first, second] = run {
+            if let [(first, first_handle), (second, second_handle)] = run {
                 pairs.push(ObjectRecordHandlePair {
                     id: format!("nx:om-object-record:handle-pair#{}", first.source_offset),
                     record: record.to_string(),
                     object_id: first.object_id,
                     first_reference: first.id.clone(),
                     second_reference: second.id.clone(),
-                    first_handle: first.value,
-                    second_handle: second.value,
+                    first_handle: *first_handle,
+                    second_handle: *second_handle,
                     source_offset: first.source_offset,
                 });
             }
@@ -4619,11 +3786,13 @@ pub fn persistent_handles(
     }
 
     let mut groups = BTreeMap::<u32, Group>::new();
-    for reference in references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
-        let group = groups.entry(reference.value).or_default();
+    for reference in references {
+        let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
+            reference.reference
+        else {
+            continue;
+        };
+        let group = groups.entry(handle).or_default();
         group.occurrence_count += 1;
         if group.records.last() != Some(&reference.record)
             && !group.records.contains(&reference.record)
@@ -4631,29 +3800,23 @@ pub fn persistent_handles(
             group.records.push(reference.record.clone());
         }
     }
-    for reference in control_references
-        .iter()
-        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
-    {
-        let group = groups.entry(reference.value).or_default();
+    for reference in control_references {
+        let DirectReference::PersistentHandle(handle) = reference.reference else {
+            continue;
+        };
+        let group = groups.entry(handle).or_default();
         group.occurrence_count += 1;
         if !group.data_blocks.contains(&reference.data_block) {
             group.data_blocks.push(reference.data_block.clone());
         }
     }
     for record in external {
-        for handle in &record.handles {
+        for handle in record.handles.serialized() {
             let group = groups.entry(*handle).or_default();
             group.external_occurrence_count += 1;
             if !group.external_records.contains(&record.id) {
                 group.external_records.push(record.id.clone());
             }
-        }
-        if record.closing_duplicate {
-            let Some(handle) = record.handles.last() else {
-                continue;
-            };
-            groups.entry(*handle).or_default().external_occurrence_count += 1;
         }
     }
     for pair in external_tail_pairs {
@@ -4692,13 +3855,15 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
                 return Vec::new();
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .records
+            let Some(records) = section.as_fixed() else {
+                return Vec::new();
+            };
+            records
                 .iter()
                 .cloned()
                 .enumerate()
                 .filter_map(|(record_ordinal, record)| {
-                    let object_id = record.object_id?;
+                    let object_id = record.object_id.0;
                     let declaration = crate::om::expression_declaration_name(record.bytes)?;
                     let record_id =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
@@ -4708,9 +3873,7 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
                         ),
                         object_id,
                         record: record_id,
-                        name: declaration.value.to_string(),
-                        parameter_index: declaration.parameter_index,
-                        qualifier: declaration.qualifier.map(str::to_string),
+                        name: declaration.name.into_owned(),
                         literal: declaration.literal.map(str::to_string),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset
@@ -4744,7 +3907,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             indexed.insert(
                 (entry.name.clone(), expression.offset),
                 (
-                    Some(object_id),
+                    object_id,
                     format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
                 ),
             );
@@ -4772,7 +3935,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 .get(&(entry.name.clone(), expression.offset))
                 .cloned();
             let declaration = declarations_by_name
-                .get(&(entry.name.as_str(), expression.name))
+                .get(&(entry.name.as_str(), expression.name.as_str()))
                 .and_then(|candidates| {
                     let same_record_arena = |first: &str, second: &str| {
                         first.split_once(":entry#").map(|pair| pair.0)
@@ -4792,16 +3955,13 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     };
                     Some(declaration.id.clone())
                 });
+            let value = expression.constant_value();
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
-                object_id: indexed_record
-                    .as_ref()
-                    .and_then(|(object_id, _)| *object_id),
-                record: indexed_record.map(|(_, record)| record),
+                owner: indexed_record
+                    .map(|(object_id, record)| ExpressionOwner { object_id, record }),
                 declaration,
-                name: expression.name.to_string(),
-                parameter_index: expression.parameter_index,
-                qualifier: expression.qualifier.map(str::to_string),
+                name: expression.name.into_owned(),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,
@@ -4809,7 +3969,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     crate::om::ExpressionUnit::Native(unit) => ExpressionUnit::Native(unit),
                 },
                 expression: expression.expression.to_string(),
-                value: expression.value,
+                value,
                 source_entry: entry.name.clone(),
                 source_table: format!("nx:om-entry-{entry_index}:expression-table#{table_offset}"),
                 source_offset: entry_offset + expression.offset as u64,
@@ -4834,7 +3994,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
         *name_counts
             .entry((
                 expression_scope(expression).to_string(),
-                expression.name.clone(),
+                expression.name.as_str().to_string(),
                 expression.unit.clone(),
             ))
             .or_default() += 1;
@@ -4843,7 +4003,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     for expression in expressions.iter_mut() {
         let key = (
             expression_scope(expression).to_string(),
-            expression.name.clone(),
+            expression.name.as_str().to_string(),
             expression.unit.clone(),
         );
         if name_counts.get(&key) != Some(&1) {
@@ -4863,7 +4023,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
         {
             let expression_key = (
                 expression_scope(expression).to_string(),
-                expression.name.clone(),
+                expression.name.as_str().to_string(),
                 expression.unit.clone(),
             );
             if name_counts.get(&expression_key) != Some(&1) {
@@ -4894,22 +4054,41 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
+    #[test]
+    fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
+        for (value, raw) in [
+            (0, vec![0]),
+            (0, vec![0x80, 0]),
+            (0, vec![0x90, 0, 0]),
+            (6466, vec![0x90, 0x19, 0x42]),
+        ] {
+            let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+                "object_id":value, "raw_object_id":raw, "source_offset":12});
+            let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+        for (value, raw) in [
+            (1, vec![0]),
+            (0, vec![0xff]),
+            (0, vec![0xf0, 0]),
+            (0, vec![0x90, 0]),
+            (0, vec![0, 0]),
+        ] {
+            let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+                "object_id":value, "raw_object_id":raw, "source_offset":12});
+            assert!(serde_json::from_value::<super::DataBlockReference>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("object_id/raw_object_id"));
+        }
+    }
+
+    mod expression_wire;
     mod native_units;
     mod state_counters;
-    use std::io::{Cursor, Write};
+    use std::io::Cursor;
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-
-    use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use super::*;
     use crate::container;
@@ -4931,12 +4110,9 @@ mod tests {
     fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
         let expression = |name: &str, formula: &str, value| super::Expression {
             id: format!("nx:test:expression#{name}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
             value,
@@ -4960,12 +4136,9 @@ mod tests {
     fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
         let expression = |name: &str, formula: &str, value| super::Expression {
             id: format!("nx:test:expression#{name}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
             value,
@@ -4990,12 +4163,9 @@ mod tests {
     fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
         let expression = |name: &str, formula: &str, value| super::Expression {
             id: format!("nx:test:expression#{name}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
             value,
@@ -5020,12 +4190,9 @@ mod tests {
         let expression =
             |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
                 id: id.into(),
-                object_id: None,
-                record: None,
+                owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: None,
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
                 value,
@@ -5051,12 +4218,9 @@ mod tests {
         let expression =
             |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
                 id: id.into(),
-                object_id: None,
-                record: None,
+                owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: None,
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
                 value,
@@ -5087,12 +4251,9 @@ mod tests {
             |id: &str, name: &str, unit: super::ExpressionUnit, formula: &str, value| {
                 super::Expression {
                     id: id.into(),
-                    object_id: None,
-                    record: None,
+                    owner: None,
                     declaration: None,
-                    name: name.into(),
-                    parameter_index: None,
-                    qualifier: None,
+                    name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                     unit,
                     expression: formula.into(),
                     value,
@@ -5142,19 +4303,11 @@ mod tests {
 
     #[test]
     fn nx_formula_dependencies_resolve_to_section_parameters() {
-        let expression = |key: u32,
-                          name: &str,
-                          index: u32,
-                          qualifier: Option<&str>,
-                          text: &str,
-                          value: Option<f64>| super::Expression {
+        let expression = |key: u32, name: &str, text: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{key}"),
-            object_id: Some(key),
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: Some(index),
-            qualifier: qualifier.map(str::to_string),
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
             value,
@@ -5163,11 +4316,11 @@ mod tests {
             source_offset: u64::from(key),
         };
         let expressions = [
-            expression(20, "p2", 2, None, "5", Some(5.0)),
-            expression(21, "p2_radius", 2, Some("radius"), "7", Some(7.0)),
-            expression(90, "p9", 9, None, "p2_radius * 2 + p2_radius", None),
+            expression(20, "p2", "5", Some(5.0)),
+            expression(21, "p2_radius", "7", Some(7.0)),
+            expression(90, "p9", "p2_radius * 2 + p2_radius", None),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -5188,12 +4341,9 @@ mod tests {
     fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
         let expression = |key: u32, name: &str, text: &str| super::Expression {
             id: format!("nx:test:expression#{key}"),
-            object_id: Some(key),
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.into(),
-            parameter_index: Some(key),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
             value: None,
@@ -5206,7 +4356,7 @@ mod tests {
             expression(21, "p2", "7"),
             expression(90, "p9", "p2 * 2"),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -5224,12 +4374,9 @@ mod tests {
         let expression = |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value| {
             super::Expression {
                 id: format!("nx:test:expression#{key}"),
-                object_id: Some(key),
-                record: None,
+                owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: Some(key),
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit,
                 expression: text.into(),
                 value,
@@ -5256,7 +4403,7 @@ mod tests {
                 Some(15.0),
             ),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
         crate::native::attach::attach_expression_parameters(
@@ -5289,13 +4436,13 @@ mod tests {
                 .map(String::as_str),
             Some("degree")
         );
-        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+        assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
         ir.model.parameters[0]
             .properties
             .insert("unit".into(), "native".into());
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&ir),
+            feature_completeness::incomplete_expression_parameters(&ir),
             [
                 ir.model.parameters[0].id.clone(),
                 ir.model.parameters[2].id.clone(),
@@ -5309,12 +4456,9 @@ mod tests {
         let expression =
             |id: &str, table: &str, name: &str, text: &str, source_offset: u64| super::Expression {
                 id: format!("nx:test:expression#{id}"),
-                object_id: None,
-                record: None,
+                owner: None,
                 declaration: None,
-                name: name.into(),
-                parameter_index: None,
-                qualifier: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: text.into(),
                 value: None,
@@ -5328,7 +4472,7 @@ mod tests {
             expression("a-p2", "table-a", "p2", "5", 30),
             expression("b-p2", "table-b", "p2", "7", 20),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
         crate::native::attach::attach_expression_parameters(
@@ -5340,9 +4484,15 @@ mod tests {
         );
 
         assert_eq!(ir.model.features.len(), 2);
-        assert_eq!(ir.model.features[0].id.0, "table-b:feature#equations");
+        assert_eq!(
+            ir.model.features[0].id.as_str(),
+            "table-b:feature#equations"
+        );
         assert_eq!(ir.model.features[0].ordinal, 0);
-        assert_eq!(ir.model.features[1].id.0, "table-a:feature#equations");
+        assert_eq!(
+            ir.model.features[1].id.as_str(),
+            "table-a:feature#equations"
+        );
         assert_eq!(ir.model.features[1].ordinal, 1);
         assert_eq!(
             ir.model
@@ -5368,21 +4518,21 @@ mod tests {
                 cadmpeg_ir::features::Length(value),
             ));
         }
-        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+        assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
         let mut inconsistent = ir.clone();
         inconsistent.model.parameters[1].value = Some(
             cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::features::Length(1.0)),
         );
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&inconsistent),
+            feature_completeness::incomplete_expression_parameters(&inconsistent),
             [inconsistent.model.parameters[1].id.clone()].into()
         );
 
         let mut duplicate_name = ir.clone();
         duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&duplicate_name),
+            feature_completeness::incomplete_expression_parameters(&duplicate_name),
             duplicate_name.model.parameters[..2]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -5392,7 +4542,7 @@ mod tests {
         let mut unevaluated = ir.clone();
         unevaluated.model.parameters[1].value = None;
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&unevaluated),
+            feature_completeness::incomplete_expression_parameters(&unevaluated),
             [unevaluated.model.parameters[1].id.clone()].into()
         );
 
@@ -5400,11 +4550,10 @@ mod tests {
         operation_owned.model.features[0].definition =
             cadmpeg_ir::features::FeatureDefinition::Native {
                 kind: "TEST_OPERATION".into(),
-                properties: BTreeMap::default(),
                 parameters: BTreeMap::default(),
             };
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&operation_owned),
+            feature_completeness::incomplete_expression_parameters(&operation_owned),
             [operation_owned.model.parameters[1].id.clone()].into()
         );
     }
@@ -5413,12 +4562,9 @@ mod tests {
     fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
         let expression = |id: &str, name: &str, text: &str, source_offset| super::Expression {
             id: format!("nx:test:expression#{id}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.to_string(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.to_string(),
             value: None,
@@ -5430,7 +4576,7 @@ mod tests {
             expression("p2", "p2", "p3 + 1", 10),
             expression("p3", "p3", "p2 + 1", 20),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -5448,7 +4594,7 @@ mod tests {
             .iter()
             .all(|parameter| parameter.dependencies.is_empty()));
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&ir),
+            feature_completeness::incomplete_expression_parameters(&ir),
             ir.model
                 .parameters
                 .iter()
@@ -5456,7 +4602,7 @@ mod tests {
                 .collect()
         );
         let mut losses = Vec::new();
-        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        crate::decode::report::append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("2 NX expression parameter(s)"));
     }
@@ -5465,12 +4611,9 @@ mod tests {
     fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
         let expression = |id: &str, name: &str, text: &str, source_offset| super::Expression {
             id: format!("nx:test:expression#{id}"),
-            object_id: None,
-            record: None,
+            owner: None,
             declaration: None,
-            name: name.to_string(),
-            parameter_index: None,
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.to_string(),
             value: None,
@@ -5484,7 +4627,7 @@ mod tests {
             expression("p5", "p5", "p4 * 2", 40),
             expression("p4", "p4", "7", 30),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
         crate::native::attach::attach_expression_parameters(
@@ -5515,7 +4658,7 @@ mod tests {
             ));
         }
         assert_eq!(
-            crate::decode::incomplete_expression_parameters(&ir),
+            feature_completeness::incomplete_expression_parameters(&ir),
             ir.model.parameters[2..]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -5530,7 +4673,7 @@ mod tests {
         let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
             id: id.to_string(),
             operation_label: operation.to_string(),
-            input_slot: slot,
+            input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
             input_block: format!("block-{slot}"),
             reference_ordinal: 0,
             expression_declaration: "declaration".to_string(),
@@ -5544,17 +4687,28 @@ mod tests {
             binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
         ]);
         assert_eq!(uses.len(), 2);
-        assert_eq!(uses[0].bindings, ["early", "late"]);
-        assert_eq!(uses[0].source_offsets, [20, 30]);
+        assert_eq!(
+            uses[0]
+                .bindings
+                .iter()
+                .map(|binding| binding.binding.as_str())
+                .collect::<Vec<_>>(),
+            ["early", "late"]
+        );
+        assert_eq!(
+            uses[0]
+                .bindings
+                .iter()
+                .map(|binding| binding.source_offset)
+                .collect::<Vec<_>>(),
+            [20, 30]
+        );
 
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
-            object_id: Some(20),
-            record: None,
+            owner: None,
             declaration: None,
-            name: "p20".to_string(),
-            parameter_index: Some(20),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
             value: Some(5.0),
@@ -5562,7 +4716,7 @@ mod tests {
             source_table: "table".to_string(),
             source_offset: 20,
         };
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -5585,12 +4739,9 @@ mod tests {
     fn nx_parameter_consumers_follow_physical_use_order() {
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
-            object_id: Some(20),
-            record: None,
+            owner: None,
             declaration: None,
-            name: "p20".to_string(),
-            parameter_index: Some(20),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
             value: Some(5.0),
@@ -5603,15 +4754,17 @@ mod tests {
                 id: id.to_string(),
                 operation_label: operation.to_string(),
                 expression: expression.id.clone(),
-                bindings: vec![format!("binding-{id}")],
-                source_offsets: vec![source_offset],
+                bindings: vec![crate::native::features::FeatureParameterUseBinding {
+                    binding: format!("binding-{id}"),
+                    source_offset,
+                }],
             }
         };
         let uses = [
             parameter_use("later", "nx:feature-history:operation-label#0-1", 40),
             parameter_use("earlier", "nx:feature-history:operation-label#9-8", 30),
         ];
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -5635,12 +4788,9 @@ mod tests {
     fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         let expression = super::Expression {
             id: "nx:test:expression#20".to_string(),
-            object_id: Some(20),
-            record: None,
+            owner: None,
             declaration: None,
-            name: "p20".to_string(),
-            parameter_index: Some(20),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
             value: Some(5.0),
@@ -5652,10 +4802,12 @@ mod tests {
             id: "use".to_string(),
             operation_label: "nx:feature-history:operation-label#1-2".to_string(),
             expression: expression.id.clone(),
-            bindings: vec!["binding".to_string()],
-            source_offsets: vec![30],
+            bindings: vec![crate::native::features::FeatureParameterUseBinding {
+                binding: "binding".to_string(),
+                source_offset: 30,
+            }],
         };
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         crate::native::attach::attach_expression_parameters(
             &mut ir,
@@ -5673,8 +4825,10 @@ mod tests {
         let dependencies = crate::native::attach::parameter_owner_dependencies(
             &parameter_owners,
             &[
-                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
-                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+                cadmpeg_ir::features::ParameterId::mint("nx:test:parameter#20")
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::ParameterId::mint("nx:test:parameter#20")
+                    .expect("identity grammar"),
             ],
         );
 
@@ -5693,9 +4847,9 @@ mod tests {
         let input = FeatureInputBlock {
             id: "nx:feature-history:input-block#0-7-0".to_string(),
             operation_label: "nx:feature-history:operation-label#0-7".to_string(),
-            input_slot: 0,
-            object_index: 45,
-            raw_object_index: vec![45],
+            input_slot: crate::om::header_references::HeaderSlot::Zero,
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45])
+                .unwrap(),
             data_block: "nx:om-data-blocks-2:block#45".to_string(),
             source_offset: 700,
         };
@@ -5703,8 +4857,11 @@ mod tests {
             id: format!("nx:om-data-block-references-2-45:reference#{ordinal}"),
             data_block: input.data_block.clone(),
             ordinal,
-            object_id: 201 + ordinal,
-            raw_object_id: vec![0x80, (201 + ordinal) as u8],
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                201 + ordinal,
+                &[0x80, (201 + ordinal) as u8],
+            )
+            .unwrap(),
             target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),
             target_expression_declaration: declaration.map(str::to_string),
             source_offset: 800 + u64::from(ordinal),
@@ -5716,12 +4873,9 @@ mod tests {
 
         let expression = super::Expression {
             id: "nx:om-entry-9:expression#3".to_string(),
-            object_id: Some(201),
-            record: None,
+            owner: None,
             declaration: Some("nx:om-expression-declarations-0:declaration#3".to_string()),
-            name: "p3".to_string(),
-            parameter_index: Some(3),
-            qualifier: None,
+            name: crate::om::parameter_name::ParameterName::new("p3".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "12".to_string(),
             value: Some(12.0),
@@ -5739,7 +4893,7 @@ mod tests {
             bindings[0].id,
             "nx:feature-history:parameter-binding#0-7-0-0"
         );
-        assert_eq!(bindings[0].input_slot, 0);
+        assert_eq!(bindings[0].input_slot.number(), 0);
         assert_eq!(bindings[0].reference_ordinal, 0);
         assert_eq!(bindings[0].object_id, 201);
         assert_eq!(
@@ -5771,8 +4925,10 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&bytes, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some((2, 0)),
-                values: vec![7, 0x1020],
+                leading_value: Some(
+                    crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+                ),
+                values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
             })
         );
 
@@ -5782,8 +4938,11 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&nonzero_leading, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some((3, 0x1234)),
-                values: vec![7],
+                leading_value: Some(
+                    crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234)
+                        .unwrap()
+                ),
+                values: crate::om::nonempty::NonEmpty::new([7]).unwrap(),
             })
         );
 
@@ -5814,33 +4973,48 @@ mod tests {
         let forms = super::data_block_control_forms(&container);
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
-        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed);
-        assert_eq!(forms[0].value_count, 2);
-        assert_eq!(forms[0].leading_value_width, None);
-        assert_eq!(forms[0].leading_value, None);
-        assert_eq!(forms[0].byte_len, blocks[0].byte_len);
+        assert_eq!(
+            forms[0].kind,
+            super::DataBlockControlFormKind::ZeroPrefixed {
+                value_count: std::num::NonZeroU32::new(2).unwrap()
+            }
+        );
+        assert_eq!(forms[0].kind.value_count(), 2);
+        assert_eq!(forms[0].kind.byte_len(), blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
         assert_eq!(control_values[0].ordinal, 0);
-        assert_eq!(control_values[0].value, 0);
-        assert_eq!(control_values[1].value, 1);
+        assert_eq!(control_values[0].value.value(), 0);
+        assert_eq!(control_values[1].value.value(), 1);
         let classes = super::data_block_control_class_references(&container);
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].data_block, blocks[0].id);
         assert_eq!(classes[0].ordinal, 0);
         assert_eq!(classes[0].class_ordinal, 0);
-        assert_eq!(classes[0].class_name.as_deref(), Some("UGS::ModlFeature"));
         assert_eq!(
-            classes[0].class_definition.as_deref(),
+            classes[0].class.as_ref().map(|class| class.name.as_str()),
+            Some("UGS::ModlFeature")
+        );
+        assert_eq!(
+            classes[0]
+                .class
+                .as_ref()
+                .map(|class| class.definition.as_str()),
             Some("nx:om-entry-0:class#8")
         );
         assert!(super::string_values(&container).is_empty());
         assert!(super::object_references(&container).is_empty());
         let expressions = super::expressions(&container);
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].object_id, None);
-        assert_eq!(expressions[0].record, None);
+        assert_eq!(
+            expressions[0].owner.as_ref().map(|owner| owner.object_id),
+            None
+        );
+        assert_eq!(
+            expressions[0].owner.as_ref().map(|owner| &owner.record),
+            None
+        );
     }
 
     #[test]
@@ -5874,6 +5048,53 @@ mod tests {
     }
 
     #[test]
+    fn control_form_wire_checks_nonempty_counts_and_derived_length() {
+        let json = r#"{"id":"c","data_block":"b","kind":"zero_prefixed","value_count":2,"byte_len":8,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for (field, invalid) in [("value_count", 0), ("byte_len", 0), ("byte_len", 7)] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = invalid.into();
+            assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+        let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"byte_len":1,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        for field in ["value_count", "byte_len"] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = 0.into();
+            assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+    }
+
+    #[test]
+    fn control_leading_value_preserves_wire_and_rejects_width_mismatch() {
+        let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"leading_value_width":2,"leading_value":0,"byte_len":26,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["leading_value_width"] = 4.into();
+        assert!(
+            serde_json::from_value::<super::DataBlockControlForm>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("leading_value_width")
+        );
+        wire["leading_value_width"] = 2.into();
+        wire["leading_value"] = 65536.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("leading_value"));
+    }
+
+    #[test]
     fn native_catalog_classifies_product_anchored_control_atomically() {
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
@@ -5885,11 +5106,15 @@ mod tests {
         assert_eq!(forms.len(), 1);
         assert_eq!(
             forms[0].kind,
-            super::DataBlockControlFormKind::ProductAnchored
+            super::DataBlockControlFormKind::ProductAnchored {
+                leading: Some(
+                    crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+                ),
+                value_count: std::num::NonZeroU32::new(2).unwrap(),
+                byte_len: std::num::NonZeroU64::new(26).unwrap(),
+            }
         );
-        assert_eq!(forms[0].value_count, 2);
-        assert_eq!(forms[0].leading_value_width, Some(2));
-        assert_eq!(forms[0].leading_value, Some(0));
+        assert_eq!(forms[0].kind.value_count(), 2);
         assert!(super::data_block_control_values(&container).is_empty());
         assert_eq!(super::data_block_control_index_values(&container).len(), 2);
     }
@@ -5906,40 +5131,10 @@ mod tests {
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].class_ordinal, 1);
         assert_eq!(
-            classes[0].class_name.as_deref(),
+            classes[0].class.as_ref().map(|class| class.name.as_str()),
             Some("UGS::FEATURE_RECORD")
         );
-        assert!(classes[0].class_definition.is_some());
-    }
-
-    #[test]
-    fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {
-        let mut store = offset_only_indexed_om_section();
-        let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
-        let end_at = index_start + 3 * 4;
-        let end = u32::from_le_bytes(
-            store[end_at..end_at + 4]
-                .try_into()
-                .expect("required invariant"),
-        ) as usize;
-        let mut lane = vec![0x11, 0x02];
-        lane.extend_from_slice(&[0xff; 15]);
-        lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
-        store.splice(end..end, lane.iter().copied());
-        store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
-        let container = container::scan_bytes(file).expect("required invariant");
-
-        let lanes = super::data_block_abr_reference_lanes(&container);
-        assert_eq!(lanes.len(), 1);
-        assert_eq!(lanes[0].slot_indices[0], Some(2));
-        assert_eq!(
-            lanes[0].slot_data_blocks[0].as_deref(),
-            Some("nx:om-data-blocks-0:block#2")
-        );
-        assert!(lanes[0].slot_indices[1..].iter().all(Option::is_none));
-        assert_eq!(lanes[0].slot_source_offsets.len(), 16);
-        assert_eq!(lanes[0].slot_source_offsets[0], lanes[0].source_offset + 1);
+        assert!(classes[0].class.is_some());
     }
 
     #[test]
@@ -5952,9 +5147,9 @@ mod tests {
 
         let expressions = crate::om::numeric_expressions(&bytes);
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].name, "p9");
+        assert_eq!(expressions[0].name.as_str(), "p9");
         assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
-        assert_eq!(expressions[0].value, None);
+        assert_eq!(expressions[0].constant_value(), None);
         assert_eq!(
             super::expression_parameter_names(expressions[0].expression),
             vec!["p2", "p7_radius"]
@@ -5974,24 +5169,18 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::Expression>("expressions")
             .expect("required invariant");
-        assert_eq!(
-            result
-                .ir()
-                .native
-                .namespace("nx")
-                .expect("required invariant")
-                .version,
-            189
-        );
         assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].object_id, Some(0x102));
-        assert_eq!(expressions[0].parameter_index, Some(8));
         assert_eq!(
-            expressions[0].qualifier.as_deref(),
+            expressions[0].owner.as_ref().map(|owner| owner.object_id),
+            Some(0x102)
+        );
+        assert_eq!(expressions[0].name.index(), Some(8));
+        assert_eq!(
+            expressions[0].name.qualifier(),
             Some("CircularPattern_pattern_Circular_Dir_offset_angle")
         );
         assert_eq!(
-            expressions[0].name,
+            expressions[0].name.as_str(),
             "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
         );
         assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
@@ -6010,7 +5199,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(declarations.len(), 1);
         assert_eq!(declarations[0].object_id, 0x102);
-        assert_eq!(declarations[0].parameter_index, 8);
+        assert_eq!(declarations[0].name.index(), 8);
         assert_eq!(declarations[0].literal.as_deref(), Some("120"));
         assert_eq!(
             expressions[0].declaration.as_deref(),
@@ -6021,7 +5210,7 @@ mod tests {
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.name == expressions[0].name)
+            .find(|parameter| parameter.name == expressions[0].name.as_str())
             .expect("required invariant");
         assert_eq!(
             parameter.properties.get("declaration"),
@@ -6035,13 +5224,13 @@ mod tests {
             .source_fidelity()
             .retained_records
             .iter()
-            .filter(|record| record.id.starts_with("nx:om-section-"))
+            .filter(|record| record.id().starts_with("nx:om-section-"))
             .collect::<Vec<_>>();
         assert_eq!(om_records.len(), 2);
         assert!(om_records.iter().all(|record| {
-            record.data.as_ref().is_some_and(|data| {
-                data.len() as u64 == record.byte_len
-                    && cadmpeg_ir::hash::sha256_hex(data) == record.sha256
+            record.data().is_some_and(|data| {
+                data.len() as u64 == record.byte_len()
+                    && cadmpeg_ir::hash::sha256_hex(data) == record.sha256()
             })
         }));
         let object_records = result
@@ -6060,23 +5249,24 @@ mod tests {
             .arena_as::<super::StoreHeader>("store_headers")
             .expect("required invariant");
         assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0].version, "NX 2027.3102");
+        assert_eq!(headers[0].version.as_str(), "NX 2027.3102");
         assert_eq!(headers[0].object_id, Some(0x101));
-        assert_eq!(object_records[1].object_id, Some(0x102));
+        assert_eq!(object_records[1].object_id.map(|(id, _)| id), Some(0x102));
         assert_eq!(
-            object_records[1].object_id_source_offset,
-            object_records[0]
-                .object_id_source_offset
-                .map(|offset| offset + 4)
+            object_records[1].object_id.map(|(_, offset)| offset),
+            object_records[0].object_id.map(|(_, offset)| offset + 4)
         );
-        assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
+        assert_eq!(
+            expressions[0].owner.as_ref().map(|owner| &owner.record),
+            Some(&object_records[1].id)
+        );
         assert_eq!(object_records[1].record_ordinal, 1);
         assert_eq!(
             object_records[0].section_offset,
             object_records[1].section_offset
         );
-        assert_eq!(object_records[1].byte_len, om_records[1].byte_len);
-        assert_eq!(object_records[1].sha256, om_records[1].sha256);
+        assert_eq!(object_records[1].byte_len, om_records[1].byte_len());
+        assert_eq!(object_records[1].sha256, om_records[1].sha256());
         assert_eq!(
             object_records[1].dependencies,
             vec![object_records[0].id.clone()]
@@ -6095,7 +5285,7 @@ mod tests {
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].record, object_records[1].id);
         assert_eq!(strings[0].object_id, Some(0x102));
-        assert_eq!(strings[0].value, "SKETCH_001");
+        assert_eq!(strings[0].value.as_str(), "SKETCH_001");
         let references = result
             .ir()
             .native
@@ -6106,19 +5296,17 @@ mod tests {
         assert_eq!(references.len(), 3);
         assert_eq!(references[0].record, object_records[1].id);
         assert_eq!(references[0].object_id, Some(0x102));
-        assert_eq!(references[0].value, 0x1234_5678);
-        assert_eq!(references[0].target_record, None);
-        assert_eq!(references[1].kind, super::ObjectReferenceKind::Tagged28);
-        assert_eq!(references[1].value, 0x0abc_def0);
-        assert_eq!(references[1].target_record, None);
+        let wire = serde_json::to_value(&references).unwrap();
+        assert_eq!(wire[0]["value"], 0x1234_5678);
+        assert_eq!(wire[0]["target_record"], serde_json::Value::Null);
+        assert_eq!(wire[1]["kind"], "tagged28");
+        assert_eq!(wire[1]["value"], 0x0abc_def0);
+        assert_eq!(wire[1]["target_record"], serde_json::Value::Null);
+        assert_eq!(wire[2]["kind"], "record_ordinal16");
+        assert_eq!(wire[2]["value"], 0);
         assert_eq!(
-            references[2].kind,
-            super::ObjectReferenceKind::RecordOrdinal16
-        );
-        assert_eq!(references[2].value, 0);
-        assert_eq!(
-            references[2].target_record.as_ref(),
-            Some(&object_records[0].id)
+            wire[2]["target_record"].as_str(),
+            Some(object_records[0].id.as_str())
         );
         let handles = result
             .ir()
@@ -6144,7 +5332,7 @@ mod tests {
         assert_eq!(result.ir().model.parameters.len(), 1);
         assert_eq!(result.ir().model.parameters[0].expression, "120");
         let parameter = &result.ir().model.parameters[0];
-        assert_eq!(parameter.name, expressions[0].name);
+        assert_eq!(parameter.name, expressions[0].name.as_str());
         assert!(matches!(
             parameter.value,
             Some(cadmpeg_ir::features::ParameterValue::Angle(
@@ -6229,6 +5417,11 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::FieldDefinition>("field_definitions")
             .expect("required invariant");
+        let fields: Vec<_> = fields
+            .iter()
+            .cloned()
+            .map(super::FieldDefinitionWire::from)
+            .collect();
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "m_target");
         assert_eq!(fields[0].ordinal, 0);
@@ -6242,9 +5435,14 @@ mod tests {
         assert_eq!(fields[1].trailing_code, 0x81);
         assert!(fields[1].registry_suffix.is_empty());
         assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
-        let (prefix, fingerprint, terminal) = super::registry_layout_fields(&[
+        let layout = super::registry_layout(&[
             0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
         ]);
+        let prefix = layout
+            .as_ref()
+            .map_or_else(Vec::new, |layout| layout.prefix.to_vec());
+        let fingerprint = layout.as_ref().map(|layout| layout.fingerprint);
+        let terminal = layout.as_ref().map(|layout| layout.terminal);
         assert_eq!(prefix, [0x81, 0x21]);
         assert_eq!(
             fingerprint,
@@ -6258,6 +5456,11 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::ClassDefinition>("class_definitions")
             .expect("required invariant");
+        let classes: Vec<_> = classes
+            .iter()
+            .cloned()
+            .map(super::ClassDefinitionWire::from)
+            .collect();
         assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
         assert_eq!(
             classes[0].schema_fingerprint,
@@ -6271,16 +5474,24 @@ mod tests {
         let legacy_definition = crate::om::TypeDefinition {
             offset: 0,
             name: "UGS::FEATURE_RECORD",
-            trailing_code: 0xa0,
-            registry_suffix: &[
-                0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+            registry_tail: &[
+                0xa0, 0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
             ],
         };
 
-        let legacy = super::class_registry_fields(&legacy_definition);
-        assert_eq!(legacy.storage_code, None);
-        assert_eq!(legacy.base_class, None);
-        assert_eq!(legacy.reference, None);
+        let legacy = super::ClassDefinitionWire::from(super::ClassDefinition {
+            id: String::new(),
+            name: legacy_definition.name.into(),
+            ordinal: 0,
+            trailing_code: legacy_definition.registry_tail[0],
+            registry_suffix: legacy_definition.registry_tail[1..].to_vec(),
+            section_offset: 0,
+            source_entry: String::new(),
+            source_offset: 0,
+        });
+        assert_eq!(legacy.registry_storage_code, None);
+        assert_eq!(legacy.registry_base_class, None);
+        assert_eq!(legacy.registry_reference, None);
         assert_eq!(
             legacy.schema_fingerprint,
             Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
@@ -6290,13 +5501,23 @@ mod tests {
         let complete_definition = crate::om::TypeDefinition {
             offset: 0,
             name: "UGS::FEATURE_RECORD",
-            trailing_code: 0x38,
-            registry_suffix: &[0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02],
+            registry_tail: &[
+                0x38, 0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02,
+            ],
         };
-        let complete = super::class_registry_fields(&complete_definition);
-        assert_eq!(complete.storage_code, Some(0x38));
-        assert_eq!(complete.base_class, Some(0x05));
-        assert_eq!(complete.reference, Some(0x02));
+        let complete = super::ClassDefinitionWire::from(super::ClassDefinition {
+            id: String::new(),
+            name: complete_definition.name.into(),
+            ordinal: 0,
+            trailing_code: complete_definition.registry_tail[0],
+            registry_suffix: complete_definition.registry_tail[1..].to_vec(),
+            section_offset: 0,
+            source_entry: String::new(),
+            source_offset: 0,
+        });
+        assert_eq!(complete.registry_storage_code, Some(0x38));
+        assert_eq!(complete.registry_base_class, Some(0x05));
+        assert_eq!(complete.registry_reference, Some(0x02));
         assert_eq!(
             complete.schema_fingerprint,
             Some([0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80])
@@ -6326,7 +5547,7 @@ mod tests {
         assert_eq!(result.ir().model.configurations[0].ordinal, 0);
         assert_eq!(result.ir().model.configurations[0].source_index, Some(0));
         assert_eq!(result.ir().model.configurations[0].name, "Model");
-        assert!(result.ir().model.configurations[0].active.is_active());
+        assert!(result.ir().model.configurations[0].active);
         assert_eq!(
             result.ir().model.configurations[0].bodies.resolved(),
             Some(
@@ -6342,7 +5563,7 @@ mod tests {
         );
         assert_eq!(result.ir().model.configurations[1].ordinal, 1);
         assert_eq!(result.ir().model.configurations[1].name, "Exploded");
-        assert!(result.ir().model.configurations[1].active.is_inactive());
+        assert!(!result.ir().model.configurations[1].active);
         assert!(result.ir().model.configurations[1].bodies.is_unresolved());
         let uses = result
             .ir()
@@ -6390,13 +5611,15 @@ mod tests {
                 .arena_as::<super::Configuration>("configurations")
                 .expect("required invariant");
             assert!(native[0].is_default);
-            assert!(result
-                .ir()
-                .model
-                .configurations
-                .iter()
-                .all(|configuration| configuration.active.is_inactive()
-                    && configuration.bodies.is_unresolved()));
+            assert!(
+                result
+                    .ir()
+                    .model
+                    .configurations
+                    .iter()
+                    .all(|configuration| !configuration.active
+                        && configuration.bodies.is_unresolved())
+            );
         }
     }
     mod material_and_external_records;
@@ -6407,7 +5630,7 @@ mod rmfastload;
 
 #[cfg(test)]
 mod object_record_identity_tests {
-    use crate::om::EntityRecord;
+
     use crate::test_support::prt_with_indexed_om_section;
 
     #[test]
@@ -6442,75 +5665,27 @@ mod object_record_identity_tests {
 
     #[test]
     fn graph_identity_ignores_same_section_record_reordering() {
-        let first = [0x01, 0x02, 0x90, 0x00, 0x01, 0xa0];
-        let second = [0x01, 0x02, 0x90, 0x00, 0x00, 0xb0];
-        let original = [
-            EntityRecord {
-                object_id: Some(11),
-                object_id_offset: Some(0),
-                offset: 0,
-                bytes: &first,
-            },
-            EntityRecord {
-                object_id: Some(12),
-                object_id_offset: Some(4),
-                offset: 6,
-                bytes: &second,
-            },
-        ];
+        let first: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x01, 0xa0];
+        let second: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x00, 0xb0];
+        let original = [first, second];
 
-        let reordered_first = [0x01, 0x02, 0x90, 0x00, 0x01, 0xb0];
-        let reordered_second = [0x01, 0x02, 0x90, 0x00, 0x00, 0xa0];
-        let reordered = [
-            EntityRecord {
-                object_id: Some(12),
-                object_id_offset: Some(0),
-                offset: 0,
-                bytes: &reordered_first,
-            },
-            EntityRecord {
-                object_id: Some(11),
-                object_id_offset: Some(4),
-                offset: 6,
-                bytes: &reordered_second,
-            },
-        ];
+        let reordered_first: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x01, 0xb0];
+        let reordered_second: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x00, 0xa0];
+        let reordered = [reordered_first, reordered_second];
 
         let original_identities = super::stable_object_record_identities("/entry", &original);
         let reordered_identities = super::stable_object_record_identities("/entry", &reordered);
         assert_eq!(original_identities[0], reordered_identities[1]);
         assert_eq!(original_identities[1], reordered_identities[0]);
 
-        let unrelated = [0xd0];
-        let with_unrelated = [
-            original[0].clone(),
-            original[1].clone(),
-            EntityRecord {
-                object_id: Some(13),
-                object_id_offset: Some(8),
-                offset: 12,
-                bytes: &unrelated,
-            },
-        ];
+        let unrelated: &[u8] = &[0xd0];
+        let with_unrelated = [original[0], original[1], unrelated];
         let with_unrelated_identities =
             super::stable_object_record_identities("/entry", &with_unrelated);
         assert_eq!(original_identities[0], with_unrelated_identities[0]);
         assert_eq!(original_identities[1], with_unrelated_identities[1]);
 
-        let changed = [
-            EntityRecord {
-                object_id: Some(12),
-                object_id_offset: Some(0),
-                offset: 0,
-                bytes: &reordered_first,
-            },
-            EntityRecord {
-                object_id: Some(11),
-                object_id_offset: Some(4),
-                offset: 6,
-                bytes: &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0],
-            },
-        ];
+        let changed = [reordered_first, &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0][..]];
         let changed_identities = super::stable_object_record_identities("/entry", &changed);
         assert_ne!(original_identities[0], changed_identities[1]);
     }

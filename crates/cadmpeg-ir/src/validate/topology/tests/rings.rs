@@ -7,24 +7,11 @@ use crate::report::Check;
 use crate::validate::validate_neutral;
 
 #[test]
-fn non_finite_body_transform_is_invalid() {
-    let mut ir = unit_cube();
-    let mut transform = crate::transform::Transform::identity();
-    transform.rows[2][3] = f64::NAN;
-    ir.model.bodies[0].transform = Some(transform);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == Check::Bounds && finding.message.contains("non-finite")
-        }));
-}
-
-#[test]
 fn dangling_reference_is_flagged() {
     let mut ir = unit_cube();
     // Point a coedge's edge at something that does not exist.
-    ir.model.coedges[0].edge = EdgeId("does-not-exist".into());
+    ir.model.coedges[0].edge =
+        EdgeId::mint("test:model:entity#does-not-exist").expect("valid identity");
     let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
@@ -34,37 +21,20 @@ fn dangling_reference_is_flagged() {
 }
 
 #[test]
-fn coedge_use_curve_requires_a_resolved_carrier_and_interval() {
+fn coedge_use_curve_requires_a_resolved_carrier() {
     let mut ir = unit_cube();
-    ir.model.coedges[0].use_curve = Some(CurveId("missing:use-curve#0".into()));
+    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+        curve: CurveId::mint("missing:model:use-curve#0").expect("valid identity"),
+        parameter_range: [0.0, 1.0],
+    });
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
     }));
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
-            && finding
-                .message
-                .contains("use curve and parameter range must occur together")
+            && finding.message.contains("outside its carrier domain")
     }));
-}
-
-#[test]
-fn broken_loop_ring_is_flagged() {
-    let mut ir = unit_cube();
-    // Redirect a coedge's `next` to a valid coedge in a different loop, so the
-    // referenced id resolves but the ring no longer closes.
-    let foreign = ir.model.coedges[20].id.clone();
-    ir.model.coedges[0].next = foreign;
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.check == Check::LoopClosure),
-        "expected a loop-closure finding, got: {:?}",
-        report.findings
-    );
 }
 
 #[test]
@@ -102,11 +72,12 @@ fn new_topology_references_are_validated() {
     let mut ir = unit_cube();
     ir.model.shells[0]
         .wire_edges
-        .push(EdgeId("missing-wire".into()));
-    ir.model.shells[0]
-        .free_vertices
-        .push(crate::ids::VertexId("missing-free".into()));
-    ir.model.coedges[0].radial_next = CoedgeId("missing-radial".into());
+        .push(EdgeId::mint("test:model:entity#missing-wire").expect("valid identity"));
+    ir.model.shells[0].free_vertices.push(
+        crate::ids::VertexId::mint("test:model:entity#missing-free").expect("valid identity"),
+    );
+    ir.model.coedges[0].radial_next =
+        CoedgeId::mint("test:model:entity#missing-radial").expect("valid identity");
 
     let report = validate_neutral(&ir, Vec::new());
     let messages = report
@@ -160,18 +131,24 @@ fn wire_and_free_topology_negative_cases_are_reported() {
     let mut ir = unit_cube();
 
     let mut unowned_edge = ir.model.edges[0].clone();
-    unowned_edge.id.0 = "synthetic:test:edge#unowned".into();
+    unowned_edge.id = "synthetic:test:edge#unowned"
+        .try_into()
+        .expect("valid identity");
     ir.model.edges.push(unowned_edge);
 
     let mut duplicate_edge = ir.model.edges[1].clone();
-    duplicate_edge.id.0 = "synthetic:test:edge#duplicate".into();
+    duplicate_edge.id = "synthetic:test:edge#duplicate"
+        .try_into()
+        .expect("valid identity");
     ir.model.shells[0]
         .wire_edges
         .extend([duplicate_edge.id.clone(), duplicate_edge.id.clone()]);
     ir.model.edges.push(duplicate_edge);
 
     let mut unowned_vertex = ir.model.vertices[0].clone();
-    unowned_vertex.id.0 = "synthetic:test:vertex#unowned".into();
+    unowned_vertex.id = "synthetic:test:vertex#unowned"
+        .try_into()
+        .expect("valid identity");
     ir.model.vertices.push(unowned_vertex);
 
     ir.model.shells[0]
@@ -200,15 +177,15 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
-    ir.model.loops[0].coedges.clear();
-    ir.model.loops[0].vertex_uses = vec![crate::topology::VertexUse {
+    ir.model.loops[0].boundary = crate::topology::LoopBoundary::Vertex {
         vertex: vertex.clone(),
-        after: None,
         pcurves: Vec::new(),
-    }];
+    };
     ir.model.shells[0].free_vertices.push(vertex.clone());
     let mut second_shell = ir.model.shells[0].clone();
-    second_shell.id.0 = "synthetic:test:shell#second".into();
+    second_shell.id = "synthetic:test:shell#second"
+        .try_into()
+        .expect("valid identity");
     second_shell.faces.clear();
     second_shell.wire_edges.clear();
     second_shell.free_vertices = vec![vertex];
@@ -242,14 +219,14 @@ fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
-            && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
+            && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
     }));
 
     ir.model.edges[0].param_range = Some([f64::NAN, 0.0]);
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
-            && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
+            && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
     }));
 }
 
@@ -258,51 +235,17 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     let mut ir = unit_cube();
     let face_id = ir.model.faces[0].id.clone();
     let vertex_id = ir.model.vertices[0].id.clone();
-    let loop_id = crate::ids::LoopId("synthetic:cube:vertex-loop#0".into());
+    let loop_id = crate::ids::LoopId::mint("synthetic:cube:vertex-loop#0").expect("valid identity");
     ir.model.loops.push(crate::topology::Loop {
         id: loop_id.clone(),
         face: face_id,
-        boundary_role: crate::topology::LoopBoundaryRole::Inner,
-        coedges: Vec::new(),
-        vertex_uses: vec![crate::topology::VertexUse {
+        boundary: crate::topology::LoopBoundary::Vertex {
             vertex: vertex_id,
-            after: None,
             pcurves: Vec::new(),
-        }],
+        },
     });
     ir.model.faces[0].loops.push(loop_id.clone());
     ir.model.finalize();
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
-
-    ir.model
-        .loops
-        .iter_mut()
-        .find(|loop_| loop_.id == loop_id)
-        .unwrap()
-        .boundary_role = crate::topology::LoopBoundaryRole::Outer;
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::LoopClosure
-            && finding.message == "face has more than one explicit outer loop"
-    }));
-    ir.model
-        .loops
-        .iter_mut()
-        .find(|loop_| loop_.id == loop_id)
-        .unwrap()
-        .boundary_role = crate::topology::LoopBoundaryRole::Inner;
-
-    let coedge = ir.model.loops[0].coedges[0].clone();
-    ir.model
-        .loops
-        .iter_mut()
-        .find(|loop_| loop_.id == loop_id)
-        .unwrap()
-        .coedges
-        .push(coedge);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::LoopClosure && finding.entity.as_deref() == Some(loop_id.0.as_str())
-    }));
 }

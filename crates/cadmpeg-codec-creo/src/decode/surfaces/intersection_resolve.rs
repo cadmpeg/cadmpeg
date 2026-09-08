@@ -3,11 +3,14 @@
 
 use cadmpeg_ir::geometry::CurveGeometry;
 
-use super::super::analytic::{
-    circle_parameters, cross, dot, intersect_plane_with_circle, nonperiodic_conic_parameter,
-    periodic_conic_frame, CarrierEquation, PeriodicConicFrame, PlaneEquation,
-};
 use super::super::sketch::normalized;
+use crate::decode::analytic::edges::{
+    nonperiodic_conic_parameter, periodic_conic_frame, PeriodicConicFrame,
+};
+use crate::decode::analytic::equations::{
+    circle_parameters, intersect_plane_with_circle, CarrierEquation, PlaneEquation,
+};
+use crate::vecmath::{cross, dot};
 
 use super::intersection_candidates::{
     apex_plane_cone_generator_candidates, axis_containing_plane_torus_circle_candidates,

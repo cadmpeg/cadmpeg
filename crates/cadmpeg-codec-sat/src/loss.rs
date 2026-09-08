@@ -18,15 +18,15 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`SatLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SatLossCode {
     /// The stream framed but decoded no surfaces, points, or faces.
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
-    /// An identified Spatial ACIS binary save-format band is not decoded.
-    ContainerAcisSaveFormatUnsupported,
+    /// The stream was read with a grammar its own save-format declaration does
+    /// not select.
+    SourceDialectUnverified,
 }
 
 impl SatLossCode {
@@ -34,7 +34,7 @@ impl SatLossCode {
     pub const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
-        Self::ContainerAcisSaveFormatUnsupported,
+        Self::SourceDialectUnverified,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -43,7 +43,7 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
-            Self::ContainerAcisSaveFormatUnsupported => "container.acis-save-format-unsupported",
+            Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
 
@@ -51,18 +51,19 @@ impl SatLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::GeometryFramedWithoutCarriers | Self::ContainerAcisSaveFormatUnsupported => {
-                Severity::Blocking
+            Self::GeometryFramedWithoutCarriers => Severity::Blocking,
+            Self::GeometryProceduralSurfaceUntyped | Self::SourceDialectUnverified => {
+                Severity::Warning
             }
-            Self::GeometryProceduralSurfaceUntyped => Severity::Warning,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::GeometryFramedWithoutCarriers
-            | Self::GeometryProceduralSurfaceUntyped
-            | Self::ContainerAcisSaveFormatUnsupported => LossTaxonomy::GeometryNotTransferred,
+            Self::GeometryFramedWithoutCarriers | Self::GeometryProceduralSurfaceUntyped => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
 
@@ -96,7 +97,7 @@ mod tests {
             [
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
-                "container.acis-save-format-unsupported",
+                "source.kernel-dialect-unverified",
             ]
         );
     }

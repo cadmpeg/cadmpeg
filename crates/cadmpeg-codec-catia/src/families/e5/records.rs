@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+use crate::families::e5::graph::Sign;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
 use crate::wire::records::scan_vertex_records;
 
@@ -61,31 +62,22 @@ pub struct E5RollingBallJet {
     pub pos: usize,
     /// Persistent E5 record id.
     pub record_id: u32,
-    /// Degree of every scalar jet channel.
-    pub degree: u32,
-    /// Strictly increasing native spine parameters.
-    pub knots: Vec<f64>,
-    /// Multiplicities aligned with [`Self::knots`].
-    pub multiplicities: Vec<u32>,
-    /// Position and derivative channels at each station.
-    pub sites: Vec<RollingBallJetSite>,
-    /// Native parameter interval repeated in the carrier tail.
-    pub parameter_range: [f64; 2],
-    /// Native radius repeated in the carrier tail.
-    pub radius: f64,
+    /// Knots, multiplicities, and complete derivative channels in native order.
+    pub stations: Vec<cadmpeg_ir::geometry::RollingBallJetStation>,
     /// Native surface-sense flag retained without reinterpretation.
-    pub sense: i32,
+    pub sense: Sign,
 }
 
 impl E5RollingBallJet {
+    /// Degree of every scalar jet channel.
+    pub const DEGREE: u32 = 5;
+
     /// Convert the admitted carrier payload to the exact neutral jet form.
     #[must_use]
     pub fn definition(&self) -> ProceduralSurfaceDefinition {
         ProceduralSurfaceDefinition::RollingBallJet {
-            degree: self.degree,
-            knots: self.knots.clone(),
-            multiplicities: self.multiplicities.clone(),
-            sites: self.sites.clone(),
+            degree: Self::DEGREE,
+            stations: self.stations.clone(),
         }
     }
 }
@@ -304,20 +296,14 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
     for record in e5_records(data) {
         let pos = record.pos;
         let decoded = match record.class {
-            0xc9 => e5_cylinder(data, pos).and_then(|geometry| {
-                let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
-                    unreachable!()
-                };
+            0xc9 => e5_cylinder(data, pos).and_then(|(geometry, radius)| {
                 let parameter_scale = [1.0 / radius, 1.0];
                 parameter_scale
                     .into_iter()
                     .all(f64::is_finite)
                     .then_some((geometry, parameter_scale))
             }),
-            0xca => e5_cone(data, pos).and_then(|geometry| {
-                let SurfaceGeometry::Cone { half_angle, .. } = geometry else {
-                    unreachable!()
-                };
+            0xca => e5_cone(data, pos).and_then(|(geometry, half_angle)| {
                 let u_scale = f64_le(data, pos + 158)?;
                 let v_scale = f64_le(data, pos + 166)?;
                 let parameter_scale = [1.0 / u_scale, half_angle.cos() / v_scale];
@@ -328,15 +314,7 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                     && parameter_scale.into_iter().all(f64::is_finite))
                 .then_some((geometry, parameter_scale))
             }),
-            0xcc => e5_torus(data, pos).and_then(|geometry| {
-                let SurfaceGeometry::Torus {
-                    major_radius,
-                    minor_radius,
-                    ..
-                } = geometry
-                else {
-                    unreachable!()
-                };
+            0xcc => e5_torus(data, pos).and_then(|(geometry, major_radius, minor_radius)| {
                 let parameter_scale = [1.0 / major_radius, 1.0 / minor_radius];
                 parameter_scale
                     .into_iter()
@@ -391,7 +369,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     let repeated_station_count = usize::try_from(view.u32_le()?).ok()?;
     let zero2 = view.u32_le()?;
     if station_count < 2
-        || degree != 5
+        || degree != E5RollingBallJet::DEGREE
         || repeated_station_count != station_count
         || [zero0, zero1, zero2] != [0; 3]
         || record.size
@@ -429,7 +407,11 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     let tail_zero0 = view.f64_le()?;
     let tail_radius0 = view.f64_le()?;
     let tail_radius1 = view.f64_le()?;
-    let sense = view.i32_le()?;
+    let sense = match view.i32_le()? {
+        -1 => Sign::Negative,
+        1 => Sign::Positive,
+        _ => return None,
+    };
     let tail_zero1 = view.f64_le()?;
     let tail_radius2 = view.f64_le()?;
     if parameter_min.to_bits() != knots.first()?.to_bits()
@@ -442,7 +424,6 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         || tail_radius0 <= 0.0
         || !relative_close(tail_radius0, tail_radius1, E5_D8_RADIUS_TOLERANCE)
         || !relative_close(tail_radius0, tail_radius2, E5_D8_RADIUS_TOLERANCE)
-        || !matches!(sense, -1 | 1)
         || view.array::<3>()? != [1, 0, 0]
     {
         return None;
@@ -510,7 +491,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     ) {
         return None;
     }
-    let sites = sites
+    let stations = sites
         .into_iter()
         .map(
             |(
@@ -532,16 +513,20 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
                 second_derivative: d8_derivative(second),
             },
         )
+        .zip(knots)
+        .zip(multiplicities)
+        .map(
+            |((site, knot), multiplicity)| cadmpeg_ir::geometry::RollingBallJetStation {
+                knot,
+                multiplicity,
+                site,
+            },
+        )
         .collect();
     Some(E5RollingBallJet {
         pos: record.pos,
         record_id: View::u32_le_at(data, record.pos + 9)?,
-        degree,
-        knots,
-        multiplicities,
-        sites,
-        parameter_range: [parameter_min, parameter_max],
-        radius: tail_radius0,
+        stations,
         sense,
     })
 }
@@ -646,19 +631,24 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
     }
     view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
     view.is_empty()
-        .then_some(SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            u_count: u32::try_from(u_count).ok()?,
-            v_count: u32::try_from(v_count).ok()?,
-            control_points,
-            weights,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }))
+        .then(|| {
+            NurbsSurface::new(
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                u32::try_from(u_count).ok()?,
+                u32::try_from(v_count).ok()?,
+                control_points,
+                weights,
+                false,
+                false,
+                false,
+            )
+            .ok()
+            .map(SurfaceGeometry::Nurbs)
+        })
+        .flatten()
 }
 
 fn read_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, Vec<u32>)> {
@@ -712,17 +702,17 @@ fn expand_nurbs_axis(
     (expanded.len() == total).then_some((expanded, control_count))
 }
 
-fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
+fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
     let origin = c.point3()?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
     if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    Some(geometry)
+    Some((geometry, radius))
 }
 
-fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
+fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius.is_finite()
@@ -733,10 +723,10 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(geometry)
+    Some((geometry, half_angle))
 }
 
-fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
+fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius.is_finite()
@@ -746,7 +736,7 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(geometry)
+    Some((geometry, major_radius, minor_radius))
 }
 
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -810,35 +800,35 @@ mod tests {
         assert_eq!(jets.len(), 1);
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
-        assert_eq!(jet.degree, 5);
-        assert_eq!(jet.knots.len(), 2);
-        assert_close(jet.knots[0], 2.0);
-        assert_close(jet.knots[1], 5.0);
-        assert_eq!(jet.multiplicities, [6, 6]);
-        assert_close(jet.parameter_range[0], 2.0);
-        assert_close(jet.parameter_range[1], 5.0);
-        assert_close(jet.radius, 2.0);
-        assert_eq!(jet.sense, -1);
-        assert_point_close(jet.sites[0].first_limit, Point3::new(2.0, 0.0, 0.0));
-        assert_point_close(jet.sites[1].center, Point3::new(1.0, 0.0, 0.0));
-        assert_close(jet.sites[0].angle, std::f64::consts::FRAC_PI_2);
+        assert_eq!(jet.stations.len(), 2);
+        assert_close(jet.stations[0].knot, 2.0);
+        assert_close(jet.stations[1].knot, 5.0);
+        assert_eq!(
+            jet.stations
+                .iter()
+                .map(|station| station.multiplicity)
+                .collect::<Vec<_>>(),
+            [6, 6]
+        );
+        assert_eq!(jet.sense, crate::families::e5::graph::Sign::Negative);
+        assert_point_close(jet.stations[0].site.first_limit, Point3::new(2.0, 0.0, 0.0));
+        assert_point_close(jet.stations[1].site.center, Point3::new(1.0, 0.0, 0.0));
+        assert_close(jet.stations[0].site.angle, std::f64::consts::FRAC_PI_2);
         assert_vector_close(
-            jet.sites[0].first_derivative.center,
+            jet.stations[0].site.first_derivative.center,
             Vector3::new(0.7, 0.8, 0.9),
         );
         assert_vector_close(
-            jet.sites[0].second_derivative.center,
+            jet.stations[0].site.second_derivative.center,
             Vector3::new(2.7, 2.8, 2.9),
         );
-        assert_close(jet.sites[1].second_derivative.angle, 4.0);
+        assert_close(jet.stations[1].site.second_derivative.angle, 4.0);
         assert!(matches!(
             jet.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
                 degree: 5,
-                ref knots,
-                ref multiplicities,
-                ref sites,
-            } if knots.len() == 2 && multiplicities == &[6, 6] && sites.len() == 2
+                ref stations,
+            } if stations.len() == 2 && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
         ));
     }
 
@@ -891,14 +881,14 @@ mod tests {
             let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
                 panic!("E7 surface was not NURBS");
             };
-            assert_eq!(nurbs.u_degree, 1);
-            assert_eq!(nurbs.v_degree, 1);
-            assert_eq!(nurbs.u_knots, [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.v_knots, [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.u_count, 2);
-            assert_eq!(nurbs.v_count, 2);
-            assert_eq!(nurbs.control_points.len(), 4);
-            assert_eq!(nurbs.weights.is_some(), mode == 1);
+            assert_eq!(nurbs.u_degree(), 1);
+            assert_eq!(nurbs.v_degree(), 1);
+            assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.u_count(), 2);
+            assert_eq!(nurbs.v_count(), 2);
+            assert_eq!(nurbs.control_points().len(), 4);
+            assert_eq!(nurbs.weights().is_some(), mode == 1);
         }
     }
 

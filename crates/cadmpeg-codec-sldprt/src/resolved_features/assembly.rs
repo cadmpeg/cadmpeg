@@ -141,7 +141,7 @@ pub(super) fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
     classes.iter().any(|class| class.name == "sgSketch")
         && classes
             .iter()
-            .any(|class| class.role == FeatureInputClassRole::SketchEntity)
+            .any(|class| class.role() == FeatureInputClassRole::SketchEntity)
 }
 
 #[cfg(test)]

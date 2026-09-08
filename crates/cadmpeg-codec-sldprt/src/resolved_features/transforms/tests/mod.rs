@@ -15,8 +15,7 @@ fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
         kind: SketchInputKind::Point,
         state_value: None,
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     }
 }
 

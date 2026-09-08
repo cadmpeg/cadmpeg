@@ -6,19 +6,19 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Sense, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::{
     cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
-    linear_boundary_relationship_is_valid, pcurve_within_declared_bounds, BoundaryEndpoint,
-    BoundaryVertexClusterError, BoundaryVertexSourceEndpoint, DeclaredInterval,
-    FaceTolerancePolicy,
+    linear_boundary_relationship_is_valid, linear_boundary_rings, pcurve_within_declared_bounds,
+    BoundaryEndpoint, BoundaryVertexClusterError, BoundaryVertexSourceEndpoint, DeclaredInterval,
+    FaceTolerancePolicy, LinearBoundaryGeometry, SimpleRing,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -30,11 +30,14 @@ const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 #[test]
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.2), Some(0.8), None, None]);
 
@@ -55,18 +58,21 @@ fn pcurve_bounds_use_the_active_nurbs_subrange() {
 #[test]
 fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(2.0, 0.0),
-            Point2::new(2.0, 0.0),
-            Point2::new(2.0, 0.0),
-            Point2::new(0.2, 0.0),
-            Point2::new(0.3, 0.0),
-            Point2::new(0.4, 0.0),
-        ],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+            vec![
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(0.2, 0.0),
+                Point2::new(0.3, 0.0),
+                Point2::new(0.4, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.0), Some(1.0), None, None]);
 
@@ -87,11 +93,14 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
 #[test]
 fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
+            None,
+            false,
+        )
+        .expect("valid test pcurve"),
     };
 
     assert!(pcurve_within_declared_bounds(
@@ -147,7 +156,7 @@ fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
         .model
         .faces
         .iter()
-        .any(|face| face.id.0 == "iges:model:face#D9"));
+        .any(|face| face.id.as_str() == "iges:model:face#D9"));
     assert!(result
         .report()
         .losses
@@ -158,7 +167,7 @@ fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D9:0:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
         .expect("trimmed boundary coedge");
     assert!(coedge.pcurves.is_empty());
 }
@@ -176,7 +185,7 @@ fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
         .model
         .faces
         .iter()
-        .any(|face| face.id.0 == "iges:model:face#D9"));
+        .any(|face| face.id.as_str() == "iges:model:face#D9"));
     assert!(result
         .report()
         .losses
@@ -199,7 +208,7 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
             .model
             .faces
             .iter()
-            .any(|face| face.id.0 == "iges:model:face#D9"),
+            .any(|face| face.id.as_str() == "iges:model:face#D9"),
         "losses={:#?}",
         result.report().losses
     );
@@ -213,7 +222,7 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D9:0:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
         .expect("trimmed boundary coedge");
     assert_eq!(coedge.pcurves.len(), 1);
 }
@@ -315,9 +324,9 @@ fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
 
 #[test]
 fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
-    let curve_id = CurveId("curve".into());
-    let surface_id = SurfaceId("surface".into());
-    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
+    let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -337,63 +346,64 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     });
     let candidates = vec![
         Edge {
-            id: EdgeId("wrong-occurrence".into()),
+            id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("wrong-start".into()),
-            end: VertexId("wrong-end".into()),
+            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             param_range: Some([1.0, 2.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("matching-occurrence".into()),
+            id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id),
-            start: VertexId("matching-start".into()),
-            end: VertexId("matching-end".into()),
+            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ];
     ir.model.points.extend([
         Point {
-            id: PointId("wrong-point-start".into()),
+            id: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("wrong-point-end".into()),
+            id: PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-point-start".into()),
+            id: PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-point-end".into()),
+            id: PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("wrong-start".into()),
-            point: PointId("wrong-point-start".into()),
+            id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("wrong-end".into()),
-            point: PointId("wrong-point-end".into()),
+            id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-start".into()),
-            point: PointId("matching-point-start".into()),
+            id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-point-start")
+                .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-end".into()),
-            point: PointId("matching-point-end".into()),
+            id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
             tolerance: None,
         },
     ]);
@@ -430,17 +440,17 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         true,
     )
     .expect("unique pcurve-compatible edge");
-    assert_eq!(selected.id.0, "matching-occurrence");
+    assert_eq!(selected.id.as_str(), "test:model:edge#matching-occurrence");
     assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
     assert!(pcurves_agree);
 
     let mut ambiguous_candidates = candidates.clone();
     ambiguous_candidates.push(Edge {
-        id: EdgeId("duplicate-occurrence".into()),
-        curve: Some(CurveId("curve".into())),
-        start: VertexId("matching-start".into()),
-        end: VertexId("matching-end".into()),
+        id: EdgeId::mint("test:model:edge#duplicate-occurrence").expect("identity grammar"),
+        curve: Some(CurveId::mint("test:model:curve#curve").expect("identity grammar")),
+        start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+        end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
         param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
@@ -510,22 +520,13 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D15")
+        .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 2);
     let roles = face
         .loops
         .iter()
-        .map(|id| {
-            result
-                .ir()
-                .model
-                .loops
-                .iter()
-                .find(|loop_| loop_.id == *id)
-                .unwrap()
-                .boundary_role
-        })
+        .map(|id| face.loop_role(id))
         .collect::<Vec<_>>();
     assert_eq!(
         roles,
@@ -557,7 +558,7 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
             .model
             .faces
             .iter()
-            .find(|face| face.id.0 == "iges:model:face#D3")
+            .find(|face| face.id.as_str() == "iges:model:face#D3")
             .unwrap_or_else(|| {
                 panic!(
                     "parameters={parameters} losses={:#?}",
@@ -604,7 +605,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D15")
+        .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 1);
     let loop_ = result
@@ -615,29 +616,37 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role,
+        loop_.boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Inner
     );
-    assert_eq!(face.surface.0, "iges:model:surface#D15:implicit-outer");
+    assert_eq!(
+        face.surface.as_str(),
+        "iges:model:surface#D15:implicit-outer"
+    );
     let procedural = result
         .ir()
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface == face.surface)
+        .find(|surface| {
+            result.ir().model.procedural_surface_owner(&surface.id) == Some(&face.surface)
+        })
         .unwrap();
-    match &procedural.definition {
+    match procedural.definition() {
         ProceduralSurfaceDefinition::CurveBounded {
             support,
             boundaries,
             boundary_pcurves,
             implicit_outer,
         } => {
-            assert_eq!(support.0, "iges:model:surface#D1");
-            assert_eq!(boundaries, &[CurveId("iges:model:curve#D9".into())]);
+            assert_eq!(support.as_str(), "iges:model:surface#D1");
+            assert_eq!(
+                boundaries,
+                &[CurveId::mint("iges:model:curve#D9").expect("identity grammar")]
+            );
             assert_eq!(
                 boundary_pcurves,
-                &[PcurveId("iges:model:pcurve#D15:0:0:0".into())]
+                &[PcurveId::mint("iges:model:pcurve#D15:0:0:0").expect("identity grammar")]
             );
             assert!(*implicit_outer);
         }
@@ -654,6 +663,23 @@ fn type_144_rejects_a_self_intersecting_linear_outer_boundary() {
         [1.0, 0.0],
         [0.0, 0.0],
     ]];
+    assert!(rings
+        .into_iter()
+        .map(SimpleRing::new)
+        .collect::<Result<Vec<_>, _>>()
+        .is_err());
+}
+
+#[test]
+fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
+    let candidates = [Some(LinearBoundaryGeometry::Parameter(vec![
+        [0.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 0.0],
+    ]))];
+    let rings = linear_boundary_rings(&candidates, true).unwrap();
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -661,7 +687,14 @@ fn type_144_rejects_a_self_intersecting_linear_outer_boundary() {
     };
 
     assert_eq!(
-        linear_boundary_relationship_is_valid(&rings, true, true, &plane, None, [false, false]),
+        linear_boundary_relationship_is_valid(
+            rings.as_deref(),
+            true,
+            true,
+            &plane,
+            None,
+            [false, false],
+        ),
         Some(false)
     );
 }
@@ -684,7 +717,7 @@ fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
         .model
         .faces
         .iter()
-        .any(|face| face.id.0 == "iges:model:face#D15"));
+        .any(|face| face.id.as_str() == "iges:model:face#D15"));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss
@@ -709,7 +742,7 @@ fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
         .model
         .faces
         .iter()
-        .any(|face| face.id.0 == "iges:model:face#D15"));
+        .any(|face| face.id.as_str() == "iges:model:face#D15"));
     assert!(result
         .report()
         .losses
@@ -747,7 +780,7 @@ fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
         .model
         .faces
         .iter()
-        .any(|face| face.id.0 == "iges:model:face#D9"));
+        .any(|face| face.id.as_str() == "iges:model:face#D9"));
     assert!(result
         .report()
         .losses
@@ -812,7 +845,7 @@ fn decode_brackets_curve_on_surface_carrier_agreement_at_the_global_resolution()
                 .model
                 .faces
                 .iter()
-                .any(|face| face.id.0 == "iges:model:face#D15"),
+                .any(|face| face.id.as_str() == "iges:model:face#D15"),
             decoded,
             "{shift}"
         );
@@ -847,7 +880,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D15")
+        .find(|face| face.id.as_str() == "iges:model:face#D15")
         .expect("model-preferred trimmed face");
     let outer_loop = result
         .ir()
@@ -856,7 +889,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .expect("outer loop");
-    assert!(outer_loop.coedges.iter().all(|id| result
+    assert!(outer_loop.coedges().iter().all(|id| result
         .ir()
         .model
         .coedges
@@ -885,7 +918,7 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D11:0:0")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(coedge.pcurves.len(), 2);
     let endpoints = coedge
@@ -939,7 +972,7 @@ fn decode_retains_agreeing_pcurves_when_type_141_prefers_model_curves() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D11:0:0")
         .expect("model-preferred boundary coedge");
     assert_eq!(coedge.pcurves.len(), 2);
     assert!(
@@ -967,7 +1000,7 @@ fn decode_brackets_type_141_pcurve_agreement_at_the_global_resolution() {
                 .model
                 .bodies
                 .iter()
-                .any(|body| body.id.0 == "iges:model:body#D11"),
+                .any(|body| body.id.as_str() == "iges:model:body#D11"),
             decoded,
             "{shift}"
         );
@@ -996,11 +1029,11 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
         .model
         .loops
         .iter()
-        .find(|loop_| loop_.id.0 == "iges:model:loop#D21:D17")
+        .find(|loop_| loop_.id.as_str() == "iges:model:loop#D21:D17")
         .unwrap();
-    assert_eq!(loop_.coedges.len(), 2);
+    assert_eq!(loop_.coedges().len(), 2);
     let coedges = loop_
-        .coedges
+        .coedges()
         .iter()
         .map(|id| {
             result
@@ -1055,23 +1088,25 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id.0 == "iges:model:coedge#D27:D23:0")
+        .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D27:D23:0")
         .unwrap();
     assert_eq!(coedge.pcurves.len(), 2);
     assert_eq!(coedge.pcurves[0].isoparametric, Some(true));
     assert_eq!(coedge.pcurves[1].isoparametric, Some(false));
-    assert!(coedge.pcurves[0].pcurve.0.ends_with(":0:0"));
-    assert!(coedge.pcurves[1].pcurve.0.ends_with(":0:1"));
+    assert!(coedge.pcurves[0].pcurve.as_str().ends_with(":0:0"));
+    assert!(coedge.pcurves[1].pcurve.as_str().ends_with(":0:1"));
     let loop_ = result
         .ir()
         .model
         .loops
         .iter()
-        .find(|loop_| loop_.id.0 == "iges:model:loop#D27:D23")
+        .find(|loop_| loop_.id.as_str() == "iges:model:loop#D27:D23")
         .unwrap();
-    assert_eq!(loop_.vertex_uses.len(), 1);
-    assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D27:D15:2");
-    assert_eq!(loop_.vertex_uses[0].after.as_ref(), Some(&coedge.id));
+    let [vertex_use] = loop_.anchored_vertex_uses() else {
+        panic!("edge loop retains one anchored vertex use");
+    };
+    assert_eq!(vertex_use.vertex.as_str(), "iges:model:vertex#D27:D15:2");
+    assert_eq!(vertex_use.after, coedge.id);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1097,7 +1132,7 @@ fn decode_brackets_explicit_loop_pcurve_agreement_at_the_global_resolution() {
                 .model
                 .bodies
                 .iter()
-                .any(|body| body.id.0 == "iges:model:body#D27"),
+                .any(|body| body.id.as_str() == "iges:model:body#D27"),
             decoded,
             "{shift}"
         );
@@ -1127,7 +1162,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D9")
+        .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
     let loop_ = result
         .ir()
@@ -1141,14 +1176,17 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role,
+        loop_.boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.0, "iges:model:pcurve#D9:0:0:0");
+    assert_eq!(
+        coedge.pcurves[0].pcurve.as_str(),
+        "iges:model:pcurve#D9:0:0:0"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1172,7 +1210,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D13")
+        .find(|face| face.id.as_str() == "iges:model:face#D13")
         .unwrap();
     let loop_ = result
         .ir()
@@ -1181,9 +1219,9 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
-    assert_eq!(loop_.coedges.len(), 4);
+    assert_eq!(loop_.coedges().len(), 4);
     let senses = loop_
-        .coedges
+        .coedges()
         .iter()
         .map(|id| {
             result
@@ -1235,7 +1273,7 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D13")
+        .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within the declared resolution");
     let loop_ = result
         .ir()
@@ -1244,7 +1282,7 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .expect("bounded loop");
-    assert_eq!(loop_.coedges.len(), 4);
+    assert_eq!(loop_.coedges().len(), 4);
     assert_eq!(face.tolerance, Some(0.001));
     assert!(result
         .ir()
@@ -1292,7 +1330,7 @@ fn decode_rejects_a_bounded_sheet_join_just_beyond_global_resolution() {
         .model
         .faces
         .iter()
-        .all(|face| face.id.0 != "iges:model:face#D13"));
+        .all(|face| face.id.as_str() != "iges:model:face#D13"));
     assert!(
         result.report().losses.iter().any(|loss| {
             loss.message
@@ -1317,7 +1355,7 @@ fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D13")
+        .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within the unit-converted resolution");
     assert_eq!(face.tolerance, Some(0.01));
     assert!(result
@@ -1355,7 +1393,7 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D13")
+        .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within one declared coordinate quantum");
     assert_eq!(face.tolerance, Some(0.01));
     assert!(result
@@ -1363,7 +1401,7 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
         .model
         .pcurves
         .iter()
-        .all(|pcurve| pcurve.fit_tolerance.is_none()));
+        .all(|pcurve| pcurve.fit_tolerance().is_none()));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1387,7 +1425,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "iges:model:body#D9")
+        .find(|body| body.id.as_str() == "iges:model:body#D9")
         .unwrap();
     assert_eq!(sheet.kind, cadmpeg_ir::topology::BodyKind::Sheet);
     let face = result
@@ -1395,9 +1433,9 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D9")
+        .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
-    assert_eq!(face.surface.0, "iges:model:surface#D1");
+    assert_eq!(face.surface.as_str(), "iges:model:surface#D1");
     assert_eq!(face.loops.len(), 1);
     let loop_ = result
         .ir()
@@ -1407,20 +1445,23 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role,
+        loop_.boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert_eq!(loop_.coedges.len(), 1);
+    assert_eq!(loop_.coedges().len(), 1);
     let coedge = result
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
     assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.0, "iges:model:pcurve#D9:0:0:0");
+    assert_eq!(
+        coedge.pcurves[0].pcurve.as_str(),
+        "iges:model:pcurve#D9:0:0:0"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1444,7 +1485,7 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D9")
+        .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let loop_ = result
         .ir()
@@ -1458,7 +1499,7 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(coedge.pcurves.len(), 1);
     assert!(
@@ -1484,16 +1525,18 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D13")
+        .find(|face| face.id.as_str() == "iges:model:face#D13")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let surface = result
         .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
         .unwrap();
-    let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
+    let SurfaceGeometry::Procedural { construction, .. } =
+        surface.geometry.solved_cache().unwrap_or(&surface.geometry)
+    else {
         panic!("expected a procedural revolution surface");
     };
     let procedural = result
@@ -1506,7 +1549,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
     let ProceduralSurfaceDefinition::Revolution {
         parameter_interval: Some(parameter_interval),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected a bounded procedural revolution");
     };
@@ -1526,7 +1569,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(coedge.pcurves.len(), 1);
     let pcurve = result
@@ -1536,13 +1579,13 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .iter()
         .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
         .unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
     };
     let expected_u =
         (11.762_109_22_f64 - 6.814_348_186).hypot(-6.969_522_429_f64 - -2.592_356_749_f64) * 0.5;
-    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
-    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!((nurbs.control_points()[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(nurbs.control_points()[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1568,7 +1611,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D13")
+        .find(|face| face.id.as_str() == "iges:model:face#D13")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let loop_ = result
         .ir()
@@ -1582,7 +1625,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     let pcurve = result
         .ir()
@@ -1591,15 +1634,15 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .iter()
         .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
         .unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
     };
     let expected_u = (11.762_109_22_f64 - 6.814_348_186)
         .hypot(-6.969_522_429_f64 - -2.592_356_749_f64)
         * 0.5
         * 25.4;
-    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
-    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!((nurbs.control_points()[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(nurbs.control_points()[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1636,7 +1679,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D9")
+        .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
     let loop_ = result
         .ir()
@@ -1650,7 +1693,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert!(coedge.pcurves.is_empty());
     assert!(

@@ -74,10 +74,10 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     let block = &native.value_blocks[0];
     assert_eq!(block.schema_selections.len(), 1);
     assert_eq!(block.schema_selections[0].ordinal, 4);
-    assert_eq!(block.schema_selections[0].entry, None);
-    assert_eq!(block.schema_selections[0].name, None);
-    assert!(block.schema_selections[0].encoded_value.is_empty());
-    assert!(block.fields.iter().any(|field| matches!(
+    assert_eq!(block.schema_selections[0].entry(), None);
+    assert_eq!(block.schema_selections[0].name(), None);
+    assert!(block.schema_selections[0].encoded_value().is_empty());
+    assert!(block.fields().iter().any(|field| matches!(
         field,
         crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. }
     )));
@@ -108,7 +108,7 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
     );
     assert_eq!(selections[0].ordinal, 3);
     assert!(matches!(
-        selections[0].encoded_value.as_slice(),
+        selections[0].encoded_value(),
         [
             crate::value_block::ValueField::Atom { value: 3, .. },
             crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. },
@@ -116,10 +116,10 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
         ]
     ));
     assert_eq!(selections[1].ordinal, 2);
-    assert!(selections[1].encoded_value.is_empty());
+    assert!(selections[1].encoded_value().is_empty());
     assert_eq!(selections[2].ordinal, 1);
     assert!(matches!(
-        selections[2].encoded_value.as_slice(),
+        selections[2].encoded_value(),
         [crate::value_block::ValueField::Atom { value: 2, .. }]
     ));
 }
@@ -244,11 +244,11 @@ fn decode_retains_outer_object_graph_order_and_references() {
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[0].ordinal, 0);
     assert_eq!(graph.records[0].owner_entity_id(), Some(2));
-    assert_eq!(graph.records[0].class_ref, Some(3));
-    assert_eq!(graph.records[0].storage_ref, Some(4));
+    assert_eq!(graph.records[0].class_ref(), Some(3));
+    assert_eq!(graph.records[0].storage_ref(), Some(4));
     assert_eq!(graph.records[1].ordinal, 1);
     assert_eq!(graph.records[1].owner_entity_id(), Some(2));
-    assert_eq!(graph.records[1].class_ref, Some(4));
+    assert_eq!(graph.records[1].class_ref(), Some(4));
     assert_eq!(native.design_objects.len(), 1);
     let object = &native.design_objects[0];
     assert_eq!(object.parent, graph.id);
@@ -467,7 +467,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         native.value_blocks[0].byte_offset,
         u64::try_from(16 + object_graph_stream().len()).unwrap()
     );
-    assert_eq!(native.value_blocks[0].byte_len, 16);
+    assert_eq!(native.value_blocks[0].byte_len(), 16);
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
     assert_eq!(
         native.value_blocks[0].object_graph.as_deref(),
@@ -480,15 +480,15 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
     assert_eq!(native.value_blocks[0].schema_selections[0].ordinal, 4);
     assert_eq!(
-        native.value_blocks[0].schema_selections[0].entry.as_deref(),
+        native.value_blocks[0].schema_selections[0].entry(),
         Some(native.catalogs[0].entries[4].id.as_str())
     );
     assert_eq!(
-        native.value_blocks[0].schema_selections[0].name.as_deref(),
+        native.value_blocks[0].schema_selections[0].name(),
         Some("VPGlobal")
     );
     assert_eq!(
-        native.value_blocks[0].schema_selections[0].encoded_value,
+        native.value_blocks[0].schema_selections[0].encoded_value(),
         [
             crate::value_block::ValueField::Atom {
                 value: 3,
@@ -577,22 +577,6 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let mut legacy = crate::native::CatiaNative::decode(&bytes);
-    for row in &mut legacy.alias_rows {
-        row.canonical_surface_tag = None;
-    }
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    legacy
-        .store(&mut namespace)
-        .expect("store legacy alias rows");
-    namespace.version = crate::native::CATIA_ALIAS_SURFACE_TAG_VERSION - 1;
-    assert_eq!(
-        crate::native::CatiaNative::load(&namespace)
-            .expect("load legacy alias rows")
-            .alias_rows,
-        legacy.alias_rows
-    );
 }
 
 #[test]
@@ -653,9 +637,9 @@ fn native_namespace_retains_surface_alias_core() {
         panic!("one alias row")
     };
     assert_eq!(row.byte_offset, 4);
-    assert_eq!(row.tag, 0x0012_3456);
+    assert_eq!(row.tag(), 0x0012_3456);
     assert_eq!(row.tag_raw, 0xab12_3456);
-    assert_eq!(row.entity_record_ordinal, 7);
+    assert_eq!(row.entity_record_ordinal(), 7);
     assert!(row.design_object.is_none());
     assert_eq!((row.f2, row.f3), (0x1122_3344, 0x5566_7788));
     assert!(row.group.is_none());
@@ -733,4 +717,32 @@ fn native_alias_f1_resolves_record_in_declared_part_container() {
         .expect("store alias linked to declared part container");
     crate::native::CatiaNative::load(&namespace)
         .expect("load alias linked to declared part container");
+}
+
+#[test]
+fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes() {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    let mut alias = surface_alias_stream();
+    alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
+    bytes.extend(alias);
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    for (field, replacement) in [
+        ("lead", serde_json::json!("NonSurfaceAlias")),
+        ("tag", serde_json::json!(0)),
+        ("entity_record_ordinal", serde_json::json!(0xff)),
+    ] {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native.store(&mut namespace).expect("store alias row");
+        let mut rows: Vec<serde_json::Value> = namespace.arena_as("alias_rows").unwrap();
+        assert_ne!(rows[0][field], replacement);
+        rows[0][field] = replacement;
+        namespace.set_arena("alias_rows", &rows).unwrap();
+        let error = crate::native::CatiaNative::load(&namespace)
+            .expect_err("alias-row view disagreeing with its source bytes");
+        assert!(error.to_string().contains(field), "{error}");
+    }
 }

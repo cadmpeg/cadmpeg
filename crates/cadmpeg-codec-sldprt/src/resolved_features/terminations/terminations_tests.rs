@@ -369,7 +369,6 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         .into(),
         tree_parent: None,
         source_id: Some(source_id.into()),
-        parent_source_id: None,
         ordinal: source_id.parse().expect("required invariant"),
         name: id.into(),
         kind: kind.into(),
@@ -457,7 +456,6 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source_id.into()),
-        parent_source_id: None,
         ordinal: source_id.parse().expect("required invariant"),
         name: id.into(),
         kind: "Feature".into(),
@@ -562,7 +560,6 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 xml_tag: "Feature".into(),
                 tree_parent: None,
                 source_id: Some("10".into()),
-                parent_source_id: None,
                 ordinal: 10,
                 name: "extrusion".into(),
                 kind: "Boss-Extrude".into(),
@@ -664,32 +661,32 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
 
 #[test]
 fn termination_consensus_uses_stable_reference_identity_across_lanes() {
-    let vote = |reference: &str, identity: &str| super::TerminationVote {
-        condition: "ToFace".into(),
+    let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
+        condition: super::FaceCondition::ToFace,
         reference: Some(reference.into()),
-        second_condition: None,
-        reference_identity: Some(identity.into()),
-        canonical_reference: Some("components:1,2,3".into()),
-        depth_m: None,
+        identity: identity.into(),
+        canonical: Some("components:1,2,3".into()),
     };
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");
     let consensus =
         super::consensus_termination_vote(&[Some(first.clone()), Some(second)]).unwrap();
-    assert_eq!(consensus.reference.as_deref(), Some("components:1,2,3"));
+    assert_eq!(consensus.reference(), Some("components:1,2,3"));
 
     let exact = super::consensus_termination_vote(&[Some(first.clone())]).unwrap();
-    assert_eq!(exact.reference, first.reference);
+    assert_eq!(exact.reference(), first.reference());
     assert!(super::consensus_termination_vote(&[
         Some(first),
         Some(vote("lane-1:200", "components:1,2,4")),
     ])
     .is_none());
 
-    let mut first_depth = vote("lane-0:100", "components:1,2,3");
-    first_depth.depth_m = Some(0.01);
-    let mut second_depth = vote("lane-1:200", "components:1,2,3");
-    second_depth.depth_m = Some(0.02);
+    let first_depth = super::TerminationVote::Blind {
+        depth_m: Some(0.01),
+    };
+    let second_depth = super::TerminationVote::Blind {
+        depth_m: Some(0.02),
+    };
     assert!(super::consensus_termination_vote(&[Some(first_depth), Some(second_depth),]).is_none());
 }
 
@@ -1063,11 +1060,11 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
-    let (found, kind, endpoint_selector) =
+    let (found, kind) =
         compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::Point);
-    assert_eq!(endpoint_selector, None);
+    assert_eq!(kind.endpoint_selector(), None);
     let path = compact_single_face_reference_path_at(&payload, marker).expect("required invariant");
     assert_eq!(path.last().expect("required invariant").local_id, Some(7));
 
@@ -1095,17 +1092,20 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[2]);
-    let (found, kind, endpoint_selector) =
+    let (found, kind) =
         compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
     assert_eq!(found, marker);
-    assert_eq!(kind, CompactPointReferenceKind::EdgeEndpoint);
-    assert_eq!(endpoint_selector, Some(0));
+    assert!(matches!(
+        kind,
+        CompactPointReferenceKind::EdgeEndpoint { .. }
+    ));
+    assert_eq!(kind.endpoint_selector(), Some(0));
 
     let endpoint_selector_value: u32 = 0x0012_3456;
     payload[marker - 4..marker].copy_from_slice(&endpoint_selector_value.to_le_bytes());
-    let (_, _, endpoint_selector) =
+    let (_, kind) =
         compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
-    assert_eq!(endpoint_selector, Some(endpoint_selector_value));
+    assert_eq!(kind.endpoint_selector(), Some(endpoint_selector_value));
 }
 
 #[test]
@@ -1120,7 +1120,7 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
     assert!(marker > 270);
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).map(|(found, _, _)| found),
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).map(|(found, _)| found),
         Some(marker)
     );
 
@@ -1128,7 +1128,7 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     let second = selection_vector_tail(&mut payload, &[5, 8]);
     assert!(second > marker);
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, boundary).map(|(found, _, _)| found),
+        compact_extrusion_to_vertex_at(&payload, 0, boundary).map(|(found, _)| found),
         Some(marker)
     );
     assert_eq!(
@@ -1342,7 +1342,6 @@ fn enrich_combine_uses_outermost_body_paths() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: Some("119".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Combine".into(),
             kind: "Combine".into(),

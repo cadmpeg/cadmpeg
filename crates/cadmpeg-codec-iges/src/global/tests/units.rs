@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
@@ -201,9 +200,11 @@ fn recovered_global_real_is_strictly_reported_as_noncanonical() {
         .decode(&mut Cursor::new(bytes), &strict_options(false))
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
-            loss_code,
-            IgesLossCode::GlobalNumericSyntaxRecovered.kind().as_str()
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.to_string(),
+            IgesLossCode::GlobalNumericSyntaxRecovered
+                .kind()
+                .to_string()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
@@ -223,13 +224,13 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         "furlong"
     );
     assert!(result.ir().model.points.is_empty());
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     assert!(!result
         .ir()
         .native
         .namespace("iges")
         .expect("native iges namespace")
-        .arenas
+        .arenas()
         .is_empty());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalLengthUnitUnresolved),
@@ -252,9 +253,9 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         .decode(&mut Cursor::new(bytes.clone()), &strict_options(false))
         .unwrap_err();
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
-            loss_code,
-            IgesLossCode::GlobalLengthUnitUnresolved.kind().as_str()
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
+            rejection.loss().code.to_string(),
+            IgesLossCode::GlobalLengthUnitUnresolved.kind().to_string()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }

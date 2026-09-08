@@ -8,9 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
-    SketchPlacement,
+    NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchNativeOperand, SketchPlacement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,8 @@ use crate::pmdc::{
     content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
     PmDcReferenceList,
 };
+use crate::record_identity::{Located, RecordPayload};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
@@ -80,15 +82,11 @@ pub(crate) struct SketchInventory {
     pub(crate) transforms: Vec<PmDcTransform>,
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
-    pub(crate) issues: Vec<SketchRecordIssue>,
+    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcSketchConstraint {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcSketchConstraintPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcConstraintHeader,
     pub(crate) kind: PmDcSketchConstraintKind,
@@ -105,15 +103,124 @@ pub(crate) struct PmDcConstraintHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcReferenceScalarMapWire",
+    into = "PmDcReferenceScalarMapWire"
+)]
 pub(crate) struct PmDcReferenceScalarMap {
-    pub(crate) metadata: Option<[u32; 2]>,
-    pub(crate) entries: Vec<(PmDcReference, f64)>,
+    // Metadata belongs to the nonempty sequence of reference/value pairs.
+    #[allow(clippy::type_complexity)]
+    items: Option<([u32; 2], Vec<(PmDcReference, f64)>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcReferenceScalarMapWire {
+    metadata: Option<[u32; 2]>,
+    entries: Vec<(PmDcReference, f64)>,
+}
+
+impl PmDcReferenceScalarMap {
+    fn new(metadata: Option<[u32; 2]>, entries: Vec<(PmDcReference, f64)>) -> Option<Self> {
+        Some(Self {
+            items: crate::pmdc::paired_items(metadata, entries)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    pub(crate) fn entries(&self) -> &[(PmDcReference, f64)] {
+        self.items
+            .as_ref()
+            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
+    }
+}
+
+impl From<PmDcReferenceScalarMap> for PmDcReferenceScalarMapWire {
+    fn from(value: PmDcReferenceScalarMap) -> Self {
+        match value.items {
+            None => Self {
+                metadata: None,
+                entries: Vec::new(),
+            },
+            Some((metadata, entries)) => Self {
+                metadata: Some(metadata),
+                entries,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmDcReferenceScalarMapWire> for PmDcReferenceScalarMap {
+    type Error = String;
+
+    fn try_from(wire: PmDcReferenceScalarMapWire) -> Result<Self, Self::Error> {
+        Self::new(wire.metadata, wire.entries)
+            .ok_or_else(|| "PmDc scalar map metadata disagrees with length".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcReferencePairMapWire",
+    into = "PmDcReferencePairMapWire"
+)]
 pub(crate) struct PmDcReferencePairMap {
-    pub(crate) metadata: Option<[u32; 2]>,
-    pub(crate) entries: Vec<(PmDcReference, PmDcReference)>,
+    // Metadata belongs to the nonempty sequence of ordered reference pairs.
+    #[allow(clippy::type_complexity)]
+    items: Option<([u32; 2], Vec<(PmDcReference, PmDcReference)>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmDcReferencePairMapWire {
+    metadata: Option<[u32; 2]>,
+    entries: Vec<(PmDcReference, PmDcReference)>,
+}
+
+impl PmDcReferencePairMap {
+    fn new(
+        metadata: Option<[u32; 2]>,
+        entries: Vec<(PmDcReference, PmDcReference)>,
+    ) -> Option<Self> {
+        Some(Self {
+            items: crate::pmdc::paired_items(metadata, entries)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
+
+    pub(crate) fn entries(&self) -> &[(PmDcReference, PmDcReference)] {
+        self.items
+            .as_ref()
+            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
+    }
+}
+
+impl From<PmDcReferencePairMap> for PmDcReferencePairMapWire {
+    fn from(value: PmDcReferencePairMap) -> Self {
+        match value.items {
+            None => Self {
+                metadata: None,
+                entries: Vec::new(),
+            },
+            Some((metadata, entries)) => Self {
+                metadata: Some(metadata),
+                entries,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmDcReferencePairMapWire> for PmDcReferencePairMap {
+    type Error = String;
+
+    fn try_from(wire: PmDcReferencePairMapWire) -> Result<Self, Self::Error> {
+        Self::new(wire.metadata, wire.entries)
+            .ok_or_else(|| "PmDc pair map metadata disagrees with length".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,11 +295,7 @@ pub(crate) struct SketchProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcSketch {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcSketchPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) state: i32,
@@ -205,11 +308,7 @@ pub(crate) struct PmDcSketch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcSketchEntity {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcSketchEntityPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) entity_flags: u32,
@@ -252,11 +351,7 @@ pub(crate) enum PmDcSketchEntityKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcTransform {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcTransformPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) prefix: Option<u32>,
@@ -266,26 +361,13 @@ pub(crate) struct PmDcTransform {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcDirection {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcDirectionPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) entity_flags: u32,
     pub(crate) parameter: f64,
     pub(crate) extension: Option<u32>,
     pub(crate) direction: [f64; 3],
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SketchRecordIssue {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
-    pub(crate) detail: String,
 }
 
 pub(crate) fn inventory(
@@ -304,7 +386,7 @@ pub(crate) fn inventory(
         if segment.kind != SegmentKind::PmDc {
             continue;
         }
-        let Some(version) = segment.registry_version_major else {
+        let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
         if !(15..=22).contains(&version) {
@@ -319,35 +401,35 @@ pub(crate) fn inventory(
         for record in &table.records {
             let result = match record.type_id {
                 SKETCH_TYPE => parse_sketch(ctx, record.payload, version).map(|value| {
-                    inventory.sketches.push(identify(
+                    inventory.sketches.push(Located::new(
                         value,
-                        record.type_id,
+                        type_id_string(record.type_id),
                         segment.pair.token.as_str(),
                         record.ordinal,
                     ));
                 }),
                 POINT_TYPE | LINE_TYPE | CIRCLE_TYPE | ELLIPSE_TYPE => {
                     parse_entity(ctx, record.type_id, record.payload, version).map(|value| {
-                        inventory.entities.push(identify(
+                        inventory.entities.push(Located::new(
                             value,
-                            record.type_id,
+                            type_id_string(record.type_id),
                             segment.pair.token.as_str(),
                             record.ordinal,
                         ));
                     })
                 }
                 TRANSFORM_TYPE => parse_transform(record.payload, version).map(|value| {
-                    inventory.transforms.push(identify(
+                    inventory.transforms.push(Located::new(
                         value,
-                        record.type_id,
+                        type_id_string(record.type_id),
                         segment.pair.token.as_str(),
                         record.ordinal,
                     ));
                 }),
                 DIRECTION_TYPE => parse_direction(record.payload, version).map(|value| {
-                    inventory.directions.push(identify(
+                    inventory.directions.push(Located::new(
                         value,
-                        record.type_id,
+                        type_id_string(record.type_id),
                         segment.pair.token.as_str(),
                         record.ordinal,
                     ));
@@ -365,9 +447,9 @@ pub(crate) fn inventory(
                 | CIRCLE_CENTER_TYPE
                 | EQUAL_RADIUS_TYPE => {
                     parse_constraint(ctx, record.type_id, record.payload, version).map(|value| {
-                        inventory.constraints.push(identify(
+                        inventory.constraints.push(Located::new(
                             value,
-                            record.type_id,
+                            type_id_string(record.type_id),
                             segment.pair.token.as_str(),
                             record.ordinal,
                         ));
@@ -376,13 +458,10 @@ pub(crate) fn inventory(
                 _ => continue,
             };
             if let Err(error) = result {
-                inventory.issues.push(SketchRecordIssue {
-                    id: format!(
-                        "inventor:pmdc:sketch-record-issue#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    type_id: type_id_string(record.type_id),
+                inventory.issues.push(RecordIssue {
+                    family: RecordIssueFamily::Sketch {
+                        type_id: type_id_string(record.type_id),
+                    },
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: crate::issue_detail(error)?,
@@ -404,39 +483,11 @@ pub(crate) fn inventory(
     Ok(inventory)
 }
 
-trait Identified: Sized {
-    fn set_identity(&mut self, type_id: String, token: &str, ordinal: u32);
-}
-
-fn identify<T: Identified>(mut value: T, type_id: [u8; 16], token: &str, ordinal: u32) -> T {
-    value.set_identity(type_id_string(type_id), token, ordinal);
-    value
-}
-
-macro_rules! identify_record {
-    ($type:ty, $kind:literal) => {
-        impl Identified for $type {
-            fn set_identity(&mut self, type_id: String, token: &str, ordinal: u32) {
-                self.type_id = type_id;
-                self.segment_token = token.into();
-                self.record_ordinal = ordinal;
-                self.id = format!("inventor:pmdc:{}#{}-{}", $kind, token, ordinal);
-            }
-        }
-    };
-}
-
-identify_record!(PmDcSketch, "sketch");
-identify_record!(PmDcSketchEntity, "sketch-entity");
-identify_record!(PmDcTransform, "transform");
-identify_record!(PmDcDirection, "direction");
-identify_record!(PmDcSketchConstraint, "sketch-constraint");
-
 fn parse_sketch(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcSketch, CodecError> {
+) -> Result<PmDcSketchPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let state = cursor.u32("sketch state")? as i32;
@@ -449,11 +500,7 @@ fn parse_sketch(
         .then(|| reference_list(ctx, &mut cursor, 2, "sketch auxiliary list"))
         .transpose()?;
     cursor.finish("sketch")?;
-    Ok(PmDcSketch {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcSketchPayload {
         save_version_major: version,
         header,
         state,
@@ -471,7 +518,7 @@ fn parse_entity(
     type_id: [u8; 16],
     source: View<'_>,
     version: u8,
-) -> Result<PmDcSketchEntity, CodecError> {
+) -> Result<PmDcSketchEntityPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let entity_flags = cursor.u32("sketch-entity flags")?;
@@ -484,11 +531,7 @@ fn parse_entity(
         _ => unreachable!("caller selects a supported sketch entity"),
     };
     cursor.finish("sketch entity")?;
-    Ok(PmDcSketchEntity {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcSketchEntityPayload {
         save_version_major: version,
         header,
         entity_flags,
@@ -652,7 +695,7 @@ fn parse_ellipse(
     })
 }
 
-fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransform, CodecError> {
+fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let prefix = if cursor.peek_u32("transform prefix")? == 0x203 {
@@ -680,11 +723,7 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransform, Codec
         }
     }
     cursor.finish("transform")?;
-    Ok(PmDcTransform {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcTransformPayload {
         save_version_major: version,
         header,
         prefix,
@@ -694,7 +733,7 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransform, Codec
     })
 }
 
-fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirection, CodecError> {
+fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirectionPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let entity_flags = cursor.u32("direction flags")?;
@@ -705,16 +744,12 @@ fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirection, Codec
         remaining => {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc direction has {remaining} bytes before its vector"
-            )))
+            )));
         }
     };
     let direction = point3(&mut cursor, "direction vector")?;
     cursor.finish("direction")?;
-    Ok(PmDcDirection {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcDirectionPayload {
         save_version_major: version,
         header,
         entity_flags,
@@ -763,7 +798,9 @@ fn reference_scalar_map(
             cursor.f64(&format!("constraint scalar-map value {index}"))?,
         ));
     }
-    Ok(PmDcReferenceScalarMap { metadata, entries })
+    PmDcReferenceScalarMap::new(metadata, entries).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc scalar map metadata disagrees with length".into())
+    })
 }
 
 fn reference_pair_map(
@@ -778,7 +815,9 @@ fn reference_pair_map(
             cursor.reference(&format!("constraint reference-map value {index}"))?,
         ));
     }
-    Ok(PmDcReferencePairMap { metadata, entries })
+    PmDcReferencePairMap::new(metadata, entries).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc pair map metadata disagrees with length".into())
+    })
 }
 
 fn parse_constraint_header(
@@ -791,14 +830,8 @@ fn parse_constraint_header(
     let group = cursor.reference("constraint group")?;
     let (scalar_map, reference_map) = if version <= 16 {
         (
-            PmDcReferenceScalarMap {
-                metadata: None,
-                entries: Vec::new(),
-            },
-            PmDcReferencePairMap {
-                metadata: None,
-                entries: Vec::new(),
-            },
+            PmDcReferenceScalarMap::new(None, Vec::new()).expect("empty scalar map"),
+            PmDcReferencePairMap::new(None, Vec::new()).expect("empty pair map"),
         )
     } else {
         (
@@ -821,7 +854,7 @@ fn parse_constraint(
     type_id: [u8; 16],
     source: View<'_>,
     version: u8,
-) -> Result<PmDcSketchConstraint, CodecError> {
+) -> Result<PmDcSketchConstraintPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = parse_constraint_header(ctx, &mut cursor, version)?;
     let kind = match type_id {
@@ -896,11 +929,7 @@ fn parse_constraint(
         _ => unreachable!("caller selects a supported sketch constraint"),
     };
     cursor.finish("sketch constraint")?;
-    Ok(PmDcSketchConstraint {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcSketchConstraintPayload {
         save_version_major: version,
         header,
         kind,
@@ -920,19 +949,34 @@ pub(crate) fn project(
     parameters: &[DesignParameter],
 ) -> SketchProjection {
     let raw_sketches = unique(&inventory.sketches, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let raw_entities = unique(&inventory.entities, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let transforms = unique(&inventory.transforms, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let directions = unique(&inventory.directions, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let raw_constraints = unique(&inventory.constraints, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let parameters = parameters
         .iter()
@@ -947,7 +991,10 @@ pub(crate) fn project(
     let mut projected_entities = Vec::new();
     let mut unresolved_entities = 0usize;
     for entity in &inventory.entities {
-        let key = (entity.segment_token.clone(), entity.record_ordinal);
+        let key = (
+            entity.identity.segment_token.clone(),
+            entity.identity.record_ordinal,
+        );
         if !raw_entities.contains_key(&key) {
             unresolved_entities += 1;
             continue;
@@ -956,15 +1003,17 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        let Some(sketch) = raw_sketches.get(&(entity.segment_token.clone(), sketch_ordinal)) else {
+        let Some(sketch) =
+            raw_sketches.get(&(entity.identity.segment_token.clone(), sketch_ordinal))
+        else {
             unresolved_entities += 1;
             continue;
         };
         if !sketch
             .entities
-            .references
+            .references()
             .iter()
-            .any(|reference| reference.index == entity.record_ordinal.saturating_add(1))
+            .any(|reference| reference.index == entity.identity.record_ordinal.saturating_add(1))
         {
             unresolved_entities += 1;
             continue;
@@ -973,15 +1022,12 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        projected_entities.push(SketchEntity {
-            id: entity_id(entity),
-            sketch: sketch_id(sketch),
-            construction: entity.entity_flags & 0x0408_0040 != 0,
-            native_ref: Some(entity.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: entity_endpoint_refs(entity, &raw_entities),
-            geometry,
-        });
+        projected_entities.push(
+            SketchEntity::new(entity_id(entity), sketch_id(sketch), geometry)
+                .with_construction(entity.entity_flags & 0x0408_0040 != 0)
+                .with_native_ref(Some(entity.id()))
+                .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
+        );
     }
 
     let projected_by_native = projected_entities
@@ -991,25 +1037,28 @@ pub(crate) fn project(
     let mut sketches = Vec::new();
     let mut unresolved_sketches = 0usize;
     for sketch in &inventory.sketches {
-        let key = (sketch.segment_token.clone(), sketch.record_ordinal);
+        let key = (
+            sketch.identity.segment_token.clone(),
+            sketch.identity.record_ordinal,
+        );
         if !raw_sketches.contains_key(&key) {
             unresolved_sketches += 1;
             continue;
         }
         let raw_referenced_entities = sketch
             .entities
-            .references
+            .references()
             .iter()
             .filter_map(|reference| {
                 let ordinal = reference.index.checked_sub(1)?;
                 raw_entities
-                    .get(&(sketch.segment_token.clone(), ordinal))
+                    .get(&(sketch.identity.segment_token.clone(), ordinal))
                     .copied()
             })
             .collect::<Vec<_>>();
         let referenced_entities = raw_referenced_entities
             .iter()
-            .filter_map(|raw| projected_by_native.get(raw.id.as_str()).copied())
+            .filter_map(|raw| projected_by_native.get(raw.id().as_str()).copied())
             .collect::<Vec<_>>();
         if referenced_entities.len() != raw_referenced_entities.len() {
             unresolved_sketches += 1;
@@ -1026,7 +1075,7 @@ pub(crate) fn project(
             visible: None,
             placement,
             profiles: build_profiles(&referenced_entities),
-            native_ref: Some(sketch.id.clone()),
+            native_ref: Some(sketch.id()),
         });
     }
     drop(projected_by_native);
@@ -1046,17 +1095,25 @@ pub(crate) fn project(
         .entities
         .iter()
         .filter_map(|raw| {
-            projected_by_native
-                .get(raw.id.as_str())
-                .map(|projected| ((raw.segment_token.clone(), raw.record_ordinal), *projected))
+            projected_by_native.get(raw.id().as_str()).map(|projected| {
+                (
+                    (
+                        raw.identity.segment_token.clone(),
+                        raw.identity.record_ordinal,
+                    ),
+                    *projected,
+                )
+            })
         })
         .collect::<HashMap<_, _>>();
     let mut constraints = inventory
         .constraints
         .iter()
         .filter(|constraint| {
-            raw_constraints
-                .contains_key(&(constraint.segment_token.clone(), constraint.record_ordinal))
+            raw_constraints.contains_key(&(
+                constraint.identity.segment_token.clone(),
+                constraint.identity.record_ordinal,
+            ))
         })
         .filter_map(|constraint| {
             project_constraint(constraint, &projected_entity_by_key, &parameters)
@@ -1077,7 +1134,7 @@ pub(crate) fn project(
     let raw_sketch_by_native = inventory
         .sketches
         .iter()
-        .map(|sketch| (sketch.id.as_str(), sketch))
+        .map(|sketch| (sketch.id(), sketch))
         .collect::<HashMap<_, _>>();
     let previous_sketch_count = sketches.len();
     sketches.retain(|projected| {
@@ -1089,19 +1146,19 @@ pub(crate) fn project(
             return false;
         };
         let mut seen = HashSet::new();
-        raw.entities.references.iter().all(|reference| {
+        raw.entities.references().iter().all(|reference| {
             let Some(ordinal) = reference.index.checked_sub(1) else {
                 return false;
             };
             if !seen.insert(ordinal) {
                 return false;
             }
-            let key = (raw.segment_token.clone(), ordinal);
+            let key = (raw.identity.segment_token.clone(), ordinal);
             raw_entities
                 .get(&key)
-                .is_some_and(|entity| projected_entity_native.contains(entity.id.as_str()))
+                .is_some_and(|entity| projected_entity_native.contains(entity.id().as_str()))
                 || raw_constraints.get(&key).is_some_and(|constraint| {
-                    projected_constraint_native.contains(constraint.id.as_str())
+                    projected_constraint_native.contains(constraint.id().as_str())
                 })
         })
     });
@@ -1118,7 +1175,7 @@ pub(crate) fn project(
     let raw_constraint_by_native = inventory
         .constraints
         .iter()
-        .map(|constraint| (constraint.id.as_str(), constraint))
+        .map(|constraint| (constraint.id(), constraint))
         .collect::<HashMap<_, _>>();
     let raw_sketch_by_id = inventory
         .sketches
@@ -1140,8 +1197,8 @@ pub(crate) fn project(
         raw_sketch_by_id
             .get(&constraint.sketch)
             .is_some_and(|sketch| {
-                sketch.entities.references.iter().any(|reference| {
-                    reference.index == raw_constraint.record_ordinal.saturating_add(1)
+                sketch.entities.references().iter().any(|reference| {
+                    reference.index == raw_constraint.identity.record_ordinal.saturating_add(1)
                 })
             })
     });
@@ -1162,17 +1219,17 @@ fn project_constraint(
     entities: &HashMap<(String, u32), &SketchEntity>,
     parameters: &HashMap<String, ParameterId>,
 ) -> Option<SketchConstraint> {
-    if constraint.header.scalar_map.metadata.is_some()
-        || !constraint.header.scalar_map.entries.is_empty()
-        || constraint.header.reference_map.metadata.is_some()
-        || !constraint.header.reference_map.entries.is_empty()
+    if constraint.header.scalar_map.metadata().is_some()
+        || !constraint.header.scalar_map.entries().is_empty()
+        || constraint.header.reference_map.metadata().is_some()
+        || !constraint.header.reference_map.entries().is_empty()
     {
         return None;
     }
     let resolve = |reference: PmDcReference| {
         entities
             .get(&(
-                constraint.segment_token.clone(),
+                constraint.identity.segment_token.clone(),
                 reference.index.checked_sub(1)?,
             ))
             .copied()
@@ -1182,7 +1239,7 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Coincident {
-                    entities: members.iter().map(|entity| entity.id.clone()).collect(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
                 },
                 None,
                 members,
@@ -1196,8 +1253,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Parallel {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 Some(u32::from(orientation)),
                 members,
@@ -1211,8 +1268,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Perpendicular {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 Some(u32::from(orientation)),
                 members,
@@ -1226,8 +1283,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Tangent {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 extension,
                 members,
@@ -1237,7 +1294,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             (
                 SketchConstraintDefinition::Horizontal {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
                 [member, member],
@@ -1247,7 +1304,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             (
                 SketchConstraintDefinition::Vertical {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
                 [member, member],
@@ -1263,8 +1320,8 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
                 SketchConstraintDefinition::HorizontalDistance {
-                    first: SketchLocus::Entity(members[0].id.clone()),
-                    second: SketchLocus::Entity(members[1].id.clone()),
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
                 },
                 None,
@@ -1281,8 +1338,8 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
                 SketchConstraintDefinition::VerticalDistance {
-                    first: SketchLocus::Entity(members[0].id.clone()),
-                    second: SketchLocus::Entity(members[1].id.clone()),
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
                 },
                 None,
@@ -1294,7 +1351,7 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
                 SketchConstraintDefinition::Radius {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                     parameter,
                 },
                 None,
@@ -1306,7 +1363,7 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
                 SketchConstraintDefinition::Diameter {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                     parameter,
                 },
                 None,
@@ -1321,7 +1378,7 @@ fn project_constraint(
                     native_state: Some(constraint.header.state as u32 as u64),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),
-                    entities: members.iter().map(|entity| entity.id.clone()).collect(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
                     parameter: None,
                     operands: vec![
                         native_operand(constraint, "entity", entity),
@@ -1336,8 +1393,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Equal {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 None,
                 members,
@@ -1350,7 +1407,7 @@ fn project_constraint(
     Some(SketchConstraint {
         id: SketchConstraintId(format!(
             "inventor:design:sketch-constraint#{}-{}",
-            constraint.segment_token, constraint.record_ordinal
+            constraint.identity.segment_token, constraint.identity.record_ordinal
         )),
         sketch: members[0].sketch.clone(),
         definition,
@@ -1363,7 +1420,7 @@ fn project_constraint(
         label_distance: None,
         label_position: None,
         metadata: None,
-        native_ref: Some(constraint.id.clone()),
+        native_ref: Some(constraint.id()),
     })
 }
 
@@ -1374,7 +1431,7 @@ fn resolve_parameter(
 ) -> Option<ParameterId> {
     let native = format!(
         "inventor:pmdc:parameter#{}-{}",
-        constraint.segment_token,
+        constraint.identity.segment_token,
         reference.index.checked_sub(1)?
     );
     parameters.get(&native).cloned()
@@ -1386,14 +1443,18 @@ fn native_operand(
     reference: PmDcReference,
 ) -> SketchNativeOperand {
     SketchNativeOperand {
-        native_kind: "record_reference".into(),
-        native_field: Some(field.into()),
-        native_role: None,
+        native_kind: cadmpeg_ir::products::NonEmptyString::new("record_reference")
+            .expect("source operand kind is nonempty"),
+        field: Some(NativeOperandField {
+            name: cadmpeg_ir::products::NonEmptyString::new(field)
+                .expect("source field name is nonempty"),
+            role: None,
+        }),
         object_index: reference.index,
         native_ref: reference.index.checked_sub(1).map(|ordinal| {
             format!(
                 "inventor:pmdc:sketch-entity#{}-{ordinal}",
-                constraint.segment_token
+                constraint.identity.segment_token
             )
         }),
     }
@@ -1413,11 +1474,11 @@ fn project_geometry(
             direction,
             ..
         } => {
-            let [start, end] = points.references.as_slice() else {
+            let [start, end] = points.references() else {
                 return None;
             };
-            let start = resolve_point(&entity.segment_token, start.index, entities)?;
-            let end = resolve_point(&entity.segment_token, end.index, entities)?;
+            let start = resolve_point(&entity.identity.segment_token, start.index, entities)?;
+            let end = resolve_point(&entity.identity.segment_token, end.index, entities)?;
             if !line_carrier_matches(*origin, *direction, start, end) {
                 return None;
             }
@@ -1427,7 +1488,7 @@ fn project_geometry(
             })
         }
         PmDcSketchEntityKind::Circle { center, radius, .. } => {
-            let center = resolve_point(&entity.segment_token, center.index, entities)?;
+            let center = resolve_point(&entity.identity.segment_token, center.index, entities)?;
             Some(SketchGeometry::Circle {
                 center: neutral_point(center),
                 radius: Length(radius * 10.0),
@@ -1440,7 +1501,7 @@ fn project_geometry(
             minor_radius,
             ..
         } => {
-            let center = resolve_point(&entity.segment_token, center.index, entities)?;
+            let center = resolve_point(&entity.identity.segment_token, center.index, entities)?;
             let norm = major_direction[0].hypot(major_direction[1]);
             if !norm.is_finite() || norm <= f64::EPSILON {
                 return None;
@@ -1450,8 +1511,7 @@ fn project_geometry(
                 major_angle: Angle(major_direction[1].atan2(major_direction[0])),
                 major_radius: Length(major_radius * 10.0),
                 minor_radius: Length(minor_radius * 10.0),
-                start_angle: None,
-                end_angle: None,
+                bounds: None,
             })
         }
     }
@@ -1503,15 +1563,15 @@ fn entity_endpoint_refs(
         return Vec::new();
     };
     points
-        .references
+        .references()
         .iter()
         .filter_map(|reference| {
             entities
                 .get(&(
-                    entity.segment_token.clone(),
+                    entity.identity.segment_token.clone(),
                     reference.index.checked_sub(1)?,
                 ))
-                .map(|value| value.id.clone())
+                .map(|value| value.id())
         })
         .collect()
 }
@@ -1522,11 +1582,11 @@ fn project_placement(
     directions: &HashMap<(String, u32), &PmDcDirection>,
 ) -> Option<SketchPlacement> {
     let transform = transforms.get(&(
-        sketch.segment_token.clone(),
+        sketch.identity.segment_token.clone(),
         sketch.transform.index.checked_sub(1)?,
     ))?;
     let direction = directions.get(&(
-        sketch.segment_token.clone(),
+        sketch.identity.segment_token.clone(),
         sketch.direction.index.checked_sub(1)?,
     ))?;
     let matrix = transform.matrix;
@@ -1569,7 +1629,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     let source_positions = entities
         .iter()
         .enumerate()
-        .map(|(index, entity)| (entity.id.0.as_str(), index))
+        .map(|(index, entity)| (entity.id().0.as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut profiles = entities
         .iter()
@@ -1582,7 +1642,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         })
         .map(|entity| {
             vec![SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: false,
             }]
         })
@@ -1625,7 +1685,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         let mut point = first.endpoint_refs[1].as_str();
         let mut current = start_index;
         let mut loop_uses = vec![SketchEntityUse {
-            entity: first.id.clone(),
+            entity: first.id().clone(),
             reversed: false,
         }];
         visited.insert(current);
@@ -1651,7 +1711,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
             current = next;
             visited.insert(next);
             loop_uses.push(SketchEntityUse {
-                entity: line.id.clone(),
+                entity: line.id().clone(),
                 reversed,
             });
         }
@@ -1694,14 +1754,14 @@ fn line_component(
 fn sketch_id(sketch: &PmDcSketch) -> SketchId {
     SketchId(format!(
         "inventor:design:sketch#{}-{}",
-        sketch.segment_token, sketch.record_ordinal
+        sketch.identity.segment_token, sketch.identity.record_ordinal
     ))
 }
 
 fn entity_id(entity: &PmDcSketchEntity) -> SketchEntityId {
     SketchEntityId(format!(
         "inventor:design:sketch-entity#{}-{}",
-        entity.segment_token, entity.record_ordinal
+        entity.identity.segment_token, entity.identity.record_ordinal
     ))
 }
 
@@ -1721,6 +1781,36 @@ fn unique<'a, T>(
         .into_iter()
         .filter_map(|(key, (value, count))| (count == 1).then_some((key, value)))
         .collect()
+}
+
+pub(crate) type PmDcSketch = Located<PmDcSketchPayload>;
+
+impl RecordPayload for PmDcSketchPayload {
+    const KIND: &'static str = "sketch";
+}
+
+pub(crate) type PmDcSketchEntity = Located<PmDcSketchEntityPayload>;
+
+impl RecordPayload for PmDcSketchEntityPayload {
+    const KIND: &'static str = "sketch-entity";
+}
+
+pub(crate) type PmDcTransform = Located<PmDcTransformPayload>;
+
+impl RecordPayload for PmDcTransformPayload {
+    const KIND: &'static str = "transform";
+}
+
+pub(crate) type PmDcDirection = Located<PmDcDirectionPayload>;
+
+impl RecordPayload for PmDcDirectionPayload {
+    const KIND: &'static str = "direction";
+}
+
+pub(crate) type PmDcSketchConstraint = Located<PmDcSketchConstraintPayload>;
+
+impl RecordPayload for PmDcSketchConstraintPayload {
+    const KIND: &'static str = "sketch-constraint";
 }
 
 #[cfg(test)]
@@ -1833,7 +1923,7 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcSketchEntityKind::Line { ref points, .. }
-                if points.references.iter().map(|value| value.index).collect::<Vec<_>>() == [4, 5]
+                if points.references().iter().map(|value| value.index).collect::<Vec<_>>() == [4, 5]
         ));
 
         let mut circle = entity_prefix(3, 3, 0);
@@ -1925,8 +2015,8 @@ mod tests {
         let parsed = parse(&bytes, |ctx, source| {
             parse_constraint(ctx, COINCIDENT_TYPE, source, 16).expect("legacy coincident")
         });
-        assert!(parsed.header.scalar_map.entries.is_empty());
-        assert!(parsed.header.reference_map.entries.is_empty());
+        assert!(parsed.header.scalar_map.entries().is_empty());
+        assert!(parsed.header.reference_map.entries().is_empty());
         assert!(matches!(
             parsed.kind,
             PmDcSketchConstraintKind::Coincident { first, second }
@@ -1974,7 +2064,7 @@ mod tests {
 
     #[test]
     fn projects_generated_closed_square_and_resolved_plane() {
-        let transform = parse(
+        let mut transform = parse(
             &{
                 let mut bytes = content(0);
                 bytes.extend_from_slice(&0x8421u16.to_le_bytes());
@@ -2034,20 +2124,21 @@ mod tests {
             *direction = [end[0] - start[0], end[1] - start[1]];
             entities.push(line);
         }
-        let mut transform = identify(transform, TRANSFORM_TYPE, "segment", 0);
         transform.header.source_index = 0;
-        let direction = identify(direction, DIRECTION_TYPE, "segment", 1);
-        let sketch = identify(sketch, SKETCH_TYPE, "segment", 2);
+        let transform = Located::new(transform, type_id_string(TRANSFORM_TYPE), "segment", 0);
+        let direction = Located::new(direction, type_id_string(DIRECTION_TYPE), "segment", 1);
+        let located_sketch =
+            Located::new(sketch.clone(), type_id_string(SKETCH_TYPE), "segment", 2);
         let entities = entities
             .into_iter()
             .enumerate()
             .map(|(index, value)| {
                 let type_id = if index < 4 { POINT_TYPE } else { LINE_TYPE };
-                identify(value, type_id, "segment", index as u32 + 3)
+                Located::new(value, type_id_string(type_id), "segment", index as u32 + 3)
             })
             .collect();
         let mut inventory = SketchInventory {
-            sketches: vec![sketch],
+            sketches: vec![located_sketch],
             entities,
             transforms: vec![transform],
             directions: vec![direction],
@@ -2079,16 +2170,21 @@ mod tests {
         let mapped_constraint = parse(&mapped_constraint, |ctx, source| {
             parse_constraint(ctx, COINCIDENT_TYPE, source, 22).expect("mapped coincident")
         });
-        inventory
-            .constraints
-            .push(identify(mapped_constraint, COINCIDENT_TYPE, "segment", 11));
-        inventory.sketches[0]
-            .entities
-            .references
-            .push(PmDcReference {
-                index: 12,
-                qualified: false,
-            });
+        inventory.constraints.push(Located::new(
+            mapped_constraint,
+            type_id_string(COINCIDENT_TYPE),
+            "segment",
+            11,
+        ));
+        let mut sketch = sketch;
+        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
+        references.push(PmDcReference {
+            index: 12,
+            qualified: false,
+        });
+        sketch.entities =
+            PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
+        inventory.sketches[0] = Located::new(sketch, type_id_string(SKETCH_TYPE), "segment", 2);
         let incomplete = project(&inventory, &[]);
         assert_eq!(incomplete.unresolved_sketches, 1);
         assert_eq!(incomplete.unresolved_constraints, 1);

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -195,55 +195,52 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "configuration_attribute_uses": [
-              {
-                "configuration": "nx:arrangements-1:configuration#0",
-                "id": "nx:arrangements:active-attribute-use#0",
-                "name": "Model",
-                "part_attribute": "nx:part-attributes-2:attribute#0"
-              }
-            ],
-            "configurations": [
-              {
-                "id": "nx:arrangements-1:configuration#0",
-                "is_default": true,
-                "name": "Model",
-                "source_entry": "/Root/part/arrangements",
-                "source_offset": 433
-              },
-              {
-                "id": "nx:arrangements-1:configuration#1",
-                "is_default": false,
-                "name": "Exploded",
-                "source_entry": "/Root/part/arrangements",
-                "source_offset": 474
-              }
-            ],
-            "part_attributes": [
-              {
-                "id": "nx:part-attributes-2:attribute#0",
-                "owner": "part",
-                "pdm_based": false,
-                "source_entry": "/Root/part/attrs",
-                "source_offset": 559,
-                "title": "NX_Arrangement",
-                "value": "Model",
-                "value_type": "StringAttributeType",
-                "version": 3
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          },
-          "version": 189
+          "configuration_attribute_uses": [
+            {
+              "configuration": "nx:arrangements-1:configuration#0",
+              "id": "nx:arrangements:active-attribute-use#0",
+              "name": "Model",
+              "part_attribute": "nx:part-attributes-2:attribute#0"
+            }
+          ],
+          "configurations": [
+            {
+              "id": "nx:arrangements-1:configuration#0",
+              "is_default": true,
+              "name": "Model",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 433
+            },
+            {
+              "id": "nx:arrangements-1:configuration#1",
+              "is_default": false,
+              "name": "Exploded",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 474
+            }
+          ],
+          "part_attributes": [
+            {
+              "id": "nx:part-attributes-2:attribute#0",
+              "owner": "part",
+              "pdm_based": false,
+              "source_entry": "/Root/part/attrs",
+              "source_offset": 559,
+              "title": "NX_Arrangement",
+              "value": "Model",
+              "value_type": "StringAttributeType",
+              "version": 3
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -256,9 +253,29 @@
           "footer_offset": "701",
           "header_entry_count": "3",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@155",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -272,6 +289,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@155",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -292,12 +330,20 @@
           },
           "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 1 NX design configuration(s).",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@155 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 701, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999"
+        "SPLMSSTR container: file tag 0, footer offset 701, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -428,12 +474,32 @@
           "sha256": "45205d742271c34f5068116a4ce8e06485d9373dd323abc0ffd2c5d5190922e1",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@155",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -498,10 +564,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@155 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 701, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999"
+      "SPLMSSTR container: file tag 0, footer offset 701, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

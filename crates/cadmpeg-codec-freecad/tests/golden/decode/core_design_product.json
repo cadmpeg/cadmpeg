@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -3789,7 +3789,6 @@
       "occurrences": [
         {
           "id": "fcstd:model:occurrence#Box:container",
-          "link_transform": false,
           "name": "fcstd:native:object#Box",
           "native_ref": "fcstd:native:object#Box",
           "ordinal": 0,
@@ -3861,7 +3860,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Cut:container",
-          "link_transform": false,
           "name": "fcstd:native:object#Cut",
           "native_ref": "fcstd:native:object#Cut",
           "ordinal": 1,
@@ -3933,7 +3931,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Cylinder:container",
-          "link_transform": false,
           "name": "fcstd:native:object#Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
           "ordinal": 2,
@@ -4005,7 +4002,6 @@
         },
         {
           "id": "fcstd:model:occurrence#DesignedFeature:container",
-          "link_transform": false,
           "name": "fcstd:native:object#DesignedFeature",
           "native_ref": "fcstd:native:object#DesignedFeature",
           "ordinal": 3,
@@ -4153,7 +4149,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Product:container",
-          "link_transform": false,
           "name": "fcstd:native:object#Product",
           "native_ref": "fcstd:native:object#Product",
           "ordinal": 1,
@@ -4224,7 +4219,6 @@
         },
         {
           "id": "fcstd:model:occurrence#Profile:container",
-          "link_transform": false,
           "name": "fcstd:native:object#Profile",
           "native_ref": "fcstd:native:object#Profile",
           "ordinal": 4,
@@ -7688,7 +7682,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "a10276e1286e8a39862168ee46d208a6b227142440e1b94c0abaaa48e9509a69"
+      "__shape_sha256": "ca2e2eb1a474a49cd9fc3b024fe3201c35729df3eddeb9c7b22bde48ea92abc6"
     },
     "source": {
       "attributes": {
@@ -7696,12 +7690,23 @@
         "archive_entry_count": "12",
         "document_kind": "part-design",
         "document_root": "Document",
-        "file_version": "1",
         "object_count": "17",
         "physical_archive_bytes": "9807",
         "physical_ledger_spans": "85",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
+        "program_version": "1.1R20260414 (Git shallow)"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R20260414 (Git shallow)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4",
+          "format": "fcstd"
+        }
       },
       "format": "fcstd"
     },
@@ -7715,6 +7720,19 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260414 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4",
+        "format": "fcstd"
+      }
+    },
     "format": "fcstd",
     "geometry_transferred": true,
     "losses": [],
@@ -7729,7 +7747,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

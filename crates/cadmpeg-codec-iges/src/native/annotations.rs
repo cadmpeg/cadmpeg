@@ -5,11 +5,12 @@
 //! counted-tail verdicts.
 
 use super::OverdeclaredCounts;
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
-use crate::global::Dialect;
+use crate::global::GlobalTable;
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use serde::Serialize;
@@ -260,7 +261,10 @@ impl Subject<'_> {
                         self.sequence,
                         start + 3,
                         value,
-                        "type-310-form-0",
+                        ReferenceExpectation::Type {
+                            entity_type: 310,
+                            forms: vec![0],
+                        },
                         |target| target.entity_type == 310 && target.form == 0,
                     )
                 })
@@ -295,7 +299,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "type-214-form-1-through-12",
+                    ReferenceExpectation::Named(ExpectationLabel::Type214Form1Through12),
                     |target| target.entity_type == 214 && matches!(target.form, 1..=12),
                 )
             })
@@ -331,11 +335,11 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "parameterized-curve",
+                    ReferenceExpectation::Named(ExpectationLabel::ParameterizedCurve),
                     |target| {
                         parameterized_curve_type(target)
                             && target.status.is_physically_dependent()
-                            && target.status.use_flag == 1
+                            && target.status.use_flag() == Some(UseFlag::Annotation)
                     },
                 )
             })
@@ -350,7 +354,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "type-106-form-40-or-leader",
+                    ReferenceExpectation::Named(ExpectationLabel::Type106Form40OrLeader),
                     |target| {
                         (target.entity_type == 106 && target.form == 40)
                             || (target.entity_type == 214 && matches!(target.form, 1..=12))
@@ -376,13 +380,13 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "point-dimension-enclosure",
+                    ReferenceExpectation::Named(ExpectationLabel::PointDimensionEnclosure),
                     |target| {
                         matches!(
                             (target.entity_type, target.form),
                             (100 | 102, 0) | (106, 63)
                         ) && target.status.is_physically_dependent()
-                            && target.status.use_flag == 1
+                            && target.status.use_flag() == Some(UseFlag::Annotation)
                     },
                 )
             })
@@ -397,8 +401,11 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "subordinate-annotation-geometry",
-                    |target| target.status.is_physically_dependent() && target.status.use_flag == 1,
+                    ReferenceExpectation::Named(ExpectationLabel::SubordinateAnnotationGeometry),
+                    |target| {
+                        target.status.is_physically_dependent()
+                            && target.status.use_flag() == Some(UseFlag::Annotation)
+                    },
                 )
             })
             .map(|sequence| format!("iges:entity:directory#{sequence}"))
@@ -412,7 +419,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "section-boundary-entity",
+                    ReferenceExpectation::Named(ExpectationLabel::SectionBoundaryEntity),
                     section_boundary_type,
                 )
             })
@@ -646,7 +653,7 @@ pub(super) fn build(
     parameter_resolver: &ParameterResolver<'_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> Vec<NativeAnnotation> {
     directory
         .iter()
@@ -660,7 +667,7 @@ pub(super) fn build(
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
-                v5_null_string_rule: dialect == Dialect::V5_0
+                v5_null_string_rule: global_table == GlobalTable::V5_0
                     && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)

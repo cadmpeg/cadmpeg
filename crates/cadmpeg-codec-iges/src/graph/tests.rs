@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::ReferenceOrigin;
+use crate::directory::{DirectoryEntry, SourceStatus};
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -10,7 +13,6 @@ use super::{
     build, cyclic_transform_nodes, ParameterResolver, ReferenceEdge, ReferenceKind, Resolution,
     MAX_POINTER_SEQUENCE,
 };
-use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -27,12 +29,7 @@ fn directory_entry(sequence: u32, entity_type: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: 0,
-            subordinate: 0,
-            use_flag: 0,
-            hierarchy: 0,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -50,19 +47,43 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
     let resolver = ParameterResolver::new(&directory);
 
     assert_eq!(
-        resolver.resolve(1, 0, i64::from(maximum), "test", |_| true),
+        resolver.resolve(
+            1,
+            0,
+            i64::from(maximum),
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+            |_| true
+        ),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve(1, 1, i64::from(maximum) + 1, "test", |_| true),
+        resolver.resolve(
+            1,
+            1,
+            i64::from(maximum) + 1,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+            |_| true
+        ),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(2, 0, -i64::from(maximum), "test", |_| true),
+        resolver.resolve_negative(
+            2,
+            0,
+            -i64::from(maximum),
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+            |_| true
+        ),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve_negative(2, 1, -i64::from(maximum) - 1, "test", |_| true),
+        resolver.resolve_negative(
+            2,
+            1,
+            -i64::from(maximum) - 1,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+            |_| true
+        ),
         None
     );
 
@@ -85,6 +106,47 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
 }
 
 #[test]
+fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
+    let directory = [directory_entry(1, 116)];
+    let resolver = ParameterResolver::new(&directory);
+    assert_eq!(
+        resolver.resolve(
+            1,
+            1,
+            3,
+            ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+            |target| target.entity_type == 124,
+        ),
+        None
+    );
+    assert_eq!(
+        resolver.resolve_negative(
+            1,
+            2,
+            -3,
+            ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
+            |target| target.entity_type == 310 && target.form == 0,
+        ),
+        None
+    );
+    let mut graph = BTreeMap::new();
+    resolver.append_to(&mut graph);
+    let source = point_file();
+    let scan = crate::card::scan(&source).unwrap();
+    let messages = super::losses(&graph, &scan, &[])
+        .into_iter()
+        .map(|note| note.message)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        [
+            "IGES Directory Entry D1 Parameter pointer 3 has Dangling resolution; expected type-124-transformation",
+            "IGES Directory Entry D1 Parameter pointer -3 has Dangling resolution; expected type-310-form-0-font-definition",
+        ]
+    );
+}
+
+#[test]
 fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
     let mut source = directory_entry(1, 116);
@@ -92,7 +154,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let graph = build(&[source, directory_entry(maximum, 124)]);
     let edge = graph[&1]
         .iter()
-        .find(|edge| edge.kind == ReferenceKind::Transform)
+        .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::Resolved);
 
@@ -101,7 +163,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let graph = build(&[source]);
     let edge = graph[&1]
         .iter()
-        .find(|edge| edge.kind == ReferenceKind::Transform)
+        .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::OutOfRange);
     assert!(edge.target.is_none());
@@ -116,12 +178,14 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
             (
                 source,
                 vec![ReferenceEdge {
-                    kind: ReferenceKind::Transform,
+                    origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
                     raw_pointer: i64::from(target),
                     target: Some(format!("iges:entity:directory#{target}")),
                     resolution: Resolution::Resolved,
-                    expected: "type-124".into(),
-                    parameter_index: None,
+                    expected: ReferenceExpectation::Type {
+                        entity_type: 124,
+                        forms: vec![],
+                    },
                 }],
             )
         })

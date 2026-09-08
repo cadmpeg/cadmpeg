@@ -7,8 +7,10 @@
 //! settings. Its `ModelingLength` entry carries the display length unit under
 //! the property name `modelingLengthName`.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::indexed_design_record_header as indexed_header;
 use cadmpeg_core::decode::View;
@@ -172,7 +174,7 @@ pub(crate) fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
 pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String> {
     scan.entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
         .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
         .find_map(decode_modeling_length_unit)
 }

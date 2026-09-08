@@ -9,8 +9,8 @@
 //! carries neutral construction features, tessellation, appearance, source
 //! attributes, source-native namespaces, and uninterpreted [`UnknownRecord`]s.
 //!
-//! Document state machine: [`draft::ModelDraft`] (plan name `DocumentDraft`)
-//! commits into [`CadIr`]; [`validate_neutral()`] then yields a
+//! Document state machine: [`draft::ModelDraft`] commits into [`CadIr`];
+//! [`validate_neutral()`] then yields a
 //! [`ValidationReport`]. Decode produces [`DecodeResult`] without embedding
 //! validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
@@ -20,9 +20,10 @@
 //!
 //! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
 //! entry points. Detection selects a codec from a byte prefix, inspection
-//! enumerates a container, and decoding returns a [`DecodeResult`]. Operation
-//! failures use [`cadmpeg_core::CodecError`]. A successful decode reports
-//! partial transfer through [`DecodeReport`] and [`LossNote`].
+//! enumerates a container, and decoding returns a [`DecodeResult`].
+//! [`DecodeFailure`] separates backend [`cadmpeg_core::CodecError`] values from
+//! strict-policy refusals that retain the completed report. A successful decode
+//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -40,6 +41,7 @@ pub mod attributes;
 pub mod bytes;
 pub mod codec;
 pub mod compare;
+pub mod container;
 
 pub mod diff;
 pub mod document;
@@ -62,6 +64,7 @@ pub mod pmi;
 pub mod presentation;
 pub mod products;
 mod provenance;
+pub mod references;
 pub mod report;
 pub mod schema;
 pub mod semantic_annotations;
@@ -75,56 +78,68 @@ pub mod transform;
 pub mod units;
 pub mod validate;
 
-pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
-pub use codec::{
-    CadirEncoder, Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Encoder,
+pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
+pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
+pub use container::{ContainerKind, ContainerSummary};
+pub use diff::{
+    diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
+    NonEmptyFields, SourceDiff,
 };
-pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
-pub use document::{CadIr, SourceMeta, IR_VERSION};
-pub use draft::{DocumentDraft, ModelDraft};
+pub use document::{ArenaName, CadIr, CensusKey, SourceMeta, IR_VERSION};
+pub use draft::ModelDraft;
 pub use features::{
-    BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
-    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationActivation, ConfigurationBodies,
-    ConfigurationId, ConfigurationName, CurveProjectionDirection, CurveProjectionDirectionState,
-    DesignConfiguration, DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId,
-    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
-    SketchSpace,
+    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
+    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies,
+    ConfigurationEvaluation, ConfigurationId, ConfigurationName, CurveProjectionDirection,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
+    FeatureDefinition, FeatureId, LoftGuidance, ParameterId, ParameterPmi, ParameterValue,
+    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
 pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, GeometricToleranceKind, PmiAnnotation,
-    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
+    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 pub use presentation::{
-    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+    CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
+    ViewPresentation,
 };
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
-    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy,
-    ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
+    ExternalDocument, ExternalDocumentReference, JointConnector, JointId, JointLimits,
+    JointOperand, JointOperands, LinkState, NonEmptyString, Occurrence, OperandContainer,
+    PairedJointKind, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
-pub use provenance::{Exactness, SourceObjectAssociation, SourceProvenance};
+pub use provenance::{
+    AnnotationLocation, AnnotationProvenance, CodecFormat, Exactness, Provenance, SourceLocation,
+    SourceObjectAssociation, SourceProvenance,
+};
+pub use references::{ReferenceSelection, ReferenceTarget};
 
 pub use report::{
-    CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
-    Finding, LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence,
-    ValidationReport, WritePath, SHARED_LOSS_NAMESPACE,
+    CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,
+    ExportReport, FidelityResolution, Finding, HexByteCoverageKey, IndexedCoverageKey,
+    LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence, ValidationReport,
+    WritePath, SHARED_LOSS_NAMESPACE,
 };
 pub use sketches::{
-    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
-    SketchPlacement, SketchSolverScalar, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
+    NativeOperandField, Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition,
+    SketchConstraintId, SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
+    SketchPlacement, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub use source_fidelity::{
     decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
-    SourceFidelity, DECODE_SIDECAR_VERSION, DECODE_SIDECAR_VERSION_V1, SOURCE_FIDELITY_VERSION,
+    SourceFidelity,
 };
-pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
+pub use spreadsheets::{
+    CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
+    SpreadsheetRange,
+};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
     SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -184,293 +184,290 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "curve_expressions": [
-            {
-              "assignments": [
-                {
-                  "activation": "active",
-                  "dependencies": [
-                    "d42"
-                  ],
-                  "expression": "d42+1[deg]",
-                  "offset": 310,
-                  "target": {
-                    "declared_unit": null,
-                    "kind": "parameter",
-                    "name": "result"
-                  },
-                  "value": 58.29577951308232
-                }
-              ],
-              "backup": false,
-              "entity_id": 7,
-              "id": "creo:depdb:curve_expression#active-7-269",
-              "lines": [
-                {
-                  "offset": 310,
-                  "text": "result=d42+1[deg]"
-                }
-              ],
-              "local_system": null,
-              "prohibited_constructs": [],
-              "solve_blocks": [],
-              "unresolved_solve_control": false
-            }
-          ],
-          "feature_definitions": [
-            {
-              "body": [
-                102,
-                101,
-                97,
-                116,
-                95,
-                100,
-                101,
-                102,
-                115,
-                95,
-                57,
-                49,
-                55,
-                0,
-                224,
-                1,
-                102,
-                101,
-                97,
-                116,
-                95,
-                105,
-                100,
-                0,
-                40,
-                224,
-                0,
-                103,
-                115,
-                101,
-                99,
-                50,
-                100,
-                95,
-                112,
-                116,
-                114,
-                0,
-                100,
-                105,
-                109,
-                116,
-                97,
-                98,
-                95,
-                112,
-                116,
-                114,
-                0,
-                248,
-                2,
-                247,
-                129,
-                2,
-                251,
-                226,
-                224,
-                1,
-                116,
-                121,
-                112,
-                101,
-                0,
-                10,
-                224,
-                1,
-                118,
-                97,
-                108,
-                117,
-                101,
-                0,
-                228,
-                224,
-                1,
-                100,
-                105,
-                114,
-                101,
-                99,
-                116,
-                0,
-                1,
-                224,
-                1,
-                97,
-                117,
-                120,
-                95,
-                118,
-                97,
-                108,
-                117,
-                101,
-                0,
-                15,
-                224,
-                1,
-                101,
-                120,
-                116,
-                95,
-                105,
-                100,
-                0,
-                42,
-                243,
-                247,
-                129,
-                2,
-                226,
-                10,
-                228,
-                1,
-                24,
-                42,
-                224,
-                0,
-                114,
-                101,
-                108,
-                97,
-                116,
-                95,
-                112,
-                116,
-                114,
-                0,
-                35,
-                10
-              ],
-              "definition_id": 917,
-              "id": "creo:featdefs:feature_definition#917",
-              "offset": 86,
-              "outlines": [],
-              "owner_feature_id": 40,
-              "parameter_frames": [],
-              "source_section": "FeatDefs"
-            }
-          ],
-          "feature_operation_states": [
-            {
-              "current": true,
-              "display_name_stored": true,
-              "family": "Extrude",
-              "feature_id": 40,
-              "id": "creo:mdlstatus:feature_state#40:0",
-              "identifier_keyword": "id",
-              "offset": 227,
-              "parent_feature_id": null,
-              "recipe": null,
-              "root_schema_class": null,
-              "state_offset": 227,
-              "state_ordinal": 0,
-              "stored_name": "Extrude id 40",
-              "stored_name_bytes": [
-                69,
-                120,
-                116,
-                114,
-                117,
-                100,
-                101,
-                32,
-                105,
-                100,
-                32,
-                52,
-                48
-              ],
-              "stored_name_prefix": null
-            }
-          ],
-          "sketches": [
-            {
-              "bounded_curve_segments": [],
-              "centered_line_segments": [],
-              "circle_segments": [],
-              "conic_segments": [],
-              "definition_id": 917,
-              "dimensions": [
-                {
-                  "auxiliary_body": [
-                    15
-                  ],
-                  "auxiliary_value": 0.0,
-                  "dimension_type": 10,
-                  "direction_byte": 1,
-                  "external_id": 42,
-                  "offset": 144,
-                  "references": null,
-                  "unit": "radians",
-                  "value": 1.0,
-                  "value_body": [
-                    228
-                  ]
+        "curve_expressions": [
+          {
+            "assignments": [
+              {
+                "activation": "active",
+                "dependencies": [
+                  "d42"
+                ],
+                "expression": "d42+1[deg]",
+                "offset": 310,
+                "target": {
+                  "declared_unit": null,
+                  "kind": "parameter",
+                  "name": "result"
                 },
-                {
-                  "auxiliary_body": [
-                    24
-                  ],
-                  "auxiliary_value": 0.0,
-                  "dimension_type": 10,
-                  "direction_byte": 1,
-                  "external_id": 42,
-                  "offset": 197,
-                  "references": null,
-                  "unit": "radians",
-                  "value": 1.0,
-                  "value_body": [
-                    228
-                  ]
-                }
-              ],
-              "equations": [],
-              "id": "creo:featdefs:sketch#917",
-              "offset": 86,
-              "opaque_segments": [],
-              "order_rows": [],
-              "owner_feature_id": 40,
-              "point_segments": [],
-              "reference_line_segments": [],
-              "relation_triples": [],
-              "relations": [],
-              "saved_entities": [],
-              "section_3d": null,
-              "section_points": [],
-              "segments": [],
-              "skamps": [],
-              "solved_external_ids": [],
-              "source_section": "FeatDefs",
-              "table_headers": [
-                {
-                  "buckets": [],
-                  "declared_count": 2,
-                  "entity_ref": 258,
-                  "entry_ref": null,
-                  "kind": "dimensions",
-                  "offset": 124,
-                  "row_count": 2
-                }
-              ],
-              "trim_entities": [],
-              "trim_vertices": [],
-              "variables": []
-            }
-          ],
-          "unknowns": []
-        },
-        "version": 1
+                "value": 58.29577951308232
+              }
+            ],
+            "backup": false,
+            "entity_id": 7,
+            "id": "creo:depdb:curve_expression#active-7-269",
+            "lines": [
+              {
+                "offset": 310,
+                "text": "result=d42+1[deg]"
+              }
+            ],
+            "local_system": null,
+            "prohibited_constructs": [],
+            "solve_blocks": [],
+            "unresolved_solve_control": false
+          }
+        ],
+        "feature_definitions": [
+          {
+            "body": [
+              102,
+              101,
+              97,
+              116,
+              95,
+              100,
+              101,
+              102,
+              115,
+              95,
+              57,
+              49,
+              55,
+              0,
+              224,
+              1,
+              102,
+              101,
+              97,
+              116,
+              95,
+              105,
+              100,
+              0,
+              40,
+              224,
+              0,
+              103,
+              115,
+              101,
+              99,
+              50,
+              100,
+              95,
+              112,
+              116,
+              114,
+              0,
+              100,
+              105,
+              109,
+              116,
+              97,
+              98,
+              95,
+              112,
+              116,
+              114,
+              0,
+              248,
+              2,
+              247,
+              129,
+              2,
+              251,
+              226,
+              224,
+              1,
+              116,
+              121,
+              112,
+              101,
+              0,
+              10,
+              224,
+              1,
+              118,
+              97,
+              108,
+              117,
+              101,
+              0,
+              228,
+              224,
+              1,
+              100,
+              105,
+              114,
+              101,
+              99,
+              116,
+              0,
+              1,
+              224,
+              1,
+              97,
+              117,
+              120,
+              95,
+              118,
+              97,
+              108,
+              117,
+              101,
+              0,
+              15,
+              224,
+              1,
+              101,
+              120,
+              116,
+              95,
+              105,
+              100,
+              0,
+              42,
+              243,
+              247,
+              129,
+              2,
+              226,
+              10,
+              228,
+              1,
+              24,
+              42,
+              224,
+              0,
+              114,
+              101,
+              108,
+              97,
+              116,
+              95,
+              112,
+              116,
+              114,
+              0,
+              35,
+              10
+            ],
+            "definition_id": 917,
+            "id": "creo:featdefs:feature_definition#917",
+            "offset": 86,
+            "outlines": [],
+            "owner_feature_id": 40,
+            "parameter_frames": [],
+            "source_section": "FeatDefs"
+          }
+        ],
+        "feature_operation_states": [
+          {
+            "current": true,
+            "display_name_stored": true,
+            "family": "Extrude",
+            "feature_id": 40,
+            "id": "creo:mdlstatus:feature_state#40:0",
+            "identifier_keyword": "id",
+            "offset": 227,
+            "parent_feature_id": null,
+            "recipe": null,
+            "root_schema_class": null,
+            "state_offset": 227,
+            "state_ordinal": 0,
+            "stored_name": "Extrude id 40",
+            "stored_name_bytes": [
+              69,
+              120,
+              116,
+              114,
+              117,
+              100,
+              101,
+              32,
+              105,
+              100,
+              32,
+              52,
+              48
+            ],
+            "stored_name_prefix": null
+          }
+        ],
+        "sketches": [
+          {
+            "bounded_curve_segments": [],
+            "centered_line_segments": [],
+            "circle_segments": [],
+            "conic_segments": [],
+            "definition_id": 917,
+            "dimensions": [
+              {
+                "auxiliary_body": [
+                  15
+                ],
+                "auxiliary_value": 0.0,
+                "dimension_type": 10,
+                "direction_byte": 1,
+                "external_id": 42,
+                "offset": 144,
+                "references": null,
+                "unit": "radians",
+                "value": 1.0,
+                "value_body": [
+                  228
+                ]
+              },
+              {
+                "auxiliary_body": [
+                  24
+                ],
+                "auxiliary_value": 0.0,
+                "dimension_type": 10,
+                "direction_byte": 1,
+                "external_id": 42,
+                "offset": 197,
+                "references": null,
+                "unit": "radians",
+                "value": 1.0,
+                "value_body": [
+                  228
+                ]
+              }
+            ],
+            "equations": [],
+            "id": "creo:featdefs:sketch#917",
+            "offset": 86,
+            "opaque_segments": [],
+            "order_rows": [],
+            "owner_feature_id": 40,
+            "point_segments": [],
+            "reference_line_segments": [],
+            "relation_triples": [],
+            "relations": [],
+            "saved_entities": [],
+            "section_3d": null,
+            "section_points": [],
+            "segments": [],
+            "skamps": [],
+            "solved_external_ids": [],
+            "source_section": "FeatDefs",
+            "table_headers": [
+              {
+                "buckets": [],
+                "declared_count": 2,
+                "entity_ref": 258,
+                "entry_ref": null,
+                "kind": "dimensions",
+                "offset": 124,
+                "row_count": 2
+              }
+            ],
+            "trim_entities": [],
+            "trim_vertices": [],
+            "variables": []
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {
@@ -478,7 +475,6 @@
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "328",
-        "layout": "DEPDB",
         "section.0.length": "140",
         "section.0.name": "FeatDefs",
         "section.0.offset": "76",
@@ -496,6 +492,17 @@
         "section.2.role": "metadata",
         "section_count": "3",
         "version_line": "#UGC:2 P c"
+      },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:depdb",
+          "format": "creo"
+        }
       },
       "format": "creo"
     },
@@ -886,6 +893,17 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:depdb",
+        "format": "creo"
+      }
+    },
     "format": "creo",
     "geometry_transferred": false,
     "losses": [
@@ -1047,7 +1065,6 @@
         "creo:MdlStatus",
         "creo:DEPDB_DATA"
       ]
-    },
-    "version": "3"
+    }
   }
 }

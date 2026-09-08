@@ -21,6 +21,10 @@ const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => surface_is_supported(geometry),
         SurfaceGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && surface_is_supported(basis)
         }
@@ -31,53 +35,30 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
         | SurfaceGeometry::Torus { .. } => true,
         SurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
         SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => false,
     }
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
-    let Some(u_count) = usize::try_from(n.u_count).ok() else {
-        return false;
-    };
-    let Some(v_count) = usize::try_from(n.v_count).ok() else {
-        return false;
-    };
-    let Some(pole_count) = u_count.checked_mul(v_count) else {
-        return false;
-    };
-    let Some(u_knot_count) = u_count
-        .checked_add(n.u_degree as usize)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return false;
-    };
-    let Some(v_knot_count) = v_count
-        .checked_add(n.v_degree as usize)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return false;
-    };
-    n.u_count > n.u_degree
-        && n.v_count > n.v_degree
-        && n.control_points.len() == pole_count
-        && n.control_points
-            .iter()
-            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        && n.weights.as_deref().is_none_or(|weights| {
-            weights.len() == pole_count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
+    n.control_points()
+        .iter()
+        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        && n.weights().is_none_or(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0)
         })
-        && n.u_knots.len() == u_knot_count
-        && n.v_knots.len() == v_knot_count
-        && knots_nondecreasing(&n.u_knots)
-        && knots_nondecreasing(&n.v_knots)
+        && knots_nondecreasing(n.u_knots())
+        && knots_nondecreasing(n.v_knots())
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     match curve {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => curve_is_supported(geometry),
         CurveGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && curve_is_supported(basis)
         }
@@ -89,39 +70,39 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
         | CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline { .. } => true,
+        | CurveGeometry::Polyline(_) => true,
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
     }
 }
 
 fn similarity_transform(transform: &Transform) -> bool {
     if transform
-        .rows
+        .rows()
         .iter()
         .flatten()
         .any(|value| !value.is_finite())
-        || transform.rows[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || (transform.rows[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows()[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows()[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows()[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || (transform.rows()[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
     {
         return false;
     }
     let columns = [
         Vector3::new(
-            transform.rows[0][0],
-            transform.rows[1][0],
-            transform.rows[2][0],
+            transform.rows()[0][0],
+            transform.rows()[1][0],
+            transform.rows()[2][0],
         ),
         Vector3::new(
-            transform.rows[0][1],
-            transform.rows[1][1],
-            transform.rows[2][1],
+            transform.rows()[0][1],
+            transform.rows()[1][1],
+            transform.rows()[2][1],
         ),
         Vector3::new(
-            transform.rows[0][2],
-            transform.rows[1][2],
-            transform.rows[2][2],
+            transform.rows()[0][2],
+            transform.rows()[1][2],
+            transform.rows()[2][2],
         ),
     ];
     let scale = columns[0].norm();
@@ -157,11 +138,8 @@ fn direction2(e: &mut Emitter, v: Point2) -> Ref {
 }
 
 fn similarity_transform_2d(transform: &Transform2) -> bool {
-    if !transform.is_affine() {
-        return false;
-    }
-    let first = Point2::new(transform.rows[0][0], transform.rows[1][0]);
-    let second = Point2::new(transform.rows[0][1], transform.rows[1][1]);
+    let first = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
+    let second = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = first.u.hypot(first.v);
     let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10 * scale.max(1.0);
     scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12
@@ -176,9 +154,12 @@ fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref 
 }
 
 fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
-    let origin = point2(e, Point2::new(transform.rows[0][2], transform.rows[1][2]));
-    let x = Point2::new(transform.rows[0][0], transform.rows[1][0]);
-    let y = Point2::new(transform.rows[0][1], transform.rows[1][1]);
+    let origin = point2(
+        e,
+        Point2::new(transform.rows()[0][2], transform.rows()[1][2]),
+    );
+    let x = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
+    let y = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = x.u.hypot(x.v);
     let x = direction2(e, x);
     let y = direction2(e, y);
@@ -253,29 +234,25 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 ),
             )
         }
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            let points = control_points
+        PcurveGeometry::Nurbs { nurbs } => {
+            let points = nurbs
+                .control_points()
                 .iter()
                 .map(|point| point2(e, *point))
                 .collect::<Vec<_>>();
-            let (knots, multiplicities) = compress_knots(knots);
+            let (knots, multiplicities) = compress_knots(nurbs.knots());
             let base = format!(
-                "{degree},{},.UNSPECIFIED.,{},.U.",
+                "{},{},.UNSPECIFIED.,{},.U.",
+                nurbs.degree(),
                 refs(&points),
-                closed_flag(*periodic)
+                closed_flag(nurbs.periodic())
             );
             let with_knots = format!(
                 "{},{},.UNSPECIFIED.",
                 int_list(&multiplicities),
                 real_list(&knots)
             );
-            if let Some(weights) = weights {
+            if let Some(weights) = nurbs.weights() {
                 e.emit_raw(
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
@@ -358,25 +335,25 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     let origin = point(
         e,
         Point3::new(
-            transform.rows[0][3],
-            transform.rows[1][3],
-            transform.rows[2][3],
+            transform.rows()[0][3],
+            transform.rows()[1][3],
+            transform.rows()[2][3],
         ),
     );
     let x = Vector3::new(
-        transform.rows[0][0],
-        transform.rows[1][0],
-        transform.rows[2][0],
+        transform.rows()[0][0],
+        transform.rows()[1][0],
+        transform.rows()[2][0],
     );
     let y = Vector3::new(
-        transform.rows[0][1],
-        transform.rows[1][1],
-        transform.rows[2][1],
+        transform.rows()[0][1],
+        transform.rows()[1][1],
+        transform.rows()[2][1],
     );
     let z = Vector3::new(
-        transform.rows[0][2],
-        transform.rows[1][2],
-        transform.rows[2][2],
+        transform.rows()[0][2],
+        transform.rows()[1][2],
+        transform.rows()[2][2],
     );
     let scale = x.norm();
     let x = direction(e, x);
@@ -391,6 +368,10 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 /// Emit an analytic or NURBS surface carrier.
 pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
     Some(match g {
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => return surface(e, geometry),
         SurfaceGeometry::Plane {
             origin,
             normal,
@@ -460,7 +441,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
         // These carrier families have no direct STEP representation; callers
         // report the omitted carrier instead of fabricating a placeholder.
         SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => return None,
     })
 }
@@ -468,6 +449,10 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
 /// Emit an analytic or NURBS 3D curve carrier.
 pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
     Some(match g {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => return curve(e, geometry),
         CurveGeometry::Line {
             origin,
             direction: d,
@@ -527,8 +512,9 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
-        CurveGeometry::Polyline { points, .. } => {
-            let points = points
+        CurveGeometry::Polyline(polyline) => {
+            let points = polyline
+                .points()
                 .iter()
                 .map(|position| point(e, *position).to_string())
                 .collect::<Vec<_>>()
@@ -599,16 +585,16 @@ fn closed_flag(periodic: bool) -> &'static str {
 }
 
 fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
-    let pts: Vec<Ref> = n.control_points.iter().map(|p| point(e, *p)).collect();
-    let (knots, mults) = compress_knots(&n.knots);
+    let pts: Vec<Ref> = n.control_points().iter().map(|p| point(e, *p)).collect();
+    let (knots, mults) = compress_knots(n.knots());
     let ctrl = refs(&pts);
     let base = format!(
         "{},{ctrl},.UNSPECIFIED.,{},.U.",
-        n.degree,
-        closed_flag(n.periodic)
+        n.degree(),
+        closed_flag(n.periodic())
     );
     let with_knots = format!("{},{},.UNSPECIFIED.", int_list(&mults), real_list(&knots));
-    match &n.weights {
+    match n.weights() {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
@@ -633,28 +619,28 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     }
     // IR control points are u-major: index i*v_count + j is pole (i, j). STEP's
     // control_points_list is LIST(u) OF LIST(v), so the outer list runs over u.
-    let u_count = n.u_count as usize;
-    let v_count = n.v_count as usize;
+    let u_count = n.u_count() as usize;
+    let v_count = n.v_count() as usize;
     let mut rows: Vec<String> = Vec::with_capacity(u_count);
     for i in 0..u_count {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);
         for j in 0..v_count {
             let idx = i * v_count + j;
-            let p = n.control_points[idx];
+            let p = n.control_points()[idx];
             row.push(point(e, p));
         }
         rows.push(refs(&row));
     }
     let grid = format!("({})", rows.join(","));
 
-    let (u_knots, u_mults) = compress_knots(&n.u_knots);
-    let (v_knots, v_mults) = compress_knots(&n.v_knots);
+    let (u_knots, u_mults) = compress_knots(n.u_knots());
+    let (v_knots, v_mults) = compress_knots(n.v_knots());
     let base = format!(
         "{},{},{grid},.UNSPECIFIED.,{},{},.U.",
-        n.u_degree,
-        n.v_degree,
-        closed_flag(n.u_periodic),
-        closed_flag(n.v_periodic)
+        n.u_degree(),
+        n.v_degree(),
+        closed_flag(n.u_periodic()),
+        closed_flag(n.v_periodic())
     );
     let with_knots = format!(
         "{},{},{},{},.UNSPECIFIED.",
@@ -663,7 +649,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         real_list(&u_knots),
         real_list(&v_knots)
     );
-    Some(match &n.weights {
+    Some(match n.weights() {
         None => e.emit(
             "B_SPLINE_SURFACE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),

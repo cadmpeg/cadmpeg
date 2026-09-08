@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::super::definitions::test_support::with_points;
 use super::super::definitions::*;
 use crate::psb;
 use crate::scalar;
@@ -19,7 +20,7 @@ fn positional_dimension_table_uses_the_inherited_table_class() {
     assert_eq!(dimensions.declared_count, 2);
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 2);
-    assert_eq!(dimensions.rows[0].value, Some(3.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(
         dimensions.rows[0].value_body,
         [0x46, 0x08, 0, 0, 0, 0, 0, 0]
@@ -97,7 +98,7 @@ fn positional_dimension_table_is_self_describing_when_multiple_rows_close() {
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 4);
     assert_eq!(dimensions.rows[0].external_id, 2);
-    assert_eq!(dimensions.rows[1].value, Some(-0.5));
+    assert_eq!(dimensions.rows[1].value.resolved(), Some(-0.5));
 }
 
 #[test]
@@ -128,15 +129,15 @@ fn positional_dimension_table_retains_bounded_opaque_values() {
         .expect("positional dimtab");
 
     assert_eq!(dimensions.rows.len(), 3);
-    assert_eq!(dimensions.rows[1].value, None);
+    assert_eq!(dimensions.rows[1].value.resolved(), None);
     assert_eq!(
-        dimensions.rows[1].unresolved_value_token.as_deref(),
+        dimensions.rows[1].value.unresolved_token(),
         Some(&[0x00, 0x04, 0xa6][..])
     );
     assert_eq!(dimensions.rows[1].value_body, [0x00, 0x04, 0xa6]);
     assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(dimensions.rows[1].external_id, 44);
-    assert_eq!(dimensions.rows[2].value, Some(-1.0));
+    assert_eq!(dimensions.rows[2].value.resolved(), Some(-1.0));
     assert_eq!(dimensions.rows[2].external_id, 45);
 }
 
@@ -152,7 +153,7 @@ fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_for
     let positive_row = positional_dimension(&positive, 0, positive.len(), &cache)
         .expect("positive dictionary dimension");
     assert_eq!(
-        positive_row.value,
+        positive_row.value.resolved(),
         Some(f64::from_be_bytes([
             0x3f, 0xc8, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f,
         ]))
@@ -168,16 +169,16 @@ fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_for
     ] {
         let row =
             positional_dimension(body, 0, body.len(), &cache).expect("bounded opaque dimension");
-        assert_eq!(row.value, None);
-        assert_eq!(row.unresolved_value_token.as_deref(), Some(token));
+        assert_eq!(row.value.resolved(), None);
+        assert_eq!(row.value.unresolved_token(), Some(token));
         assert_eq!(row.external_id, external_id);
     }
     let zero_row = positional_dimension(&zero, 0, zero.len(), &cache).expect("zero dimension");
-    assert_eq!(zero_row.value, Some(0.0));
+    assert_eq!(zero_row.value.resolved(), Some(0.0));
     assert_eq!(zero_row.external_id, 49);
     let negative_half_row = positional_dimension(&negative_half, 0, negative_half.len(), &cache)
         .expect("negative half dimension");
-    assert_eq!(negative_half_row.value, Some(-0.5));
+    assert_eq!(negative_half_row.value.resolved(), Some(-0.5));
     assert_eq!(negative_half_row.external_id, 50);
 }
 
@@ -188,7 +189,7 @@ fn positional_dimension_seven_byte_positive_value_preserves_field_alignment() {
         .expect("seven-byte positive dimension");
 
     assert_eq!(
-        row.value,
+        row.value.resolved(),
         Some(f64::from_be_bytes([
             0x40, 0x60, 0x07, 0x53, 0x93, 0xb5, 0xe5, 0,
         ]))
@@ -228,10 +229,10 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
     let decoded = definitions(&payload);
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
-    assert_eq!(decoded[1].owner_feature_id, Some(42));
+    assert_eq!(decoded[1].identity.owner_feature_id(), Some(42));
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 1);
-    assert_eq!(dimensions.rows[0].value, Some(3.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(dimensions.rows[0].external_id, 43);
 }
 
@@ -248,14 +249,14 @@ fn depdb_gsec2d_definition_anchors_positional_table_replay() {
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded.len(), 2);
-    assert_eq!(decoded[0].id, 2);
-    assert_eq!(decoded[1].id, 2);
+    assert_eq!(decoded[0].identity.id(), 2);
+    assert_eq!(decoded[1].identity.id(), 2);
     assert!(decoded
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 1);
-    assert_eq!(dimensions.rows[0].value, Some(3.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(dimensions.rows[0].external_id, 43);
 }
 
@@ -275,18 +276,24 @@ fn positional_variable_table_joins_coordinate_rows() {
     assert!(variables.is_complete());
     assert_eq!(variables.rows[0].value_body, [0x18]);
     assert_eq!(variables.rows[0].guess_body, [0x18]);
-    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[0].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(0));
     assert_eq!(variables.rows[0].uvar_id, Some(9));
-    assert_eq!(variables.rows[1].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[1].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
     assert_eq!(variables.rows[1].uvar_id, Some(10));
-    assert_eq!(variables.points.len(), 1);
-    assert_eq!(variables.points[0].point_id, 7);
-    assert_eq!(variables.points[0].u, Some(0.0));
-    assert_eq!(variables.points[0].v, Some(0.0));
+    assert_eq!(variables.points().len(), 1);
+    assert_eq!(variables.points()[0].point_id, 7);
+    assert_eq!(variables.points()[0].u, Some(0.0));
+    assert_eq!(variables.points()[0].v, Some(0.0));
 }
 
 #[test]
@@ -314,11 +321,17 @@ fn positional_variable_guess_zero_preserves_compact_trailing_fields_at_table_bou
 
     assert!(variables.is_complete());
     assert_eq!(variables.rows.len(), 2);
-    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[0].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(1));
     assert_eq!(variables.rows[0].uvar_id, Some(15));
-    assert_eq!(variables.rows[1].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[1].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[1].known, Some(0));
     assert_eq!(variables.rows[1].homogeneity, Some(1));
     assert_eq!(variables.rows[1].uvar_id, Some(7));
@@ -332,7 +345,7 @@ fn variable_tables_retain_extents_without_decoded_rows() {
     assert_eq!(variables.declared_count, 2);
     assert_eq!(variables.entity_ref, Some(119));
     assert!(variables.rows.is_empty());
-    assert!(variables.points.is_empty());
+    assert!(variables.points().is_empty());
     assert!(!variables.is_complete());
 
     let positional = b"\xf8\x02\xf7\x77\xfb\xe2\xf7\x78";
@@ -342,65 +355,61 @@ fn variable_tables_retain_extents_without_decoded_rows() {
     assert_eq!(variables.declared_count, 2);
     assert_eq!(variables.entity_ref, Some(119));
     assert!(variables.rows.is_empty());
-    assert!(variables.points.is_empty());
+    assert!(variables.points().is_empty());
     assert!(!variables.is_complete());
 }
 
 #[test]
 fn variable_table_withholds_duplicate_coordinate_identities() {
     let row = |variable_type, value, offset| FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key: 7,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset,
     };
-    let table = variable_table_from_rows(
-        3,
-        Some(119),
-        vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
-        5,
-    );
+    let table = FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: Some(119),
+        rows: vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
+        offset: 5,
+    };
 
     assert_eq!(table.rows.len(), 3);
-    assert_eq!(table.points.len(), 1);
-    assert_eq!(table.points[0].point_id, 7);
-    assert_eq!(table.points[0].u, None);
-    assert_eq!(table.points[0].v, Some(3.0));
+    assert_eq!(table.points().len(), 1);
+    assert_eq!(table.points()[0].point_id, 7);
+    assert_eq!(table.points()[0].u, None);
+    assert_eq!(table.points()[0].v, Some(3.0));
 }
 
 #[test]
 fn radius_variables_do_not_create_section_points() {
     let row = |variable_type, key, value, offset| FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset,
     };
-    let table = variable_table_from_rows(
-        3,
-        Some(119),
-        vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
-        5,
-    );
+    let table = FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: Some(119),
+        rows: vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
+        offset: 5,
+    };
 
-    assert_eq!(table.points.len(), 1);
-    assert_eq!(table.points[0].point_id, 7);
+    assert_eq!(table.points().len(), 1);
+    assert_eq!(table.points()[0].point_id, 7);
     let (points, ambiguous) = table.reconciled_points();
     assert_eq!(points.get(&7), Some(&[Some(2.0), Some(3.0)]));
     assert!(!points.contains_key(&99));
@@ -416,21 +425,19 @@ fn variable_coordinate_7e_and_c6_are_the_f3_dict_sign_pair() {
     assert_eq!(
         decode_variable_scalar(&positive, 0, positive.len(), &cache),
         (
-            Some(f64::from_be_bytes([
+            ScalarLane::Value(f64::from_be_bytes([
                 0x3f, 0xf3, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7
             ])),
-            7,
-            false
+            7
         )
     );
     assert_eq!(
         decode_variable_scalar(&negative, 0, negative.len(), &cache),
         (
-            Some(f64::from_be_bytes([
+            ScalarLane::Value(f64::from_be_bytes([
                 0xbf, 0xf3, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7
             ])),
-            7,
-            false
+            7
         )
     );
 }
@@ -446,26 +453,26 @@ fn positional_gsec3d_decodes_placement_and_reference_rows() {
 
     assert_eq!(section.sketch_plane_entity_id, Some(513));
     assert_eq!(section.sketch_plane_flip, None);
-    assert_eq!(section.reference_plane_entity_ids, vec![6, 7]);
-    assert_eq!(section.reference_plane_rows.len(), 2);
-    assert_eq!(section.reference_plane_rows[0].plane_entity_id, 6);
-    assert_eq!(section.reference_plane_rows[0].reference_type, Some(5));
-    assert_eq!(section.reference_plane_rows[0].external_reference_id, None);
-    assert_eq!(section.reference_plane_rows[0].segment_id, Some(3));
-    assert_eq!(section.reference_plane_rows[0].sub_index, None);
     assert_eq!(
-        section.reference_plane_rows[0].reference_flip,
-        Some(BinaryFlag::Clear)
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        vec![6, 7]
     );
-    assert_eq!(section.reference_plane_rows[1].plane_entity_id, 7);
-    assert_eq!(section.reference_plane_rows[1].reference_type, Some(5));
-    assert_eq!(section.reference_plane_rows[1].external_reference_id, None);
-    assert_eq!(section.reference_plane_rows[1].segment_id, Some(4));
-    assert_eq!(section.reference_plane_rows[1].sub_index, None);
-    assert_eq!(
-        section.reference_plane_rows[1].reference_flip,
-        Some(BinaryFlag::Set)
-    );
+    let ReferencePlanes::Positional(rows) = &section.reference_planes else {
+        panic!("positional reference planes");
+    };
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].plane_entity_id, 6);
+    assert_eq!(rows[0].reference_type, Some(5));
+    assert_eq!(rows[0].external_reference_id, None);
+    assert_eq!(rows[0].segment_id, Some(3));
+    assert_eq!(rows[0].sub_index, None);
+    assert_eq!(rows[0].reference_flip, Some(BinaryFlag::Clear));
+    assert_eq!(rows[1].plane_entity_id, 7);
+    assert_eq!(rows[1].reference_type, Some(5));
+    assert_eq!(rows[1].external_reference_id, None);
+    assert_eq!(rows[1].segment_id, Some(4));
+    assert_eq!(rows[1].sub_index, None);
+    assert_eq!(rows[1].reference_flip, Some(BinaryFlag::Set));
     assert_eq!(section.reference_plane_datum_geometry_id, None);
     assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
     assert_eq!(section.orientation.reference_type, None);
@@ -481,7 +488,7 @@ fn positional_gsec3d_retains_its_header_without_a_body() {
 
     assert_eq!(section.offset, 6);
     assert_eq!(section.sketch_plane_entity_id, None);
-    assert!(section.reference_plane_entity_ids.is_empty());
+    assert!(section.reference_planes.entity_ids().next().is_none());
     assert_eq!(section.orientation, FeatureSectionOrientation::default());
 }
 
@@ -494,7 +501,10 @@ fn positional_gsec3d_retains_placement_and_complete_reference_prefix() {
     let section = positional_section_3d(payload, 0, payload.len()).expect("positional gsec3d");
 
     assert_eq!(section.sketch_plane_entity_id, Some(513));
-    assert_eq!(section.reference_plane_entity_ids, [6]);
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        [6]
+    );
     assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
     assert_eq!(section.orientation.reference_type, None);
     assert_eq!(section.orientation.segment_id, None);
@@ -515,7 +525,10 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
             \xe0\x01flip_flag\0\x00\
             \xe0\x00p_saved_result\0";
 
-    let definitions = definitions_in_ranges(&payload[..], &[(0, 1, None, false)]);
+    let definitions = definitions_in_ranges(
+        &payload[..],
+        &[(0, std::num::NonZeroU32::new(1), None, false)],
+    );
     let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
 
     assert_eq!(section.sketch_plane_entity_id, Some(42));
@@ -627,8 +640,8 @@ fn relation_table_retains_solver_children_after_an_invalid_row() {
     assert_eq!(relations.declared_count, 3);
     assert_eq!(relations.entity_ref, Some(106));
     assert!(relations.rows.is_empty());
-    assert_eq!(relations.skamps.len(), 1);
-    assert_eq!(relations.skamps[0].id, 5);
+    assert_eq!(relations.skamps().len(), 1);
+    assert_eq!(relations.skamps()[0].id, 5);
 }
 
 #[test]
@@ -883,26 +896,33 @@ fn positional_definition_preserves_its_named_solver_tables() {
 
     let definitions = definitions_in_ranges(
         &payload,
-        &[(0, 1, None, false), (positional_start, 2, None, true)],
+        &[
+            (0, std::num::NonZeroU32::new(1), None, false),
+            (positional_start, std::num::NonZeroU32::new(2), None, true),
+        ],
     );
     let relations = definitions[1].relations.as_ref().expect("relations");
 
-    assert_eq!(relations.skamps.len(), 1);
-    assert_eq!(relations.skamps[0].id, 5);
+    assert_eq!(relations.skamps().len(), 1);
+    assert_eq!(relations.skamps()[0].id, 5);
     assert_eq!(
         relations
-            .skamp_header
+            .skamps
             .as_ref()
+            .expect("skamp table")
+            .header()
             .expect("skamp header")
             .declared_count,
         1
     );
-    assert_eq!(relations.triples.len(), 1);
-    assert_eq!(relations.triples[0].relation_id, Some(7));
+    assert_eq!(relations.triples().len(), 1);
+    assert_eq!(relations.triples()[0].relation_id, Some(7));
     assert_eq!(
         relations
-            .triples_header
+            .triples
             .as_ref()
+            .expect("triples table")
+            .header()
             .expect("triples header")
             .declared_count,
         1
@@ -1148,12 +1168,11 @@ fn positional_trim_vertex_table_retains_an_empty_extent() {
 
 #[test]
 fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
-    let segment = |kind, point_ids, external_id| FeatureSegment {
+    let segment = |kind, external_id| FeatureSegment {
         kind,
         directions: [None; 3],
-        point_ids,
-        center_id: (kind == FeatureSegmentKind::Arc).then_some(4),
-        arc_orientation: (kind == FeatureSegmentKind::Arc).then_some(0),
+        center_id: matches!(kind, FeatureSegmentKind::Arc(_)).then_some(4),
+        arc_orientation: matches!(kind, FeatureSegmentKind::Arc(_)).then_some(0),
         vertical_horizontal: None,
         radius_ref: None,
         radius2_ref: None,
@@ -1165,30 +1184,28 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         declared_count: 2,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![
-            segment(FeatureSegmentKind::Line, [1, 2], 9),
-            segment(FeatureSegmentKind::Arc, [2, 3], 10),
-        ],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![
+            segment(FeatureSegmentKind::Line([1, 2]), 9),
+            segment(FeatureSegmentKind::Arc([2, 3]), 10),
+        ])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
-    let variables = FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![FeatureSectionPoint {
+    let variables = with_points(
+        FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        },
+        vec![FeatureSectionPoint {
             point_id: 2,
             u: Some(3.0),
             v: Some(4.0),
         }],
-        offset: 0,
-    };
+    );
 
     assert_eq!(
         entity_intersection(&[9, 10], Some(&segments), Some(&variables)),
@@ -1201,7 +1218,7 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     assert!(incomplete_segments.segment(9).is_none());
     assert_eq!(
         incomplete_segments.unique_segment(9),
-        Some(&segments.rows[0])
+        Some(&segments.rows.ordinary().cloned().collect::<Vec<_>>()[0])
     );
     assert_eq!(
         entity_intersection(&[9, 10], Some(&incomplete_segments), Some(&variables)),
@@ -1209,12 +1226,17 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     );
 
     let mut duplicate_segments = segments.clone();
-    duplicate_segments.rows.push(segments.rows[0].clone());
+    duplicate_segments
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+            segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].clone(),
+        ));
     assert!(duplicate_segments.segment(9).is_none());
     assert!(entity_intersection(&[9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
 
     let mut duplicate_points = variables.clone();
-    duplicate_points.points.push(variables.points[0].clone());
+    duplicate_points.rows.extend(variables.rows.clone());
+    duplicate_points.declared_count += variables.declared_count;
     assert_eq!(
         duplicate_points.reconciled_points().0.get(&2),
         Some(&[Some(3.0), Some(4.0)])
@@ -1223,44 +1245,36 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)),
         Some([3.0, 4.0])
     );
-    duplicate_points.points[1].u = Some(5.0);
+    duplicate_points.rows[2].value = ScalarLane::Value(5.0);
     assert!(duplicate_points.reconciled_points().1.contains(&2));
     assert!(entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)).is_none());
     let row = |variable_type, value, offset| FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key: 2,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset,
     };
     let mut repeated_raw = variables.clone();
-    repeated_raw.points[0] = FeatureSectionPoint {
-        point_id: 2,
-        u: None,
-        v: None,
-    };
     repeated_raw.rows = vec![row(1, 3.0, 30), row(1, 3.0, 31), row(2, 4.0, 32)];
     assert_eq!(
         repeated_raw.reconciled_points().0.get(&2),
         Some(&[Some(3.0), Some(4.0)])
     );
-    repeated_raw.rows[1].value = Some(5.0);
+    repeated_raw.rows[1].value = ScalarLane::Value(5.0);
     assert!(repeated_raw.reconciled_points().1.contains(&2));
 }
 
 #[test]
 fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
-    let segment = |kind, point_ids, center_id, radius_ref, external_id| FeatureSegment {
+    let segment = |kind, center_id, radius_ref, external_id| FeatureSegment {
         kind,
         directions: [None; 3],
-        point_ids,
         center_id,
         arc_orientation: center_id.map(|_| 0),
         vertical_horizontal: None,
@@ -1274,14 +1288,10 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         declared_count: rows.len() as u32,
         has_elided_prototype: false,
         entity_ref: None,
-        rows,
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (rows)
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 0,
     };
     let point = |point_id, u, v| FeatureSectionPoint {
@@ -1290,31 +1300,32 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         v: Some(v),
     };
     let radius = |key, value| FeatureVariableRow {
-        variable_type: 3,
+        variable_type: crate::feature::definitions::VariableType::Radius,
         key,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset: 0,
     };
-    let variables =
-        |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| FeatureVariableTable {
-            declared_count: rows.len() as u32,
-            entity_ref: None,
-            rows,
+    let variables = |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| {
+        with_points(
+            FeatureVariableTable {
+                declared_count: rows.len() as u32,
+                entity_ref: None,
+                rows,
+                offset: 0,
+            },
             points,
-            offset: 0,
-        };
+        )
+    };
 
     let bounded_unique = segment_table(vec![
-        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+        segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(5), Some(6), 10),
     ]);
     let bounded_unique_variables = variables(
         vec![
@@ -1345,23 +1356,22 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         Some([1.0, 0.0])
     );
     let mut derived_radius = bounded_unique_variables.clone();
-    derived_radius.rows.clear();
-    derived_radius.declared_count = 0;
+    derived_radius
+        .rows
+        .retain(|row| row.variable_type != VariableType::Radius);
+    derived_radius.declared_count = derived_radius.rows.len() as u32;
     assert_eq!(
         entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
         Some([1.0, 0.0])
     );
-    let conflicting_radius = variables(
-        bounded_unique_variables.points.clone(),
-        vec![radius(6, 2.0)],
-    );
+    let conflicting_radius = variables(bounded_unique_variables.points(), vec![radius(6, 2.0)]);
     assert!(
         entity_intersection(&[9, 10], Some(&bounded_unique), Some(&conflicting_radius),).is_none()
     );
 
     let secant = segment_table(vec![
-        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+        segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(5), Some(6), 10),
     ]);
     let secant_variables = variables(
         vec![
@@ -1376,8 +1386,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     assert!(entity_intersection(&[9, 10], Some(&secant), Some(&secant_variables)).is_none());
 
     let tangent_circles = segment_table(vec![
-        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+        segment(FeatureSegmentKind::Arc([1, 2]), Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(7), Some(8), 10),
     ]);
     let tangent_circle_variables = variables(
         vec![
@@ -1400,8 +1410,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     );
 
     let secant_circles = segment_table(vec![
-        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
-        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+        segment(FeatureSegmentKind::Arc([1, 2]), Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc([3, 4]), Some(7), Some(8), 10),
     ]);
     let secant_circle_variables = variables(
         vec![
@@ -1425,9 +1435,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
 #[test]
 fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
     let segment = |point_ids, external_id| FeatureSegment {
-        kind: FeatureSegmentKind::Line,
+        kind: FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
-        point_ids,
         center_id: None,
         arc_orientation: None,
         vertical_horizontal: None,
@@ -1441,21 +1450,20 @@ fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
         declared_count: 3,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 0,
     };
-    let variables = FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![
+    let variables = with_points(
+        FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        },
+        vec![
             FeatureSectionPoint {
                 point_id: 1,
                 u: Some(-1.0),
@@ -1487,8 +1495,7 @@ fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
                 v: Some(2.0),
             },
         ],
-        offset: 0,
-    };
+    );
     assert_eq!(
         entity_intersection(&[9, 10, 11], Some(&segments), Some(&variables)),
         Some([0.0, 0.0])

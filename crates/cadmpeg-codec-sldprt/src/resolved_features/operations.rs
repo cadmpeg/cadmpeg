@@ -13,47 +13,39 @@ pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
 pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
 pub(crate) const SPLIT_LINE_TOOL_PROPERTY: &str = "SplitLineTool";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FormCodePadding {
-    Four,
-    Eight,
-}
-
-impl FormCodePadding {
-    fn bytes(self) -> usize {
-        match self {
-            Self::Four => 4,
-            Self::Eight => 8,
-        }
-    }
-}
-
-pub(crate) fn form_code_padding(sw_version: Option<&str>) -> Option<FormCodePadding> {
-    let version = sw_version?.parse::<u32>().ok()?;
-    (version > 0).then_some(if version >= 12_000 {
-        FormCodePadding::Eight
-    } else {
-        FormCodePadding::Four
-    })
-}
-
 pub(super) fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     let start = name_offset.checked_sub(2)?;
     View::u16_le_at(payload, start)
+}
+
+/// Selects one operation code from byte-valid layout candidates.
+///
+/// A declared padding selects at most one versioned candidate. Without a
+/// declaration, all byte-valid candidates must agree; their order is not
+/// evidence and cannot choose the operation.
+fn consistent_operation_code(
+    mut candidates: impl Iterator<Item = u32>,
+    padding_declared: bool,
+) -> Option<u32> {
+    let first = candidates.next()?;
+    if !padding_declared && candidates.any(|candidate| candidate != first) {
+        return None;
+    }
+    Some(first)
 }
 
 pub(super) fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let direct_class = lane
         .classes
         .iter()
         .find(|class| class.offset + 6 + class.name.len() as u64 == name.offset);
-    let code_offset = if let Some(class) = direct_class {
+    if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
         if lane
             .native_payload
@@ -64,7 +56,7 @@ pub(super) fn feature_operation_code(
         }
         let candidates = [8usize, 4]
             .into_iter()
-            .filter(|padding| form_padding.is_none_or(|expected| expected.bytes() == *padding))
+            .filter(|padding| form_padding.is_none_or(|expected| expected == *padding))
             .filter_map(|padding| {
                 let code_offset = class_offset.checked_sub(4 + padding)?;
                 if !lane
@@ -75,53 +67,43 @@ pub(super) fn feature_operation_code(
                 {
                     return None;
                 }
-                let code = View::u32_le_at(&lane.native_payload, code_offset)?;
-                Some((code_offset, code))
-            })
-            .collect::<Vec<_>>();
-        if form_padding.is_none() {
-            // A zero form code makes four- and eight-byte padding both match. A
-            // different candidate code is not a byte-level discriminator.
-            match candidates.as_slice() {
-                [(code_offset, _)] => *code_offset,
-                [(first_offset, first_code), (_, second_code)] if first_code == second_code => {
-                    *first_offset
-                }
-                _ => return None,
-            }
-        } else {
-            candidates.first().map(|(code_offset, _)| *code_offset)?
-        }
+                View::u32_le_at(&lane.native_payload, code_offset)
+            });
+        return consistent_operation_code(candidates, form_padding.is_some());
+    }
+
+    let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
+    if !is_class_token(repeated_token) {
+        return None;
+    }
+    if let Some(code_offset) = name_offset.checked_sub(14).filter(|code_offset| {
+        repeated_token == 0x8000
+            && lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
+    }) {
+        return View::u32_le_at(&lane.native_payload, code_offset);
+    }
+
+    let paddings: &[usize] = if class == Some("moICE_c") {
+        &[8, 4, 0]
     } else {
-        let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
-        if !is_class_token(repeated_token) {
+        &[8, 4]
+    };
+    let candidates = paddings.iter().copied().filter_map(|padding| {
+        if padding != 0 && form_padding.is_some_and(|expected| expected != padding) {
             return None;
         }
-        let compact_instance = name_offset.checked_sub(14).filter(|code_offset| {
-            repeated_token == 0x8000
-                && lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
-        });
-        compact_instance.or_else(|| {
-            let paddings: &[usize] = if class == Some("moICE_c") {
-                &[8, 4, 0]
-            } else {
-                &[8, 4]
-            };
-            paddings.iter().copied().find_map(|padding| {
-                if padding != 0 && form_padding.is_some_and(|expected| expected.bytes() != padding)
-                {
-                    return None;
-                }
-                let code_offset = name_offset.checked_sub(6 + padding)?;
-                lane.native_payload
-                    .get(code_offset + 4..name_offset - 2)?
-                    .iter()
-                    .all(|byte| *byte == 0)
-                    .then_some(code_offset)
-            })
-        })?
-    };
-    View::u32_le_at(&lane.native_payload, code_offset)
+        let code_offset = name_offset.checked_sub(6 + padding)?;
+        if !lane
+            .native_payload
+            .get(code_offset + 4..name_offset - 2)?
+            .iter()
+            .all(|byte| *byte == 0)
+        {
+            return None;
+        }
+        View::u32_le_at(&lane.native_payload, code_offset)
+    });
+    consistent_operation_code(candidates, form_padding.is_some())
 }
 
 pub(super) fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
@@ -150,7 +132,7 @@ pub(crate) fn bind_feature_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     bind_extrusion_operations(features, histories, lanes, form_padding);
     bind_revolution_operations(features, histories, lanes, form_padding);
@@ -162,7 +144,7 @@ pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_features = histories
         .iter()
@@ -204,7 +186,7 @@ pub(crate) fn bind_sweep_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_features = histories
         .iter()
@@ -212,14 +194,10 @@ pub(crate) fn bind_sweep_operations(
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid { op },
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Sweep { mode, .. } = &mut feature.definition else {
             continue;
         };
-        if *op != BooleanOp::Unresolved {
+        if *mode != cadmpeg_ir::features::SweepMode::Unresolved {
             continue;
         }
         let Some(history) = feature
@@ -243,7 +221,19 @@ pub(crate) fn bind_sweep_operations(
             continue;
         };
         if operations.all(|operation| operation == first) {
-            *op = first;
+            *mode = match first {
+                BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Join,
+                },
+                BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Cut,
+                },
+                BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Intersect,
+                },
+                BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::NewBody,
+                BooleanOp::Unresolved => continue,
+            };
         }
     }
 }
@@ -331,7 +321,7 @@ pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_features = histories
         .iter()
@@ -387,7 +377,7 @@ pub(crate) fn inherit_configuration_operations(
     base_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) {
     let history_by_id = histories
         .iter()
@@ -452,7 +442,7 @@ fn operation_carrier_present(
     kind: OperationKind,
     feature: &Feature,
     lane: &FeatureInputLane,
-    form_padding: Option<FormCodePadding>,
+    form_padding: Option<usize>,
 ) -> bool {
     let source_matches = feature
         .source_id

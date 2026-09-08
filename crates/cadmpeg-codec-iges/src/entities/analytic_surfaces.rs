@@ -20,7 +20,7 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
-    let id = PointId(format!("iges:model:point#D{sequence}"));
+    let id = PointId::mint(format!("iges:model:point#D{sequence}")).expect("identity grammar");
     ir.model
         .points
         .iter()
@@ -476,7 +476,8 @@ pub(super) fn project(
             }
         };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar"),
             geometry: result,
             source_object: Some(source_object(entry)),
         });

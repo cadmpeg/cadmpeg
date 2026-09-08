@@ -2,6 +2,7 @@
 //! A CAD document together with its load origin.
 
 use cadmpeg_ir::{CadIr, DecodeReport, DecodeResult, SourceFidelity};
+use cadmpeg_registry::Selection;
 
 /// A neutral document and the source information available for later export.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,8 +19,17 @@ pub struct LoadedDocument {
 pub enum LoadOrigin {
     /// The document was loaded without native decode metadata.
     Neutral,
+    /// Decode metadata restored from a neutral document sidecar.
+    Restored {
+        /// What the decoder transferred and omitted.
+        report: DecodeReport,
+        /// Decode-time annotations and retained native records.
+        fidelity: SourceFidelity,
+    },
     /// The document was produced by a native decoder.
     Decoded {
+        /// How the native decoder was selected.
+        selection: Selection,
         /// What the decoder transferred and omitted.
         report: DecodeReport,
         /// Decode-time annotations and retained native records.
@@ -37,11 +47,23 @@ impl LoadedDocument {
     }
 
     /// Creates a document from a native decode result.
-    pub fn decoded(result: DecodeResult) -> Self {
+    pub fn decoded(result: DecodeResult, selection: Selection) -> Self {
         let (ir, report, fidelity) = result.into_parts();
         Self {
             ir,
-            origin: LoadOrigin::Decoded { report, fidelity },
+            origin: LoadOrigin::Decoded {
+                report,
+                fidelity,
+                selection,
+            },
+        }
+    }
+
+    /// Creates a neutral load whose matching sidecar restores decode origin.
+    pub fn restored(ir: CadIr, report: DecodeReport, fidelity: SourceFidelity) -> Self {
+        Self {
+            ir,
+            origin: LoadOrigin::Restored { report, fidelity },
         }
     }
 
@@ -49,7 +71,9 @@ impl LoadedDocument {
     pub const fn decode_report(&self) -> Option<&DecodeReport> {
         match &self.origin {
             LoadOrigin::Neutral => None,
-            LoadOrigin::Decoded { report, .. } => Some(report),
+            LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => {
+                Some(report)
+            }
         }
     }
 
@@ -57,7 +81,9 @@ impl LoadedDocument {
     pub const fn fidelity(&self) -> Option<&SourceFidelity> {
         match &self.origin {
             LoadOrigin::Neutral => None,
-            LoadOrigin::Decoded { fidelity, .. } => Some(fidelity),
+            LoadOrigin::Decoded { fidelity, .. } | LoadOrigin::Restored { fidelity, .. } => {
+                Some(fidelity)
+            }
         }
     }
 }

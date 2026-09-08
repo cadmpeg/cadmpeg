@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion and revolution pcurves.
 
-use super::super::analytic::{cross, dot, nurbs_intrinsic_parameter_range};
 use super::super::native::annotate;
 use super::super::sketch::{normalized, section_point_in_model};
 use super::nurbs::{oriented_sketch_nurbs_curve, placed_section_nurbs};
 use super::profiles::{circular_pcurve, line_pcurve, profile_arc};
 use super::surfaces::{revolved_nurbs_surface, revolved_section_surface};
+use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
+use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
@@ -29,17 +30,13 @@ pub(in super::super) fn add_extrusion_pcurve(
     geometry: PcurveGeometry,
 ) -> PcurveId {
     let parameter_range = match &geometry {
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            ..
-        } => usize::try_from(*degree)
+        PcurveGeometry::Nurbs { nurbs } => usize::try_from(nurbs.degree())
             .ok()
             .and_then(|degree| {
-                (control_points.len() > degree && knots.len() == control_points.len() + degree + 1)
-                    .then_some(())?;
-                Some([*knots.get(degree)?, *knots.get(control_points.len())?])
+                Some([
+                    *nurbs.knots().get(degree)?,
+                    *nurbs.knots().get(nurbs.control_points().len())?,
+                ])
             })
             .filter(|range| range[0] < range[1])
             .unwrap_or([0.0, 1.0]),
@@ -56,10 +53,7 @@ pub(in super::super) fn add_extrusion_pcurve(
     ir.model.pcurves.push(Pcurve {
         id: id.clone(),
         geometry,
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: Some(parameter_range),
-        fit_tolerance: None,
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some(parameter_range), None),
     });
     id
 }
@@ -67,7 +61,7 @@ pub(in super::super) fn add_extrusion_pcurve(
 pub(in super::super) fn revolution_boundary_pcurve(
     surface: &SurfaceGeometry,
     point: [f64; 3],
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<PcurveGeometry> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -186,7 +180,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
@@ -197,30 +191,58 @@ pub(in super::super) fn revolved_brep_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<SurfaceGeometry> {
     if matches!(geometry, SketchGeometry::Nurbs { .. }) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
         return Some(SurfaceGeometry::Nurbs(revolved_nurbs_surface(
-            &placed_section_nurbs(transform, &directrix),
+            &placed_section_nurbs(transform, &directrix)?,
             axis,
         )?));
     }
     revolved_section_surface(transform, geometry, axis)
 }
 
+/// An endpoint boundary of a revolved profile segment.
+#[derive(Clone, Copy)]
+pub(in super::super) enum RevolutionBoundary {
+    Start,
+    End,
+}
+
+impl RevolutionBoundary {
+    /// The boundary key used in native identities.
+    pub(super) const fn key(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::End => "end",
+        }
+    }
+
+    /// The other endpoint boundary.
+    pub(super) const fn opposite(self) -> Self {
+        match self {
+            Self::Start => Self::End,
+            Self::End => Self::Start,
+        }
+    }
+}
+
 pub(in super::super) fn revolution_profile_boundary_pcurve(
     transform: &crate::placement::FeatureSectionTransform,
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     surface: &SurfaceGeometry,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
     section_point: [f64; 2],
-    at_start: bool,
+    boundary: RevolutionBoundary,
 ) -> Option<PcurveGeometry> {
     if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
         let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
-        let parameter = if at_start { lower } else { upper };
+        let parameter = match boundary {
+            RevolutionBoundary::Start => lower,
+            RevolutionBoundary::End => upper,
+        };
         return Some(line_pcurve(
             [parameter, 0.0],
             [parameter, std::f64::consts::TAU],
@@ -237,7 +259,7 @@ pub(in super::super) fn revolution_face_sense(
     transform: &crate::placement::FeatureSectionTransform,
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     surface: &SurfaceGeometry,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
     profile_area: f64,
 ) -> Option<Sense> {
     let is_nurbs = matches!(segment.0, SketchGeometry::Nurbs { .. });
@@ -319,3 +341,6 @@ pub(in super::super) fn revolution_face_sense(
         Sense::Reversed
     })
 }
+
+#[cfg(test)]
+mod tests;

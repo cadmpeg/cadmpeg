@@ -6,7 +6,11 @@ transfers B-rep topology, analytic and NURBS carriers, display meshes,
 appearances, selected document attributes, Keywords XML feature history, and
 ResolvedFeatures sketch-entity records.
 
-Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+<!-- generated: capability sldprt -->
+
+Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
+
+<!-- /generated: capability sldprt -->
 
 ## Install
 
@@ -81,7 +85,8 @@ ambiguity.
 use std::fs::File;
 
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::{Codec, DecodeOptions};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.sldprt")?;
@@ -91,10 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.sldprt")?;
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir(),
-            fidelity: Some(&decoded.source_fidelity()),
-        })?
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )?
         .write_to(&mut output)?;
     Ok(())
 }

@@ -84,73 +84,82 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
             .collect::<Vec<_>>(),
         [Some(1), Some(2), Some(3)]
     );
-    assert_eq!(lane.sketch_entities[0].link_selector, Some(1));
     assert_eq!(
         lane.sketch_entities[0]
             .links
+            .as_ref()
+            .map(|links| links.selector),
+        Some(1)
+    );
+    assert_eq!(
+        lane.sketch_entities[0]
+            .links()
             .iter()
             .map(|link| (link.local_id, link.entity_ref.as_str()))
             .collect::<Vec<_>>(),
         [(2, lane.sketch_entities[1].id.as_str())]
     );
-    SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 }
 
 #[test]
 fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("local object id does not match")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("local object id does not match"))
+    );
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("inconsistent marker order"));
 }
 
 #[test]
 fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("object index does not match")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("object index does not match"))
+    );
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("inconsistent marker order"));
 }
 
 #[test]
 fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -159,18 +168,18 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -181,7 +190,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
 
 #[test]
 fn native_validation_rejects_duplicate_sketch_marker_offsets() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -190,18 +199,21 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
         native.feature_input_lanes[0].sketch_entities[1].offset = offset;
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("repeats entity offset")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("repeats entity offset"))
+    );
 }
 
 #[test]
 fn native_validation_requires_complete_ordered_sketch_markers() {
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
                 &triangle_body(),
@@ -210,11 +222,12 @@ fn native_validation_requires_complete_ordered_sketch_markers() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
         native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
     });
-    let messages = crate::validate_native(decoded.ir())
+    let messages = crate::resolved_features::validate::validate_native(decoded.ir())
         .into_iter()
         .map(|finding| finding.message)
         .collect::<Vec<_>>();

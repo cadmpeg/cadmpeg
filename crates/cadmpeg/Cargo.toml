@@ -33,24 +33,27 @@ default = [
   "iges",
   "sat",
 ]
-fcstd = ["dep:cadmpeg-codec-freecad"]
-f3d = ["dep:cadmpeg-codec-f3d"]
-inventor = ["dep:cadmpeg-codec-inventor"]
-sldprt = ["dep:cadmpeg-codec-sldprt"]
-catia = ["dep:cadmpeg-codec-catia"]
-creo = ["dep:cadmpeg-codec-creo"]
-nx = ["dep:cadmpeg-codec-nx"]
-rhino = ["dep:cadmpeg-codec-rhino"]
-step = ["dep:cadmpeg-codec-step"]
-iges = ["dep:cadmpeg-codec-iges"]
-sat = ["dep:cadmpeg-codec-sat"]
+#
+# Each id forwards to the same feature of `cadmpeg-registry`, which owns the
+# codec registry and constructs the codecs for detection, inspection, and
+# encoding. Direct codec dependencies are needed only by CLI tests.
+fcstd = ["cadmpeg-registry/fcstd", "dep:cadmpeg-codec-freecad"]
+f3d = ["cadmpeg-registry/f3d"]
+inventor = ["cadmpeg-registry/inventor"]
+sldprt = ["cadmpeg-registry/sldprt", "dep:cadmpeg-codec-sldprt"]
+catia = ["cadmpeg-registry/catia", "dep:cadmpeg-codec-catia"]
+creo = ["cadmpeg-registry/creo", "dep:cadmpeg-codec-creo"]
+nx = ["cadmpeg-registry/nx", "dep:cadmpeg-codec-nx"]
+rhino = ["cadmpeg-registry/rhino", "dep:cadmpeg-codec-rhino"]
+step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
+iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
+sat = ["cadmpeg-registry/sat"]
 
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir = { workspace = true, features = ["schema"] }
-cadmpeg-codec-f3d = { workspace = true, optional = true }
-cadmpeg-codec-inventor = { workspace = true, optional = true }
+cadmpeg-registry.workspace = true
 cadmpeg-codec-freecad = { workspace = true, optional = true }
 cadmpeg-codec-sldprt = { workspace = true, optional = true }
 cadmpeg-codec-catia = { workspace = true, optional = true }
@@ -59,7 +62,6 @@ cadmpeg-codec-nx = { workspace = true, optional = true }
 cadmpeg-codec-rhino = { workspace = true, optional = true }
 cadmpeg-codec-iges = { workspace = true, optional = true }
 cadmpeg-codec-step = { workspace = true, optional = true }
-cadmpeg-codec-sat = { workspace = true, optional = true }
 clap.workspace = true
 anyhow.workspace = true
 memchr.workspace = true
@@ -73,8 +75,10 @@ thiserror.workspace = true
 assert_cmd.workspace = true
 crc32fast.workspace = true
 predicates.workspace = true
-toml.workspace = true
 zip.workspace = true
+# `layout_tables` parses `docs/layouts/*.toml`. The dialect registries moved to
+# `cadmpeg-registry`, which embeds and parses them itself.
+toml.workspace = true
 # The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
 # those fixtures out of the normal library build.
 cadmpeg-ir = { workspace = true, features = ["examples"] }

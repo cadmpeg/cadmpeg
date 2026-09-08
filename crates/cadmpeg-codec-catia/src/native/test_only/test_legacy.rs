@@ -1,70 +1,27 @@
 use super::*;
 
 pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
-    if let Some(body) = &record.inline_body {
+    if let Some(body) = &record.inline_body() {
         return record.lead == 0x03
             && body.first() == Some(&record.lead)
-            && u64::try_from(body.len())
-                .ok()
-                .and_then(|len| len.checked_add(6))
-                == Some(record.byte_len)
-            && record.definition_len == 0
-            && record.definition_prefix.is_empty()
+            && record.definition_prefix().is_empty()
             && record.definition_schema_selections.is_empty()
-            && record.definition_suffix.is_empty()
-            && record.value_len == 0
-            && record.value_payload.is_empty()
-            && record.value_fields.is_empty()
+            && record.definition_suffix().is_empty()
+            && record.value_payload().is_empty()
+            && record.value_fields().is_empty()
             && record.value_schema_selections.is_empty()
-            && record.value_packets.is_empty()
-            && record.numeric_pair.is_none()
             && record.reference_signature.is_none()
-            && record.record_suffix.is_empty()
-            && record.suffix_value.is_none()
-            && record.suffix_framing.is_none()
+            && record.record_suffix().is_empty()
+            && record.suffix_value().is_none()
+            && record.suffix_framing().is_none()
             && record.suffix_schema_selection.is_none();
     }
-    let Some(definition_body_len) = u64::try_from(record.definition_prefix.len())
-        .ok()
-        .and_then(|prefix_len| prefix_len.checked_add(5))
-        .and_then(|len| {
-            u64::try_from(record.definition_suffix.len())
-                .ok()
-                .and_then(|suffix_len| len.checked_add(suffix_len))
-        })
-    else {
-        return false;
-    };
-    let Some(value_len) = u64::try_from(record.value_payload.len())
-        .ok()
-        .and_then(|len| len.checked_add(6))
-    else {
-        return false;
-    };
-    let Some(total_len) = 7_u64
-        .checked_add(u64::from(record.definition_len))
-        .and_then(|len| len.checked_add(u64::from(record.value_len)))
-        .and_then(|len| {
-            u64::try_from(record.record_suffix.len())
-                .ok()
-                .and_then(|suffix_len| len.checked_add(suffix_len))
-        })
-    else {
-        return false;
-    };
-    u64::from(record.definition_len) == definition_body_len + 6
-        && u64::from(record.value_len) == value_len
-        && record.byte_len == total_len
-        && record.value_fields == value_block::tokenize(&record.value_payload)
-        && record.value_packets
-            == entity_table::value_packets(&record.value_payload, &record.value_fields)
-        && record.numeric_pair == entity_table::parse_numeric_pair(&record.value_payload)
-        && record
-            .reference_signature
-            .as_ref()
-            .map(|signature| &signature.production)
-            == entity_table::parse_reference_signature(&record.value_payload).as_ref()
-        && record.suffix_value == entity_suffix_value(&record.record_suffix)
+    record
+        .reference_signature
+        .as_ref()
+        .map(|signature| &signature.production)
+        == entity_table::parse_reference_signature(record.value_payload()).as_ref()
+        && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
 }
 
 pub(super) fn legacy_schema_identifiers(
@@ -175,7 +132,7 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
         && relation.parameter_selector == parameter_selector
         && relation.parameter_entity_id == parameter_entity_id
         && (relation.result_type == "VoidType") == relation.output.is_some()
-        && parsed.result_type == relation.result_type
+        && parsed.result_type() == relation.result_type
         && parsed.inputs.len() == relation.inputs.len()
         && parsed
             .inputs
@@ -185,8 +142,7 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
                 parsed.parameter == stored.parameter && parsed.value_type == stored.value_type
             })
         && parsed
-            .output
-            .as_ref()
+            .output()
             .map(|output| (output.parameter.as_str(), output.value_type.as_str()))
             == relation
                 .output
@@ -252,7 +208,6 @@ fn valid_legacy_relation_field_pair(
 
 pub(super) fn validate_legacy_entity_runs(
     runs: &[CatiaLegacyEntityRun],
-    require_field_codes: bool,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut previous_end = None;
     for (index, run) in runs.iter().enumerate() {
@@ -351,7 +306,7 @@ pub(super) fn validate_legacy_entity_runs(
                             }
                             && run.role_selectors.contains(role)
                             && role.end_offset().is_none_or(|end| end == field.byte_offset)
-                            && (!require_field_codes || role.field_code == Some(0x1200))
+                            && role.field_code == Some(0x1200)
                             && run
                                 .identities
                                 .iter()
@@ -374,12 +329,10 @@ pub(super) fn validate_legacy_entity_runs(
                         roles[0].byte_offset == field.role_byte_offset
                             && roles[0].entity_id == field.entity_id
                             && roles[0].end_offset() == Some(field.byte_offset)
-                            && (!require_field_codes
-                                || roles[0].field_code == Some(field.field_code))
+                            && roles[0].field_code == Some(field.field_code)
                             && roles[1].byte_offset == field.boundary_role_byte_offset
                             && roles[1].entity_id == field.entity_id
-                            && (!require_field_codes
-                                || roles[1].field_code.is_some()
+                            && (roles[1].field_code.is_some()
                                 || legacy_schema_boundary_closes_text(run, field, &roles[0]))
                     })
             })

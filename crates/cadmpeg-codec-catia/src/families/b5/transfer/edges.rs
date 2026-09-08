@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SurfaceCurveFamily,
+    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SupportPcurve, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;
@@ -65,26 +65,19 @@ pub(super) fn merge_curve_plan(
     }
 }
 
-pub(super) fn curve_cache_has_ordered_knots(geometry: &CurveGeometry) -> bool {
-    let CurveGeometry::Nurbs(curve) = geometry else {
-        return true;
-    };
-    curve.knots.iter().all(|knot| knot.is_finite()) && knots_nondecreasing(&curve.knots)
-}
-
 pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
     plan.parameter_range.or_else(|| {
         let CurveGeometry::Nurbs(curve) = &plan.geometry else {
             return None;
         };
-        let degree = usize::try_from(curve.degree).ok()?;
+        let degree = usize::try_from(curve.degree()).ok()?;
         Some([
-            *curve.knots.get(degree)?,
+            *curve.knots().get(degree)?,
             *curve
-                .knots
+                .knots()
                 .len()
                 .checked_sub(degree + 1)
-                .and_then(|index| curve.knots.get(index))?,
+                .and_then(|index| curve.knots().get(index))?,
         ])
     })
 }
@@ -93,8 +86,7 @@ pub(super) fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]
     graph.vertex_points.get(vertex).copied().or_else(|| {
         vertex
             .checked_sub(graph.vertex_points.len())
-            .and_then(|index| graph.logical_vertex_points.get(index))
-            .copied()
+            .and_then(|index| graph.logical_vertices.get(index).map(|vertex| vertex.point))
     })
 }
 
@@ -133,12 +125,16 @@ pub(super) fn b5_edge_support_definition(
     let mut sides = std::array::from_fn(|_| IntcurveSupportSide {
         surface: None,
         pcurve: None,
-        pcurve_parameter_range: None,
     });
     for (side, (surface, pcurve, support_range)) in sides.iter_mut().zip(supports) {
         side.surface = Some(surface_ids.get(surface)?.clone());
-        side.pcurve = Some(pcurves.get(pcurve)?.0.clone());
-        side.pcurve_parameter_range = (*support_range != parameter_range).then_some(*support_range);
+        let mapped_range = (*support_range != parameter_range)
+            .then(|| DirectedParameterRange::new(*support_range).ok())
+            .flatten();
+        side.pcurve = Some(SupportPcurve::new(
+            pcurves.get(pcurve)?.0.clone(),
+            mapped_range,
+        ));
     }
     let context = IntcurveSupportContext {
         sides,
@@ -159,9 +155,10 @@ pub(super) fn b5_edge_support_definition(
             "surface-curve",
             "parametric_surface_curve",
             ProceduralCurveDefinition::SurfaceCurve {
-                family: SurfaceCurveFamily::Parametric,
-                context,
-                tail: None,
+                family: SurfaceCurveFamily::Parametric {
+                    context,
+                    tail: None,
+                },
             },
         ))
     }
@@ -288,10 +285,11 @@ pub(super) fn emit_edges(
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
-        let id = EdgeId(format!("catia:b5:edge#{edge_id}"));
-        let curve_id = CurveId(format!("catia:b5:curve#{edge_id}"));
+        let id = EdgeId::mint(format!("catia:b5:edge#{edge_id}")).expect("identity grammar");
+        let curve_id =
+            CurveId::mint(format!("catia:b5:curve#{edge_id}")).expect("identity grammar");
         let endpoints = graph.edge_vertices[&edge_id];
-        let mut curve_plan = plan
+        let curve_plan = plan
             .edge_curve_plan
             .remove(&edge_id)
             .unwrap_or_else(|| CurvePlan {
@@ -302,17 +300,7 @@ pub(super) fn emit_edges(
                 edge_tolerance: None,
                 cache_fit_tolerance: None,
             });
-        if !curve_cache_has_ordered_knots(&curve_plan.geometry) {
-            curve_plan = CurvePlan {
-                geometry: CurveGeometry::Unknown {
-                    record: Some(payload.clone()),
-                },
-                parameter_range: None,
-                edge_tolerance: None,
-                cache_fit_tolerance: None,
-            };
-            plan.edge_helix_plan.remove(&edge_id);
-        }
+
         let helix = plan.edge_helix_plan.remove(&edge_id);
         let edge_range = curve_plan.parameter_range;
         let support_curve_range = curve_plan_parameter_range(&curve_plan);
@@ -362,7 +350,8 @@ pub(super) fn emit_edges(
                 )
             });
         if let Some((kind, tag, definition)) = procedural {
-            let procedural_id = ProceduralCurveId(format!("catia:b5:{kind}#{edge_id}"));
+            let procedural_id = ProceduralCurveId::mint(format!("catia:b5:{kind}#{edge_id}"))
+                .expect("identity grammar");
             annotate(
                 annotations,
                 &procedural_id,
@@ -376,12 +365,11 @@ pub(super) fn emit_edges(
             if cache_fit_tolerance.is_some() {
                 annotations.derived(&procedural_id, "cache_fit_tolerance");
             }
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: curve_id.clone(),
-                definition,
-                cache_fit_tolerance,
-            });
+            if let Ok(procedural) =
+                ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance)
+            {
+                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
+            }
         }
         annotate(
             annotations,
@@ -401,8 +389,10 @@ pub(super) fn emit_edges(
         ir.model.edges.push(Edge {
             id,
             curve: Some(curve_id),
-            start: VertexId(format!("catia:b5:vertex#{}", endpoints[0])),
-            end: VertexId(format!("catia:b5:vertex#{}", endpoints[1])),
+            start: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[0]))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[1]))
+                .expect("identity grammar"),
             param_range: edge_range,
             tolerance: edge_tolerance,
         });

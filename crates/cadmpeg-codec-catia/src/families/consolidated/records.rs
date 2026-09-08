@@ -8,8 +8,6 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -35,7 +33,7 @@ use crate::wire::bytes::{
 };
 use crate::wire::records::{
     consolidated_records, records_are_contiguous, scan_vertex_record_ranges, ConsolidatedFamily,
-    ConsolidatedPcurve, ConsolidatedRecord,
+    ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
 };
 
 const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
@@ -50,8 +48,6 @@ pub struct ConsolidatedEdgeBlock {
     pub pcurves: [ConsolidatedPcurve; 2],
     /// Shared parameter range and tolerance packet.
     pub parameters: B2EdgeParameters,
-    /// Both pcurves and the edge packet store the same native range and site count.
-    pub co_parametric: bool,
 }
 
 /// Complete consolidated edge run serialized as two side pcurves, their shared
@@ -60,14 +56,8 @@ pub struct ConsolidatedEdgeBlock {
 pub struct ConsolidatedTopologyEdgeRun {
     /// Co-parametric side definitions and shared range packet.
     pub edge: ConsolidatedEdgeBlock,
-    /// The two serialized edge uses, in side order.
-    #[cfg(test)]
-    pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the two counted use-reference vectors form the allocation chain
-    /// ending at the node's curve reference.
-    pub identity_chain_consistent: bool,
 }
 
 /// Complete analytic-circle edge run serialized as a class-`0x18` descriptor,
@@ -75,7 +65,7 @@ pub struct ConsolidatedTopologyEdgeRun {
 #[derive(Debug, Clone)]
 pub struct ConsolidatedAnalyticCircleEdgeRun {
     /// Class-`0x18` descriptor immediately preceding the circle carrier.
-    pub descriptor: ConsolidatedAnalyticCircleDescriptor,
+    pub descriptor: ConsolidatedRawFrame,
     /// Arc-length circle carrier.
     pub circle: B2Circle,
     /// Eight-scalar class-`0x23` edge definition.
@@ -83,23 +73,6 @@ pub struct ConsolidatedAnalyticCircleEdgeRun {
     pub definition: ConsolidatedEdgeDefinition,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the use references and endpoint selectors close one allocation chain.
-    pub identity_chain_consistent: bool,
-}
-
-/// Exact class-`0x18` frame attached to an analytic circle carrier.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsolidatedAnalyticCircleDescriptor {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
 }
 
 /// Complete class-`0x25` edge run with its adjacent class-`0x18` descriptor.
@@ -109,8 +82,6 @@ pub struct ConsolidatedClass25EdgeRun {
     pub descriptor: B2Class25Descriptor,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the use references and endpoint selectors close one allocation chain.
-    pub identity_chain_consistent: bool,
 }
 
 /// Two adjacent oriented uses and their terminal native edge node.
@@ -122,8 +93,6 @@ pub struct ConsolidatedEdgeUseRun {
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the use references and endpoint selectors close one allocation chain.
-    pub identity_chain_consistent: bool,
 }
 
 /// Compact edge node selected by its zero-based ordinal in one face-owner allocation.
@@ -160,28 +129,56 @@ pub(crate) struct ConsolidatedOwnerBoundaryCycle {
     pub edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
 }
 
+/// Class of a consolidated edge-definition frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ConsolidatedEdgeDefinitionClass {
+    Class23,
+    Class24,
+    Class25,
+}
+
+impl From<ConsolidatedEdgeDefinitionClass> for u8 {
+    fn from(class: ConsolidatedEdgeDefinitionClass) -> Self {
+        match class {
+            ConsolidatedEdgeDefinitionClass::Class23 => 0x23,
+            ConsolidatedEdgeDefinitionClass::Class24 => 0x24,
+            ConsolidatedEdgeDefinitionClass::Class25 => 0x25,
+        }
+    }
+}
+
+impl TryFrom<u8> for ConsolidatedEdgeDefinitionClass {
+    type Error = String;
+    fn try_from(class: u8) -> Result<Self, Self::Error> {
+        match class {
+            0x23 => Ok(Self::Class23),
+            0x24 => Ok(Self::Class24),
+            0x25 => Ok(Self::Class25),
+            _ => Err(format!(
+                "edge-definition class {class:#x} is not 0x23, 0x24, or 0x25"
+            )),
+        }
+    }
+}
+
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsolidatedEdgeDefinition {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
+    /// Framed record.
+    pub frame: ConsolidatedRawFrame,
     /// Edge-definition class in `0x23..=0x25`.
-    pub class: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
-    /// Structurally decoded class-specific payload, when its complete grammar closes.
-    pub data: Option<ConsolidatedEdgeDefinitionData>,
+    pub class: ConsolidatedEdgeDefinitionClass,
+}
+
+impl ConsolidatedEdgeDefinition {
+    pub fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
+        consolidated_edge_definition_data(self.class.into(), &self.frame.payload)
+    }
 }
 
 /// Closed payload grammar of a consolidated edge-definition frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ConsolidatedEdgeDefinitionData {
     /// Compact class-`0x24` payload `81 <operand> 0f 87`.
@@ -325,8 +322,6 @@ pub struct ConsolidatedNativeEdgeGraph {
 #[derive(Debug, Clone)]
 #[cfg(test)]
 pub struct ConsolidatedNativeGraphEdge {
-    /// Complete serialized edge run.
-    pub run: ConsolidatedTopologyEdgeRun,
     /// Compact endpoint indices into [`ConsolidatedNativeEdgeGraph::vertex_identities`].
     pub vertices: [usize; 2],
 }
@@ -445,13 +440,12 @@ pub(crate) fn consolidated_edge_blocks_from_records(
                 let first = pcurves.get(&first_record.range.start)?;
                 let second = pcurves.get(&second_record.range.start)?;
                 let parameters = parameters.get(&parameter_record.range.start)?;
-                let co_parametric = first.points.len() == second.points.len()
+                let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
                     && first.range == parameters.range;
-                Some(ConsolidatedEdgeBlock {
+                co_parametric.then(|| ConsolidatedEdgeBlock {
                     pcurves: [first.clone(), second.clone()],
                     parameters: parameters.clone(),
-                    co_parametric,
                 })
             } else {
                 None
@@ -505,10 +499,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
                 let use_run = use_runs.get(&use0.range.start)?;
                 Some(ConsolidatedTopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
-                    #[cfg(test)]
-                    uses: use_run.uses.clone(),
                     node: use_run.node,
-                    identity_chain_consistent: use_run.identity_chain_consistent,
                 })
             } else {
                 None
@@ -566,23 +557,19 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             }
             let use_run = use_runs.get(&use0.range.start)?;
             let definition = use_run.definition.clone()?;
-            match definition.data.as_ref()? {
+            match definition.data()? {
                 ConsolidatedEdgeDefinitionData::Scalar { values, .. } if values.len() == 8 => {}
                 _ => return None,
             }
             Some(ConsolidatedAnalyticCircleEdgeRun {
-                descriptor: ConsolidatedAnalyticCircleDescriptor {
-                    pos: parameter.range.start,
-                    width: parameter.width,
-                    flag: parameter.flag,
-                    header_token: parameter.header_token,
-                    payload: data[parameter.payload.clone()].to_vec(),
-                },
+                descriptor: ConsolidatedRawFrame::from_record(
+                    parameter,
+                    data[parameter.payload.clone()].to_vec(),
+                ),
                 circle: circles.get(&circle.range.start)?.clone(),
                 #[cfg(test)]
                 definition,
                 node: use_run.node,
-                identity_chain_consistent: use_run.identity_chain_consistent,
             })
         })
         .collect()
@@ -634,7 +621,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             let use_run = use_runs.get(&use0.range.start)?;
             let definition = use_run.definition.clone()?;
             if !matches!(
-                definition.data.as_ref(),
+                definition.data(),
                 Some(
                     ConsolidatedEdgeDefinitionData::Scalar25 { .. }
                         | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
@@ -645,7 +632,6 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             Some(ConsolidatedClass25EdgeRun {
                 descriptor: descriptors.get(&descriptor.range.start)?.clone(),
                 node: use_run.node,
-                identity_chain_consistent: use_run.identity_chain_consistent,
             })
         })
         .collect()
@@ -701,8 +687,8 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .checked_sub(2)
                 .zip(node.curve_ref.checked_sub(1))
                 .is_some_and(|(first, second)| {
-                    uses[0].references.as_deref() == Some(&[first, second])
-                        && uses[1].references.as_deref() == Some(&[second, node.curve_ref])
+                    uses[0].references() == Some(&[first, second][..])
+                        && uses[1].references() == Some(&[second, node.curve_ref][..])
                 })
                 && [node.start_parameter_ref, node.end_parameter_ref] == [2, 1];
             let definition = index
@@ -715,23 +701,19 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && record.family == ConsolidatedFamily::B
                         && matches!(record.class, 0x23..=0x25)
                 })
-                .map(|record| ConsolidatedEdgeDefinition {
-                    pos: record.range.start,
-                    width: record.width,
-                    flag: record.flag,
-                    class: record.class,
-                    header_token: record.header_token,
-                    payload: data[record.payload.clone()].to_vec(),
-                    data: consolidated_edge_definition_data(
-                        record.class,
-                        &data[record.payload.clone()],
-                    ),
+                .and_then(|record| {
+                    Some(ConsolidatedEdgeDefinition {
+                        frame: ConsolidatedRawFrame::from_record(
+                            record,
+                            data[record.payload.clone()].to_vec(),
+                        ),
+                        class: ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
+                    })
                 });
-            Some(ConsolidatedEdgeUseRun {
+            identity_chain_consistent.then_some(ConsolidatedEdgeUseRun {
                 definition,
                 uses,
                 node,
-                identity_chain_consistent,
             })
         })
         .collect::<Vec<_>>();
@@ -766,27 +748,26 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     .checked_add(1)
                     .zip(operand.checked_add(2))
                     .is_some_and(|(first, second)| {
-                        uses[0].references.as_deref() == Some(&[node.start_parameter_ref, first])
-                            && uses[1].references.as_deref()
-                                == Some(&[node.end_parameter_ref, second])
+                        uses[0].references() == Some(&[node.start_parameter_ref, first][..])
+                            && uses[1].references() == Some(&[node.end_parameter_ref, second][..])
                     })
                     && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
             }
             _ => false,
         };
+        if !identity_chain_consistent {
+            return None;
+        }
         Some(ConsolidatedEdgeUseRun {
             definition: Some(ConsolidatedEdgeDefinition {
-                pos: definition_record.range.start,
-                width: definition_record.width,
-                flag: definition_record.flag,
-                class: definition_record.class,
-                header_token: definition_record.header_token,
-                payload: data[definition_record.payload.clone()].to_vec(),
-                data: definition_data,
+                frame: ConsolidatedRawFrame::from_record(
+                    definition_record,
+                    data[definition_record.payload.clone()].to_vec(),
+                ),
+                class: ConsolidatedEdgeDefinitionClass::try_from(definition_record.class).ok()?,
             }),
             uses,
             node,
-            identity_chain_consistent,
         })
     });
     preceding.into_iter().chain(succeeding).collect()
@@ -1080,9 +1061,6 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
     let mut vertex_identities = Vec::new();
     let mut edges = Vec::with_capacity(runs.len());
     for run in runs {
-        if !run.identity_chain_consistent {
-            return None;
-        }
         let vertices = [run.node.start_vertex_ref, run.node.end_vertex_ref].map(|identity| {
             *vertex_indices.entry(identity).or_insert_with(|| {
                 let index = vertex_identities.len();
@@ -1090,7 +1068,7 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
                 index
             })
         });
-        edges.push(ConsolidatedNativeGraphEdge { run, vertices });
+        edges.push(ConsolidatedNativeGraphEdge { vertices });
     }
     let mut vertex_edges = vec![Vec::new(); vertex_identities.len()];
     for (edge, value) in edges.iter().enumerate() {
@@ -1258,12 +1236,13 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 }) else {
                     continue;
                 };
+                let partner_points = block.pcurves[partner].points();
                 let winners: Vec<_> = surfaces
                     .iter()
                     .filter_map(|surface| {
                         nurbs_carrier_offset(
-                            &surface.geometry,
-                            &block.pcurves[partner].points,
+                            &SurfaceGeometry::Nurbs(surface.geometry.clone()),
+                            &partner_points,
                             &anchor_points,
                         )
                         .map(|offset| {
@@ -1361,9 +1340,9 @@ fn support_points(
         ConsolidatedSupportBinding::Cylinder { pos } => {
             let carrier = carriers.cylinders.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_cylinder_point(carrier, *uv))
+                .map(|site| b2_cylinder_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
@@ -1373,57 +1352,61 @@ fn support_points(
                 .find(|value| value.pos == *pos)?
                 .cylinder;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_cylinder_point(carrier, *uv))
+                .map(|site| b2_cylinder_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
             let carrier = carriers.cones.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_cone_point(carrier, *uv))
+                .map(|site| b2_cone_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::Sphere { pos } => {
             let carrier = carriers.spheres.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|&[u, v]| cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v))
+                .map(|site| {
+                    let [u, v] = site.point;
+                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
+                })
                 .collect()
         }
         ConsolidatedSupportBinding::Torus { pos } => {
             let carrier = carriers.tori.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_torus_point(carrier, *uv))
+                .map(|site| b2_torus_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::Plane { pos } => {
             let carrier = carriers.planes.iter().find(|value| value.pos == *pos)?;
             let geometry = b2_plane_geometry(carrier)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|&[u, v]| cadmpeg_ir::eval::surface_point(&geometry, u, v))
+                .map(|site| {
+                    let [u, v] = site.point;
+                    cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                })
                 .collect()
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let SurfaceGeometry::Nurbs(surface) = &carriers
+            let surface = &carriers
                 .nurbs_surfaces
                 .iter()
                 .find(|surface| surface.pos == *pos)?
-                .geometry
-            else {
-                return None;
-            };
+                .geometry;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|&[u, v]| {
+                .map(|site| {
+                    let [u, v] = site.point;
                     let partials = nurbs_surface_partials(surface, u, v)?;
                     let normal = partials.du.cross(partials.dv).unit()?;
                     Some(Point3::new(
@@ -1492,7 +1475,10 @@ fn nurbs_carrier_offset(
 }
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
     let span = circle.range[1] - circle.range[0];
@@ -1508,10 +1494,13 @@ fn pcurve_endpoints_match_cone(
     cone: &B2Cone,
     vertices: &[Point3],
 ) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|uv| {
+    [first, last].into_iter().all(|uv| {
         b2_cone_point(cone, uv).is_some_and(|point| {
             vertices
                 .iter()
@@ -1525,10 +1514,13 @@ fn pcurve_endpoints_match_torus(
     torus: &B2Torus,
     vertices: &[Point3],
 ) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|uv| {
+    [first, last].into_iter().all(|uv| {
         b2_torus_point(torus, uv).is_some_and(|point| {
             vertices
                 .iter()
@@ -1542,10 +1534,13 @@ fn pcurve_endpoints_match_sphere(
     sphere: &B2Sphere,
     vertices: &[Point3],
 ) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|[u, v]| {
+    [first, last].into_iter().all(|[u, v]| {
         cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(sphere), u, v).is_some_and(|point| {
             vertices
                 .iter()
@@ -1562,10 +1557,13 @@ fn pcurve_endpoints_match_plane(
     let Some(geometry) = b2_plane_geometry(plane) else {
         return false;
     };
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|[u, v]| {
+    [first, last].into_iter().all(|[u, v]| {
         cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
             vertices
                 .iter()
@@ -1580,16 +1578,16 @@ fn pcurve_endpoints_match_vertices(
     vertices: &[Point3],
 ) -> bool {
     let Some(first) = pcurve
-        .points
+        .sites
         .first()
-        .and_then(|uv| b2_cylinder_point(cylinder, *uv))
+        .and_then(|site| b2_cylinder_point(cylinder, site.point))
     else {
         return false;
     };
     let Some(last) = pcurve
-        .points
+        .sites
         .last()
-        .and_then(|uv| b2_cylinder_point(cylinder, *uv))
+        .and_then(|site| b2_cylinder_point(cylinder, site.point))
     else {
         return false;
     };
@@ -1667,24 +1665,27 @@ mod tests {
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
-        let surface = SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        });
+        let surface = SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid unit-square surface"),
+        );
         let tiny = 1e-200;
         let offset = nurbs_carrier_offset(
             &surface,
@@ -1716,7 +1717,7 @@ mod tests {
         let span = 1e-200_f64;
         let circle = B2Circle {
             pos: 0,
-            layout: 0x32,
+            layout: crate::native::CatiaCircleLayout::Identity6Bit,
             record_id: 1,
             frame_token: 0,
             center_pair: [0.0; 2],
@@ -1725,15 +1726,22 @@ mod tests {
             full_circle: false,
             chart_shift: 0.0,
         };
-        let pcurve = |points| ConsolidatedPcurve {
+        let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {
             pos: 0,
             support_id: 1,
-            degree: 1,
             extrapolation_sites: 0,
-            knots: vec![0.0, span],
-            points,
-            first_derivatives: Vec::new(),
-            second_derivatives: Vec::new(),
+            sites: points
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(index, point)| crate::wire::records::ConsolidatedPcurveSite {
+                        knot: if index == 0 { 0.0 } else { span },
+                        point,
+                        first_derivatives: [0.0, 0.0],
+                        second_derivatives: [0.0, 0.0],
+                    },
+                )
+                .collect(),
             range: [0.0, span],
             tail: Vec::new(),
         };

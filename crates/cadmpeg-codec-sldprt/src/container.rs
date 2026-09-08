@@ -7,14 +7,18 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_container::compression::{inflate_bounded_probe, inflate_deflate, inflate_zlib_member};
-use cadmpeg_core::bytes::{contains, find};
+use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::dialect::DialectLayers;
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::block_frame_header as block_hdr;
 use crate::layout::cache_cell_header as cache_hdr;
@@ -29,44 +33,61 @@ pub const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 /// from driving an unbounded allocation. Real part streams sit far below this.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
-/// Codec-defined role labels for [`ContainerEntry::role`].
-pub mod role {
-    /// A CRC-validated compressed block (payload family in `attributes`).
-    pub const BLOCK: &str = "block";
-    /// A tail section-directory entry naming one OPC part.
-    pub const DIRECTORY_ENTRY: &str = "directory-entry";
-    /// A cache-cell section-index grid entry (not a compressed payload).
-    pub const CACHE_CELL: &str = "cache-cell";
-    /// A named stream in a Compound File Binary container.
-    pub const COMPOUND_STREAM: &str = "compound-stream";
+/// Classified decompressed payload signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadFamily {
+    Parasolid,
+    PngPreview,
+    BmpThumbnail,
+    Ole2,
+    Tessellation,
+    SwObjects,
+    Unqlite,
+    Xml,
+    Unknown,
+}
+
+impl PayloadFamily {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Parasolid => "parasolid",
+            Self::PngPreview => "png-preview",
+            Self::BmpThumbnail => "bmp-thumbnail",
+            Self::Ole2 => "ole2",
+            Self::Tessellation => "tessellation",
+            Self::SwObjects => "sw-objects",
+            Self::Unqlite => "unqlite",
+            Self::Xml => "xml",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 /// Classify a decompressed block payload by signature.
 ///
-/// The returned labels form the `family` values exposed by [`Block`] and
-/// [`summarize`]. Unknown signatures return `"unknown"`.
-pub fn payload_family(payload: &[u8]) -> &'static str {
+/// Unknown signatures return [`PayloadFamily::Unknown`].
+pub fn payload_family(payload: &[u8]) -> PayloadFamily {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
-        "png-preview"
+        PayloadFamily::PngPreview
     } else if is_bmp_thumbnail(payload) {
-        "bmp-thumbnail"
+        PayloadFamily::BmpThumbnail
     } else if payload.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) {
-        "ole2"
+        PayloadFamily::Ole2
     } else if contains(payload, b"uoTempBodyTessData_c")
         || contains(payload, b"uoTempFaceTessData_c")
     {
-        "tessellation"
+        PayloadFamily::Tessellation
     } else if payload.starts_with(&[0xff, 0xff, 0x01, 0x00]) {
-        "sw-objects"
+        PayloadFamily::SwObjects
     } else if payload.starts_with(b"unqlite") {
-        "unqlite"
+        PayloadFamily::Unqlite
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
         || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
     {
-        "xml"
+        PayloadFamily::Xml
     } else {
-        "unknown"
+        PayloadFamily::Unknown
     }
 }
 
@@ -78,13 +99,6 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
         return false;
     };
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
-}
-
-/// Find a Parasolid `PS\0\0` signature in the first 64 payload bytes.
-pub fn parasolid_offset(payload: &[u8]) -> Option<usize> {
-    const SIG: &[u8] = &[b'P', b'S', 0x00, 0x00];
-    let window = payload.len().min(64);
-    find(&payload[..window], SIG)
 }
 
 /// Decode a nibble-swapped section name.
@@ -111,20 +125,21 @@ pub struct Block {
     pub type_id: u32,
     /// Compressed payload length.
     pub comp_sz: u32,
-    /// Declared decompressed length, equal to `payload.len()`.
-    pub uncomp_sz: u32,
     /// OPC section name decoded from the preamble, when printable.
     pub section: Option<String>,
-    /// Payload-family label from [`payload_family`], or `"parasolid"`.
-    pub family: &'static str,
+    /// Payload family from its signature or extracted Parasolid streams.
+    pub family: PayloadFamily,
     /// The decompressed payload bytes.
     pub payload: Vec<u8>,
-    /// First direct or nested Parasolid stream in this block.
-    pub ps_stream: Option<Vec<u8>>,
-    /// Every Parasolid stream carried by this block.
-    pub ps_streams: Vec<Vec<u8>>,
-    /// Outer-payload offset of each entry in `ps_streams`.
-    pub ps_stream_offsets: Vec<usize>,
+    /// Every located and header-validated Parasolid stream carried by this block.
+    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
+}
+
+impl Block {
+    /// Decompressed payload length.
+    pub fn uncomp_sz(&self) -> usize {
+        self.payload.len()
+    }
 }
 
 /// One tail-directory entry naming a section.
@@ -168,10 +183,8 @@ pub struct CompoundStream {
     pub payload: Vec<u8>,
     /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
     pub decoded_payload: Option<Vec<u8>>,
-    /// Every Parasolid stream carried by this compound stream.
-    pub ps_streams: Vec<Vec<u8>>,
-    /// Raw compound-stream offset of each entry in `ps_streams`.
-    pub ps_stream_offsets: Vec<usize>,
+    /// Every located and header-validated Parasolid stream carried here.
+    pub ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 /// Complete result of an outer-container scan.
@@ -188,6 +201,8 @@ pub struct ContainerScan<'a> {
     pub cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
     pub compound_streams: Vec<CompoundStream>,
+    /// `swSolidWorks` XML facts parsed once from the retained sections.
+    pub(crate) solidworks: SolidWorksEnvelopeScan,
 }
 
 #[derive(Clone, Copy)]
@@ -205,13 +220,13 @@ impl<'a> Section<'a> {
     }
 
     pub(crate) fn display_name(self) -> String {
-        self.name().map_or_else(
-            || match self {
-                Self::Block(block) => format!("block@{}", block.offset),
-                Self::Compound(_) => unreachable!("compound streams are named"),
-            },
-            str::to_string,
-        )
+        match self {
+            Self::Block(block) => block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            Self::Compound(stream) => stream.path.clone(),
+        }
     }
 
     pub(crate) fn ordinal(self) -> usize {
@@ -230,6 +245,13 @@ impl<'a> Section<'a> {
         }
     }
 
+    pub(crate) fn site_key(self) -> String {
+        match self {
+            Self::Block(block) => format!("block@{}", block.offset),
+            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+        }
+    }
+
     pub(crate) fn payload(self) -> &'a [u8] {
         match self {
             Self::Block(block) => &block.payload,
@@ -237,17 +259,10 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn ps_streams(self) -> &'a [Vec<u8>] {
+    pub(crate) fn ps_streams(self) -> &'a [crate::parasolid::ExtractedStream] {
         match self {
             Self::Block(block) => &block.ps_streams,
             Self::Compound(stream) => &stream.ps_streams,
-        }
-    }
-
-    pub(crate) fn ps_stream_offsets(self) -> &'a [usize] {
-        match self {
-            Self::Block(block) => &block.ps_stream_offsets,
-            Self::Compound(stream) => &stream.ps_stream_offsets,
         }
     }
 }
@@ -287,11 +302,6 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Test whether a prefix has the generic Compound File Binary signature.
-pub fn looks_like_compound_file(prefix: &[u8]) -> bool {
-    prefix.starts_with(&COMPOUND_FILE_MAGIC)
-}
-
 /// Scan an in-memory `.sldprt` image.
 ///
 /// Truncated input produces a scan containing every structure that could be
@@ -304,14 +314,14 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
             .ok()
             .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
             .unwrap_or_default();
-        return ContainerScan {
-            source_image: bytes,
-            version: 0,
-            blocks: Vec::new(),
-            directory: Vec::new(),
-            cache_cells: Vec::new(),
+        return completed_scan(
+            bytes,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
             compound_streams,
-        };
+        );
     }
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) = match walk_native_markers(bytes, |off| {
@@ -321,13 +331,39 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
         Err(never) => match never {},
     };
 
+    completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
+}
+
+fn completed_scan(
+    source_image: &[u8],
+    version: u32,
+    blocks: Vec<Block>,
+    directory: Vec<DirectoryEntry>,
+    cache_cells: Vec<CacheCell>,
+    compound_streams: Vec<CompoundStream>,
+) -> ContainerScan<'_> {
+    let solidworks = scan_solidworks_envelopes(
+        blocks
+            .iter()
+            .map(|block| (block.section.as_deref(), block.payload.as_slice()))
+            .chain(compound_streams.iter().map(|stream| {
+                (
+                    Some(stream.path.as_str()),
+                    stream
+                        .decoded_payload
+                        .as_deref()
+                        .unwrap_or(stream.payload.as_slice()),
+                )
+            })),
+    );
     ContainerScan {
-        source_image: bytes,
+        source_image,
         version,
         blocks,
         directory,
         cache_cells,
-        compound_streams: Vec::new(),
+        compound_streams,
+        solidworks,
     }
 }
 
@@ -377,12 +413,7 @@ fn compound_stream(
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
 ) -> CompoundStream {
-    let located_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
-    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
-    let ps_streams = located_streams
-        .into_iter()
-        .map(|(_, payload)| payload)
-        .collect();
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
     CompoundStream {
         path,
         directory_id,
@@ -390,7 +421,6 @@ fn compound_stream(
         payload: bytes,
         decoded_payload: decoded_bytes,
         ps_streams,
-        ps_stream_offsets,
     }
 }
 
@@ -398,27 +428,27 @@ fn compound_stream(
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = compound_streams(ctx, root)?;
-        return Ok(ContainerScan {
-            source_image: root.window(),
-            version: 0,
-            blocks: Vec::new(),
-            directory: Vec::new(),
-            cache_cells: Vec::new(),
+        return Ok(completed_scan(
+            root.window(),
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
             compound_streams,
-        });
+        ));
     }
     let bytes = root.window();
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) =
         walk_native_markers(bytes, |off| try_block_budgeted(ctx, root, off))?;
-    Ok(ContainerScan {
-        source_image: bytes,
+    Ok(completed_scan(
+        bytes,
         version,
         blocks,
         directory,
         cache_cells,
-        compound_streams: Vec::new(),
-    })
+        Vec::new(),
+    ))
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
@@ -508,14 +538,11 @@ struct RawBlock {
     offset: usize,
     type_id: u32,
     comp_sz: u32,
-    uncomp_sz: u32,
     preamble_len: usize,
     section: Option<String>,
-    family: &'static str,
+    family: PayloadFamily,
     payload: Vec<u8>,
-    ps_stream: Option<Vec<u8>>,
-    ps_streams: Vec<Vec<u8>>,
-    ps_stream_offsets: Vec<usize>,
+    ps_streams: Vec<crate::parasolid::ExtractedStream>,
 }
 
 impl RawBlock {
@@ -524,13 +551,10 @@ impl RawBlock {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
-            uncomp_sz: self.uncomp_sz,
             section: self.section,
             family: self.family,
             payload: self.payload,
-            ps_stream: self.ps_stream,
             ps_streams: self.ps_streams,
-            ps_stream_offsets: self.ps_stream_offsets,
         }
     }
 }
@@ -594,31 +618,22 @@ fn block_from_inflated(
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let located_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
-    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
-    let ps_streams = located_streams
-        .into_iter()
-        .map(|(_, stream)| stream)
-        .collect::<Vec<_>>();
-    let ps_stream = ps_streams.first().cloned();
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
     let family = if ps_streams.is_empty() {
         payload_family(&inflated)
     } else {
-        "parasolid"
+        PayloadFamily::Parasolid
     };
 
     Some(RawBlock {
         offset: off,
         type_id: frame.type_id,
         comp_sz: frame.comp_sz,
-        uncomp_sz: frame.uncomp_sz,
         preamble_len: frame.pre_sz as usize,
         section,
         family,
         payload: inflated,
-        ps_stream,
         ps_streams,
-        ps_stream_offsets,
     })
 }
 
@@ -722,30 +737,31 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
 
 /// Convert a scan into the generic container inventory returned by
 /// [`cadmpeg_ir::Codec::inspect`].
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSummary {
     let mut entries = Vec::new();
 
     for b in &scan.blocks {
         let mut attributes = BTreeMap::new();
         attributes.insert("offset".to_string(), b.offset.to_string());
         attributes.insert("type_id".to_string(), format!("0x{:08x}", b.type_id));
-        attributes.insert("family".to_string(), b.family.to_string());
+        attributes.insert("family".to_string(), b.family.label().to_string());
         attributes.insert("sha256".to_string(), sha256_hex(&b.payload));
-        if let Some(ps) = &b.ps_stream {
-            if let Some(sch) = crate::parasolid::stream_header(ps) {
-                attributes.insert("parasolid_schema".to_string(), sch.schema.clone());
-                attributes.insert("parasolid_description".to_string(), sch.description.clone());
-            }
+        if let Some(stream) = b.ps_streams.first() {
+            attributes.insert("parasolid_schema".to_string(), stream.header.schema.clone());
+            attributes.insert(
+                "parasolid_description".to_string(),
+                stream.header.description.clone(),
+            );
         }
         entries.push(ContainerEntry {
             name: b
                 .section
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", b.offset)),
-            role: role::BLOCK.to_string(),
-            compression: "deflate".to_string(),
+            role: ContainerRole::Block,
+            compression: EntryCompression::Deflate,
             compressed_size: b.comp_sz as u64,
-            uncompressed_size: b.uncomp_sz as u64,
+            uncompressed_size: b.uncomp_sz() as u64,
             attributes,
         });
     }
@@ -756,8 +772,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("type_id".to_string(), format!("0x{:08x}", d.type_id));
         entries.push(ContainerEntry {
             name: d.name.clone(),
-            role: role::DIRECTORY_ENTRY.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::DirectoryEntry,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: d.size as u64,
             attributes,
@@ -770,8 +786,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("logical_len".to_string(), c.logical_len.to_string());
         entries.push(ContainerEntry {
             name: c.name.clone(),
-            role: role::CACHE_CELL.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::CacheCell,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -784,18 +800,33 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("sha256".to_string(), sha256_hex(&stream.payload));
         attributes.insert(
             "family".to_string(),
-            payload_family(&stream.payload).to_string(),
+            payload_family(&stream.payload).label().to_string(),
         );
         entries.push(ContainerEntry {
             name: stream.path.clone(),
-            role: role::COMPOUND_STREAM.to_string(),
-            compression: "compound-file".to_string(),
+            role: ContainerRole::CompoundStream,
+            compression: EntryCompression::CompoundFile,
             compressed_size: stream.payload.len() as u64,
             uncompressed_size: stream.payload.len() as u64,
             attributes,
         });
     }
 
+    ContainerSummary::classified(
+        dialects,
+        if scan.compound_streams.is_empty() {
+            cadmpeg_ir::ContainerKind::SldprtBlocks
+        } else {
+            cadmpeg_ir::ContainerKind::CompoundFileBinary
+        },
+        entries,
+        Vec::new(),
+        notes(scan),
+    )
+}
+
+/// Describe the decoded container without constructing its entry inventory.
+pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
     let mut notes = vec![format!(
         "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
          entry/entries, {} cache-cell(s), {} compound stream(s)",
@@ -819,23 +850,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         "Parasolid body streams supply the typed topology and analytic carriers used by decode"
             .to_string(),
     );
-
-    ContainerSummary {
-        format: "sldprt".to_string(),
-        container_kind: if scan.compound_streams.is_empty() {
-            "sldprt-blocks"
-        } else {
-            "compound-file-binary"
-        }
-        .to_string(),
-        entries,
-        notes,
-    }
+    notes
 }
 
-pub(crate) fn active_parasolid_summary(
-    scan: &ContainerScan,
-) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
+pub(crate) fn active_parasolid_summary<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<(String, usize, &'a crate::parasolid::StreamHeader)> {
     let selected = select_active_parasolid_site(scan)?;
     Some((selected.name(), selected.payload.len(), selected.header))
 }
@@ -850,64 +870,23 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
                 .iter()
                 .flat_map(|stream| &stream.ps_streams),
         )
-        .filter_map(|payload| crate::parasolid::stream_header(payload))
-        .any(|header| crate::parasolid::is_body_stream(&header))
-}
-
-/// Select the unique Parasolid partition block for the active configuration.
-///
-/// An explicit active configuration index is authoritative. Without one, the
-/// available body sites must contain exactly one non-ghost partition candidate.
-/// This compatibility API returns only a block-envelope site; the decoder uses
-/// [`select_active_parasolid_site`] so both envelopes retain their source site.
-pub fn select_active_parasolid<'a>(
-    scan: &'a ContainerScan<'_>,
-) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
-    let selected = select_active_parasolid_site(scan)?;
-    match selected.origin {
-        ActiveParasolidOrigin::Block(block) => Some((block, selected.header)),
-        ActiveParasolidOrigin::Compound(_) => None,
-    }
-}
-
-/// The source site of one selected Parasolid partition stream.
-#[derive(Clone, Copy)]
-pub(crate) enum ActiveParasolidOrigin<'a> {
-    /// A native block-envelope block.
-    Block(&'a Block),
-    /// A Compound File Binary stream.
-    Compound(&'a CompoundStream),
-}
-
-impl ActiveParasolidOrigin<'_> {
-    fn site_key(self) -> String {
-        match self {
-            Self::Block(block) => format!("block@{}", block.offset),
-            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
-        }
-    }
+        .any(|stream| crate::parasolid::is_body_stream(&stream.header))
 }
 
 /// One selected Parasolid partition stream and its source site.
 pub(crate) struct ActiveParasolidSite<'a> {
-    pub(crate) origin: ActiveParasolidOrigin<'a>,
+    pub(crate) section: Section<'a>,
     pub(crate) payload: &'a [u8],
-    pub(crate) header: crate::parasolid::StreamHeader,
+    pub(crate) header: &'a crate::parasolid::StreamHeader,
 }
 
 impl ActiveParasolidSite<'_> {
     pub(crate) fn name(&self) -> String {
-        match self.origin {
-            ActiveParasolidOrigin::Block(block) => block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            ActiveParasolidOrigin::Compound(stream) => stream.path.clone(),
-        }
+        self.section.display_name()
     }
 
     pub(crate) fn site_key(&self) -> String {
-        self.origin.site_key()
+        self.section.site_key()
     }
 }
 
@@ -922,21 +901,21 @@ pub(crate) fn select_active_parasolid_site<'a>(
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
     let mut candidates = Vec::new();
-    for block in &scan.blocks {
-        let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-        let section_is_partition = section.contains("partition")
-            && !section.contains("ghost")
-            && !section.contains("deltas")
-            && !section.contains("resolvedfeatures");
-        let section_is_admissible = !section.contains("ghost")
-            && !section.contains("deltas")
-            && !section.contains("resolvedfeatures");
-        let body_streams = block
-            .ps_streams
+    for section in scan.sections() {
+        let name = section.name().unwrap_or("").to_ascii_lowercase();
+        let section_is_partition = name.contains("partition")
+            && !name.contains("ghost")
+            && !name.contains("deltas")
+            && !name.contains("resolvedfeatures");
+        let section_is_admissible = !name.contains("ghost")
+            && !name.contains("deltas")
+            && !name.contains("resolvedfeatures");
+        let body_streams = section
+            .ps_streams()
             .iter()
-            .filter_map(|payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((payload, header))
+            .filter_map(|stream| {
+                crate::parasolid::is_body_stream(&stream.header)
+                    .then_some((stream.payload.as_slice(), &stream.header))
             })
             .collect::<Vec<_>>();
         let sole_body_stream = body_streams.len() == 1;
@@ -947,49 +926,13 @@ pub(crate) fn select_active_parasolid_site<'a>(
                 || description.contains("deltas")
                 || !(description.contains("partition") || sole_body_stream && section_is_partition)
                 || active_configuration.is_some_and(|active| {
-                    block.section.as_deref().and_then(configuration_index) != Some(active)
+                    section.name().and_then(configuration_index) != Some(active)
                 })
             {
                 continue;
             }
             candidates.push(ActiveParasolidSite {
-                origin: ActiveParasolidOrigin::Block(block),
-                payload,
-                header,
-            });
-        }
-    }
-    for stream in &scan.compound_streams {
-        let path = stream.path.to_ascii_lowercase();
-        let section_is_partition = path.contains("partition")
-            && !path.contains("ghost")
-            && !path.contains("deltas")
-            && !path.contains("resolvedfeatures");
-        let section_is_admissible = !path.contains("ghost")
-            && !path.contains("deltas")
-            && !path.contains("resolvedfeatures");
-        let body_streams = stream
-            .ps_streams
-            .iter()
-            .filter_map(|payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((payload, header))
-            })
-            .collect::<Vec<_>>();
-        let sole_body_stream = body_streams.len() == 1;
-        for (payload, header) in body_streams {
-            let description = header.description.to_ascii_lowercase();
-            if !section_is_admissible
-                || description.contains("ghost")
-                || description.contains("deltas")
-                || !(description.contains("partition") || sole_body_stream && section_is_partition)
-                || active_configuration
-                    .is_some_and(|active| configuration_index(&stream.path) != Some(active))
-            {
-                continue;
-            }
-            candidates.push(ActiveParasolidSite {
-                origin: ActiveParasolidOrigin::Compound(stream),
+                section,
                 payload,
                 header,
             });
@@ -1018,67 +961,11 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 pub(crate) fn manifest_active_configuration(
     scan: &ContainerScan<'_>,
 ) -> Option<(usize, Option<String>)> {
-    let mut candidate = None;
-    for section in scan.sections() {
-        if !is_features_manifest(section) {
-            continue;
-        }
-        let Some(text) = xml_text(section.payload()) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        if document.root_element().tag_name().name() != "swSolidWorks" {
-            continue;
-        }
-        let configurations = document
-            .descendants()
-            .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
-            .collect::<Vec<_>>();
-        if configurations.is_empty() {
-            continue;
-        }
-        let rows = configurations
-            .into_iter()
-            .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
-            .collect::<Vec<_>>();
-        let [row] = rows.as_slice() else {
-            return None;
-        };
-        let id = row.attribute("swID")?;
-        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        let index = id.parse::<usize>().ok()?;
-        let name = manifest_configuration_name(&document, *row, id);
-        let current = (index, name);
-        match candidate.as_mut() {
-            None => candidate = Some(current),
-            Some((previous_index, previous_name)) => {
-                if *previous_index != index {
-                    return None;
-                }
-                if let (Some(previous), Some(current)) =
-                    (previous_name.as_deref(), current.1.as_deref())
-                {
-                    if previous != current {
-                        return None;
-                    }
-                }
-                if previous_name.is_none() {
-                    *previous_name = current.1;
-                }
-            }
-        }
-    }
-    candidate
+    scan.solidworks.manifest_active_configuration.unique()
 }
 
-fn is_features_manifest(section: Section<'_>) -> bool {
-    section
-        .name()
-        .and_then(|name| name.rsplit('/').next())
+fn is_features_manifest_name(name: Option<&str>) -> bool {
+    name.and_then(|name| name.rsplit('/').next())
         .is_some_and(|name| name.eq_ignore_ascii_case("Features"))
 }
 
@@ -1116,37 +1003,7 @@ fn manifest_configuration_name(
 
 fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
     let active = active_configuration_name(scan)?;
-    let mut indices = Vec::new();
-    for section in scan.sections() {
-        let Some(text) = xml_text(section.payload()) else {
-            continue;
-        };
-        let Ok(document) = roxmltree::Document::parse(&text) else {
-            continue;
-        };
-        if !document
-            .root_element()
-            .tag_name()
-            .name()
-            .contains("Keywords")
-        {
-            continue;
-        }
-        indices.extend(
-            document
-                .descendants()
-                .filter(|node| {
-                    node.is_element()
-                        && node.tag_name().name() == "Configuration"
-                        && node.attribute("Name") == Some(active.as_str())
-                })
-                .filter_map(|node| node.attribute("SourceIndex"))
-                .filter(|value| {
-                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
-                })
-                .filter_map(|value| value.parse::<usize>().ok()),
-        );
-    }
+    let indices = scan.solidworks.configuration_source_indices.get(&active)?;
     (indices.len() == 1).then(|| indices[0])
 }
 
@@ -1154,27 +1011,8 @@ pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<Stri
     manifest_active_configuration(scan)
         .and_then(|(_, name)| name)
         .or_else(|| {
-            let mut names = BTreeSet::new();
-            for section in scan.sections() {
-                let Some(text) = xml_text(section.payload()) else {
-                    continue;
-                };
-                let Ok(document) = roxmltree::Document::parse(&text) else {
-                    continue;
-                };
-                if document.root_element().tag_name().name() != "swSolidWorks" {
-                    continue;
-                }
-                names.extend(
-                    document
-                        .descendants()
-                        .filter(|node| node.tag_name().name() == "swModel")
-                        .filter_map(|node| node.attribute("swConfigurationName"))
-                        .map(str::to_string),
-                );
-            }
-            (names.len() == 1)
-                .then(|| names.into_iter().next())
+            (scan.solidworks.configuration_names.len() == 1)
+                .then(|| scan.solidworks.configuration_names.iter().next().cloned())
                 .flatten()
         })
 }
@@ -1191,6 +1029,203 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
     }
+}
+
+/// Metadata from the first parsed `swSolidWorks` envelope.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SolidWorksEnvelope {
+    pub(crate) sw_version: Option<String>,
+    pub(crate) creation_time: Option<String>,
+    pub(crate) path: Option<String>,
+    pub(crate) model_name: Option<String>,
+    pub(crate) configuration_name: Option<String>,
+    pub(crate) configuration_attributes: BTreeMap<String, String>,
+}
+
+/// Cached facts from all parsed `swSolidWorks` envelopes in one scan.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SolidWorksEnvelopeScan {
+    first: Option<SolidWorksEnvelope>,
+    configuration_names: BTreeSet<String>,
+    manifest_active_configuration: ManifestActiveConfiguration,
+    configuration_source_indices: BTreeMap<String, Vec<usize>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum ManifestActiveConfiguration {
+    #[default]
+    Absent,
+    Unique(usize, Option<String>),
+    Ambiguous,
+}
+
+impl ManifestActiveConfiguration {
+    fn merge(&mut self, current: Self) {
+        match (&mut *self, current) {
+            (_, Self::Absent) | (Self::Ambiguous, _) => {}
+            (_, Self::Ambiguous) => *self = Self::Ambiguous,
+            (Self::Absent, current @ Self::Unique(..)) => *self = current,
+            (Self::Unique(previous_index, previous_name), Self::Unique(index, mut name)) => {
+                if *previous_index != index
+                    || matches!(
+                        (previous_name.as_deref(), name.as_deref()),
+                        (Some(previous), Some(current)) if previous != current
+                    )
+                {
+                    *self = Self::Ambiguous;
+                } else if previous_name.is_none() {
+                    *previous_name = name.take();
+                }
+            }
+        }
+    }
+
+    fn unique(&self) -> Option<(usize, Option<String>)> {
+        match self {
+            Self::Unique(index, name) => Some((*index, name.clone())),
+            Self::Absent | Self::Ambiguous => None,
+        }
+    }
+}
+
+fn scan_solidworks_envelopes<'a>(
+    sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
+) -> SolidWorksEnvelopeScan {
+    let mut scan = SolidWorksEnvelopeScan::default();
+    for (section, payload) in sections {
+        let Some(text) = xml_text(payload) else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        let root = document.root_element();
+        if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
+            scan.manifest_active_configuration
+                .merge(manifest_active_configuration_in(&document));
+        }
+        if root.tag_name().name().contains("Keywords") {
+            for configuration in document
+                .descendants()
+                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
+            {
+                let Some(name) = configuration.attribute("Name") else {
+                    continue;
+                };
+                let Some(index) = configuration
+                    .attribute("SourceIndex")
+                    .filter(|value| {
+                        !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+                    .and_then(|value| value.parse::<usize>().ok())
+                else {
+                    continue;
+                };
+                scan.configuration_source_indices
+                    .entry(name.to_owned())
+                    .or_default()
+                    .push(index);
+            }
+        }
+        if root.tag_name().name() != "swSolidWorks" {
+            continue;
+        }
+        scan.configuration_names.extend(
+            root.descendants()
+                .filter(|node| node.has_tag_name("swModel"))
+                .filter_map(|node| node.attribute("swConfigurationName"))
+                .map(str::to_owned),
+        );
+        if scan.first.is_some() {
+            continue;
+        }
+        let model = root.descendants().find(|node| node.has_tag_name("swModel"));
+        let mut configuration_attributes = BTreeMap::new();
+        for configuration in root
+            .descendants()
+            .filter(|node| node.has_tag_name("swConfiguration"))
+        {
+            let Some(slot) = configuration.attribute("swID") else {
+                continue;
+            };
+            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
+                continue;
+            }
+            for (source, target) in [
+                ("swConfigurationNeedsUpdate", "needs_update"),
+                ("swMostRecentConfiguration", "most_recent"),
+                ("swConfigurationFlags", "flags"),
+                ("swConfigurationAlternateName", "alternate_name"),
+            ] {
+                if let Some(value) = configuration.attribute(source) {
+                    configuration_attributes.insert(
+                        format!("sw_configuration_{slot}_{target}"),
+                        value.to_owned(),
+                    );
+                }
+            }
+        }
+        scan.first = Some(SolidWorksEnvelope {
+            sw_version: root.attribute("swVersion").map(str::to_owned),
+            creation_time: root.attribute("swCreationTime").map(str::to_owned),
+            path: root.attribute("swPath").map(str::to_owned),
+            model_name: model
+                .and_then(|node| node.attribute("swName"))
+                .map(str::to_owned),
+            configuration_name: model
+                .and_then(|node| node.attribute("swConfigurationName"))
+                .map(str::to_owned),
+            configuration_attributes,
+        });
+    }
+    scan
+}
+
+fn manifest_active_configuration_in(
+    document: &roxmltree::Document<'_>,
+) -> ManifestActiveConfiguration {
+    let configurations = document
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
+        .collect::<Vec<_>>();
+    if configurations.is_empty() {
+        return ManifestActiveConfiguration::Absent;
+    }
+    let rows = configurations
+        .into_iter()
+        .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
+        .collect::<Vec<_>>();
+    let [row] = rows.as_slice() else {
+        return ManifestActiveConfiguration::Ambiguous;
+    };
+    let Some(id) = row.attribute("swID") else {
+        return ManifestActiveConfiguration::Ambiguous;
+    };
+    let Some(index) = (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| id.parse::<usize>().ok())
+        .flatten()
+    else {
+        return ManifestActiveConfiguration::Ambiguous;
+    };
+    ManifestActiveConfiguration::Unique(index, manifest_configuration_name(document, *row, id))
+}
+
+/// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
+pub(crate) fn first_solidworks_envelope<'a>(
+    payloads: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<SolidWorksEnvelope> {
+    scan_solidworks_envelopes(payloads.into_iter().map(|payload| (None, payload))).first
+}
+
+pub(crate) fn solidworks_envelope<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<&'a SolidWorksEnvelope> {
+    scan.solidworks.first.as_ref()
+}
+
+/// Returns the first envelope's `swVersion` declaration verbatim.
+pub(crate) fn declared_sw_version<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
+    solidworks_envelope(scan).and_then(|envelope| envelope.sw_version.as_deref())
 }
 
 #[cfg(test)]

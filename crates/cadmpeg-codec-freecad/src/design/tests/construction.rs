@@ -7,6 +7,7 @@ use cadmpeg_ir::features::{
     FeatureDefinition, Length, ShellJoin, ShellMode, SweepOrientation, SweepTransformation,
     SweepTransition,
 };
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -178,13 +179,13 @@ fn retains_native_for_malformed_post_process_controls() {
     ] {
         assert!(matches!(
             definition(name),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::AdditiveBox"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::AdditiveBox"
         ));
     }
     assert_eq!(result.report().losses.len(), 5);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }
@@ -280,7 +281,7 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         }
     ));
     assert!(
-        matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker_class } if source.ends_with(":Sources") && face_maker_class == "Part::FaceMakerUnified")
+        matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker } if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
     assert!(result.report().losses.is_empty());
@@ -445,24 +446,18 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         definition("Uniform"),
         cadmpeg_ir::features::FeatureDefinition::Scale {
             center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: Some(-2.0),
-                x: None,
-                y: None,
-                z: None
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform(-2.0),
             ..
         }
     ));
     assert!(matches!(
         definition("Anisotropic"),
         cadmpeg_ir::features::FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: None,
-                x: Some(2.0),
-                y: Some(3.0),
-                z: Some(4.0)
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(Vector3 {
+                x: 2.0,
+                y: 3.0,
+                z: 4.0,
+            }),
             ..
         }
     ));
@@ -515,12 +510,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&absent, "Scale"),
         FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: Some(2.0),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform(2.0),
             ..
         }
     ));
@@ -537,12 +527,11 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&valid, "Scale"),
         FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: None,
-                x: Some(3.0),
-                y: Some(4.0),
-                z: Some(5.0),
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(Vector3 {
+                x: 3.0,
+                y: 4.0,
+                z: 5.0,
+            }),
             ..
         }
     ));
@@ -565,7 +554,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
             .expect("malformed Part scale flag");
         assert!(matches!(
             definition(&result, "Scale"),
-            FeatureDefinition::Native { kind, .. } if kind == "Part::Scale"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Scale"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert_valid_document(result.ir());
@@ -902,7 +891,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             sections,
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
             },
             orientation: Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
                 tangent: true,
@@ -1204,7 +1193,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     assert!(matches!(
         definition(&result, "SweepAbsent"),
         FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+            mode: cadmpeg_ir::features::SweepMode::NewBody,
             orientation: Some(SweepOrientation::Frenet),
             path_tangent: false,
             linearize: false,
@@ -1257,13 +1246,13 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     ] {
         assert!(matches!(
             definition(&result, name),
-            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+            FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
         ));
     }
     assert_eq!(result.report().losses.len(), 7);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }
@@ -1450,7 +1439,7 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
             .expect("subshape binder feature");
         assert!(matches!(
             &definition.definition,
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::SubShapeBinder"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::SubShapeBinder"
         ));
     }
     assert_eq!(result.report().losses.len(), 2);
@@ -1458,8 +1447,8 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        .all(|loss| loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking));
 }
 
@@ -1630,12 +1619,12 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, kind: &str) {
         assert!(matches!(
             feature_definition(result, "Target"),
-            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+            FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     }
@@ -1806,7 +1795,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         let result = decode_surface(&surface_document(&mode));
         assert!(matches!(
             feature_definition(&result, "Target"),
-            FeatureDefinition::Native { kind, .. } if kind == "Part::ProjectOnSurface"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::ProjectOnSurface"
         ));
         assert_eq!(result.report().losses.len(), 1);
     }
@@ -1857,18 +1846,20 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         &draft.definition,
         cadmpeg_ir::features::FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
-            neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
-            parting_tool: None,
-            pull_direction,
-            pull_plane: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+                pull: Some(cadmpeg_ir::features::DraftPull {
+                    direction: pull_direction,
+                    plane: None,
+                }),
+            },
             angle: Some(cadmpeg_ir::features::Angle(angle)),
             outward: Some(true),
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
-            && pull_direction.is_some_and(|direction|
-                (direction.x - 0.0).abs() < 1.0e-12
-                    && (direction.y + 1.0).abs() < 1.0e-12
-                    && direction.z.abs() < 1.0e-12)
+            && (pull_direction.x - 0.0).abs() < 1.0e-12
+            && (pull_direction.y + 1.0).abs() < 1.0e-12
+            && pull_direction.z.abs() < 1.0e-12
             && (*angle + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
@@ -1882,7 +1873,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     assert!(matches!(
         face_draft.definition,
         FeatureDefinition::Draft {
-            pull_direction: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull: None, .. },
             ..
         }
     ));
@@ -1951,8 +1942,8 @@ fn rejects_ambiguous_single_source_design_operands() {
     }
     assert_eq!(result.report().losses.len(), 5);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }

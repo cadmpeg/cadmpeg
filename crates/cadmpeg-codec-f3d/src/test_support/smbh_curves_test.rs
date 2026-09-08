@@ -9,7 +9,13 @@ pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
     let record = &mut bytes[edge.offset..edge.offset + edge.len];
     let curve_ref_tag = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -40,10 +46,21 @@ pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let delta = bytes
@@ -81,7 +98,13 @@ pub(crate) fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let helix = records.iter().find(|record| record.index == 19).unwrap();
     let block = generated_curve_block();
     let relative = bytes[helix.offset..helix.offset + helix.len]
@@ -97,9 +120,21 @@ pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .unwrap();
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -207,9 +242,21 @@ pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> 
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .unwrap();
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -232,10 +279,21 @@ pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let delta = bytes
@@ -272,10 +330,21 @@ pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -305,10 +374,21 @@ pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -359,10 +439,21 @@ pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -399,10 +490,21 @@ pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -443,10 +545,21 @@ pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8>
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -487,10 +600,21 @@ pub(crate) fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8>
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -734,10 +858,21 @@ pub(crate) fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -802,10 +937,21 @@ pub(crate) fn synthetic_geometry_with_cache_first_curve_smbh(
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        &bytes,
+        edge,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x0c,
+    )
+    .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())

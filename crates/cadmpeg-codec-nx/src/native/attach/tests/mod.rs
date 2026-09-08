@@ -19,8 +19,8 @@ pub(crate) fn hole_diameters_for_operations(
 
 pub(crate) fn simple_hole_diameters(
     ir: &CadIr,
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
     let operation_positions = templates

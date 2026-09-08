@@ -5,7 +5,7 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-    HoleForm, HoleKind, Length, ProfileRef, Termination, VertexSelection,
+    HoleConstruction, HoleKind, Length, LinearTermination, ProfileRef, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -111,11 +111,7 @@ pub(crate) fn project_extrude(
         None => None,
     };
     let one_sided = |termination| ExtrudeExtent::OneSided {
-        side: ExtrudeSide {
-            termination,
-            draft,
-            offset: None,
-        },
+        side: ExtrudeSide { termination, draft },
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
@@ -123,76 +119,74 @@ pub(crate) fn project_extrude(
             && !legacy_history_extrusion
             && !implicit_modern_blind =>
         {
-            one_sided(Termination::Unresolved)
+            one_sided(LinearTermination::Unresolved)
         }
         None | Some("Blind") => match length("Depth")
             .or_else(|| legacy_history_extrusion.then(legacy_length).flatten())
             .or_else(sole_length)
         {
-            Some(length) => one_sided(Termination::Blind { length }),
-            None => one_sided(Termination::Unresolved),
+            Some(length) => one_sided(LinearTermination::Blind { length }),
+            None => one_sided(LinearTermination::Unresolved),
         },
         Some("Symmetric") => match length("Depth").or_else(sole_length) {
             Some(length) => ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length },
+                    termination: LinearTermination::Blind { length },
                     draft,
-                    offset: None,
                 },
             },
-            None => one_sided(Termination::Unresolved),
+            None => one_sided(LinearTermination::Unresolved),
         },
         Some("TwoSided") => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: length("Depth")?,
                 },
                 draft,
-                offset: None,
             },
             second: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: length("Depth2")?,
                 },
                 draft: None,
-                offset: None,
             },
         },
-        Some("ThroughAll") => one_sided(Termination::ThroughAll),
+        Some("ThroughAll") => one_sided(LinearTermination::ThroughAll),
         Some("ThroughAllBoth") => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft,
-                offset: None,
             },
             second: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft: None,
-                offset: None,
             },
         },
-        Some("ThroughNext") => one_sided(Termination::ThroughNext),
-        Some("ToFace") => one_sided(Termination::ToFace {
+        Some("ThroughNext") => one_sided(LinearTermination::ThroughNext),
+        Some("ToFace") => one_sided(LinearTermination::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
             offset: None,
         }),
-        Some("ToVertex") => one_sided(Termination::ToVertex {
+        Some("ToVertex") => one_sided(LinearTermination::ToVertex {
             vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
         }),
         Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
-            Some(offset) => one_sided(Termination::OffsetFromFace {
+            Some(offset) => one_sided(LinearTermination::OffsetFromFace {
                 face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
                 offset,
             }),
-            None => one_sided(Termination::Unresolved),
+            None => one_sided(LinearTermination::Unresolved),
         },
-        Some(_) => one_sided(Termination::Unresolved),
+        Some(_) => one_sided(LinearTermination::Unresolved),
     };
     let direction = match feature.properties.get("Direction") {
-        Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit(parse_vector3(value)?),
+        Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: parse_vector3(value)?,
+            source: None,
+        },
         None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
     };
-    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit(value) if !valid_direction(value))
+    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector))
     {
         return None;
     }
@@ -219,7 +213,6 @@ pub(crate) fn project_extrude(
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent,
         op,
-        direction_source: None,
         solid: Some(!matches!(
             feature
                 .input_class
@@ -289,8 +282,8 @@ pub(crate) fn project_hole(
                 .map(Length),
         )
         .zip(drill_point_angle)
-        .map(
-            |((major_diameter, thread_depth), drill_point_angle)| HoleKind::Threaded {
+        .map(|((major_diameter, thread_depth), drill_point_angle)| {
+            HoleConstruction::NativeThread {
                 major_diameter,
                 thread_depth,
                 pitch: feature
@@ -299,53 +292,36 @@ pub(crate) fn project_hole(
                     .and_then(|value| parse_positive_length_mm(value))
                     .map(Length),
                 drill_point_angle,
-            },
-        );
-    let kind = if has_counterbore && has_countersink {
-        HoleKind::Unresolved {
-            form: None,
-            counterbore_diameter,
-            counterbore_depth,
-            countersink_diameter,
-            countersink_angle,
-        }
+            }
+        });
+    let construction = if has_counterbore && has_countersink {
+        hole_form(HoleKind::Unresolved(None))
     } else if has_counterbore {
         match (counterbore_diameter, counterbore_depth) {
-            (Some(diameter), Some(depth)) => drill_point_angle.map_or(
+            (Some(diameter), Some(depth)) => hole_form(drill_point_angle.map_or(
                 HoleKind::Counterbore { diameter, depth },
                 |drill_point_angle| HoleKind::CounterboreDrilled {
                     diameter,
                     depth,
                     drill_point_angle,
                 },
-            ),
-            (diameter, depth) => HoleKind::Unresolved {
-                form: Some(HoleForm::Counterbore),
-                counterbore_diameter: diameter,
-                counterbore_depth: depth,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
+            )),
+            (diameter, depth) => hole_form(HoleKind::PartialCounterbore { diameter, depth }),
         }
     } else if has_countersink {
         match (countersink_diameter, countersink_angle) {
-            (Some(diameter), Some(angle)) => HoleKind::Countersink { diameter, angle },
-            (diameter, angle) => HoleKind::Unresolved {
-                form: Some(HoleForm::Countersink),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: diameter,
-                countersink_angle: angle,
-            },
+            (Some(diameter), Some(angle)) => hole_form(HoleKind::Countersink { diameter, angle }),
+            (diameter, angle) => hole_form(HoleKind::PartialCountersink { diameter, angle }),
         }
     } else if let Some(thread) = thread {
         thread
     } else if let Some(drill_point_angle) = drill_point_angle {
-        HoleKind::SimpleDrilled { drill_point_angle }
+        hole_form(HoleKind::SimpleDrilled { drill_point_angle })
     } else {
-        profile
-            .as_ref()
-            .map_or(HoleKind::Simple, |profile| profile.kind)
+        profile.as_ref().map_or_else(
+            || hole_form(HoleKind::Simple),
+            |profile| profile.construction.clone(),
+        )
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("Blind")
@@ -353,7 +329,7 @@ pub(crate) fn project_hole(
                 .as_ref()
                 .is_some_and(|profile| profile.exit_kind.is_some()) =>
         {
-            Some(Termination::ThroughAll)
+            Some(LinearTermination::ThroughAll)
         }
         None | Some("Blind") => feature
             .parameters
@@ -361,8 +337,8 @@ pub(crate) fn project_hole(
             .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
             .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
-            .map(|length| Termination::Blind { length }),
-        Some("ThroughAll") => Some(Termination::ThroughAll),
+            .map(|length| LinearTermination::Blind { length }),
+        Some("ThroughAll") => Some(LinearTermination::ThroughAll),
         Some(_) => None,
     };
     FeatureDefinition::Hole {
@@ -373,7 +349,6 @@ pub(crate) fn project_hole(
             .get("Face")
             .cloned()
             .map(FaceSelection::Native),
-        position: None,
         direction: None,
         placements: feature
             .properties
@@ -391,15 +366,13 @@ pub(crate) fn project_hole(
                     position,
                     direction,
                 }]
-            })
-            .unwrap_or_default(),
-        kind,
+            }),
+        construction,
         exit_kind: profile.as_ref().and_then(|profile| profile.exit_kind),
         diameter,
         extent,
         bottom: profile.as_ref().and_then(|profile| profile.bottom),
         taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
-        specification: None,
         allow_multi_profile_faces: None,
     }
 }
@@ -413,7 +386,7 @@ pub(crate) fn threaded_hole_major_diameter(
         return None;
     }
     let FeatureDefinition::Hole {
-        kind: HoleKind::Threaded { major_diameter, .. },
+        construction: HoleConstruction::NativeThread { major_diameter, .. },
         ..
     } = project_hole(feature, features_by_source, history_features)
     else {
@@ -426,10 +399,17 @@ pub(crate) fn threaded_hole_major_diameter(
 pub(crate) struct HoleProfileConstruction {
     pub(crate) diameter: Length,
     pub(crate) depth: Option<Length>,
-    pub(crate) kind: HoleKind,
+    pub(crate) construction: HoleConstruction,
     pub(crate) exit_kind: Option<HoleKind>,
     pub(crate) bottom: Option<HoleBottom>,
     pub(crate) taper_angle: Option<Angle>,
+}
+
+fn hole_form(kind: HoleKind) -> HoleConstruction {
+    HoleConstruction::Form {
+        kind,
+        specification: None,
+    }
 }
 
 pub(crate) fn hole_profile_construction(
@@ -469,17 +449,13 @@ pub(crate) fn hole_profile_construction(
 }
 
 pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum DimensionRole {
-        Diameter,
-        Length,
-        Angle,
+    enum ParsedDimension {
+        Diameter(Length),
+        Length(Length),
+        Angle(Angle),
     }
 
-    let mut diameters = Vec::new();
-    let mut lengths = Vec::new();
-    let mut angles = Vec::new();
-    let mut roles = Vec::new();
+    let mut dimensions = Vec::new();
     let source_dimensions = profile
         .content
         .iter()
@@ -502,15 +478,22 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 .filter(|value| *value > 0.0)
                 .map(Length)
             {
-                diameters.push(value);
-                roles.push(DimensionRole::Diameter);
+                dimensions.push(ParsedDimension::Diameter(value));
             }
         } else if let Some(value) = parse_bounded_angle_rad(expression).map(Angle) {
-            angles.push(value);
-            roles.push(DimensionRole::Angle);
+            dimensions.push(ParsedDimension::Angle(value));
         } else if let Some(value) = parse_positive_dimension_length_mm(expression).map(Length) {
-            lengths.push(value);
-            roles.push(DimensionRole::Length);
+            dimensions.push(ParsedDimension::Length(value));
+        }
+    }
+    let mut diameters = Vec::new();
+    let mut lengths = Vec::new();
+    let mut angles = Vec::new();
+    for dimension in &dimensions {
+        match dimension {
+            ParsedDimension::Diameter(value) => diameters.push(*value),
+            ParsedDimension::Length(value) => lengths.push(*value),
+            ParsedDimension::Angle(value) => angles.push(*value),
         }
     }
     diameters.sort_by(|left, right| left.0.total_cmp(&right.0));
@@ -520,7 +503,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
             diameter: *diameter,
             depth: Some(*depth),
-            kind: HoleKind::Simple,
+            construction: hole_form(HoleKind::Simple),
             exit_kind: None,
             bottom: Some(HoleBottom::Flat),
             taper_angle: None,
@@ -528,9 +511,9 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
             diameter: *diameter,
             depth: Some(*depth),
-            kind: HoleKind::SimpleDrilled {
+            construction: hole_form(HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
-            },
+            }),
             exit_kind: None,
             bottom: Some(HoleBottom::Angled {
                 included_angle: *drill_point_angle,
@@ -539,21 +522,22 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             taper_angle: None,
         }),
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
-            if roles
-                == [
-                    DimensionRole::Diameter,
-                    DimensionRole::Length,
-                    DimensionRole::Diameter,
-                    DimensionRole::Length,
-                    DimensionRole::Angle,
+            if matches!(
+                dimensions.as_slice(),
+                [
+                    ParsedDimension::Diameter(_),
+                    ParsedDimension::Length(_),
+                    ParsedDimension::Diameter(_),
+                    ParsedDimension::Length(_),
+                    ParsedDimension::Angle(_),
                 ]
-                && diameter.0 < major_diameter.0
+            ) && diameter.0 < major_diameter.0
                 && thread_depth.0 < drill_depth.0 =>
         {
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*drill_depth),
-                kind: HoleKind::Threaded {
+                construction: HoleConstruction::NativeThread {
                     major_diameter: *major_diameter,
                     thread_depth: *thread_depth,
                     pitch: None,
@@ -578,7 +562,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*drill_depth),
-                kind: HoleKind::Threaded {
+                construction: HoleConstruction::NativeThread {
                     major_diameter: *major_diameter,
                     thread_depth: *thread_depth,
                     pitch: None,
@@ -593,18 +577,18 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [drill_point_angle])
-            if roles.last() == Some(&DimensionRole::Diameter)
+            if matches!(dimensions.last(), Some(ParsedDimension::Diameter(_)))
                 && diameter.0 < entry_diameter.0
                 && entry_depth.0 < depth.0 =>
         {
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*depth),
-                kind: HoleKind::CounterboreDrilled {
+                construction: hole_form(HoleKind::CounterboreDrilled {
                     diameter: *entry_diameter,
                     depth: *entry_depth,
                     drill_point_angle: *drill_point_angle,
-                },
+                }),
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,
@@ -617,26 +601,27 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             [diameter, exit_diameter, counterbore_diameter],
             [counterbore_depth, through_depth],
             [exit_angle],
-        ) if roles
-            == [
-                DimensionRole::Length,
-                DimensionRole::Diameter,
-                DimensionRole::Angle,
-                DimensionRole::Length,
-                DimensionRole::Diameter,
-                DimensionRole::Diameter,
+        ) if matches!(
+            dimensions.as_slice(),
+            [
+                ParsedDimension::Length(_),
+                ParsedDimension::Diameter(_),
+                ParsedDimension::Angle(_),
+                ParsedDimension::Length(_),
+                ParsedDimension::Diameter(_),
+                ParsedDimension::Diameter(_),
             ]
-            && diameter.0 < exit_diameter.0
+        ) && diameter.0 < exit_diameter.0
             && exit_diameter.0 < counterbore_diameter.0
             && counterbore_depth.0 < through_depth.0 =>
         {
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*through_depth),
-                kind: HoleKind::Counterbore {
+                construction: hole_form(HoleKind::Counterbore {
                     diameter: *counterbore_diameter,
                     depth: *counterbore_depth,
-                },
+                }),
                 exit_kind: Some(HoleKind::Countersink {
                     diameter: *exit_diameter,
                     angle: *exit_angle,
@@ -657,12 +642,12 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*drill_depth),
-                kind: HoleKind::Counterdrill {
+                construction: hole_form(HoleKind::Counterdrill {
                     diameter: *recess_diameter,
                     entry_diameter: Some(*entry_diameter),
                     depth: *recess_depth,
                     angle: *entry_angle,
-                },
+                }),
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
 
 #[test]
 fn nx_cone_retains_body_family_without_dimensions() {
@@ -11,7 +11,12 @@ fn nx_cone_retains_body_family_without_dimensions() {
 
     let definition = super::body_writing_unresolved_feature_definition("CONE", &source_properties);
 
-    assert_eq!(definition, Some(FeatureDefinition::ConeUnresolved));
+    assert_eq!(
+        definition,
+        Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Cone
+        })
+    );
     assert_eq!(definition.unwrap().body_output_family(), Some("cone"));
 }
 

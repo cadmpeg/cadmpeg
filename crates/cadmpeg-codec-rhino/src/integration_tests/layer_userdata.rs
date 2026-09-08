@@ -114,18 +114,21 @@ fn layer_record_with_userdata(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u
 }
 
 fn document(archive: ArchiveVersion, layer: Vec<u8>) -> Vec<u8> {
+    document_with_stamp(archive, layer, Some(202_608_010))
+}
+
+fn document_with_stamp(
+    archive: ArchiveVersion,
+    layer: Vec<u8>,
+    writer_version: Option<i64>,
+) -> Vec<u8> {
+    let properties: Vec<Vec<u8>> = writer_version
+        .map(|value| vec![support::test_dump::short_chunk(archive, 0xa000_0026, value)])
+        .unwrap_or_default();
     support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(
-                archive,
-                0x1000_0014,
-                &[support::test_dump::short_chunk(
-                    archive,
-                    0xa000_0026,
-                    202_608_010,
-                )],
-            ),
+            support::test_dump::table(archive, 0x1000_0014, &properties),
             support::test_dump::table(archive, 0x1000_0015, &[]),
             support::test_dump::table(archive, 0x1000_0011, &[layer]),
             support::test_dump::table(archive, 0x1000_0013, &[]),
@@ -138,7 +141,7 @@ fn assert_layer_record_retained(
     layer: &[u8],
     message: &str,
 ) {
-    let layers = &result.ir().native.namespace("rhino").unwrap().arenas["layers"];
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     let fields = layers[0].fields();
     assert_eq!(
@@ -165,11 +168,11 @@ fn assert_layer_record_retained(
         .iter()
         .find(|record| {
             record
-                .id
+                .id()
                 .starts_with("rhino:opaque:record#10000011-20008050-")
         })
         .expect("layer record is retained");
-    assert_eq!(retained.data.as_deref(), Some(layer));
+    assert_eq!(retained.data(), Some(layer));
     assert_valid(result);
 }
 
@@ -191,6 +194,41 @@ fn layer_userdata_future_payload_retains_complete_layer_record() {
     assert_layer_record_retained(&result, &layer, "layer per-viewport userdata at offset");
 }
 
+/// The layer parent-link charge reaches the report as a typed loss code.
+///
+/// `parse_layer` creates the typed loss at the decision site. This asserts the
+/// code that survives the decode pipeline.
+#[test]
+fn unstamped_layer_carries_the_parent_link_typed_loss_code() {
+    let archive = ArchiveVersion::V8;
+    let layer = layer_record(archive, &[0xde, 0xad]);
+
+    let unstamped = decode(document_with_stamp(archive, layer.clone(), None));
+    assert!(
+        unstamped.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()
+                && loss.message.contains("layer parent link")
+        }),
+        "{:?}",
+        unstamped.report().losses
+    );
+
+    // The same record under a stamp: the parent link is read, so nothing is
+    // charged and the layer still reaches the native arena.
+    let stamped = decode(document(archive, layer));
+    let layers = &stamped.ir().native.namespace("rhino").unwrap().arenas()["layers"];
+    assert_eq!(layers.len(), 1);
+    assert!(
+        !stamped
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()),
+        "{:?}",
+        stamped.report().losses
+    );
+}
+
 #[test]
 fn layer_userdata_malformed_payload_retains_complete_layer_record() {
     let archive = ArchiveVersion::V8;
@@ -206,7 +244,7 @@ fn obsolete_layer_settings_are_consumed_without_typed_layer_fields() {
         let userdata = obsolete_layer_userdata(archive, OBSOLETE_LAYER_SETTINGS, major);
         let layer = layer_record_with_userdata(archive, &userdata);
         let result = decode(document(archive, layer));
-        let layers = &result.ir().native.namespace("rhino").unwrap().arenas["layers"];
+        let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
         assert_eq!(layers.len(), 1);
         let fields = layers[0].fields();
         assert_eq!(
@@ -231,7 +269,7 @@ fn malformed_obsolete_layer_settings_are_discarded_without_altering_the_layer() 
     let userdata = malformed_obsolete_layer_userdata(archive, OBSOLETE_LAYER_SETTINGS);
     let layer = layer_record_with_userdata(archive, &userdata);
     let result = decode(document(archive, layer));
-    let layers = &result.ir().native.namespace("rhino").unwrap().arenas["layers"];
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     let fields = layers[0].fields();
     assert_eq!(

@@ -14,7 +14,9 @@ use crate::chunks::{
     ChecksumStatus, Chunk,
 };
 use crate::curves::{error, GeometryError};
-use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::objects::{
+    parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
+};
 use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
 use crate::wire::Uuid;
 
@@ -40,8 +42,6 @@ const TL_BREP: Uuid = Uuid::from_canonical([
 ]);
 /// Maximum number of records in one Brep array.
 pub(crate) const MAX_BREP_ITEMS: usize = 1 << 20;
-/// Maximum nesting depth used while reading polymorphic children.
-pub(crate) const MAX_BREP_DEPTH: usize = 32;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
@@ -78,8 +78,19 @@ pub(crate) struct RawBrepChild {
     pub(crate) class_data_range: Range<usize>,
     /// Complete class-wrapper byte range.
     pub(crate) source_range: Range<usize>,
-    /// Base-class family inferred from the class UUID.
-    pub(crate) base_type: RawBrepBaseType,
+}
+
+impl RawBrepChild {
+    /// Returns the base-class family defined by the class UUID.
+    fn base_type(&self) -> RawBrepBaseType {
+        if crate::curves::curve_class(self.class_uuid) {
+            RawBrepBaseType::Curve
+        } else if crate::curves::surface_class(self.class_uuid) {
+            RawBrepBaseType::Surface
+        } else {
+            RawBrepBaseType::Other
+        }
+    }
 }
 
 /// A positional polymorphic Brep array.
@@ -202,13 +213,11 @@ pub(crate) struct RawBrepFace {
     pub(crate) source_range: Range<usize>,
 }
 
-/// A render or analysis mesh cache slot.
+/// A present render or analysis mesh cache entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RawBrepMeshSlot {
-    /// Present mesh child, if it passed class validation.
-    pub(crate) mesh: Option<RawBrepChild>,
-    /// Whether the archive supplied a nonzero presence byte.
-    pub(crate) present: bool,
+pub(crate) struct RawBrepMesh {
+    /// Mesh child that passed class validation.
+    pub(crate) mesh: RawBrepChild,
     /// Class-userdata descriptors attached to the mesh object wrapper.
     pub(crate) userdata: Vec<UserdataDescriptor>,
 }
@@ -246,6 +255,8 @@ pub(crate) struct RawBrepRegion {
 /// Parsed Brep data before semantic validation.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RawBrep {
+    /// Typed losses raised while selecting writer-version-dependent layouts.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Packed payload minor.
     pub(crate) minor: u8,
     /// C2 curve slots.
@@ -267,33 +278,17 @@ pub(crate) struct RawBrep {
     /// Brep bounds.
     pub(crate) bounds: BoundingBox,
     /// Render mesh cache slots.
-    pub(crate) render_meshes: Vec<RawBrepMeshSlot>,
+    pub(crate) render_meshes: Vec<Option<RawBrepMesh>>,
     /// Analysis mesh cache slots.
-    pub(crate) analysis_meshes: Vec<RawBrepMeshSlot>,
-    /// Complete render-mesh side-wrapper range.
-    pub(crate) render_mesh_array_range: Range<usize>,
-    /// Complete analysis-mesh side-wrapper range.
-    pub(crate) analysis_mesh_array_range: Range<usize>,
+    pub(crate) analysis_meshes: Vec<Option<RawBrepMesh>>,
     /// Raw solid state, normalized only by validation.
     pub(crate) is_solid: Option<i32>,
     /// Region face sides.
     pub(crate) face_sides: Vec<RawBrepFaceSide>,
     /// Regions.
     pub(crate) regions: Vec<RawBrepRegion>,
-    /// Complete region-topology wrapper range.
-    pub(crate) region_wrapper_range: Option<Range<usize>>,
     /// Complete payload range.
     pub(crate) source_range: Range<usize>,
-    /// Complete vertex-array wrapper range.
-    pub(crate) vertex_array_range: Range<usize>,
-    /// Complete edge-array wrapper range.
-    pub(crate) edge_array_range: Range<usize>,
-    /// Complete trim-array wrapper range.
-    pub(crate) trim_array_range: Range<usize>,
-    /// Complete loop-array wrapper range.
-    pub(crate) loop_array_range: Range<usize>,
-    /// Complete face-array wrapper range.
-    pub(crate) face_array_range: Range<usize>,
 }
 
 /// A semantically validated raw Brep.
@@ -303,6 +298,15 @@ pub(crate) struct ValidatedRawBrep {
     raw: RawBrep,
     /// Warnings for repaired positional fields or discarded optional data.
     warnings: Vec<String>,
+}
+
+/// Body kind selected from one validated serialized Brep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BrepBodyKind {
+    /// A closed volumetric body.
+    Solid,
+    /// An open sheet body.
+    Sheet,
 }
 
 impl ValidatedRawBrep {
@@ -554,6 +558,84 @@ impl ValidatedRawBrep {
     pub(crate) fn warnings(&self) -> &[String] {
         &self.warnings
     }
+
+    /// Selects the serialized body kind and reports an unverified stamp-dependent gauge.
+    pub(crate) fn body_kind(
+        &self,
+        writer_version: Option<i64>,
+    ) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
+        body_kind(&self.raw, writer_version)
+    }
+}
+
+/// Classifies one B-rep body, reporting whether a missing stamp decided it.
+fn body_kind(
+    raw: &RawBrep,
+    writer_version: Option<i64>,
+) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
+    let closed = !raw.faces.is_empty()
+        && raw.edges.iter().enumerate().all(|(edge, _)| {
+            raw.trims
+                .iter()
+                .filter(|trim| trim.edge == edge as i32)
+                .count()
+                == 2
+        });
+    let kind = serialized_body_kind(raw.minor, raw.is_solid, writer_version, closed);
+    let loss = body_kind_rests_on_missing_stamp(raw.minor, raw.is_solid, writer_version, closed)
+        .then(|| {
+            crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(format!(
+                "Brep body kind gauge substituted: stored solid flag {} was trusted over the \
+                 closed-shell gauge because the writer-version stamp is absent",
+                raw.is_solid.unwrap_or(-1)
+            ))
+        });
+    (kind, loss)
+}
+
+/// First openNURBS writer version whose `ON_Brep` stores a meaningful solid flag.
+const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;
+
+/// True when a missing writer stamp is what decided the body kind.
+///
+/// The stored solid flag is trusted when the stamp is absent and ignored when
+/// the stamp is older than [`SOLID_FLAG_WRITER_VERSION`], so an unstamped
+/// archive is classified on an assumption the archive does not carry. This
+/// compares the two readings of the same bytes and reports only a disagreement:
+/// where both readings pick the same body kind nothing was substituted.
+fn body_kind_rests_on_missing_stamp(
+    minor: u8,
+    is_solid: Option<i32>,
+    writer_version: Option<i64>,
+    closed: bool,
+) -> bool {
+    writer_version.is_none()
+        && serialized_body_kind(minor, is_solid, None, closed)
+            != serialized_body_kind(minor, is_solid, Some(SOLID_FLAG_WRITER_VERSION - 1), closed)
+}
+
+fn serialized_body_kind(
+    minor: u8,
+    is_solid: Option<i32>,
+    writer_version: Option<i64>,
+    closed: bool,
+) -> BrepBodyKind {
+    let stored = (minor >= 2
+        && writer_version.is_none_or(|version| version >= SOLID_FLAG_WRITER_VERSION))
+    .then_some(is_solid)
+    .flatten();
+    match stored {
+        Some(1 | 2) => BrepBodyKind::Solid,
+        Some(0) => {
+            if closed {
+                BrepBodyKind::Solid
+            } else {
+                BrepBodyKind::Sheet
+            }
+        }
+        _ if closed => BrepBodyKind::Solid,
+        _ => BrepBodyKind::Sheet,
+    }
 }
 
 /// Result of parsing a structurally framed Brep payload.
@@ -584,15 +666,7 @@ pub(crate) fn parse(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 == 2 {
-        return parse_legacy_major2(
-            bytes,
-            range,
-            archive,
-            writer_version,
-            userdata,
-            version,
-            reader,
-        );
+        return parse_legacy_major2(bytes, range, archive, version, reader);
     }
     if version >> 4 != 3 {
         return Err(GeometryError::unsupported(
@@ -602,12 +676,12 @@ pub(crate) fn parse(
     }
     let minor = version & 0x0f;
     let mut warnings = Vec::new();
+    let mut losses = Vec::new();
     let c2 = read_children(
         bytes,
         &mut reader,
         archive,
         RawBrepBaseType::Curve,
-        0,
         &mut warnings,
     )?;
     let c3 = read_children(
@@ -615,7 +689,6 @@ pub(crate) fn parse(
         &mut reader,
         archive,
         RawBrepBaseType::Curve,
-        0,
         &mut warnings,
     )?;
     let surfaces = read_children(
@@ -623,27 +696,36 @@ pub(crate) fn parse(
         &mut reader,
         archive,
         RawBrepBaseType::Surface,
-        0,
         &mut warnings,
     )?;
-    let (vertices, vertex_array_range) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
-    let (edges, edge_array_range) =
-        read_edges(bytes, &mut reader, archive, writer_version, &mut warnings)?;
-    let (trims, trim_array_range) =
-        read_trims(bytes, &mut reader, archive, writer_version, &mut warnings)?;
-    let (loops, loop_array_range) = read_loops(bytes, &mut reader, archive, &mut warnings)?;
-    let (faces, face_array_range) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
+    let (vertices, _) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
+    let (edges, _) = read_edges(
+        bytes,
+        &mut reader,
+        archive,
+        writer_version,
+        &mut warnings,
+        &mut losses,
+    )?;
+    let (trims, _) = read_trims(
+        bytes,
+        &mut reader,
+        archive,
+        writer_version,
+        &mut warnings,
+        &mut losses,
+    )?;
+    let (loops, _) = read_loops(bytes, &mut reader, archive, &mut warnings)?;
+    let (faces, _) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
     let bounds = bbox(&mut reader)?;
-    let (render_meshes, render_mesh_array_range, analysis_meshes, analysis_mesh_array_range) =
-        if minor >= 1 {
-            let (render, render_range) =
-                read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
-            let (analysis, analysis_range) =
-                read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
-            (render, render_range, analysis, analysis_range)
-        } else {
-            (Vec::new(), 0..0, Vec::new(), 0..0)
-        };
+    let (render_meshes, analysis_meshes) = if minor >= 1 {
+        let (render, _) = read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+        let (analysis, _) =
+            read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+        (render, analysis)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let is_solid = if minor >= 2 {
         let value = reader.i32()?;
         if (0..=2).contains(&value) {
@@ -657,23 +739,26 @@ pub(crate) fn parse(
     } else {
         None
     };
-    let (mut face_sides, mut regions, mut region_wrapper_range, inline_region_loaded) =
-        if minor >= 3 {
-            read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
-        } else {
-            (Vec::new(), Vec::new(), None, false)
-        };
+    let (mut face_sides, mut regions, _, inline_region_loaded) = if minor >= 3 {
+        read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
+    } else {
+        (Vec::new(), Vec::new(), None, false)
+    };
     if !inline_region_loaded {
-        if let Some(extra) = userdata.iter().find(|value| {
-            value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
-                && value.item_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
-                && (value.application_uuid.is_none() || value.application_uuid == Some(OPENNURBS4))
-        }) {
+        if let Some(extra) = userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|value| {
+                value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+                    && value.item_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+                    && (value.application_uuid.is_none()
+                        || value.application_uuid == Some(OPENNURBS4))
+            })
+        {
             match read_region_topology_userdata(bytes, extra, archive, faces.len(), &mut warnings) {
-                Ok((sides, topology_regions, range, _)) => {
+                Ok((sides, topology_regions, _, _)) => {
                     face_sides = sides;
                     regions = topology_regions;
-                    region_wrapper_range = range;
                 }
                 Err(error) => warnings.push(format!(
                     "invalid optional Brep region topology discarded: {error}"
@@ -686,6 +771,7 @@ pub(crate) fn parse(
         warnings.push(format!("ON_Brep skipped {skipped} trailing bytes"));
     }
     let raw = RawBrep {
+        losses,
         minor,
         c2,
         c3,
@@ -698,18 +784,10 @@ pub(crate) fn parse(
         bounds,
         render_meshes,
         analysis_meshes,
-        render_mesh_array_range,
-        analysis_mesh_array_range,
         is_solid,
         face_sides,
         regions,
-        region_wrapper_range,
         source_range: range,
-        vertex_array_range,
-        edge_array_range,
-        trim_array_range,
-        loop_array_range,
-        face_array_range,
     };
     match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
@@ -731,12 +809,26 @@ struct LegacyCurveMeta {
     endpoints: [Point3; 2],
 }
 
+impl LegacyCurveMeta {
+    fn into_child(self) -> RawBrepChild {
+        RawBrepChild {
+            class_uuid: crate::curves::POLYCURVE,
+            class_data_range: self.range.clone(),
+            source_range: self.range,
+        }
+    }
+}
+
+struct LegacyVertex {
+    vertex: RawBrepVertex,
+    point_sum: [f64; 3],
+    point_count: usize,
+}
+
 fn parse_legacy_major2(
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    _writer_version: Option<i64>,
-    _userdata: &[UserdataDescriptor],
     version: u8,
     mut reader: BoundedReader<'_>,
 ) -> Result<BrepParse, GeometryError> {
@@ -755,7 +847,6 @@ fn parse_legacy_major2(
     let bounds = bbox(&mut reader)?;
 
     let c2_start = reader.position();
-    let mut c2_slots = Vec::with_capacity(trim_count);
     let mut c2_meta = Vec::with_capacity(trim_count);
     for _ in 0..trim_count {
         let curve_range = crate::curves::consume_legacy_polycurve_2d(bytes, &mut reader, archive)?;
@@ -767,21 +858,14 @@ fn parse_legacy_major2(
         )?;
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
         c2_meta.push(LegacyCurveMeta {
-            range: curve_range.clone(),
+            range: curve_range,
             domain,
             endpoints,
         });
-        c2_slots.push(Some(RawBrepChild {
-            class_uuid: crate::curves::POLYCURVE,
-            class_data_range: curve_range.clone(),
-            source_range: curve_range,
-            base_type: RawBrepBaseType::Curve,
-        }));
     }
     let c2_range = c2_start..reader.position();
 
     let c3_start = reader.position();
-    let mut c3_slots = Vec::with_capacity(edge_count);
     let mut c3_meta = Vec::with_capacity(edge_count);
     for _ in 0..edge_count {
         let curve_range =
@@ -795,16 +879,10 @@ fn parse_legacy_major2(
         )?;
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
         c3_meta.push(LegacyCurveMeta {
-            range: curve_range.clone(),
+            range: curve_range,
             domain,
             endpoints,
         });
-        c3_slots.push(Some(RawBrepChild {
-            class_uuid: crate::curves::POLYCURVE,
-            class_data_range: curve_range.clone(),
-            source_range: curve_range,
-            base_type: RawBrepBaseType::Curve,
-        }));
     }
     let c3_range = c3_start..reader.position();
 
@@ -818,7 +896,6 @@ fn parse_legacy_major2(
             class_uuid: crate::surfaces::NURBS_SURFACE,
             class_data_range: surface_range.clone(),
             source_range: surface_range,
-            base_type: RawBrepBaseType::Surface,
         }));
     }
     let surfaces_range = surfaces_start..reader.position();
@@ -959,26 +1036,17 @@ fn parse_legacy_major2(
     })?;
     let mut endpoint_parent = (0..endpoint_count).collect::<Vec<_>>();
     for loop_record in &loops {
-        for pair in loop_record.trims.windows(2) {
+        for (last, first) in loop_record
+            .trims
+            .iter()
+            .zip(loop_record.trims.iter().cycle().skip(1))
+        {
             legacy_union(
                 &mut endpoint_parent,
-                legacy_trim_endpoint(pair[0], 1),
-                legacy_trim_endpoint(pair[1], 0),
+                legacy_trim_endpoint(*last, 1),
+                legacy_trim_endpoint(*first, 0),
             );
         }
-        let first = *loop_record
-            .trims
-            .first()
-            .expect("legacy loops have at least one trim");
-        let last = *loop_record
-            .trims
-            .last()
-            .expect("legacy loops have at least one trim");
-        legacy_union(
-            &mut endpoint_parent,
-            legacy_trim_endpoint(last, 1),
-            legacy_trim_endpoint(first, 0),
-        );
     }
     for (trim_index, trim) in trims.iter().enumerate() {
         if trim.edge < 0 {
@@ -1005,101 +1073,54 @@ fn parse_legacy_major2(
     }
     let mut root_vertices = BTreeMap::new();
     let mut vertices = Vec::new();
+    let mut endpoint_vertices = Vec::with_capacity(endpoint_count);
     for endpoint in 0..endpoint_count {
         let root = legacy_find(&mut endpoint_parent, endpoint);
-        if let Entry::Vacant(entry) = root_vertices.entry(root) {
-            let index = i32::try_from(vertices.len())
-                .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
-            entry.insert(index);
-            vertices.push(RawBrepVertex {
-                index,
-                point: Point3([0.0, 0.0, 0.0]),
-                edges: Vec::new(),
-                tolerance: 0.0,
-                source_range: 0..0,
-            });
-        }
+        let index = match root_vertices.entry(root) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let index = i32::try_from(vertices.len())
+                    .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
+                entry.insert(index);
+                vertices.push(LegacyVertex {
+                    vertex: RawBrepVertex {
+                        index,
+                        point: Point3([0.0, 0.0, 0.0]),
+                        edges: Vec::new(),
+                        tolerance: 0.0,
+                        source_range: 0..0,
+                    },
+                    point_sum: [0.0; 3],
+                    point_count: 0,
+                });
+                index
+            }
+        };
+        endpoint_vertices.push(index);
     }
-    let mut edge_endpoints = Vec::with_capacity(c3_meta.len());
-    let mut point_sums = Vec::new();
-    point_sums.try_reserve_exact(vertices.len()).map_err(|_| {
-        error(
-            reader.position(),
-            "legacy Brep vertex sum allocation failed",
-        )
-    })?;
-    point_sums.resize(vertices.len(), [0.0; 3]);
-    let mut point_counts = Vec::new();
-    point_counts
-        .try_reserve_exact(vertices.len())
-        .map_err(|_| {
-            error(
-                reader.position(),
-                "legacy Brep vertex count allocation failed",
-            )
-        })?;
-    point_counts.resize(vertices.len(), 0_usize);
+    let mut edges = Vec::with_capacity(edge_count);
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index as usize];
-            let start_root =
-                legacy_find(&mut endpoint_parent, legacy_trim_endpoint_for_edge(trim, 0));
-            let end_root =
-                legacy_find(&mut endpoint_parent, legacy_trim_endpoint_for_edge(trim, 1));
             [
-                *root_vertices
-                    .get(&start_root)
-                    .expect("legacy edge start root has a vertex"),
-                *root_vertices
-                    .get(&end_root)
-                    .expect("legacy edge end root has a vertex"),
+                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, 0)],
+                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, 1)],
             ]
         } else {
             let start = legacy_vertex(&mut vertices, curve.endpoints[0]);
             let end = legacy_vertex(&mut vertices, curve.endpoints[1]);
-            if vertices.len() > point_sums.len() {
-                let additional = vertices.len() - point_sums.len();
-                point_sums.try_reserve_exact(additional).map_err(|_| {
-                    error(
-                        reader.position(),
-                        "legacy Brep vertex sum allocation failed",
-                    )
-                })?;
-                point_sums.resize(vertices.len(), [0.0; 3]);
-                point_counts.try_reserve_exact(additional).map_err(|_| {
-                    error(
-                        reader.position(),
-                        "legacy Brep vertex count allocation failed",
-                    )
-                })?;
-                point_counts.resize(vertices.len(), 0);
-            }
             [start, end]
         };
         for (vertex, point) in endpoints
             .into_iter()
             .zip([curve.endpoints[0], curve.endpoints[1]])
         {
-            let index = vertex as usize;
-            point_sums[index][0] += point.0[0];
-            point_sums[index][1] += point.0[1];
-            point_sums[index][2] += point.0[2];
-            point_counts[index] += 1;
+            let vertex = &mut vertices[vertex as usize];
+            vertex.point_sum[0] += point.0[0];
+            vertex.point_sum[1] += point.0[1];
+            vertex.point_sum[2] += point.0[2];
+            vertex.point_count += 1;
         }
-        edge_endpoints.push(endpoints);
-    }
-    for (index, vertex) in vertices.iter_mut().enumerate() {
-        if point_counts[index] != 0 {
-            let count = point_counts[index] as f64;
-            vertex.point = Point3([
-                point_sums[index][0] / count,
-                point_sums[index][1] / count,
-                point_sums[index][2] / count,
-            ]);
-        }
-    }
-    let mut edges = Vec::with_capacity(edge_count);
-    for (edge_index, curve) in c3_meta.iter().enumerate() {
         let edge_index_i32 = i32::try_from(edge_index)
             .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
         let trim_indexes = edge_trim_indexes[edge_index].clone();
@@ -1113,26 +1134,32 @@ fn parse_legacy_major2(
             curve: edge_index_i32,
             proxy_reversed: 0,
             proxy_domain: curve.domain,
-            vertices: edge_endpoints[edge_index],
+            vertices: endpoints,
             trims: trim_indexes,
             tolerance,
             domain: curve.domain,
             source_range: 0..0,
         });
     }
+    let mut vertices = vertices
+        .into_iter()
+        .map(|mut accumulated| {
+            if accumulated.point_count != 0 {
+                let count = accumulated.point_count as f64;
+                accumulated.vertex.point = Point3([
+                    accumulated.point_sum[0] / count,
+                    accumulated.point_sum[1] / count,
+                    accumulated.point_sum[2] / count,
+                ]);
+            }
+            accumulated.vertex
+        })
+        .collect::<Vec<_>>();
     for trim in &mut trims {
-        let trim_index = trim.index as usize;
-        let start_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 0));
-        let end_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 1));
         trim.vertices = [
-            *root_vertices
-                .get(&start_root)
-                .expect("legacy trim start root has a vertex"),
-            *root_vertices
-                .get(&end_root)
-                .expect("legacy trim end root has a vertex"),
+            endpoint_vertices[legacy_trim_endpoint(trim.index, 0)],
+            endpoint_vertices[legacy_trim_endpoint(trim.index, 1)],
         ];
-        debug_assert_eq!(trim.index as usize, trim_index);
     }
     for edge in &edges {
         for vertex in edge.vertices {
@@ -1180,26 +1207,33 @@ fn parse_legacy_major2(
         vertex.tolerance = tolerance;
     }
 
-    let (render_meshes, render_mesh_array_range) =
+    let (render_meshes, _) =
         read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?;
-    let (analysis_meshes, analysis_mesh_array_range) = if minor >= 1 {
-        read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?
+    let analysis_meshes = if minor >= 1 {
+        read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?.0
     } else {
-        (Vec::new(), 0..0)
+        Vec::new()
     };
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
         warnings.push(format!("legacy ON_Brep skipped {skipped} trailing bytes"));
     }
     let raw = RawBrep {
+        losses: Vec::new(),
         minor,
         c2: RawBrepChildren {
-            slots: c2_slots,
+            slots: c2_meta
+                .into_iter()
+                .map(|curve| Some(curve.into_child()))
+                .collect(),
             source_range: c2_range,
             expected_type: RawBrepBaseType::Curve,
         },
         c3: RawBrepChildren {
-            slots: c3_slots,
+            slots: c3_meta
+                .into_iter()
+                .map(|curve| Some(curve.into_child()))
+                .collect(),
             source_range: c3_range,
             expected_type: RawBrepBaseType::Curve,
         },
@@ -1216,18 +1250,10 @@ fn parse_legacy_major2(
         bounds,
         render_meshes,
         analysis_meshes,
-        render_mesh_array_range,
-        analysis_mesh_array_range,
         is_solid: None,
         face_sides: Vec::new(),
         regions: Vec::new(),
-        region_wrapper_range: None,
         source_range: range,
-        vertex_array_range: 0..0,
-        edge_array_range: 0..0,
-        trim_array_range: 0..0,
-        loop_array_range: 0..0,
-        face_array_range: 0..0,
     };
     match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
@@ -1249,48 +1275,55 @@ fn legacy_curve_shape(
     let crate::curves::DecodedGeometry::Curve { curve } = decoded else {
         return Err(error(offset, "legacy Brep polycurve is not a curve"));
     };
-    let parameters = curve
-        .compound
-        .as_ref()
-        .map(|compound| compound.parameters.as_slice())
-        .filter(|parameters| parameters.len() >= 2)
-        .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
+    let domain = match curve {
+        crate::curves::DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let first = children
+                .first()
+                .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
+            Interval([first.0, *end_parameter])
+        }
+        crate::curves::DecodedCurve::Leaf { .. } => {
+            return Err(error(
+                offset,
+                "legacy Brep polycurve has no parameter range",
+            ));
+        }
+    };
     let endpoints = legacy_decoded_curve_endpoints(curve, offset)?;
-    Ok((
-        Interval([
-            parameters[0],
-            *parameters.last().expect("range has two values"),
-        ]),
-        endpoints,
-    ))
+    Ok((domain, endpoints))
 }
 
 fn legacy_decoded_curve_endpoints(
     curve: &crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<[Point3; 2], GeometryError> {
-    if let Some(compound) = &curve.compound {
-        let first = compound
-            .children
-            .first()
-            .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
-        let last = compound
-            .children
-            .last()
-            .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
-        return Ok([
-            legacy_decoded_curve_endpoints(first, offset)?[0],
-            legacy_decoded_curve_endpoints(last, offset)?[1],
-        ]);
-    }
-    match &curve.geometry {
+    let geometry = match curve {
+        crate::curves::DecodedCurve::Compound { children, .. } => {
+            let first = children
+                .first()
+                .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
+            let last = children
+                .last()
+                .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
+            return Ok([
+                legacy_decoded_curve_endpoints(&first.1, offset)?[0],
+                legacy_decoded_curve_endpoints(&last.1, offset)?[1],
+            ]);
+        }
+        crate::curves::DecodedCurve::Leaf { geometry, .. } => geometry,
+    };
+    match geometry {
         CurveGeometry::Nurbs(nurbs) => {
             let first = nurbs
-                .control_points
+                .control_points()
                 .first()
                 .ok_or_else(|| error(offset, "legacy Brep curve has no first pole"))?;
             let last = nurbs
-                .control_points
+                .control_points()
                 .last()
                 .ok_or_else(|| error(offset, "legacy Brep curve has no last pole"))?;
             Ok([
@@ -1348,21 +1381,25 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
-fn legacy_vertex(vertices: &mut Vec<RawBrepVertex>, point: Point3) -> i32 {
+fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> i32 {
     if let Some((index, _)) = vertices
         .iter()
         .enumerate()
-        .find(|(_, value)| value.point == point)
+        .find(|(_, value)| value.vertex.point == point)
     {
         return index as i32;
     }
     let index = vertices.len();
-    vertices.push(RawBrepVertex {
-        index: index as i32,
-        point,
-        edges: Vec::new(),
-        tolerance: 0.0,
-        source_range: 0..0,
+    vertices.push(LegacyVertex {
+        vertex: RawBrepVertex {
+            index: index as i32,
+            point,
+            edges: Vec::new(),
+            tolerance: 0.0,
+            source_range: 0..0,
+        },
+        point_sum: [0.0; 3],
+        point_count: 0,
     });
     index as i32
 }
@@ -1373,7 +1410,7 @@ fn read_legacy_mesh_sides(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
-) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
+) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let start = reader.position();
     let mut slots = Vec::with_capacity(face_count);
     for _ in 0..face_count {
@@ -1385,7 +1422,7 @@ fn read_legacy_mesh_sides(
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
             }
         };
-        let (mesh, userdata) = if present {
+        let mesh = if present {
             let object_start = reader.position();
             let object = match chunk_at(bytes, object_start, reader.end(), archive, false) {
                 Ok(object) => object,
@@ -1395,55 +1432,41 @@ fn read_legacy_mesh_sides(
                     return Ok((empty_mesh_slots(face_count), start..reader.position()));
                 }
             };
-            if let Err(error) = reader.skip(object.next_offset - object_start) {
+            if let Err(error) = reader.skip(object.next_offset() - object_start) {
                 reader.skip_remaining()?;
                 warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
             }
-            match parse_class_wrapper_with_userdata(
-                bytes,
-                chunk_start_range(&object),
-                archive,
-                warnings,
-            ) {
-                Ok((class, userdata)) if supported_mesh(class.class_uuid) => (
-                    Some(RawBrepChild {
+            match parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings) {
+                Ok((class, userdata)) if supported_mesh(class.class_uuid) => Some(RawBrepMesh {
+                    mesh: RawBrepChild {
                         class_uuid: class.class_uuid,
                         class_data_range: class.class_data_range,
-                        source_range: object_start..object.next_offset,
-                        base_type: RawBrepBaseType::Other,
-                    }),
+                        source_range: object_start..object.next_offset(),
+                    },
                     userdata,
-                ),
+                }),
                 Ok(_) => {
                     warnings.push("legacy Brep mesh cache slot has wrong class".to_string());
-                    (None, Vec::new())
+                    None
                 }
                 Err(error) => {
                     warnings.push(format!("legacy Brep mesh cache slot degraded: {error}"));
-                    (None, Vec::new())
+                    None
                 }
             }
         } else {
-            (None, Vec::new())
+            None
         };
-        slots.push(RawBrepMeshSlot {
-            mesh,
-            present,
-            userdata,
-        });
+        slots.push(mesh);
     }
     Ok((slots, start..reader.position()))
 }
 
-fn empty_mesh_slots(count: usize) -> Vec<RawBrepMeshSlot> {
+fn empty_mesh_slots(count: usize) -> Vec<Option<RawBrepMesh>> {
     let mut slots = Vec::with_capacity(count);
     for _ in 0..count {
-        slots.push(RawBrepMeshSlot {
-            mesh: None,
-            present: false,
-            userdata: Vec::new(),
-        });
+        slots.push(None);
     }
     slots
 }
@@ -1461,15 +1484,8 @@ fn read_children(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_type: RawBrepBaseType,
-    depth: usize,
     warnings: &mut Vec<String>,
 ) -> Result<RawBrepChildren, GeometryError> {
-    if depth > MAX_BREP_DEPTH {
-        return Err(error(
-            reader.position(),
-            "Brep child recursion limit exceeded",
-        ));
-    }
     let start = reader.position();
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child_reader = body_reader(bytes, &chunk)?;
@@ -1494,16 +1510,13 @@ fn read_children(
             1 => {
                 let child_start = child_reader.position();
                 let child_chunk = chunk_at(bytes, child_start, child_reader.end(), archive, false)?;
-                let child_end = child_chunk.next_offset;
-                let class =
-                    parse_class_wrapper(bytes, chunk_start_range(&child_chunk), archive, warnings)?;
+                let child_end = child_chunk.next_offset();
+                let class = parse_class_wrapper(bytes, child_chunk.range(), archive, warnings)?;
                 child_reader.skip(child_end - child_start)?;
-                let base_type = classify_base_type(class.class_uuid);
                 slots.push(Some(RawBrepChild {
                     class_uuid: class.class_uuid,
                     class_data_range: class.class_data_range,
                     source_range: child_start..child_end,
-                    base_type,
                 }));
             }
             _ => {
@@ -1524,7 +1537,7 @@ fn read_children(
     )?;
     Ok(RawBrepChildren {
         slots,
-        source_range: start..chunk.next_offset,
+        source_range: start..chunk.next_offset(),
         expected_type,
     })
 }
@@ -1543,7 +1556,7 @@ fn read_vertices(
         let start = child.position();
         let index = child.i32()?;
         let point = point(&mut child)?;
-        let edges = indexes(&mut child, "vertex edge")?;
+        let edges = indexes(&mut child)?;
         let tolerance = child.f64()?;
         result.push(RawBrepVertex {
             index,
@@ -1558,17 +1571,46 @@ fn read_vertices(
     Ok((result, range))
 }
 
+/// Reports a topology array read under the pre-2002 layout for want of a stamp.
+///
+/// On a V3-or-later archive the stored domain is read only when the writer
+/// stamp vouches for it; without a stamp the proxy domain is substituted and the
+/// stored one is never read, so the emitted geometry rests on an assumption the
+/// archive does not carry. An empty array carries no such reading.
+///
+/// This needs no agreement guard, unlike the body-kind and material charges.
+/// The two readings consume different byte counts per record, so the stamped
+/// reading shifts every record after the first and the two cannot coincide.
+/// `raw_array_start` cannot rule that out either: its record width is a minimum
+/// size check for the allocation, not the stride of the reading that follows.
+fn unstamped_legacy_layout(
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    count: usize,
+    field: &str,
+) -> Option<cadmpeg_ir::report::LossNote> {
+    (archive.value() >= 3 && writer_version.is_none() && count > 0).then(|| {
+        crate::loss::writer_stamp_unverified(format!(
+            "Brep {field} read with the pre-2002 layout for {count} records because the archive has no writer-version stamp"
+        ))
+    })
+}
+
 fn read_edges(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
+    if let Some(loss) = unstamped_legacy_layout(archive, writer_version, count, "edge domains") {
+        losses.push(loss);
+    }
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
         let start = child.position();
@@ -1577,7 +1619,7 @@ fn read_edges(
         let proxy_reversed = child.i32()?;
         let proxy_domain = interval(&mut child)?;
         let vertices = [child.i32()?, child.i32()?];
-        let trims = indexes(&mut child, "edge trim")?;
+        let trims = indexes(&mut child)?;
         let tolerance = child.f64()?;
         let domain = if current {
             interval(&mut child)?
@@ -1607,11 +1649,20 @@ fn read_trims(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "trim", 132)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
+    if let Some(loss) = unstamped_legacy_layout(
+        archive,
+        writer_version,
+        count,
+        "trim domains and proxy senses",
+    ) {
+        losses.push(loss);
+    }
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
         let start = child.position();
@@ -1671,7 +1722,7 @@ fn read_loops(
     for _ in 0..count {
         let start = child.position();
         let index = child.i32()?;
-        let trims = indexes(&mut child, "loop trim")?;
+        let trims = indexes(&mut child)?;
         let loop_type = child.i32()?;
         let face = child.i32()?;
         result.push(RawBrepLoop {
@@ -1716,7 +1767,7 @@ fn read_faces(
     for _ in 0..count {
         let record_start = child.position();
         let index = child.i32()?;
-        let loops = indexes(&mut child, "face loop")?;
+        let loops = indexes(&mut child)?;
         let surface = child.i32()?;
         let reversed_surface = child.i32()?;
         let material_channel = child.i32()?;
@@ -1758,10 +1809,10 @@ fn read_mesh_sides(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
-) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
+) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let parsed: Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> = (|| {
+    let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
         let mut result = Vec::with_capacity(face_count);
         let mut children = Vec::new();
         for _ in 0..face_count {
@@ -1770,26 +1821,19 @@ fn read_mesh_sides(
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
                 children.push(object.range());
-                let class = parse_class_wrapper_with_userdata(
-                    bytes,
-                    chunk_start_range(&object),
-                    archive,
-                    warnings,
-                );
-                child.skip(object.next_offset - start)?;
+                let class =
+                    parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings);
+                child.skip(object.next_offset() - start)?;
                 match class {
                     Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
-                        result.push(RawBrepMeshSlot {
-                            mesh: Some(RawBrepChild {
+                        Some(RawBrepMesh {
+                            mesh: RawBrepChild {
                                 class_uuid: class.class_uuid,
                                 class_data_range: class.class_data_range,
-                                source_range: start..object.next_offset,
-                                base_type: RawBrepBaseType::Other,
-                            }),
-                            present: true,
+                                source_range: start..object.next_offset(),
+                            },
                             userdata,
-                        });
-                        continue;
+                        })
                     }
                     Ok(_) => {
                         warnings.push("Brep mesh cache slot has wrong class".to_string());
@@ -1803,11 +1847,7 @@ fn read_mesh_sides(
             } else {
                 None
             };
-            result.push(RawBrepMeshSlot {
-                mesh,
-                present,
-                userdata: Vec::new(),
-            });
+            result.push(mesh);
         }
         finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
@@ -1815,24 +1855,17 @@ fn read_mesh_sides(
     match parsed {
         Ok(result) => Ok(result),
         Err(error) => {
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
             warnings.push(format!("Brep mesh cache degraded: {error}"));
             Ok((
-                alloc_filled(
-                    face_count,
-                    RawBrepMeshSlot {
-                        mesh: None,
-                        present: false,
-                        userdata: Vec::new(),
+                alloc_filled(face_count, None, "Rhino Brep degraded mesh slots").map_err(
+                    |allocation| {
+                        GeometryError::malformed(
+                            chunk.range().start,
+                            format!("Brep degraded mesh allocation refused: {allocation}"),
+                        )
                     },
-                    "Rhino Brep degraded mesh slots",
-                )
-                .map_err(|allocation| {
-                    GeometryError::malformed(
-                        chunk.range().start,
-                        format!("Brep degraded mesh allocation refused: {allocation}"),
-                    )
-                })?,
+                )?,
                 chunk.range(),
             ))
         }
@@ -1892,10 +1925,10 @@ fn read_regions(
         outer.skip_remaining()?;
         Ok((sides, regions, Some(nested_chunk.range()), true))
     })();
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     match parsed {
         Ok((sides, regions, nested, inline_region_loaded)) => {
-            let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested.as_slice())?;
+            let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested.as_slice())?;
             if matches!(
                 verify_checksum_ranges(bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
@@ -1915,7 +1948,7 @@ fn read_regions(
 
 fn read_region_topology_userdata(
     bytes: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
@@ -2001,7 +2034,7 @@ fn read_region_records<'a>(
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         let index = child.i32()?;
         let region_type = child.i32()?;
-        let sides = indexes(&mut child, "region side")?;
+        let sides = indexes(&mut child)?;
         let bounds = bbox(&mut child)?;
         child.skip_remaining()?;
         result.push(RawBrepRegion {
@@ -2036,8 +2069,8 @@ fn region_element(
     let start = reader.position();
     if archive.value() < 60 {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        reader.skip(chunk.next_offset - start)?;
-        let mut child = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
+        reader.skip(chunk.next_offset() - start)?;
+        let mut child = BoundedReader::new(bytes, chunk.body().start, chunk.body().end)?;
         let major = child.i32()?;
         let minor = child.i32()?;
         if major != 1 || minor < 0 {
@@ -2046,15 +2079,17 @@ fn region_element(
                 "unsupported raw region element version",
             ));
         }
-        Ok((child.position()..chunk.body.end, start..chunk.next_offset))
+        Ok((
+            child.position()..chunk.body().end,
+            start..chunk.next_offset(),
+        ))
     } else {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        let class =
-            parse_class_wrapper(bytes, chunk_start_range(&chunk), archive, &mut Vec::new())?;
+        let class = parse_class_wrapper(bytes, chunk.range(), archive, &mut Vec::new())?;
         if class.class_uuid != expected_class {
             return Err(error(start, "unexpected Brep region element class"));
         }
-        reader.skip(chunk.next_offset - start)?;
+        reader.skip(chunk.next_offset() - start)?;
         let mut class_data = BoundedReader::new(
             bytes,
             class.class_data_range.start,
@@ -2066,11 +2101,14 @@ fn region_element(
         let minor = body.i32()?;
         if major != 1 || minor < 0 {
             return Err(GeometryError::unsupported(
-                payload.body.start,
+                payload.body().start,
                 "unsupported Brep region element version",
             ));
         }
-        Ok((body.position()..payload.body.end, start..chunk.next_offset))
+        Ok((
+            body.position()..payload.body().end,
+            start..chunk.next_offset(),
+        ))
     }
 }
 
@@ -2230,13 +2268,12 @@ fn anonymous_array_start(reader: &mut BoundedReader<'_>) -> Result<usize, Geomet
     count(reader, MAX_BREP_ITEMS)
 }
 
-fn indexes(reader: &mut BoundedReader<'_>, label: &str) -> Result<Vec<i32>, GeometryError> {
+fn indexes(reader: &mut BoundedReader<'_>) -> Result<Vec<i32>, GeometryError> {
     let count = count(reader, MAX_BREP_ITEMS)?;
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
         result.push(reader.i32()?);
     }
-    let _ = label;
     Ok(result)
 }
 
@@ -2274,23 +2311,10 @@ fn typed_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) ->
             .slots
             .get(index as usize)
             .and_then(Option::as_ref)
-            .is_some_and(|child| child.base_type == expected)
+            .is_some_and(|child| child.base_type() == expected)
 }
 
 fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
-    let mut actual = alloc_filled(
-        raw.vertices.len(),
-        Vec::<i32>::new(),
-        "Rhino Brep vertex edge incidences",
-    )
-    .map_err(|error| {
-        GeometryError::malformed(0, format!("Brep incidence allocation refused: {error}"))
-    })?;
-    for (vertex, record) in raw.vertices.iter().enumerate() {
-        for edge in &record.edges {
-            actual[vertex].push(*edge);
-        }
-    }
     for (edge_index, edge) in raw.edges.iter().enumerate() {
         for trim_index in &edge.trims {
             let trim = &raw.trims[*trim_index as usize];
@@ -2311,7 +2335,8 @@ fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
             } else {
                 1
             };
-            let count = actual[*vertex as usize]
+            let count = raw.vertices[*vertex as usize]
+                .edges
                 .iter()
                 .filter(|value| **value == edge_index as i32)
                 .count();
@@ -2380,17 +2405,13 @@ fn supported_mesh(uuid: Uuid) -> bool {
     uuid == crate::mesh::ON_MESH
 }
 
-fn chunk_start_range(chunk: &crate::chunks::Chunk) -> Range<usize> {
-    chunk.range()
-}
-
 fn anonymous_chunk(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Chunk, GeometryError> {
     let chunk = chunk_at(bytes, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             "expected bounded anonymous Brep chunk",
@@ -2400,7 +2421,11 @@ fn anonymous_chunk(
 }
 
 fn body_reader<'a>(bytes: &'a [u8], chunk: &Chunk) -> Result<BoundedReader<'a>, GeometryError> {
-    Ok(BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?)
+    Ok(BoundedReader::new(
+        bytes,
+        chunk.body().start,
+        chunk.body().end,
+    )?)
 }
 
 fn finish_anonymous(
@@ -2425,7 +2450,7 @@ fn finish_anonymous(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
@@ -2437,7 +2462,7 @@ fn finish_anonymous_children(
     children: &[Range<usize>],
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     finish_anonymous_ranges(bytes, parent, chunk, child, &direct, warnings)
 }
 
@@ -2464,18 +2489,8 @@ fn finish_anonymous_ranges(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
-}
-
-fn classify_base_type(uuid: Uuid) -> RawBrepBaseType {
-    if crate::curves::curve_class(uuid) {
-        RawBrepBaseType::Curve
-    } else if crate::curves::surface_class(uuid) {
-        RawBrepBaseType::Surface
-    } else {
-        RawBrepBaseType::Other
-    }
 }
 
 #[cfg(test)]
@@ -2578,8 +2593,8 @@ mod tests {
         anonymous_mixed(&[(&header, false), (&side_array, true), (&region_array, true)])
     }
 
-    fn region_topology_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor {
+    fn region_topology_userdata_descriptor(range: Range<usize>) -> ClassUserdata {
+        ClassUserdata {
             range: range.clone(),
             version: (2, 2),
             class_uuid: V5_BREP_REGION_TOPOLOGY_USERDATA,
@@ -2587,11 +2602,8 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: Some(OPENNURBS4),
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: range,
-            unknown_version: false,
         }
     }
 
@@ -2754,10 +2766,13 @@ mod tests {
 
     fn raw_child(base_type: RawBrepBaseType) -> RawBrepChild {
         RawBrepChild {
-            class_uuid: Uuid::nil(),
+            class_uuid: match base_type {
+                RawBrepBaseType::Curve => crate::curves::POLYCURVE,
+                RawBrepBaseType::Surface => crate::surfaces::NURBS_SURFACE,
+                RawBrepBaseType::Other => Uuid::nil(),
+            },
             class_data_range: 0..0,
             source_range: 0..0,
-            base_type,
         }
     }
 
@@ -2816,6 +2831,7 @@ mod tests {
             })
             .collect();
         RawBrep {
+            losses: Vec::new(),
             minor: 0,
             c2: RawBrepChildren {
                 slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
@@ -2858,24 +2874,94 @@ mod tests {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            render_mesh_array_range: 0..0,
-            analysis_mesh_array_range: 0..0,
             is_solid: None,
             face_sides: Vec::new(),
             regions: Vec::new(),
-            region_wrapper_range: None,
             source_range: 0..0,
-            vertex_array_range: 0..0,
-            edge_array_range: 0..0,
-            trim_array_range: 0..0,
-            loop_array_range: 0..0,
-            face_array_range: 0..0,
         }
+    }
+
+    #[test]
+    fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
+        assert_eq!(
+            serialized_body_kind(2, Some(1), Some(200_210_020), false),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(2), Some(200_210_020), false),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(3), Some(200_210_020), false),
+            BrepBodyKind::Sheet
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(3), Some(200_210_020), true),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(0), Some(200_210_020), true),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(0), Some(200_210_020), false),
+            BrepBodyKind::Sheet
+        );
+        assert_eq!(
+            serialized_body_kind(1, Some(1), Some(200_210_020), true),
+            BrepBodyKind::Solid
+        );
+        assert_eq!(
+            serialized_body_kind(2, Some(1), Some(200_210_019), false),
+            BrepBodyKind::Sheet
+        );
+    }
+
+    /// A missing stamp trusts the stored solid flag; the loss follows that reading.
+    ///
+    /// The same bytes classify as `Sheet` under any stamp older than the flag, so an
+    /// unstamped archive that reads `Solid` was classified on an assumption it does
+    /// not carry. Where the two readings agree nothing was substituted.
+    #[test]
+    fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
+        assert_eq!(
+            serialized_body_kind(2, Some(1), None, false),
+            BrepBodyKind::Solid
+        );
+        assert!(body_kind_rests_on_missing_stamp(2, Some(1), None, false));
+        assert!(body_kind_rests_on_missing_stamp(2, Some(2), None, false));
+
+        // A modern stamp vouches for the same flag: the reading is verified.
+        assert!(!body_kind_rests_on_missing_stamp(
+            2,
+            Some(1),
+            Some(200_210_020),
+            false
+        ));
+        // Both readings agree, so no kind was substituted.
+        assert!(!body_kind_rests_on_missing_stamp(2, Some(1), None, true));
+        assert!(!body_kind_rests_on_missing_stamp(2, Some(0), None, false));
+        assert!(!body_kind_rests_on_missing_stamp(2, None, None, false));
+        assert!(!body_kind_rests_on_missing_stamp(1, Some(1), None, false));
+
+        // The whole-record path reports the substitution as a typed loss.
+        let mut raw = one_face_raw();
+        raw.minor = 2;
+        raw.is_solid = Some(1);
+        let validated = ValidatedRawBrep::try_new(raw).expect("valid Brep");
+        let (kind, substituted) = validated.body_kind(None);
+        assert_eq!(kind, BrepBodyKind::Solid);
+        assert_eq!(
+            substituted.as_ref().map(|loss| &loss.code),
+            Some(&crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
+        );
+        assert_eq!(validated.body_kind(Some(200_210_020)).1, None);
     }
 
     fn degenerate_trim_raw(trim_type: i32, curve: i32) -> RawBrep {
         let interval = Interval([0.0, 1.0]);
         RawBrep {
+            losses: Vec::new(),
             minor: 0,
             c2: RawBrepChildren {
                 slots: vec![Some(raw_child(RawBrepBaseType::Curve))],
@@ -2940,18 +3026,10 @@ mod tests {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            render_mesh_array_range: 0..0,
-            analysis_mesh_array_range: 0..0,
             is_solid: None,
             face_sides: Vec::new(),
             regions: Vec::new(),
-            region_wrapper_range: None,
             source_range: 0..0,
-            vertex_array_range: 0..0,
-            edge_array_range: 0..0,
-            trim_array_range: 0..0,
-            loop_array_range: 0..0,
-            face_array_range: 0..0,
         }
     }
 
@@ -2964,26 +3042,22 @@ mod tests {
 
     #[test]
     fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
-        let circle = crate::curves::DecodedCurve {
-            geometry: CurveGeometry::Circle {
+        let circle = crate::curves::DecodedCurve::leaf(
+            CurveGeometry::Circle {
                 center: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 radius: 2.0,
             },
-            compound: None,
-            warnings: Vec::new(),
-        };
+            Vec::new(),
+        );
         assert_eq!(
             legacy_decoded_curve_endpoints(&circle, 0).expect("circle endpoints"),
             [Point3([3.0, 2.0, 3.0]); 2]
         );
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
-        let degenerate = crate::curves::DecodedCurve {
-            geometry: CurveGeometry::Degenerate { point },
-            compound: None,
-            warnings: Vec::new(),
-        };
+        let degenerate =
+            crate::curves::DecodedCurve::leaf(CurveGeometry::Degenerate { point }, Vec::new());
         assert_eq!(
             legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
             [Point3([4.0, 5.0, 6.0]); 2]
@@ -3051,6 +3125,7 @@ mod tests {
                 ArchiveVersion::V5,
                 Some(writer),
                 &mut Vec::new(),
+                &mut Vec::new(),
             )
             .expect("trims");
             assert_eq!(range, 0..bytes.len());
@@ -3100,7 +3175,7 @@ mod tests {
         let mut warnings = Vec::new();
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("degraded cache");
-        assert!(slots[0].mesh.is_none());
+        assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3115,7 +3190,7 @@ mod tests {
                 .expect("legacy cache degradation");
         assert_eq!(range, 0..bytes.len());
         assert_eq!(slots.len(), 1);
-        assert!(!slots[0].present);
+        assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3128,7 +3203,7 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("empty cache slot");
         assert_eq!(slots.len(), 1);
-        assert!(!slots[0].present);
+        assert!(slots[0].is_none());
         assert!(warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3143,11 +3218,13 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("mesh cache with userdata");
         assert_eq!(slots.len(), 1);
-        assert!(slots[0].present);
-        assert!(slots[0].mesh.is_some(), "warnings: {warnings:?}");
-        assert_eq!(slots[0].userdata.len(), 1);
+        assert!(slots[0].is_some(), "warnings: {warnings:?}");
+        assert_eq!(slots[0].as_ref().unwrap().userdata.len(), 1);
         assert_eq!(
-            slots[0].userdata[0].item_uuid,
+            slots[0].as_ref().unwrap().userdata[0]
+                .known()
+                .unwrap()
+                .item_uuid,
             crate::mesh::V5_MESH_DOUBLE_VERTICES
         );
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
@@ -3168,13 +3245,12 @@ mod tests {
             &mut reader,
             ArchiveVersion::V5,
             RawBrepBaseType::Curve,
-            0,
             &mut Vec::new(),
         )
         .expect("children");
         assert!(array.slots[0].is_none());
         assert_eq!(
-            array.slots[1].as_ref().expect("wrong class").base_type,
+            array.slots[1].as_ref().expect("wrong class").base_type(),
             RawBrepBaseType::Other
         );
         assert_eq!(reader.remaining(), 0);

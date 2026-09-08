@@ -43,9 +43,7 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn presentation_layer_expands_all_product_definition_views() {
@@ -227,9 +225,8 @@ pub(crate) fn step_color_assets_round_trip_names_and_tessellation_targets_strict
         write_step(
             &ir,
             &mut bytes,
+            schema,
             &StepWriteOptions {
-                schema,
-                unsupported: StepUnsupportedPolicy::Reject,
                 ..StepWriteOptions::default()
             },
         )
@@ -319,10 +316,8 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
     let report = write_step(
         decoded.ir(),
         &mut output,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write tessellation layer");
     assert!(!report.losses.iter().any(|loss| {
@@ -383,9 +378,9 @@ fn complex_presentation_annotation_inherits_text_and_placement() {
     );
     assert_eq!(text.as_deref(), Some("inspect surface"));
     let transform = placement.as_ref().expect("annotation placement");
-    assert_eq!(transform.rows[0][3], 10.0);
-    assert_eq!(transform.rows[1][3], 20.0);
-    assert_eq!(transform.rows[2][3], 30.0);
+    assert_eq!(transform.rows()[0][3], 10.0);
+    assert_eq!(transform.rows()[1][3], 20.0);
+    assert_eq!(transform.rows()[2][3], 30.0);
 }
 
 #[test]
@@ -415,7 +410,7 @@ fn composite_presentation_text_does_not_depend_on_set_order() {
         assert!(
             unknowns
                 .iter()
-                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
             "ambiguous text carrier #{id} was not retained"
         );
     }
@@ -448,14 +443,16 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
         .native_unknowns("step")
         .expect("STEP unknown records");
     assert!(
-        unknowns.iter().any(|record| record.id.0.ends_with("#11")),
+        unknowns
+            .iter()
+            .any(|record| record.id.as_str().ends_with("#11")),
         "unmodeled tessellated wrapper #11 was not retained"
     );
     for id in [12, 13] {
         assert!(
             !unknowns
                 .iter()
-                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
             "decoded tessellated curve carrier #{id} was retained as opaque"
         );
     }
@@ -480,7 +477,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#7")
+        .find(|curve| curve.id.as_str() == "step:data:curve#7")
         .expect("styled polyline carrier");
     assert_eq!(
         curve
@@ -718,7 +715,7 @@ fn context_dependent_styles_are_not_flattened_without_context() {
         "step:data:presentation_style_by_context#8",
     ] {
         assert!(
-            unknowns.iter().any(|record| record.id.0 == id),
+            unknowns.iter().any(|record| record.id.as_str() == id),
             "missing {id}"
         );
     }
@@ -729,18 +726,6 @@ fn context_dependent_styles_are_not_flattened_without_context() {
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let mut output = Vec::new();
-    let error = write_step(
-        result.ir(),
-        &mut output,
-        &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
-            ..StepWriteOptions::default()
-        },
-    )
-    .expect_err("strict write must reject retained context styles");
-    assert!(matches!(error, StepError::Unsupported(_)));
-    assert!(output.is_empty());
 }
 
 #[test]
@@ -757,7 +742,7 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
     assert!(matches!(
         &result.ir().model.appearance_bindings[0].target,
         cadmpeg_ir::appearance::AppearanceTarget::Point(point)
-            if point.0 == "step:data:point#13"
+            if point.as_str() == "step:data:point#13"
     ));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
@@ -774,13 +759,13 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
         "step:data:presentation_style_by_context#11",
     ] {
         assert!(
-            unknowns.iter().any(|record| record.id.0 == id),
+            unknowns.iter().any(|record| record.id.as_str() == id),
             "missing {id}"
         );
     }
     assert!(!unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:styled_item#15"));
+        .any(|record| record.id.as_str() == "step:data:styled_item#15"));
     assert!(result
         .ir()
         .model
@@ -802,7 +787,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
             !matches!(
                 &binding.target,
                 cadmpeg_ir::appearance::AppearanceTarget::Point(point)
-                    if point.0 == "step:data:point#3"
+                    if point.as_str() == "step:data:point#3"
             )
         }));
         assert!(result.report().losses.iter().any(|loss| {
@@ -820,7 +805,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
             "step:data:presentation_style_by_context#11",
         ] {
             assert!(
-                unknowns.iter().any(|record| record.id.0 == id),
+                unknowns.iter().any(|record| record.id.as_str() == id),
                 "missing {id}"
             );
         }
@@ -850,7 +835,7 @@ fn complex_representation_invisibility_reaches_surface_body() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "step:data:body#38")
+        .find(|body| body.id.as_str() == "step:data:body#38")
         .expect("surface body");
     assert_eq!(body.visible, Some(false));
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -888,7 +873,7 @@ fn styled_item_invisibility_is_binding_scoped() {
             matches!(
                 &binding.target,
                 cadmpeg_ir::appearance::AppearanceTarget::Surface(surface)
-                    if surface.0 == "step:data:surface#5"
+                    if surface.as_str() == "step:data:surface#5"
             )
         })
         .collect::<Vec<_>>();
@@ -910,7 +895,7 @@ fn styled_item_invisibility_is_binding_scoped() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#14"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#14"));
 }
 
 #[test]
@@ -1072,7 +1057,7 @@ fn presentation_layer_invisibility_is_layer_scoped() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#3"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#3"));
 }
 
 #[test]
@@ -1095,7 +1080,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#3")
+        .find(|curve| curve.id.as_str() == "step:data:curve#3")
         .expect("styled curve");
     assert_eq!(
         curve
@@ -1110,7 +1095,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "step:data:surface#9")
+        .find(|surface| surface.id.as_str() == "step:data:surface#9")
         .expect("annotation support surface");
     assert_eq!(
         surface
@@ -1143,7 +1128,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#3")
+        .find(|curve| curve.id.as_str() == "step:data:curve#3")
         .expect("complex styled curve");
     assert_eq!(
         curve
@@ -1174,7 +1159,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .all(|record| record.id.0 != "step:data:styled_item#6"));
+        .all(|record| record.id.as_str() != "step:data:styled_item#6"));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1367,12 +1352,14 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
-    region.id.0 = "zzzz:test:region#second".into();
+    region.id = "zzzz:test:region#second"
+        .try_into()
+        .expect("valid identity");
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
     ir.model.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#body".into()),
+        id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
         description: None,
         visible: None,
@@ -1380,7 +1367,13 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     });
 
     let mut bytes = Vec::new();
-    write_step(&ir, &mut bytes, &StepWriteOptions::default()).expect("write body presentation");
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write body presentation");
     let (exchange, diagnostics) = crate::parse::parse(&bytes).expect("parse body presentation");
     assert!(diagnostics.is_empty());
     let layer = exchange
@@ -1499,7 +1492,13 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
-    let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
     let s = String::from_utf8(buf).unwrap();
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
     assert!(s.contains("ADVANCED_FACE"));
@@ -1512,14 +1511,15 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
 
     let mut transformed = unit_cube();
     transformed.model.bodies[0].visible = Some(false);
-    transformed.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    transformed.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     let transformed_text = export(&transformed);
     assert!(transformed_text.contains("MAPPED_ITEM"));
     assert!(!transformed_text.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
@@ -1584,7 +1584,8 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     let mut ir = unit_cube();
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("test:appearance#black".to_string()),
+        id: AppearanceId::mint("test:model:appearance#black".to_string())
+            .expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1602,9 +1603,12 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#face".to_string(),
+        id: "test:model:appearance-binding#face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(face),
-        appearance: AppearanceId("test:appearance#black".to_string()),
+        appearance: AppearanceId::mint("test:model:appearance#black".to_string())
+            .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1633,7 +1637,8 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("test:appearance#vertex".to_string()),
+        id: AppearanceId::mint("test:model:appearance#vertex".to_string())
+            .expect("identity grammar"),
         name: Some("vertex green".to_string()),
         asset_guid: None,
         library_id: None,
@@ -1651,9 +1656,12 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#vertex".to_string(),
+        id: "test:model:appearance-binding#vertex"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Vertex(vertex),
-        appearance: AppearanceId("test:appearance#vertex".to_string()),
+        appearance: AppearanceId::mint("test:model:appearance#vertex".to_string())
+            .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1688,7 +1696,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     let mut ir = unit_cube();
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#point".to_string()),
+        id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
         visible: None,
@@ -1696,8 +1704,13 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     });
 
     let mut bytes = Vec::new();
-    let report =
-        write_step(&ir, &mut bytes, &StepWriteOptions::default()).expect("write point layer");
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write point layer");
     assert!(!report.losses.iter().any(|loss| {
         loss.message
             .contains("layer 'point layer' has 1 item(s) without a writable STEP carrier")
@@ -1715,8 +1728,10 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
 
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
-    let parent_product = ProductDefinitionId("test:product#parent".into());
-    let child_product = ProductDefinitionId("test:product#child".into());
+    let parent_product =
+        ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
+    let child_product =
+        ProductDefinitionId::mint("test:model:product#child").expect("identity grammar");
     ir.model.product_definitions.extend([
         ProductDefinition {
             id: parent_product.clone(),
@@ -1741,8 +1756,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             native_ref: None,
         },
     ]);
-    let root = OccurrenceId("test:occurrence#root".into());
-    let child = OccurrenceId("test:occurrence#child".into());
+    let root = OccurrenceId::mint("test:model:occurrence#root").expect("identity grammar");
+    let child = OccurrenceId::mint("test:model:occurrence#child").expect("identity grammar");
     ir.model.occurrences.extend([
         Occurrence {
             id: root.clone(),
@@ -1752,18 +1767,11 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             parent: OccurrenceParent::Root,
             ordinal: 0,
             transform: Transform::identity(),
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some("Root assembly".into()),
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: None,
         },
         Occurrence {
@@ -1773,30 +1781,22 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             },
             parent: OccurrenceParent::Occurrence { occurrence: root },
             ordinal: 0,
-            transform: Transform {
-                rows: [
-                    [1.0, 0.0, 0.0, 25.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
-            },
-            prototype_transform: Transform::identity(),
+            transform: Transform::from_rows([
+                [1.0, 0.0, 0.0, 25.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+            .expect("affine transform"),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some("Child occurrence".into()),
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
-            link_transform: None,
+            link: None,
             native_ref: None,
         },
     ]);
-    let annotation = PmiId("test:pmi#note".into());
+    let annotation = PmiId::mint("test:model:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
         name: Some("inspection note".into()),
@@ -1809,7 +1809,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         },
     });
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#mixed".into()),
+        id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
         description: None,
         visible: None,
@@ -1826,9 +1826,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     let report = write_step(
         &ir,
         &mut bytes,
+        StepSchema::Ap242Edition3,
         &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         },
     )
@@ -1877,7 +1876,8 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("test:appearance#black".to_string()),
+        id: AppearanceId::mint("test:model:appearance#black".to_string())
+            .expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1895,9 +1895,12 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#face".to_string(),
+        id: "test:model:appearance-binding#face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(face),
-        appearance: AppearanceId("test:appearance#black".to_string()),
+        appearance: AppearanceId::mint("test:model:appearance#black".to_string())
+            .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,

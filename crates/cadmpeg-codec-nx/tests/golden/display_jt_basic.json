@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -143,185 +143,182 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "display_jt_compressed_element_sequences": [
-              {
-                "elements": [
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-0"
-                ],
-                "framed_byte_len": 48,
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529,
-                "tail": [
-                  6,
-                  5
-                ],
-                "tail_sha256": "678feb3f747a2d2f550e94426e93e05c4701e4ee09543ff89eb06986772c261c"
-              }
-            ],
-            "display_jt_compressed_elements": [
-              {
-                "body_byte_len": 3,
-                "body_sha256": "06df4f7e1394f1c57cc6583fba4d8060a5a66f4f4771c14aeff6b9af8a28c9b3",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
-                "inflated_offset": 0,
-                "object_base_type": 1,
-                "object_id": 5,
-                "object_type_id": [
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3,
-                  3
-                ],
-                "ordinal": 0,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              }
-            ],
-            "display_jt_documents": [
-              {
-                "byte_order": 0,
-                "format_major": 9,
-                "format_minor": 4,
-                "id": "nx:display-jt:document#0-row-0",
-                "index_row": "nx:display-jt:index#0-row-0",
-                "lsg_segment_id": [
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "physical_byte_len": 207,
-                "source_offset": 368,
-                "toc_entries": [
-                  {
-                    "attributes": [
-                      0,
-                      0,
-                      0,
-                      1
-                    ],
-                    "id": "nx:display-jt:toc-entry#0-row-0-0",
-                    "ordinal": 0,
-                    "segment_byte_len": 70,
-                    "segment_id": [
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2
-                    ],
-                    "segment_offset": 137,
-                    "source_offset": 477
-                  }
-                ],
-                "toc_offset": 105,
-                "version_field": "Version 9.4 JT                                                                  "
-              }
-            ],
-            "display_jt_indices": [
-              {
-                "declared_count": 1,
-                "id": "nx:display-jt:index#0",
-                "rows": [
-                  {
-                    "header_offset": 28,
-                    "id": "nx:display-jt:index#0-row-0",
-                    "ordinal": 0,
-                    "source_offset": 348,
-                    "value": 100
-                  }
-                ],
-                "source_offset": 340,
-                "version": 9
-              }
-            ],
-            "display_jt_segments": [
-              {
-                "compression": {
-                  "algorithm": 2,
-                  "compressed_byte_len": 37,
-                  "compressed_data_byte_len": 38,
-                  "flag": 2,
-                  "inflated_sha256": "f17921f91e80310304aec97e8947719a1b255efb9eeb38137d2b914689e1e81d"
-                },
-                "document": "nx:display-jt:document#0-row-0",
-                "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "bb2c12e1b93a31bc804b6b107c32d2cb370e231692c02235255201ea21ada64a",
-                "segment_byte_len": 70,
-                "segment_id": [
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2
-                ],
-                "segment_type": 1,
-                "source_offset": 505,
-                "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          },
-          "version": 189
+          "display_jt_compressed_element_sequences": [
+            {
+              "elements": [
+                "nx:display-jt:segment#0-row-0-0-inflated-element-0"
+              ],
+              "framed_byte_len": 48,
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529,
+              "tail": [
+                6,
+                5
+              ],
+              "tail_sha256": "678feb3f747a2d2f550e94426e93e05c4701e4ee09543ff89eb06986772c261c"
+            }
+          ],
+          "display_jt_compressed_elements": [
+            {
+              "body_byte_len": 3,
+              "body_sha256": "06df4f7e1394f1c57cc6583fba4d8060a5a66f4f4771c14aeff6b9af8a28c9b3",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
+              "inflated_offset": 0,
+              "object_base_type": 1,
+              "object_id": 5,
+              "object_type_id": [
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3,
+                3
+              ],
+              "ordinal": 0,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            }
+          ],
+          "display_jt_documents": [
+            {
+              "byte_order": 0,
+              "format_major": 9,
+              "format_minor": 4,
+              "id": "nx:display-jt:document#0-row-0",
+              "index_row": "nx:display-jt:index#0-row-0",
+              "lsg_segment_id": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "physical_byte_len": 207,
+              "source_offset": 368,
+              "toc_entries": [
+                {
+                  "attributes": [
+                    0,
+                    0,
+                    0,
+                    1
+                  ],
+                  "id": "nx:display-jt:toc-entry#0-row-0-0",
+                  "ordinal": 0,
+                  "segment_byte_len": 70,
+                  "segment_id": [
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2
+                  ],
+                  "segment_offset": 137,
+                  "source_offset": 477
+                }
+              ],
+              "toc_offset": 105,
+              "version_field": "Version 9.4 JT                                                                  "
+            }
+          ],
+          "display_jt_indices": [
+            {
+              "declared_count": 1,
+              "id": "nx:display-jt:index#0",
+              "rows": [
+                {
+                  "header_offset": 28,
+                  "id": "nx:display-jt:index#0-row-0",
+                  "ordinal": 0,
+                  "source_offset": 348,
+                  "value": 100
+                }
+              ],
+              "source_offset": 340,
+              "version": 9
+            }
+          ],
+          "display_jt_segments": [
+            {
+              "compression": {
+                "algorithm": 2,
+                "compressed_byte_len": 37,
+                "compressed_data_byte_len": 38,
+                "flag": 2,
+                "inflated_sha256": "f17921f91e80310304aec97e8947719a1b255efb9eeb38137d2b914689e1e81d"
+              },
+              "document": "nx:display-jt:document#0-row-0",
+              "id": "nx:display-jt:segment#0-row-0-0",
+              "payload_sha256": "bb2c12e1b93a31bc804b6b107c32d2cb370e231692c02235255201ea21ada64a",
+              "segment_byte_len": 70,
+              "segment_id": [
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2
+              ],
+              "segment_type": 1,
+              "source_offset": 505,
+              "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -334,9 +331,29 @@
           "footer_offset": "575",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
-          "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
           "plain_streams": "0"
+        },
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@119",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         },
         "format": "nx"
       },
@@ -350,6 +367,27 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@119",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": true,
       "losses": [
@@ -370,12 +408,20 @@
           },
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx"
+          },
+          "message": "The Parasolid stream at stream@119 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 575, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-        "Parasolid schema: SCH_TEST_1_9999"
+        "SPLMSSTR container: file tag 0, footer offset 575, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -485,12 +531,32 @@
           "sha256": "173ac020f2c71a2d189ac51864d2ec57d338dcbcd3ad5bc4941f16bbb6dd88e1",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@119",
+            "schema": "SCH_TEST_1_9999"
+          },
+          "dialect": "parasolid:unknown",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -544,10 +610,20 @@
       }
     ],
     "format": "nx",
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx"
+        },
+        "message": "The Parasolid stream at stream@119 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 575, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
-      "Parasolid schema: SCH_TEST_1_9999"
+      "SPLMSSTR container: file tag 0, footer offset 575, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }
 }

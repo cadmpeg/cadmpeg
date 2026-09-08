@@ -258,26 +258,24 @@ pub(super) fn oriented_nurbs_range(
     let CurveGeometry::Nurbs(mut curve) = geometry else {
         return None;
     };
-    let degree = usize::try_from(curve.degree).ok()?;
-    let domain_start = *curve.knots.get(degree)?;
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let domain_start = *curve.knots().get(degree)?;
     let domain_end = *curve
-        .knots
+        .knots()
         .len()
         .checked_sub(degree + 1)
-        .and_then(|index| curve.knots.get(index))?;
+        .and_then(|index| curve.knots().get(index))?;
     let mut range = endpoint_parameters;
     if range[0] > range[1] {
         let sum = domain_start + domain_end;
-        curve.knots = curve
-            .knots
-            .into_iter()
-            .rev()
-            .map(|knot| sum - knot)
-            .collect();
-        curve.control_points.reverse();
-        if let Some(weights) = &mut curve.weights {
-            weights.reverse();
-        }
+        curve.reverse_parameterization();
+        curve
+            .edit_knots(|knots| {
+                for knot in knots {
+                    *knot += sum;
+                }
+            })
+            .ok()?;
         range = [sum - range[0], sum - range[1]];
     }
     if !range[0].is_finite()
@@ -389,22 +387,25 @@ pub(super) fn lifted_curve_geometry(
             direction_u,
             direction_v,
             ..
-        } => Some(CurveGeometry::Nurbs(NurbsCurve {
-            degree: pcurve.degree,
-            knots,
-            control_points: pcurve
-                .control_points
-                .iter()
-                .map(|uv| {
-                    point3(add(
-                        *origin,
-                        add(scale(*direction_u, uv[0]), scale(*direction_v, uv[1])),
-                    ))
-                })
-                .collect(),
-            weights: pcurve.weights.clone(),
-            periodic: false,
-        })),
+        } => Some(CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                pcurve.degree,
+                knots,
+                pcurve
+                    .control_points
+                    .iter()
+                    .map(|uv| {
+                        point3(add(
+                            *origin,
+                            add(scale(*direction_u, uv[0]), scale(*direction_v, uv[1])),
+                        ))
+                    })
+                    .collect(),
+                pcurve.weights.clone(),
+                false,
+            )
+            .ok()?,
+        )),
         B5Surface::Cylinder {
             origin,
             reference_x,
@@ -634,8 +635,8 @@ pub(super) fn cylinder_helix(
         axis: vector(*axis),
     };
     let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE)?;
-    let cache_start = cache.curve.control_points.first()?;
-    let cache_end = cache.curve.control_points.last()?;
+    let cache_start = cache.curve.control_points().first()?;
+    let cache_end = cache.curve.control_points().last()?;
     if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE
         || distance([cache_end.x, cache_end.y, cache_end.z], edge_end) > POINT_TOLERANCE
     {
@@ -661,7 +662,9 @@ pub(super) fn emit_pcurves(
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
-        for (index, (&object_id, &edge_id)) in loop_.pcurves.iter().zip(&loop_.edges).enumerate() {
+        for (index, member) in loop_.members.iter().enumerate() {
+            let object_id = member.pcurve;
+            let edge_id = member.edge;
             let Some((_, _, native_range)) = pcurve_plan.get(&object_id) else {
                 continue;
             };
@@ -688,9 +691,10 @@ pub(super) fn emit_pcurves(
         let range_count = ranges.len();
         for (rank, (range_bits, occurrences)) in ranges.into_iter().enumerate() {
             let id = if range_count == 1 {
-                PcurveId(format!("catia:b5:pcurve#{object_id}"))
+                PcurveId::mint(format!("catia:b5:pcurve#{object_id}")).expect("identity grammar")
             } else {
-                PcurveId(format!("catia:b5:pcurve#{object_id}@{rank}"))
+                PcurveId::mint(format!("catia:b5:pcurve#{object_id}@{rank}"))
+                    .expect("identity grammar")
             };
             annotate(
                 annotations,
@@ -717,10 +721,11 @@ pub(super) fn emit_pcurves(
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
-                wrapper_reversed: None,
-                parameter_range: Some(parameter_range),
-                fit_tolerance: None,
-                native_tail_flags: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    Some(parameter_range),
+                    None,
+                ),
             });
         }
     }

@@ -50,7 +50,6 @@ pub(crate) struct ByteRange {
 #[derive(Debug, Clone)]
 pub(crate) struct DisplayFace {
     pub(crate) mesh: Mesh,
-    pub(crate) table_index: usize,
     pub(crate) table: ByteRange,
     pub(crate) metadata: ByteRange,
     pub(crate) surface_references: Vec<PersistentSurfaceReference>,
@@ -124,11 +123,6 @@ pub(crate) struct ClassInterval {
     source_ids: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SceneFeatureClasses {
-    pub(crate) by_source: HashMap<String, String>,
-}
-
 pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let declarations = payload
         .windows(CLASS_MARKER.len())
@@ -183,7 +177,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .into_iter()
         .filter(|class| {
             matches!(
-                crate::classification::native_object_class(&class.name).tree_node,
+                crate::classification::native_object_class(&class.name).tree_node(),
                 Some(
                     cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
                         | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
@@ -201,7 +195,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .collect()
 }
 
-pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses {
+pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, String> {
     let mut candidates = HashMap::<u32, Option<String>>::new();
     for section in scan.sections() {
         for (source, class) in scene_classes(section.payload()) {
@@ -215,12 +209,10 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses
                 .or_insert_with(|| Some(class));
         }
     }
-    SceneFeatureClasses {
-        by_source: candidates
-            .into_iter()
-            .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
-            .collect(),
-    }
+    candidates
+        .into_iter()
+        .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
+        .collect()
 }
 
 pub(crate) fn auxiliary_channels_are_consistent(
@@ -228,9 +220,9 @@ pub(crate) fn auxiliary_channels_are_consistent(
     channels: &[TessellationChannel],
 ) -> bool {
     let [b, c, d] = channels else { return false };
-    if (b.item_size, b.kind, b.flags) != (4, 8, 2)
-        || (c.item_size, c.kind, c.flags) != (4, 8, 2)
-        || (d.item_size, d.kind, d.flags) != (1, 8, 2)
+    if (b.item_size(), b.kind(), b.flags()) != (4, 8, 2)
+        || (c.item_size(), c.kind(), c.flags()) != (4, 8, 2)
+        || (d.item_size(), d.kind(), d.flags()) != (1, 8, 2)
     {
         return false;
     }
@@ -248,22 +240,25 @@ pub(crate) fn auxiliary_channels_are_consistent(
         return false;
     };
     let stored_list_c = c
-        .data
+        .data()
         .chunks_exact(4)
         .map(|bytes| usize::try_from(View::u32_le_at(bytes, 0)?).ok())
         .collect::<Option<Vec<_>>>();
-    let counts = (usize::try_from(b.count).ok(), usize::try_from(d.count).ok());
+    let counts = (
+        usize::try_from(b.count()).ok(),
+        usize::try_from(d.count()).ok(),
+    );
     let payload_lengths = channels.iter().all(|channel| {
-        usize::try_from(channel.item_size)
+        usize::try_from(channel.item_size())
             .ok()
-            .and_then(|size| usize::try_from(channel.count).ok()?.checked_mul(size))
-            == Some(channel.data.len())
+            .and_then(|size| usize::try_from(channel.count()).ok()?.checked_mul(size))
+            == Some(channel.data().len())
     });
     payload_lengths
         && (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
-        && usize::try_from(c.count).ok() == Some(strips.len())
+        && usize::try_from(c.count()).ok() == Some(strips.len())
         && stored_list_c.as_deref() == Some(list_c.as_slice())
-        && b.data
+        && b.data()
             .chunks_exact(4)
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
@@ -283,15 +278,16 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         if end > bytes.len() {
             return None;
         }
-        channels.push(TessellationChannel {
-            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-            item_size: item_size as u32,
-            kind,
-            flags,
-            count: count as u32,
-            data: bytes[data..end].to_vec(),
-            indices: Vec::new(),
-        });
+        channels.push(
+            TessellationChannel::new(
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                item_size as u32,
+                kind,
+                flags,
+                bytes[data..end].to_vec(),
+            )
+            .ok()?,
+        );
         if index == 0 && item_size == 4 && kind == 8 {
             strips = (0..count)
                 .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
@@ -327,9 +323,9 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         .iter()
         .try_fold(0usize, |total, length| total.checked_add(*length))?;
     if !matches!(channels.as_slice(), [a, positions, normals, ..]
-        if (a.item_size, a.kind, a.flags) == (4, 8, 2)
-            && (positions.item_size, positions.kind, positions.flags) == (12, 100, 2)
-            && (normals.item_size, normals.kind, normals.flags) == (12, 100, 2))
+        if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
+            && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
+            && (normals.item_size(), normals.kind(), normals.flags()) == (12, 100, 2))
     {
         return None;
     }
@@ -407,7 +403,6 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
         for (start, end, mesh) in tables {
             faces.push(DisplayFace {
                 mesh,
-                table_index: 0,
                 table: ByteRange { start, end },
                 metadata: ByteRange {
                     start: end,
@@ -423,7 +418,6 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
             .get(index + 1)
             .map_or(faces[index].metadata.end, |next| next.table.start)
             .min(faces[index].metadata.end);
-        faces[index].table_index = index;
         faces[index].metadata.end = metadata_end;
         faces[index].surface_references =
             persistent_surface_references(payload, faces[index].metadata);
@@ -705,11 +699,11 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
 
     let mut assigned = Vec::new();
     for mesh in &mut model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertices.is_empty() {
+        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertices().is_empty() {
             continue;
         }
         let coordinate_scale = mesh
-            .vertices
+            .vertices()
             .iter()
             .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
             .fold(1.0_f64, f64::max);
@@ -720,7 +714,7 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
             .iter()
             .filter(|candidate| {
                 let tolerance = candidate.tolerance.max(quantization_tolerance);
-                mesh.vertices.iter().all(|point| {
+                mesh.vertices().iter().all(|point| {
                     surface_measure(
                         candidate.surface,
                         candidate.inverse.apply_point(*point),
@@ -774,7 +768,7 @@ fn approximate_surface_owner(
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
 ) -> Option<(usize, f64)> {
-    if mesh.normals.len() != mesh.vertices.len() || mesh.normals.is_empty() {
+    if mesh.normals().len() != mesh.vertices().len() || mesh.normals().is_empty() {
         return None;
     }
     let mut fits = candidates
@@ -782,7 +776,7 @@ fn approximate_surface_owner(
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
-            for (point, normal) in mesh.vertices.iter().zip(&mesh.normals) {
+            for (point, normal) in mesh.vertices().iter().zip(mesh.normals()) {
                 let local_point = candidate.inverse.apply_point(*point);
                 let measure = surface_measure(candidate.surface, local_point, None)?;
                 let residual = measure.residual;
@@ -837,7 +831,7 @@ fn approximate_trimmed_surface_owner(
         .filter_map(|(index, candidate)| {
             let trim = candidate.trim.as_ref()?;
             let mut max_residual = 0.0_f64;
-            for point in &mesh.vertices {
+            for point in mesh.vertices() {
                 let measure = surface_measure(
                     candidate.surface,
                     candidate.inverse.apply_point(*point),
@@ -884,12 +878,12 @@ fn contains_nurbs_surface(surface: &SurfaceGeometry) -> bool {
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
     model: &mut cadmpeg_ir::document::Model,
-    face_identities: &[(String, PersistentFaceIdentity)],
+    face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
 ) -> Vec<String> {
     let mut faces_by_identity = HashMap::<PersistentFaceIdentity, Option<FaceId>>::new();
     for (target, identity) in face_identities {
-        let candidate = FaceId(target.clone());
+        let candidate = target.clone();
         match faces_by_identity.entry(identity.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(candidate));
@@ -1074,7 +1068,7 @@ impl CylindricalTrim {
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> bool {
-        mesh.vertices.iter().all(|point| {
+        mesh.vertices().iter().all(|point| {
             let point = inverse_body.apply_point(*point);
             let axial = point.vector_from(self.origin).dot(self.axis);
             let angular = cylinder_angle(point, self.origin, self.axis, self.ref_direction);
@@ -1101,7 +1095,7 @@ impl ConicalTrim {
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> bool {
-        mesh.vertices.iter().all(|point| {
+        mesh.vertices().iter().all(|point| {
             let point = inverse_body.apply_point(*point);
             let axial = point.vector_from(self.origin).dot(self.axis);
             let local_radius = self.radius + axial * self.slope;
@@ -1140,7 +1134,7 @@ impl PlanarTrim {
     ) -> bool {
         let tolerance = tolerance + self.boundary_tolerance;
         let projected = mesh
-            .vertices
+            .vertices()
             .iter()
             .map(|point| self.frame.project(inverse_body.apply_point(*point)))
             .collect::<Vec<_>>();
@@ -1177,7 +1171,7 @@ impl PlanarTrim {
         }) {
             return false;
         }
-        mesh.triangles.iter().all(|triangle| {
+        mesh.triangles().iter().all(|triangle| {
             let [Some(a), Some(b), Some(c)] =
                 triangle.map(|index| projected.get(index as usize).copied())
             else {
@@ -1225,9 +1219,9 @@ fn closed_planar_circle(
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<CircularHole> {
-    let coedge = *coedges.get(&loop_.coedges[0])?;
+    let coedge = *coedges.get(&loop_.coedges()[0])?;
     let edge = *edges.get(&coedge.edge)?;
-    if coedge.owner_loop != loop_.id || coedge.next != coedge.id || coedge.previous != coedge.id {
+    if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
         return None;
     }
     let CurveGeometry::Circle {
@@ -1496,27 +1490,24 @@ fn planar_trim(
     let mut boundary_tolerance = 0.0_f64;
     for loop_id in &face.loops {
         let loop_ = *loops.get(loop_id)?;
-        if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+        if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some()
+        {
             return None;
         }
-        if loop_.coedges.len() == 1 {
+        if loop_.coedges().len() == 1 {
             circles.push(closed_planar_circle(
                 loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
             )?);
             continue;
         }
 
-        let mut polygon = Vec::with_capacity(loop_.coedges.len());
+        let mut polygon = Vec::with_capacity(loop_.coedges().len());
         let mut first_start = None;
         let mut previous_end = None;
-        for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+        for coedge_id in loop_.coedges() {
             let coedge = *coedges.get(coedge_id)?;
             let edge = *edges.get(&coedge.edge)?;
-            if coedge.owner_loop != loop_.id
-                || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
-                || coedge.previous
-                    != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
-            {
+            if coedge.owner_loop != loop_.id {
                 return None;
             }
             let (start, end) = match coedge.sense {
@@ -1644,13 +1635,13 @@ fn planar_hole_trim(
         .iter()
         .map(|loop_id| loops.get(loop_id).copied())
         .collect::<Option<Vec<_>>>()?;
-    if !face_loops.iter().any(|loop_| loop_.coedges.len() > 1) {
+    if !face_loops.iter().any(|loop_| loop_.coedges().len() > 1) {
         return None;
     }
     let holes = face_loops
         .iter()
         .filter(|loop_| {
-            loop_.face == face.id && loop_.coedges.len() == 1 && loop_.vertex_uses.is_empty()
+            loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
         })
         .filter_map(|loop_| {
             closed_planar_circle(
@@ -1694,18 +1685,14 @@ fn cylindrical_trim(
         return None;
     };
     let loop_ = *loops.get(loop_id)?;
-    if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+    if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
     }
     let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
     let mut axial_bounds = None::<(f64, f64)>;
-    for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+    for coedge_id in loop_.coedges() {
         let coedge = *coedges.get(coedge_id)?;
-        if coedge.owner_loop != loop_.id
-            || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
-            || coedge.previous
-                != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
-        {
+        if coedge.owner_loop != loop_.id {
             return None;
         }
         let edge = *edges.get(&coedge.edge)?;
@@ -1747,7 +1734,7 @@ fn cylindrical_trim(
     }
     let (min_axial, max_axial) = axial_bounds?;
     let angles = loop_
-        .coedges
+        .coedges()
         .iter()
         .map(|coedge_id| {
             let coedge = coedges.get(coedge_id)?;
@@ -1813,19 +1800,15 @@ fn conical_trim(
         return None;
     };
     let loop_ = *loops.get(loop_id)?;
-    if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+    if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
     }
     let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
     let mut axial_bounds = None::<(f64, f64)>;
     let mut angles = Vec::new();
-    for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+    for coedge_id in loop_.coedges() {
         let coedge = *coedges.get(coedge_id)?;
-        if coedge.owner_loop != loop_.id
-            || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
-            || coedge.previous
-                != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
-        {
+        if coedge.owner_loop != loop_.id {
             return None;
         }
         let edge = *edges.get(&coedge.edge)?;
@@ -1837,10 +1820,10 @@ fn conical_trim(
                 }
             }
             CurveGeometry::Nurbs(nurbs) => {
-                if nurbs.degree != 1
-                    || nurbs.periodic
-                    || nurbs.control_points.len() != 2
-                    || nurbs.control_points.iter().any(|point| {
+                if nurbs.degree() != 1
+                    || nurbs.periodic()
+                    || nurbs.control_points().len() != 2
+                    || nurbs.control_points().iter().any(|point| {
                         analytic_surface_residual(surface, *point)
                             .is_none_or(|residual| residual > tolerance)
                     })
@@ -2584,7 +2567,7 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }
@@ -2669,7 +2652,7 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
         }
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }

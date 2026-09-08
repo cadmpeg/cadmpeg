@@ -1,19 +1,33 @@
-use crate::decode::analytic::{
+use crate::decode::analytic::carriers::transfer_topology_bound_planes;
+use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation};
+use crate::decode::analytic::planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, dot, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
+    analytic_curve_plane, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
     plane_candidate_pcurve_lies_on_carrier, plane_candidates, stored_parameter_normal_candidates,
-    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes,
-    unique_round_edge_origin_candidate, BoundaryLine, CylinderEquation, PlaneCandidate, PlaneChart,
-    PlaneEquation,
+    topology_bound_line_plane, topology_bound_plane, unique_round_edge_origin_candidate,
+    BoundaryLine, PlaneCandidate, PlaneChart,
 };
 use crate::decode::surfaces::fc05_cap_pair_model_frame;
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
+use crate::vecmath::dot;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+fn nurbs_curve(
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+) -> CurveGeometry {
+    CurveGeometry::Nurbs(
+        NurbsCurve::new(degree, knots, control_points, weights, false)
+            .expect("cardinality-valid test curve"),
+    )
+}
 
 #[test]
 fn topology_boundary_points_define_one_plane() {
@@ -58,57 +72,53 @@ fn analytic_conic_boundary_defines_its_plane() {
 
 #[test]
 fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
-    let planar = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let planar = nurbs_curve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 2.0),
             Point3::new(1.0, 0.0, 2.0),
             Point3::new(1.0, 1.0, 2.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+    );
     let plane = analytic_curve_plane(&planar).expect("planar NURBS boundary");
     assert_eq!(plane.origin[2], 2.0);
     assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
 
-    let nonplanar = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 3,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let nonplanar = nurbs_curve(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 2.0),
             Point3::new(1.0, 0.0, 2.0),
             Point3::new(1.0, 1.0, 3.0),
             Point3::new(0.0, 1.0, 2.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+    );
     assert!(analytic_curve_plane(&nonplanar).is_none());
 
-    let line = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 2.0, 4.0), Point3::new(3.0, 2.0, 4.0)],
-        weights: Some(vec![2.0, 1.0]),
-        periodic: false,
-    });
+    let line = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 2.0, 4.0), Point3::new(3.0, 2.0, 4.0)],
+        Some(vec![2.0, 1.0]),
+    );
     let line = analytic_boundary_line(&line).expect("degree-one NURBS line");
     assert_eq!(line.origin, [0.0, 2.0, 4.0]);
     assert_eq!(line.direction, [1.0, 0.0, 0.0]);
 
-    let bent = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
+    let bent = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+    );
     assert!(analytic_boundary_line(&bent).is_none());
 }
 
@@ -153,11 +163,10 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 1,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -168,20 +177,20 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             type_byte: 0,
             feature_id: 1,
             directions: [0; 2],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [11, 0],
             offset: 20,
         });
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![crate::topology::HalfEdgeId {
             curve_id: 11,
-            side: 0,
+            side: crate::topology::Side::Zero,
         }],
     });
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(2.0, 3.0, 4.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -203,7 +212,11 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == SurfaceId("creo:visibgeom:surface#5".to_string()))
+        .find(|surface| {
+            surface.id
+                == SurfaceId::mint("creo:visibgeom:surface#5".to_string())
+                    .expect("identity grammar")
+        })
         .expect("topology-bound plane");
     let SurfaceGeometry::Plane { origin, normal, .. } = &plane.geometry else {
         panic!("expected plane geometry");
@@ -231,11 +244,10 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 1,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -247,29 +259,32 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
                 type_byte: 0,
                 feature_id: 1,
                 directions: [0; 2],
-                faces: [5, 0],
+                faces: [std::num::NonZeroU32::new(5), None],
                 next_edges: [if id == 11 { 12 } else { 11 }, 0],
                 offset: 20,
             });
     }
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [11, 12]
             .into_iter()
-            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
             .collect(),
     });
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     for (id, origin, direction) in [
         (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),
         (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
     ] {
         ir.model.curves.push(Curve {
-            id: CurveId(format!("creo:visibgeom:curve#{id}")),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
+            id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
+            geometry: nurbs_curve(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
                     origin,
                     Point3::new(
                         origin.x + direction.x,
@@ -277,9 +292,8 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
                         origin.z + direction.z,
                     ),
                 ],
-                weights: None,
-                periodic: false,
-            }),
+                None,
+            ),
             source_object: None,
         });
     }
@@ -294,7 +308,8 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         1
     );
     assert!(ir.model.surfaces.iter().any(|surface| {
-        surface.id == SurfaceId("creo:visibgeom:surface#5".to_string())
+        surface.id
+            == SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar")
             && matches!(
                 &surface.geometry,
                 SurfaceGeometry::Plane { origin, normal, .. }
@@ -391,7 +406,7 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
     let mut frame = PlaneLocalSystem {
         surface_id: 141,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.0),
             Some(0.0),
             Some(1.0),
@@ -405,9 +420,7 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
             Some(0.0),
             Some(-0.85),
         ],
-        origin: Some([8.0, 0.0, -0.85]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::SupportTriples),
         classification: LocalSystemClassification::Simple,
         row_offset: 10,
         offset: 20,
@@ -417,7 +430,7 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
     assert_eq!(candidate.equation.normal, equation.normal);
     assert_eq!(candidate.chart.expect("chart").u_axis, [1.0, 0.0, 0.0]);
 
-    frame.origin = Some([8.0, 0.0, 1.0]);
+    frame.slots[11] = Some(1.0);
     assert!(envelope_reconciled_plane_candidate(&frame, equation).is_none());
 }
 
@@ -426,10 +439,8 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
     let frame = PlaneLocalSystem {
         surface_id: 52,
         body: Vec::new(),
-        slots: vec![Some(0.0); 12],
-        origin: Some([-9.0, 48.0, 0.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -9.0, 48.0, 0.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Simple,
         row_offset: 10,
         offset: 20,
@@ -456,11 +467,10 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 42,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 4,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -482,10 +492,11 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some([100.0, 200.0, 300.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 30,
@@ -507,11 +518,10 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 42,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 4,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -534,7 +544,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(1.0),
             Some(0.0),
             Some(1.0),
@@ -548,9 +558,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
             Some(0.0),
             Some(0.0),
         ],
-        origin: Some([0.0, 0.0, 0.0]),
-        u_axis: Some([component, 0.0, -component]),
-        normal: Some([component, 0.0, component]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 30,
@@ -578,11 +586,10 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x22,
             kind,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: id as usize,
         });
@@ -610,7 +617,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
             type_byte: 0,
             feature_id: 4,
             directions: [0; 2],
-            faces: [7, 5],
+            faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(5)],
             next_edges: [0; 2],
             offset: 30,
         });
@@ -618,13 +625,22 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         .fc05_cylinder_cap_pairs
         .push(crate::curve::Fc05CylinderCapPair {
             surface_id: 7,
-            curve_ids: vec![11, 12],
-            cap_plane_ids: vec![1, 2],
-            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge {
+                    curve_id: 11,
+                    cap_plane_id: 1,
+                    cap_ordinate_row_frame: 0.0,
+                },
+                crate::curve::Fc05CapEdge {
+                    curve_id: 12,
+                    cap_plane_id: 2,
+                    cap_ordinate_row_frame: 38.0,
+                },
+            ],
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             reference_direction_row_frame: [1.0, 0.0],
-            parameter_sign: 1,
+            parameter_sense: crate::curve::ParameterSense::Increasing,
             cap_ordinates_row_frame: vec![0.0, 38.0],
             offset: 40,
         });
@@ -632,7 +648,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 5,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.8),
             Some(0.0),
             Some(-0.6),
@@ -646,9 +662,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
             Some(0.0),
             Some(origin_z),
         ],
-        origin: Some([0.0, 0.0, origin_z]),
-        u_axis: Some([0.8, 0.0, -0.6]),
-        normal: Some([-0.6, 0.0, 0.8]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 50,
         offset: 60,
@@ -687,32 +701,51 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
     ]);
     let pair = crate::curve::Fc05CylinderCapPair {
         surface_id: 7,
-        curve_ids: vec![11, 12],
-        cap_plane_ids: vec![1, 2],
-        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        cap_edges: vec![
+            crate::curve::Fc05CapEdge {
+                curve_id: 11,
+                cap_plane_id: 1,
+                cap_ordinate_row_frame: -87.5368,
+            },
+            crate::curve::Fc05CapEdge {
+                curve_id: 12,
+                cap_plane_id: 2,
+                cap_ordinate_row_frame: -49.5368,
+            },
+        ],
         center_row_frame: [2.0, 3.0],
         radius_mm: 0.5,
         reference_direction_row_frame: [1.0, 0.0],
-        parameter_sign: 1,
+        parameter_sense: crate::curve::ParameterSense::Increasing,
         cap_ordinates_row_frame: vec![-87.5368, -49.5368],
         offset: 30,
     };
 
     let frame = fc05_cap_pair_model_frame(&scan, &pair).expect("unit cap-span frame");
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.unit_vector(), [0.0, 1.0, 0.0]);
     assert!((frame.origin[0] - 2.0).abs() <= EPS_FC05_FRAME_TEST);
     assert!((frame.origin[1] - 87.5368).abs() <= EPS_FC05_FRAME_TEST);
     assert!((frame.origin[2] - 3.0).abs() <= EPS_FC05_FRAME_TEST);
 
     let reversed = crate::curve::Fc05CylinderCapPair {
-        cap_plane_ids: vec![2, 1],
-        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        cap_edges: vec![
+            crate::curve::Fc05CapEdge {
+                curve_id: 11,
+                cap_plane_id: 2,
+                cap_ordinate_row_frame: -87.5368,
+            },
+            crate::curve::Fc05CapEdge {
+                curve_id: 12,
+                cap_plane_id: 1,
+                cap_ordinate_row_frame: -49.5368,
+            },
+        ],
         cap_ordinates_row_frame: vec![-87.5368, -49.5368],
         ..pair
     };
     let reversed_frame =
         fc05_cap_pair_model_frame(&scan, &reversed).expect("reversed unit cap-span frame");
-    assert_eq!(reversed_frame.axis, [0.0, -1.0, 0.0]);
+    assert_eq!(reversed_frame.unit_vector(), [0.0, -1.0, 0.0]);
     assert!((reversed_frame.origin[1] + 49.5368).abs() <= EPS_FC05_FRAME_TEST);
 }
 
@@ -729,11 +762,10 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x22,
             kind,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: id as usize,
         });
@@ -760,12 +792,13 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             sample_direction_row_frame: [1.0, 0.0],
-            reference_direction_row_frame: Some([1.0, 0.0]),
-            parameter_sign: Some(1),
+            angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense: crate::curve::ParameterSense::Increasing,
+                reference_direction_row_frame: [1.0, 0.0],
+            },
             cap_ordinate_row_frame: Some(0.0),
             point_count: 8,
             max_residual: 0.0,
-            angle_parameter_consistent: true,
             offset: 30,
         },
         crate::curve::Fc05Circle {
@@ -773,12 +806,13 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             sample_direction_row_frame: [1.0, 0.0],
-            reference_direction_row_frame: Some([1.0, 0.0]),
-            parameter_sign: Some(1),
+            angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense: crate::curve::ParameterSense::Increasing,
+                reference_direction_row_frame: [1.0, 0.0],
+            },
             cap_ordinate_row_frame: Some(38.0),
             point_count: 8,
             max_residual: 0.0,
-            angle_parameter_consistent: true,
             offset: 31,
         },
     ]);
@@ -788,7 +822,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             type_byte: 5,
             feature_id: 4,
             directions: [0; 2],
-            faces: [7, 1],
+            faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(1)],
             next_edges: [0; 2],
             offset: 40,
         },
@@ -797,7 +831,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             type_byte: 5,
             feature_id: 4,
             directions: [0; 2],
-            faces: [7, 2],
+            faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(2)],
             next_edges: [0; 2],
             offset: 41,
         },
@@ -806,7 +840,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             type_byte: 5,
             feature_id: 4,
             directions: [0; 2],
-            faces: [7, 5],
+            faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(5)],
             next_edges: [0; 2],
             offset: 42,
         },
@@ -815,13 +849,22 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         .fc05_cylinder_cap_pairs
         .push(crate::curve::Fc05CylinderCapPair {
             surface_id: 7,
-            curve_ids: vec![11, 12],
-            cap_plane_ids: vec![1, 2],
-            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge {
+                    curve_id: 11,
+                    cap_plane_id: 1,
+                    cap_ordinate_row_frame: 0.0,
+                },
+                crate::curve::Fc05CapEdge {
+                    curve_id: 12,
+                    cap_plane_id: 2,
+                    cap_ordinate_row_frame: 38.0,
+                },
+            ],
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             reference_direction_row_frame: [1.0, 0.0],
-            parameter_sign: 1,
+            parameter_sense: crate::curve::ParameterSense::Increasing,
             cap_ordinates_row_frame: vec![0.0, 38.0],
             offset: 43,
         });
@@ -851,7 +894,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 5,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.8),
             Some(0.0),
             Some(-0.6),
@@ -865,9 +908,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             Some(0.0),
             Some(origin_z),
         ],
-        origin: Some([0.0, 0.0, origin_z]),
-        u_axis: Some([0.8, 0.0, -0.6]),
-        normal: Some([0.6, 0.0, 0.8]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 50,
         offset: 60,
@@ -888,21 +929,19 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
-            type_byte: 0x22,
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: 1,
         },
         crate::surface::SurfaceRow {
             id: 2,
-            type_byte: 0x23,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: 2,
         },
@@ -912,12 +951,13 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
         center_row_frame: [0.0, 0.0],
         radius_mm: 1.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(0.0),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset: 7,
     });
     scan.references
@@ -939,14 +979,14 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
             type_byte: 5,
             feature_id: 4,
             directions: [0; 2],
-            faces: [2, 1],
+            faces: [std::num::NonZeroU32::new(2), std::num::NonZeroU32::new(1)],
             next_edges: [0; 2],
             offset: 9,
         });
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 1,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.8),
             Some(0.0),
             Some(-0.6),
@@ -960,9 +1000,7 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
             Some(0.0),
             Some(0.0),
         ],
-        origin: Some([0.0, 0.0, 0.0]),
-        u_axis: Some([0.8, 0.0, -0.6]),
-        normal: Some([0.6, 0.0, 0.8]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 11,
@@ -989,11 +1027,10 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
     for id in [1, 2] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x22,
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: id as usize,
         });
@@ -1002,23 +1039,8 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
         crate::surface::PlaneLocalSystem {
             surface_id: 1,
             body: Vec::new(),
-            slots: vec![
-                Some(0.6),
-                Some(0.0),
-                Some(-0.8),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.8),
-                Some(0.0),
-                Some(0.6),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-            ],
-            origin: Some([0.0, 0.0, 0.0]),
-            u_axis: Some([0.6, 0.0, 0.8]),
-            normal: Some([0.8, 0.0, -0.6]),
+            slots: [0.6, 0.0, 0.8, 0.0, 0.0, 0.0, 0.8, 0.0, -0.6, 0.0, 0.0, 0.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: LocalSystemClassification::Unclassified,
             row_offset: 1,
             offset: 10,
@@ -1026,10 +1048,8 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
         crate::surface::PlaneLocalSystem {
             surface_id: 2,
             body: Vec::new(),
-            slots: vec![None; 12],
-            origin: Some([0.0, 1.0, 0.0]),
-            u_axis: Some([1.0, 0.0, 0.0]),
-            normal: Some([0.0, 1.0, 0.0]),
+            slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: LocalSystemClassification::Simple,
             row_offset: 2,
             offset: 20,
@@ -1038,7 +1058,7 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
     if with_pcurve {
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
-            faces: [1, 2],
+            faces: [1, 2].map(std::num::NonZeroU32::new),
             face_0_endpoints: [[1.0, 1.0], [2.0, 1.0]],
             face_1_endpoints: [[0.6, 0.8], [1.2, 1.6]],
             offset: 30,
@@ -1093,8 +1113,8 @@ fn plane_pcurve_discriminates_a_feature_frame_against_an_analytic_carrier() {
         }),
         offset: 0,
     };
-    let cylinder = crate::decode::analytic::CarrierEquation::Cylinder(
-        crate::decode::analytic::CylinderEquation {
+    let cylinder = crate::decode::analytic::equations::CarrierEquation::Cylinder(
+        crate::decode::analytic::equations::CylinderEquation {
             origin: [0.0, 0.0, 0.0],
             axis: [1.0, 0.0, 0.0],
             ref_direction: [0.0, 1.0, 0.0],
@@ -1131,7 +1151,6 @@ fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
     later.offset += 1;
     later.slots[9] = Some(5.0);
     later.slots[10] = Some(5.0);
-    later.origin = Some([5.0, 5.0, 0.0]);
     scan.planes.local_systems.push(later);
 
     let candidates = plane_candidates(&scan);

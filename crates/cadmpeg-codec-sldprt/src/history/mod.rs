@@ -24,35 +24,15 @@ pub(crate) use write::*;
 
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
-#[allow(unused_imports)]
 use cadmpeg_ir::annotations::Annotations;
-#[allow(unused_imports)]
-use cadmpeg_ir::attributes::AttributeValue;
-#[allow(unused_imports)]
-use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId, CosmeticThreadExtent,
-    DatumPlaneReference, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection,
-    ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, HoleBottom, HoleKind, Length, ParameterId, ParameterValue, PathRef,
-    ProfileRef, RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, SketchSpace,
-    SplitFaceTool, Termination,
-};
-#[allow(unused_imports)]
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-#[allow(unused_imports)]
-use cadmpeg_ir::math::{Point3, Vector3};
-#[allow(unused_imports)]
-use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::Exactness;
-#[allow(unused_imports)]
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
     scan.sections()
         .filter_map(|section| {
             let source = section.ordinal();
-            let text = xml_text(section.payload())?;
+            let text = crate::container::xml_text(section.payload())?;
             let doc = roxmltree::Document::parse(&text).ok()?;
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
@@ -135,19 +115,16 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         id,
                         parent: parent.clone(),
                         xml_tag: node.tag_name().name().into(),
-                        tree_parent: node
-                            .ancestors()
-                            .skip(1)
-                            .find_map(|ancestor| feature_ids.get(&ancestor.range().start).cloned()),
+                        tree_parent: node.ancestors().skip(1).find_map(|ancestor| {
+                            let record_id = feature_ids.get(&ancestor.range().start)?.clone();
+                            Some(crate::records::TreeParent::Record {
+                                record_id,
+                                source_id: ancestor.attribute("id").map(str::to_string),
+                            })
+                        }),
                         source_id: node
                             .attribute("id")
                             .filter(|value| !value.is_empty())
-                            .map(str::to_string),
-                        parent_source_id: node
-                            .ancestors()
-                            .skip(1)
-                            .find(|ancestor| feature_ids.contains_key(&ancestor.range().start))
-                            .and_then(|parent| parent.attribute("id"))
                             .map(str::to_string),
                         ordinal: ordinal as u32,
                         name: node.attribute("Name").unwrap_or("").into(),
@@ -291,7 +268,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
 
 pub(crate) fn enrich_scene_classes(
     histories: &mut [FeatureHistory],
-    scene_classes: &crate::tessellation::SceneFeatureClasses,
+    scene_classes: &HashMap<String, String>,
 ) {
     for feature in histories
         .iter_mut()
@@ -301,7 +278,7 @@ pub(crate) fn enrich_scene_classes(
             continue;
         };
         if feature.input_class.is_none() && classless_builtin_node(feature) {
-            feature.input_class = scene_classes.by_source.get(source).cloned();
+            feature.input_class = scene_classes.get(source).cloned();
         }
     }
 }
@@ -309,6 +286,7 @@ pub(crate) fn enrich_scene_classes(
 #[cfg(test)]
 mod literal_tests {
     use super::*;
+    use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
 
     #[test]
     fn native_scalar_literals_are_compact_and_bit_exact() {
@@ -595,20 +573,6 @@ mod literal_tests {
             rewrite_parameter_expression("Width * 2", &aliases).as_deref(),
             Some("\"Wall-Gauge\" * 2")
         );
-    }
-}
-
-fn xml_text(bytes: &[u8]) -> Option<String> {
-    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
-    if bytes.starts_with(&[0xff, 0xfe]) {
-        let mut view = View::over_retained(&bytes[2..]);
-        let mut units = Vec::new();
-        while let Some(unit) = view.u16_le() {
-            units.push(unit);
-        }
-        Some(String::from_utf16_lossy(&units))
-    } else {
-        std::str::from_utf8(bytes).ok().map(str::to_string)
     }
 }
 

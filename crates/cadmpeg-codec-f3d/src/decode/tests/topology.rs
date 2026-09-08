@@ -10,10 +10,13 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -29,7 +32,7 @@ fn decode_builds_valid_topology_and_geometry() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result
         .report()
         .notes
@@ -46,7 +49,7 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index)
+            .map(|metadata| metadata.endpoint_index.code())
             .collect::<Vec<_>>(),
         [0, 1, 0]
     );
@@ -62,12 +65,11 @@ fn decode_builds_valid_topology_and_geometry() {
     assert!(continuities
         .iter()
         .all(|metadata| metadata.sense == cadmpeg_ir::topology::Sense::Forward));
-    assert_f3d_native_parity(result.ir());
     assert!(result
         .source_fidelity()
         .annotations
         .provenance
-        .contains_key(&result.ir().model.bodies[0].id.0));
+        .contains_key(result.ir().model.bodies[0].id.as_str()));
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir().model.surfaces[0].geometry {
@@ -100,7 +102,7 @@ fn decode_builds_valid_topology_and_geometry() {
     // Edges carry no analytic curve (their carriers were null), which is legal.
     assert!(result.ir().model.edges.iter().all(|e| e.curve.is_none()));
     // The loop's coedge ring is the three coedges in order.
-    assert_eq!(result.ir().model.loops[0].coedges.len(), 3);
+    assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
 }
 
 #[test]
@@ -112,7 +114,13 @@ fn history_topology_decode_matches_full_brep_graph() {
     ] {
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
-        let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
+        let records = cadmpeg_asm::sab::frame(
+            &bytes,
+            start,
+            limit,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .expect("frame BREP");
 
         let full_brep = crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT);
         let full =
@@ -129,12 +137,13 @@ fn history_topology_decode_matches_full_brep_graph() {
 
 #[test]
 fn decode_transfers_generated_wire_body_topology() {
-    let mut result = F3dCodec
+    let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
             &DecodeOptions::default(),
         )
         .expect("generated wire body decode");
+    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
         result.ir().model.bodies[0].kind,
@@ -165,8 +174,7 @@ fn decode_transfers_generated_wire_body_topology() {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let mut edited = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut edited)
+    crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut edited)
         .expect("wire-side retained edit");
     let edited = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -206,9 +214,9 @@ fn decode_transfers_isolated_vertex_wire_topology() {
     );
     assert!(f3d_native(result.ir()).vertex_ownerships.is_empty());
     let wire = &f3d_native(result.ir()).wire_topologies[0];
-    assert!(wire.edges.is_empty());
+    assert!(wire.members.edges().is_empty());
     assert_eq!(
-        wire.free_vertex,
+        wire.members.free_vertex().cloned(),
         Some(result.ir().model.vertices[0].id.clone())
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
@@ -283,8 +291,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         point: Point3::new(2.0, 3.0, 4.0),
     };
     let mut regenerated = Vec::new();
-    F3dCodec
-        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut regenerated)
+    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
         .expect("degenerate curve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -304,10 +311,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less degenerate curve encode");
     let round_trip = F3dCodec
@@ -341,10 +345,7 @@ fn generated_source_less_writes_general_face_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less general body encode");
     let round_trip = F3dCodec
@@ -398,10 +399,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less face-and-point-wire body encode");
     let round_trip = F3dCodec
@@ -419,7 +417,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
-        .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
+        .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
     assert!(
         validation.is_ok(),
@@ -454,10 +452,7 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less solid-plus-wire encode");
     let round_trip = F3dCodec
@@ -511,10 +506,7 @@ fn generated_source_less_writes_wire_body_topology() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less wire body encode");
     let round_trip = F3dCodec
@@ -567,10 +559,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less free-vertex wire encode");
     let round_trip = F3dCodec
@@ -591,9 +580,9 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     );
     assert!(f3d_native(round_trip.ir()).vertex_ownerships.is_empty());
     let wire = &f3d_native(round_trip.ir()).wire_topologies[0];
-    assert!(wire.edges.is_empty());
+    assert!(wire.members.edges().is_empty());
     assert_eq!(
-        wire.free_vertex,
+        wire.members.free_vertex().cloned(),
         Some(round_trip.ir().model.vertices[0].id.clone())
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
@@ -639,10 +628,7 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less mixed-wire shell encode");
     let round_trip = F3dCodec
@@ -654,16 +640,16 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
-        .any(|wire| wire.edges.len() == 1 && wire.free_vertex.is_none()));
+        .any(|wire| wire.members.edges().len() == 1 && wire.members.free_vertex().is_none()));
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
-        .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
+        .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
     assert_eq!(
         f3d_native(round_trip.ir())
             .wire_topologies
             .iter()
-            .filter(|wire| wire.edges.is_empty() && wire.free_vertex.is_some())
+            .filter(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some())
             .count(),
         2
     );
@@ -694,14 +680,15 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         .replace("f3d:brep:", "generated:wire_two:");
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire IR");
-    second.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    second.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [1.0, 0.0, 0.0, 25.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     source_less.model.bodies.append(&mut second.model.bodies);
     source_less.model.regions.append(&mut second.model.regions);
     source_less.model.shells.append(&mut second.model.shells);
@@ -715,10 +702,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-wire-body encode");
     let round_trip = F3dCodec
@@ -739,7 +723,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         round_trip.ir().model.bodies[1]
             .transform
             .expect("second wire transform")
-            .rows[0][3],
+            .rows()[0][3],
         25.0
     );
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
@@ -779,10 +763,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-edge wire encode");
     let round_trip = F3dCodec
@@ -832,10 +813,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-region wire encode");
     let round_trip = F3dCodec
@@ -892,10 +870,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-shell wire encode");
     let round_trip = F3dCodec
@@ -930,7 +905,7 @@ fn analytic_carrier_decode_covers_each_shape() {
         Record {
             index: 0,
             name: head.to_string(),
-            head: head.to_string(),
+
             tokens: tokens.into(),
             offset: 0,
             len: 0,
@@ -1148,7 +1123,7 @@ fn decode_succeeds_when_geometry_present() {
     let result = F3dCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.surfaces.len(), 1);
 }
 
@@ -1171,7 +1146,7 @@ fn decode_keeps_face_on_unknown_surface() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.coedges.len(), 3);
     assert_eq!(result.ir().model.vertices.len(), 3);
@@ -1228,18 +1203,25 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .model
             .surfaces
             .iter()
-            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)))
+            .find(|surface| {
+                matches!(
+                    surface.geometry.solved_cache(),
+                    Some(SurfaceGeometry::Nurbs(_))
+                )
+            })
             .unwrap_or_else(|| panic!("{family} must retain its solved NURBS carrier"));
         let procedural = result
             .ir()
             .model
             .procedural_surfaces
             .iter()
-            .find(|procedural| procedural.surface == surface.id)
+            .find(|procedural| {
+                result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            })
             .unwrap_or_else(|| panic!("{family} must retain its construction identity"));
         let ProceduralSurfaceDefinition::Unknown {
             record: Some(record),
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("{family} must retain its opaque construction")
         };
@@ -1263,10 +1245,16 @@ fn decode_reports_faces_with_missing_surface_references() {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(
+            &smbh,
+            start,
+            limit,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .unwrap();
         let face = records
             .iter()
-            .filter(|record| record.head == "face")
+            .filter(|record| record.head() == "face")
             .nth(1)
             .expect("second generated face");
         let record = &mut smbh[face.offset..face.offset + face.len];
@@ -1330,7 +1318,13 @@ fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &smbh,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
     let record = &mut smbh[edge.offset..edge.offset + edge.len];
     let curve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();

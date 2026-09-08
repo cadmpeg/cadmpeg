@@ -36,7 +36,7 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
         .native
         .0
         .values()
-        .flat_map(|namespace| namespace.arenas.values())
+        .flat_map(|namespace| namespace.arenas().values())
         .flatten()
     {
         if wanted.contains(record.id()) {
@@ -55,12 +55,12 @@ pub(super) fn check_annotations(
     findings: &mut Vec<Finding>,
 ) {
     let wanted: HashSet<&str> = annotations
-        .exactness
+        .exactness()
         .iter()
-        .filter_map(|(id, note)| (!note.fields.is_empty()).then_some(id.as_str()))
+        .filter_map(|(id, note)| (!note.fields().is_empty()).then_some(id.as_str()))
         .collect();
     let entity_json = annotated_entity_json(ir, &wanted);
-    for (id, provenance) in &annotations.provenance {
+    for id in annotations.provenance.keys() {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,
@@ -69,16 +69,8 @@ pub(super) fn check_annotations(
                 "provenance key does not resolve to an entity",
             );
         }
-        if provenance.stream as usize >= annotations.streams.len() {
-            annotation_finding(
-                findings,
-                Severity::Error,
-                id,
-                "provenance stream index is out of range",
-            );
-        }
     }
-    for (id, note) in &annotations.exactness {
+    for (id, note) in annotations.exactness() {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,
@@ -88,7 +80,7 @@ pub(super) fn check_annotations(
             );
             continue;
         }
-        if note.fields.is_empty() {
+        if note.fields().is_empty() {
             continue;
         }
         let Some(entity) = entity_json.get(id) else {
@@ -100,7 +92,7 @@ pub(super) fn check_annotations(
             );
             continue;
         };
-        for path in note.fields.keys() {
+        for path in note.fields().keys() {
             if path.is_empty() || !field_path_resolves(entity, path) {
                 annotation_finding(
                     findings,
@@ -162,7 +154,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(feature.id.0.clone()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 });
             }
         }
@@ -176,7 +168,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("helix axis native_ref `{target}` does not resolve"),
-                    entity: Some(feature.id.0.clone()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 });
             }
         }
@@ -188,7 +180,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(parameter.id.0.clone()),
+                    entity: Some(parameter.id.as_str().to_owned()),
                 });
             }
         }
@@ -198,7 +190,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("PMI native_ref `{}` does not resolve", semantic.native_ref),
-                    entity: Some(parameter.id.0.clone()),
+                    entity: Some(parameter.id.as_str().to_owned()),
                 });
             }
         }
@@ -210,7 +202,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(configuration.id.0.clone()),
+                    entity: Some(configuration.id.as_str().to_owned()),
                 });
             }
         }
@@ -299,7 +291,7 @@ pub(super) fn check_native_links(
     // The `unknowns` arena is one of the namespace arenas below, so the generic
     // record loop already covers every unknown-record link.
     for namespace in ir.native.0.values() {
-        for records in namespace.arenas.values() {
+        for records in namespace.arenas().values() {
             for record in records {
                 let Some(serde_json::Value::Array(links)) = record.field("links") else {
                     continue;

@@ -281,13 +281,13 @@ fn render_settings(
     let modern = data.get(body.start).copied() == Some(0);
     let (mut reader, minor, legacy_version) = if modern {
         let chunk = chunk_at(data, body.start, body.end, archive, false)?;
-        if chunk.typecode != ANONYMOUS || chunk.short {
+        if chunk.typecode != ANONYMOUS || chunk.short() {
             return Err(FramingError::Structural {
                 offset: body.start,
                 message: "render-settings wrapper is invalid".to_string(),
             });
         }
-        let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let (major, minor) = (reader.i32()?, reader.i32()?);
         if major != 1 || minor < 0 {
             return Err(FramingError::structural(
@@ -439,14 +439,14 @@ fn render_userdata(
     record: &Record,
     archive: ArchiveVersion,
 ) -> Result<RenderUserdataDescriptor, FramingError> {
-    let mut offset = record.body.start;
+    let mut offset = record.body().start;
     let mut items = Vec::new();
     let mut unknown_chunks = Vec::new();
-    while offset < record.body.end {
-        let chunk = chunk_at(data, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let chunk = chunk_at(data, offset, record.body().end, archive, false)?;
         match chunk.typecode {
             CLASS_USERDATA => {
-                if chunk.short {
+                if chunk.short() {
                     return Err(FramingError::structural(
                         chunk.header_start,
                         "render userdata item must be a long chunk",
@@ -459,10 +459,10 @@ fn render_userdata(
                     archive,
                     &mut checksum_warnings,
                 )?);
-                offset = chunk.next_offset;
+                offset = chunk.next_offset();
             }
             CLASS_END => {
-                if !chunk.short || chunk.value != 0 {
+                if !chunk.short() || chunk.value() != 0 {
                     return Err(FramingError::structural(
                         chunk.header_start,
                         "render userdata class end must be a short zero chunk",
@@ -472,7 +472,7 @@ fn render_userdata(
                     source: record.range.clone(),
                     items,
                     unknown_chunks,
-                    suffix: chunk.next_offset..record.body.end,
+                    suffix: chunk.next_offset()..record.body().end,
                 });
             }
             0 => {
@@ -483,12 +483,12 @@ fn render_userdata(
             }
             _ => {
                 unknown_chunks.push(chunk.range());
-                offset = chunk.next_offset;
+                offset = chunk.next_offset();
             }
         }
     }
     Err(FramingError::structural(
-        record.body.end,
+        record.body().end,
         "render userdata is missing its class end",
     ))
 }
@@ -518,9 +518,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         .map(|value| NotesRecord {
             id: "rhino:document:notes#current".to_string(),
             source_offset: value.source.range.start as u64,
-            html: value.html != 0,
+            html: value.html,
             text: value.text.clone(),
-            visible: value.visible != 0,
+            visible: value.visible,
             window_rectangle: value.rectangle,
             locked: value.locked,
         })
@@ -543,10 +543,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         archive_file_name: properties.as_file_name.clone(),
         model_url: settings.model_url.clone(),
         current_layer_index: settings.current_layer,
-        current_material_index: settings.current_material,
-        current_material_source: settings.current_material_source,
-        current_color: settings.current_color,
-        current_color_source: settings.current_color_source,
+        current_material_index: settings.current_material.map(|selection| selection.value),
+        current_material_source: settings.current_material.map(|selection| selection.source),
+        current_color: settings.current_color.map(|selection| selection.value),
+        current_color_source: settings.current_color.map(|selection| selection.source),
         current_wire_density: settings.current_wire_density,
         current_font_index: settings.current_font,
         current_dimension_style_index: settings.current_dimstyle,
@@ -579,7 +579,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
     let scale = settings
         .units
         .as_ref()
-        .and_then(|value| value.millimeters_per_unit)
+        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
         .unwrap_or(1.0);
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
@@ -592,15 +592,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         }
         for record in &table.records {
             let result = if record.typecode == ANNOTATION_SETTINGS {
-                annotation_settings(scan.data, record.body.clone(), record.range.start, scale)
+                annotation_settings(scan.data, record.body(), record.range.start, scale)
                     .map(|value| annotations.push(value))
             } else if record.typecode == GRID_DEFAULTS {
-                grid_defaults(scan.data, record.body.clone(), record.range.start, scale)
+                grid_defaults(scan.data, record.body(), record.range.start, scale)
                     .map(|value| grids.push(value))
             } else if record.typecode == RENDER_SETTINGS {
                 render_settings(
                     scan.data,
-                    record.body.clone(),
+                    record.body(),
                     record.range.start,
                     scan.archive,
                     scale,
@@ -648,7 +648,6 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.version = namespace.version.max(2);
     namespace
         .set_arena("revisions", &revisions)
         .expect("Rhino revisions serialize");

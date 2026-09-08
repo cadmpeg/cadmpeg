@@ -21,11 +21,13 @@
 //! indexing and reference resolution hold for every record.
 
 use crate::kernel_header::KernelHeader;
+use crate::kernel_header::RefWidth;
 use crate::sab::{Record, Token};
+use crate::stream_error::{StreamError, StreamFormat};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dialect {
+pub enum Terminator {
     /// `End-of-ASM-data`.
     Asm,
     /// `End-of-ACIS-data`.
@@ -38,8 +40,6 @@ pub enum Dialect {
 pub struct TextHeader {
     /// ACIS save-format version word, `major * 100 + minor`.
     pub save_format_version: u32,
-    /// Record-count word; `0` when unwritten.
-    pub record_count: u32,
     /// Entity-count word: the `RecordTable` index of the first referenced record.
     pub entity_count: u64,
     /// Flags word: bit 0 marks a history partition, bits 1..=7 the revision.
@@ -66,9 +66,8 @@ impl TextHeader {
     /// binary stream carries.
     pub fn as_kernel_header(&self) -> KernelHeader {
         KernelHeader {
-            width: 8,
+            width: RefWidth::Eight,
             save_format_version: Some(self.save_format_version),
-            record_count: Some(self.record_count),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
             product_family: Some(self.product_family.clone()),
@@ -90,29 +89,8 @@ pub struct TextStream {
     /// lines; the stream does not always begin with `asmheader`.
     pub records: Vec<Record>,
     /// Which terminator line closed the stream.
-    pub dialect: Dialect,
+    pub terminator: Terminator,
 }
-
-/// A parse error with the byte offset where parsing could not continue.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SatError {
-    /// Byte offset in the stream.
-    pub offset: usize,
-    /// What went wrong.
-    pub reason: String,
-}
-
-impl std::fmt::Display for SatError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SAT parse failed at byte {}: {}",
-            self.offset, self.reason
-        )
-    }
-}
-
-impl std::error::Error for SatError {}
 
 /// Whether `bytes` begins like a text ASM stream: an ASCII digit run (the
 /// save-format word) followed by a space.
@@ -162,7 +140,7 @@ impl FieldReader<'_> {
     /// Read one raw whitespace-delimited field. Returns `None` at end of
     /// input. An `@N` field consumes one separator byte and exactly `N` raw
     /// bytes, which may include whitespace and newlines.
-    fn next_field(&mut self) -> Result<Option<(usize, String)>, SatError> {
+    fn next_field(&mut self) -> Result<Option<(usize, String)>, StreamError> {
         self.skip_ws();
         if self.pos >= self.bytes.len() {
             return Ok(None);
@@ -172,7 +150,8 @@ impl FieldReader<'_> {
             self.pos += 1;
         }
         let word = std::str::from_utf8(&self.bytes[start..self.pos])
-            .map_err(|error| SatError {
+            .map_err(|error| StreamError {
+                format: StreamFormat::Text,
                 offset: start + error.valid_up_to(),
                 reason: "field is not valid UTF-8".to_string(),
             })?
@@ -182,20 +161,22 @@ impl FieldReader<'_> {
 
     /// Consume the `@N` payload after its length field: one separator byte,
     /// then `N` raw bytes.
-    fn read_str_payload(&mut self, len: usize, at: usize) -> Result<String, SatError> {
+    fn read_str_payload(&mut self, len: usize, at: usize) -> Result<String, StreamError> {
         self.pos += 1; // one separator byte after the length field
         let end = self
             .pos
             .checked_add(len)
             .filter(|end| *end <= self.bytes.len());
         let Some(end) = end else {
-            return Err(SatError {
+            return Err(StreamError {
+                format: StreamFormat::Text,
                 offset: at,
                 reason: format!("truncated @{len} string"),
             });
         };
         let payload = std::str::from_utf8(&self.bytes[self.pos..end])
-            .map_err(|error| SatError {
+            .map_err(|error| StreamError {
+                format: StreamFormat::Text,
                 offset: self.pos + error.valid_up_to(),
                 reason: format!("@{len} string is not valid UTF-8"),
             })?
@@ -220,13 +201,14 @@ fn header_line<'a>(
     bytes: &'a [u8],
     pos: &mut usize,
     what: &str,
-) -> Result<Vec<&'a [u8]>, SatError> {
+) -> Result<Vec<&'a [u8]>, StreamError> {
     let start = *pos;
     let end = bytes[start..]
         .iter()
         .position(|b| *b == b'\n')
         .map(|off| start + off)
-        .ok_or_else(|| SatError {
+        .ok_or_else(|| StreamError {
+            format: StreamFormat::Text,
             offset: start,
             reason: format!("missing {what} line"),
         })?;
@@ -241,11 +223,12 @@ fn header_int<T: std::str::FromStr>(
     field: Option<&&[u8]>,
     at: usize,
     what: &str,
-) -> Result<T, SatError> {
+) -> Result<T, StreamError> {
     field
         .and_then(|field| std::str::from_utf8(field).ok())
         .and_then(|field| field.parse().ok())
-        .ok_or_else(|| SatError {
+        .ok_or_else(|| StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: format!("header line has no {what} field"),
         })
@@ -253,7 +236,12 @@ fn header_int<T: std::str::FromStr>(
 
 /// Read one `N <bytes>` counted string from a header line's raw byte slice.
 /// Header strings use a bare count without the record encoding's `@` prefix.
-fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result<String, SatError> {
+fn counted_string(
+    line: &[u8],
+    pos: &mut usize,
+    at: usize,
+    what: &str,
+) -> Result<String, StreamError> {
     while *pos < line.len() && is_ws(line[*pos]) {
         *pos += 1;
     }
@@ -264,12 +252,14 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
     let len: usize = std::str::from_utf8(&line[start..*pos])
         .ok()
         .and_then(|digits| digits.parse().ok())
-        .ok_or_else(|| SatError {
+        .ok_or_else(|| StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: format!("header line has no {what} count"),
         })?;
     if line.get(*pos).is_none_or(|byte| !is_ws(*byte)) {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: format!("header {what} count has no separator"),
         });
@@ -278,12 +268,14 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
     let end = pos
         .checked_add(len)
         .filter(|end| *end <= line.len())
-        .ok_or_else(|| SatError {
+        .ok_or_else(|| StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: format!("truncated {what} string"),
         })?;
     let value = std::str::from_utf8(&line[*pos..end])
-        .map_err(|error| SatError {
+        .map_err(|error| StreamError {
+            format: StreamFormat::Text,
             offset: at + *pos + error.valid_up_to(),
             reason: format!("header {what} string is not valid UTF-8"),
         })?
@@ -292,17 +284,18 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
     Ok(value)
 }
 
-fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
+fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError> {
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
     if line1.len() != 4 {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "save-format header line must contain four fields".to_string(),
         });
     }
     let save_format_version = header_int(line1.first(), at, "save format")?;
-    let record_count = header_int(line1.get(1), at, "record count")?;
+    header_int::<u32>(line1.get(1), at, "record count")?;
     let entity_count = header_int(line1.get(2), at, "entity count")?;
     let flags = header_int(line1.get(3), at, "flags")?;
 
@@ -312,7 +305,8 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
         .iter()
         .position(|b| *b == b'\n')
         .map(|off| line2_start + off)
-        .ok_or_else(|| SatError {
+        .ok_or_else(|| StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "missing product line".to_string(),
         })?;
@@ -323,7 +317,8 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let product_version = counted_string(line2, &mut cursor, at, "product version")?;
     let save_date = counted_string(line2, &mut cursor, at, "save date")?;
     if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "product header line must contain three counted strings".to_string(),
         });
@@ -332,23 +327,26 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let at = *pos;
     let line3 = header_line(bytes, pos, "tolerance")?;
     if line3.len() != 3 {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "tolerance header line must contain three fields".to_string(),
         });
     }
-    let float = |field: Option<&&[u8]>, what: &str| -> Result<f64, SatError> {
+    let float = |field: Option<&&[u8]>, what: &str| -> Result<f64, StreamError> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
-            .ok_or_else(|| SatError {
+            .ok_or_else(|| StreamError {
+                format: StreamFormat::Text,
                 offset: at,
                 reason: format!("header line has no {what} field"),
             })
     };
     let scale = float(line3.first(), "scale")?;
     if !scale.is_finite() || scale <= 0.0 {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "header scale must be finite and positive".to_string(),
         });
@@ -356,14 +354,14 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let resabs = float(line3.get(1), "resabs")?;
     let resnor = float(line3.get(2), "resnor")?;
     if !resabs.is_finite() || resabs < 0.0 || !resnor.is_finite() || resnor < 0.0 {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "header tolerances must be finite and nonnegative".to_string(),
         });
     }
     Ok(TextHeader {
         save_format_version,
-        record_count,
         entity_count,
         flags,
         product_family,
@@ -380,7 +378,7 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
 // ---------------------------------------------------------------------------
 
 /// Parse a complete text stream into its header and typed record table.
-pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
+pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
     let mut pos = 0usize;
     let header = parse_header(bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
@@ -389,16 +387,16 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
 
     let mut reader = FieldReader { bytes, pos };
     let mut records = Vec::new();
-    let mut dialect = None;
+    let mut terminator = None;
     // Record name field, then payload fields until the terminator.
     'stream: while let Some((rec_start, name)) = reader.next_field()? {
         match name.as_str() {
             "End-of-ASM-data" => {
-                dialect = Some(Dialect::Asm);
+                terminator = Some(Terminator::Asm);
                 break 'stream;
             }
             "End-of-ACIS-data" => {
-                dialect = Some(Dialect::Acis);
+                terminator = Some(Terminator::Acis);
                 break 'stream;
             }
             _ => {}
@@ -408,14 +406,16 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
         let mut subtype_depth = 0usize;
         loop {
             let Some((at, field)) = reader.next_field()? else {
-                return Err(SatError {
+                return Err(StreamError {
+                    format: StreamFormat::Text,
                     offset: rec_start,
                     reason: format!("record `{name}` has no `#` terminator"),
                 });
             };
             if field == "#" {
                 if subtype_depth != 0 {
-                    return Err(SatError {
+                    return Err(StreamError {
+                        format: StreamFormat::Text,
                         offset: at,
                         reason: format!("record `{name}` terminates inside a subtype scope"),
                     });
@@ -426,7 +426,8 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
             match prim {
                 Prim::Open => subtype_depth += 1,
                 Prim::Close if subtype_depth == 0 => {
-                    return Err(SatError {
+                    return Err(StreamError {
+                        format: StreamFormat::Text,
                         offset: at,
                         reason: format!("record `{name}` closes an unopened subtype scope"),
                     });
@@ -436,26 +437,28 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
             }
             prims.push(prim);
         }
-        let head = name.split('-').next().unwrap_or_default().to_owned();
-        let tokens = type_record(&head, &prims, len_factor);
+        let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
+        let tokens = type_record(head, &prims, len_factor);
         records.push(Record {
             index: records.len(),
             name,
-            head,
+
             tokens: tokens.into(),
             offset: rec_start,
             len: reader.pos - rec_start,
         });
     }
-    let Some(dialect) = dialect else {
-        return Err(SatError {
+    let Some(terminator) = terminator else {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: reader.pos,
             reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
         });
     };
     reader.skip_ws();
     if reader.pos != bytes.len() {
-        return Err(SatError {
+        return Err(StreamError {
+            format: StreamFormat::Text,
             offset: reader.pos,
             reason: "non-whitespace data follows the stream terminator".to_string(),
         });
@@ -463,20 +466,22 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
     Ok(TextStream {
         header,
         records,
-        dialect,
+        terminator,
     })
 }
 
-fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Prim, SatError> {
+fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Prim, StreamError> {
     if let Some(rest) = field.strip_prefix('$') {
-        let index = rest.parse::<i64>().map_err(|_| SatError {
+        let index = rest.parse::<i64>().map_err(|_| StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "reference field has no valid decimal index".to_string(),
         })?;
         return Ok(Prim::Ref(index));
     }
     if let Some(rest) = field.strip_prefix('@') {
-        let len = rest.parse::<usize>().map_err(|_| SatError {
+        let len = rest.parse::<usize>().map_err(|_| StreamError {
+            format: StreamFormat::Text,
             offset: at,
             reason: "string field has no valid decimal byte count".to_string(),
         })?;
@@ -806,14 +811,13 @@ fn try_shape(prims: &[Prim], k: f64, slots: &[Slot]) -> Option<Vec<Token>> {
 // Construction grammars (subtype scopes)
 // ---------------------------------------------------------------------------
 
-/// B-spline block dimensionality per pole.
+/// Coordinate domain of one B-spline curve block.
 #[derive(Clone, Copy)]
-struct BsKind {
-    /// Model-space coordinates per pole (converted); a BS2 pole's UV
-    /// coordinates are parameters and are not converted.
-    coords: usize,
-    /// Whether pole coordinates are model-space lengths.
-    scaled: bool,
+enum BsKind {
+    /// Two unscaled surface parameters per pole.
+    Parameter,
+    /// Three model-space lengths per pole.
+    Model,
 }
 
 /// A `nubs`/`nurbs` curve block ([`asm.md` §6.5]): marker, degree, closure,
@@ -845,11 +849,15 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
     let poles = usize::try_from(mult_sum - (degree - 1))
         .ok()
         .filter(|count| *count >= 2)?;
-    let per_pole = kind.coords + usize::from(rational);
+    let coords = match kind {
+        BsKind::Parameter => 2,
+        BsKind::Model => 3,
+    };
+    let per_pole = coords + usize::from(rational);
     for _ in 0..poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
-            let scaled = kind.scaled && coordinate < kind.coords;
+            let scaled = matches!(kind, BsKind::Model) && coordinate < coords;
             out.push(Token::Double(if scaled { value * cur.k } else { value }));
         }
     }
@@ -925,14 +933,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
     }
     cur.enum_word(CACHE_FORM, out)?;
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 3,
-            scaled: true,
-        },
-        out,
-    )?;
+    bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
     out.push(Token::Double(tolerance * cur.k));
     for _ in 0..2 {
@@ -964,14 +965,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// the inline BS2 block, its parameter-space fit tolerance, the support
 /// surface scope, and four trailing booleans.
 fn exp_par_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 2,
-            scaled: false,
-        },
-        out,
-    )?;
+    bs_curve_block(cur, BsKind::Parameter, out)?;
     let tolerance = cur.num()?;
     out.push(Token::Double(tolerance));
     cur.word_is("spline")?;
@@ -1114,14 +1108,7 @@ fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         out.push(Token::Ident("nullbs".to_string()));
         return Some(());
     }
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 2,
-            scaled: false,
-        },
-        out,
-    )
+    bs_curve_block(cur, BsKind::Parameter, out)
 }
 
 /// The shared cache-first intcurve context ([`asm.md` §6.3]): serializer
@@ -1134,14 +1121,7 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
     out.push(Token::Long(stamp));
     cur.word_is("full")?;
     out.push(Token::Enum(0));
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 3,
-            scaled: true,
-        },
-        out,
-    )?;
+    bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
     out.push(Token::Double(tolerance * cur.k));
     nullable_surface(cur, out)?;
@@ -1476,9 +1456,8 @@ mod tests {
     #[test]
     fn both_dialect_headers_parse_and_record_their_terminator() {
         let asm = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("asm stream");
-        assert_eq!(asm.dialect, Dialect::Asm);
+        assert_eq!(asm.terminator, Terminator::Asm);
         assert_eq!(asm.header.save_format_version, 23200);
-        assert_eq!(asm.header.record_count, 0);
         assert_eq!(asm.header.entity_count, 2);
         assert_eq!(asm.header.flags, 2);
         assert_eq!(asm.header.product_family, "Autodesk Neutron");
@@ -1502,11 +1481,11 @@ mod tests {
                     Jul 17 14:48:06 2026 \n25.4 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 \
                     #\nEnd-of-ACIS-data \n";
         let acis = parse(text.as_bytes()).expect("acis stream");
-        assert_eq!(acis.dialect, Dialect::Acis);
+        assert_eq!(acis.terminator, Terminator::Acis);
         assert_eq!(acis.header.save_format_version, 700);
         assert!(approx(acis.header.scale, 25.4));
         // No asmheader record: the first record is `body` at index 0.
-        assert_eq!(acis.records[0].head, "body");
+        assert_eq!(acis.records[0].head(), "body");
         assert_eq!(acis.records[0].index, 0);
     }
 
@@ -1869,7 +1848,7 @@ mod tests {
         assert_eq!(stream.records.len(), 4);
         let lump = stream.records[0].ref_at(3).expect("first lump ref");
         assert_eq!(
-            stream.records[usize::try_from(lump).expect("index")].head,
+            stream.records[usize::try_from(lump).expect("index")].head(),
             "lump"
         );
         let owner = stream.records[2].ref_at(5).expect("lump owner");

@@ -1,5 +1,21 @@
 {
   "container_kind": "iso-10303-21-clear-text",
+  "dialects": {
+    "extra": [],
+    "primary": {
+      "admission": {
+        "unverified": {
+          "using": "step:ap242-e3"
+        }
+      },
+      "declared": {
+        "file_schema_identifier": "AP214",
+        "implementation_level": "2;1"
+      },
+      "dialect": "step:unknown",
+      "format": "step"
+    }
+  },
   "entries": [
     {
       "attributes": {},
@@ -22,7 +38,45 @@
     }
   ],
   "format": "step",
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "step"
+      },
+      "message": "FILE_SCHEMA identifier AP214; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "geometry.document-length-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "geometry.document-angle-unit-unresolved",
+        "kind": "geometry_not_transferred",
+        "namespace": "step"
+      },
+      "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step"
+      },
+      "message": "preserved 1 EXAMPLE_STRINGS instance(s) as named opaque STEP records",
+      "severity": "warning"
+    }
+  ],
   "notes": [
-    "schema AP214; edition unspecified"
+    "schema AP214; dialect step:unknown"
   ]
 }

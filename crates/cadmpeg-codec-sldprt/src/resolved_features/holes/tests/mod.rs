@@ -47,11 +47,10 @@ fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
-        id: FeatureId("hole".into()),
+        id: FeatureId::mint("hole").expect("identity grammar"),
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -62,16 +61,14 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
             profile: None,
             profile_filter: None,
             face: None,
-            position: None,
             direction: None,
-            placements: Vec::new(),
-            kind: HoleKind::Simple,
+            placements: None,
+            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,
             diameter: Some(Length(4.0)),
             extent: None,
             bottom: None,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         },
         native_ref: Some("native-hole".into()),
@@ -91,7 +88,6 @@ fn native_history() -> FeatureHistory {
             xml_tag: "HoleWizard".into(),
             tree_parent: None,
             source_id: Some("7".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Hole".into(),
             kind: "HoleWizard".into(),
@@ -156,7 +152,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
-        id: SurfaceId(format!("surface-{id}")),
+        id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(x, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -168,15 +164,11 @@ fn cylinder(id: usize, x: f64) -> Surface {
 }
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
-    SketchEntity {
-        id: SketchEntityId(format!("profile-line-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
-    }
+    SketchEntity::new(
+        SketchEntityId(format!("profile-line-{ordinal}")),
+        sketch.clone(),
+        SketchGeometry::Line { start, end },
+    )
 }
 
 mod axial_profile;

@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::alloc_filled;
 
-use super::mesh_quotient::{MeshEndpointRelationChoice, MeshEndpointRelationStateSignature};
+use super::mesh_quotient::{
+    MeshEndpointRelationChoice, MeshEndpointRelationSelection, MeshEndpointRelationStateSignature,
+};
 use crate::families::standard::topology::{
     CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology,
 };
@@ -1265,26 +1267,12 @@ pub(crate) fn canonicalize_endpoint_relation_state(
         .map(|choices| {
             let mut choices = choices
                 .iter()
-                .map(|choice| {
-                    let mut assignments = choice.assignments.clone();
-                    assignments.sort_unstable();
-                    assignments.dedup();
-                    let mut edge_pairs = choice
-                        .edge_pairs
-                        .iter()
-                        .map(|&(edge, mut pair)| {
-                            pair.sort_unstable();
-                            (edge, pair)
-                        })
-                        .collect::<Vec<_>>();
-                    edge_pairs.sort_unstable();
-                    Some((assignments, edge_pairs))
-                })
-                .collect::<Option<Vec<_>>>()?;
+                .map(|choice| choice.selection.normalized())
+                .collect::<Vec<_>>();
             choices.sort_unstable();
-            Some(choices)
+            choices
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     let mut state = (assigned, domains);
 
     let point_count = gauge
@@ -1354,7 +1342,14 @@ fn map_endpoint_relation_state(
         .map(|choices| {
             let mut choices = choices
                 .iter()
-                .map(|(assignments, pairs)| {
+                .map(|selection| {
+                    let MeshEndpointRelationSelection::Enumerated {
+                        assignments,
+                        edge_pairs: pairs,
+                    } = selection
+                    else {
+                        return Some(MeshEndpointRelationSelection::Deferred);
+                    };
                     let mut mapped_pairs = Vec::with_capacity(pairs.len());
                     for &(edge, pair) in pairs {
                         let target = *row_mapping.get(edge)?;
@@ -1368,7 +1363,10 @@ fn map_endpoint_relation_state(
                             .push((target, mapped_endpoint_pair(Some(pair), Some(permutation))?));
                     }
                     mapped_pairs.sort_unstable();
-                    Some((assignments.clone(), mapped_pairs))
+                    Some(MeshEndpointRelationSelection::Enumerated {
+                        assignments: assignments.clone(),
+                        edge_pairs: mapped_pairs,
+                    })
                 })
                 .collect::<Option<Vec<_>>>()?;
             choices.sort_unstable();
@@ -1458,7 +1456,8 @@ fn relation_row_signature(
     };
     signature.push(assigned);
     for choices in &state.1 {
-        for (_, pairs) in choices {
+        for selection in choices {
+            let pairs = selection.edge_pairs();
             let mut value = None;
             for &(candidate, pair) in pairs {
                 if candidate != edge {
@@ -1512,8 +1511,10 @@ fn relation_state_memo_collapses_coordinate_gauge() {
         };
         let domains = vec![vec![MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![0],
-            edge_pairs: pairs.into_iter().enumerate().collect(),
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: pairs.into_iter().enumerate().collect(),
+            },
         }]];
         canonicalize_endpoint_relation_state(
             &domains,
@@ -1563,8 +1564,10 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
         };
         let domains = vec![vec![MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![0],
-            edge_pairs: pairs,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: pairs,
+            },
         }]];
         canonicalize_endpoint_relation_state(&domains, &[None, None], gauge)
             .expect("coordinate gauge state")
@@ -1610,8 +1613,10 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     let state = |assigned: Vec<Option<[usize; 2]>>, pairs: Vec<(usize, [usize; 2])>| {
         let domains = vec![vec![MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![0],
-            edge_pairs: pairs,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: pairs,
+            },
         }]];
         canonicalize_endpoint_relation_state(&domains, &assigned, gauge)
             .expect("row-coordinate gauge state")

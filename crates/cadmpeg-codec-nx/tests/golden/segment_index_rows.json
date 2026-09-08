@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "5",
+      "ir_version": "6",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -43,30 +43,27 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "segment_index_rows": [
-              {
-                "id": "nx:segment-index:row#0",
-                "ordinal": 0,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 76,
-                "subtype_code": 9,
-                "type_code": 7,
-                "value": 11
-              },
-              {
-                "id": "nx:segment-index:row#1",
-                "ordinal": 1,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 88,
-                "subtype_code": 1,
-                "type_code": 1,
-                "value": 28
-              }
-            ],
-            "unknowns": []
-          },
-          "version": 189
+          "segment_index_rows": [
+            {
+              "id": "nx:segment-index:row#0",
+              "ordinal": 0,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 76,
+              "subtype_code": 9,
+              "type_code": 7,
+              "value": 11
+            },
+            {
+              "id": "nx:segment-index:row#1",
+              "ordinal": 1,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 88,
+              "subtype_code": 1,
+              "type_code": 1,
+              "value": 28
+            }
+          ],
+          "unknowns": []
         }
       },
       "source": {
@@ -82,6 +79,17 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
+        },
         "format": "nx"
       },
       "tolerances": {
@@ -94,6 +102,17 @@
     },
     "report": {
       "container_only": false,
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      },
       "format": "nx",
       "geometry_transferred": false,
       "losses": [
@@ -108,7 +127,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ]
     },
@@ -129,12 +148,22 @@
         "streams": [
           "nx:container"
         ]
-      },
-      "version": "3"
+      }
     }
   },
   "inspect": {
     "container_kind": "splmsstr",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr",
+        "format": "nx"
+      }
+    },
     "entries": [
       {
         "attributes": {
@@ -150,7 +179,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

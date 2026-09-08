@@ -1,0 +1,247 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use super::*;
+use crate::f3z::merge::{
+    append_feature_history, compose_transforms, extend_native, rescope_record, OccurrenceScope,
+};
+
+fn feature(id: &str, ordinal: u64) -> Feature {
+    Feature {
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal,
+        name: None,
+        suppressed: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "test".into(),
+            parameters: std::collections::BTreeMap::new(),
+        },
+        native_ref: None,
+    }
+}
+
+#[test]
+fn component_feature_history_follows_the_parent_without_losing_relative_order() {
+    let mut parent = Model::default();
+    parent.features = vec![
+        feature("f3d:feature#parent-0", 4),
+        feature("f3d:feature#parent-1", 8),
+    ];
+    let mut component = Model::default();
+    component.features = vec![
+        feature("f3d:feature#component-0", 10),
+        feature("f3d:feature#component-1", 12),
+    ];
+
+    append_feature_history(&parent, &mut component).unwrap();
+
+    assert_eq!(
+        component
+            .features
+            .iter()
+            .map(|feature| feature.ordinal)
+            .collect::<Vec<_>>(),
+        vec![9, 11]
+    );
+}
+
+#[test]
+fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
+    let mut parent = Model::default();
+    parent.features = vec![feature("f3d:feature#parent", u64::MAX)];
+    let mut component = Model::default();
+    component.features = vec![feature("f3d:feature#component", 0)];
+
+    let error = append_feature_history(&parent, &mut component).unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("merged F3Z feature ordinal exceeds u64::MAX"));
+}
+
+/// The rescoping round-trip carries an entity through an untyped value tree.
+/// A coordinate is an `f64`, and a decoded one is not guaranteed finite, so
+/// the tree must hold the value itself rather than a decimal rendering of it.
+#[test]
+fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::PointId;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Point;
+
+    let point = Point {
+        id: PointId::mint("f3d:model:point#1").expect("identity grammar"),
+        position: Point3 {
+            x: f64::NAN,
+            y: f64::INFINITY,
+            z: f64::NEG_INFINITY,
+        },
+        source_object: None,
+    };
+
+    let rescoped = OccurrenceScope {
+        occurrence: "role/occurrence-0",
+    }
+    .rewrite(point)
+    .expect("a model entity rescopes through the value tree");
+
+    assert_eq!(
+        rescoped.id.as_str(),
+        "f3d:xref/role/occurrence-0/model:point#1"
+    );
+    assert!(rescoped.position.x.is_nan());
+    assert_eq!(rescoped.position.y, f64::INFINITY);
+    assert_eq!(rescoped.position.z, f64::NEG_INFINITY);
+}
+
+#[test]
+fn occurrence_transform_composes_outside_existing_body_transform() {
+    let outer = Transform::from_rows([
+        [0.0, -1.0, 0.0, 20.0],
+        [1.0, 0.0, 0.0, 30.0],
+        [0.0, 0.0, 1.0, 40.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
+    let inner = Transform::from_rows([
+        [1.0, 0.0, 0.0, 5.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
+
+    assert_eq!(
+        compose_transforms(outer, inner).rows(),
+        [
+            [0.0, -1.0, 0.0, 20.0],
+            [1.0, 0.0, 0.0, 35.0],
+            [0.0, 0.0, 1.0, 40.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+}
+
+#[test]
+fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
+    let mut merged = Model::default();
+    let mut component = Model::default();
+    component.bodies = vec![Body {
+        id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }];
+    component.regions = vec![Region {
+        id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+        shells: Vec::new(),
+    }];
+    for ordinal in 0..2 {
+        let occurrence = format!("role/occurrence-{ordinal}");
+        let mut scope = OccurrenceScope {
+            occurrence: &occurrence,
+        };
+        merged
+            .extend_rewritten(component.clone(), &mut scope)
+            .expect("merge component arenas");
+    }
+
+    for ordinal in 0..2 {
+        let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
+        assert_eq!(merged.bodies[ordinal].id.as_str(), format!("{prefix}1"));
+        assert_eq!(
+            merged.bodies[ordinal].regions[0].as_str(),
+            format!("{prefix}2")
+        );
+        assert_eq!(merged.regions[ordinal].id.as_str(), format!("{prefix}2"));
+        assert_eq!(merged.regions[ordinal].body.as_str(), format!("{prefix}1"));
+    }
+}
+
+#[test]
+fn occurrence_merge_remaps_and_retains_native_records() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            42,
+            crate::records::DesignSketchFrameForm::MemberCompact {
+                paired_byte_offset: 76,
+            },
+        )
+        .unwrap(),
+        id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
+        scope_record_index: None,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned())
+            .expect("valid entity ID"),
+
+        visibility: None,
+
+        class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
+        record_index: 7,
+
+        paired_class_tag: crate::records::DesignClassTag::try_from("002".to_owned()).unwrap(),
+    };
+    let mut component = Native::default();
+    component
+        .namespace_mut("f3d")
+        .set_arena("design_sketch_placements", &[placement])
+        .expect("store component native");
+    let mut root = Native::default();
+    extend_native(&mut root, component, "role/occurrence-0").unwrap();
+
+    let merged: Vec<DesignSketchPlacement> = root
+        .namespace("f3d")
+        .expect("merged f3d namespace")
+        .arena_as("design_sketch_placements")
+        .expect("read merged arena");
+    assert_eq!(
+        merged[0].id,
+        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-sketch-placement#42"
+    );
+}
+
+#[test]
+fn occurrence_merge_remaps_native_record_map_keys_and_nested_payloads() {
+    let record = NativeRecord::new(
+        "f3d:Design/Configurations.json:design-configuration#1",
+        serde_json::json!({
+            "channels": {
+                "f3d:brep:entity#2": "kept",
+                "plain": "f3d:brep:entity#3",
+            },
+            "payload": [{"link": "f3d:brep:entity#4"}, "not-an-id"],
+        })
+        .as_object()
+        .expect("object payload")
+        .clone(),
+    )
+    .expect("valid native identity");
+
+    let rescoped = rescope_record(&record, "role/occurrence-0").unwrap();
+
+    assert_eq!(
+        rescoped.id(),
+        "f3d:xref/role/occurrence-0/Design/Configurations.json:design-configuration#1"
+    );
+    assert_eq!(
+        serde_json::Value::Object(rescoped.fields()),
+        serde_json::json!({
+            "channels": {
+                "f3d:xref/role/occurrence-0/brep:entity#2": "kept",
+                "plain": "f3d:xref/role/occurrence-0/brep:entity#3",
+            },
+            "payload": [
+                {"link": "f3d:xref/role/occurrence-0/brep:entity#4"},
+                "not-an-id",
+            ],
+        })
+    );
+}

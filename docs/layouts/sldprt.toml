@@ -1323,7 +1323,7 @@ anchor = "side1 f64 BE"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/brep/blend.rs"
-contains = "if !matches!(selector, 0x45 | 0x52)"
+contains = "for selector in [0x45, 0x52]"
 note = "The parser's selector value set; see the `selector` field note."
 
 # --- §7.5 Offset surface ----------------------------------------------------

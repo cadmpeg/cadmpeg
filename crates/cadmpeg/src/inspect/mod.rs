@@ -23,13 +23,66 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
 use numeric::{parse_offset, EndianArgs, ScalarType};
 
 /// Default number of bytes a bare `inspect hex` prints.
 const DEFAULT_HEX_LEN: u64 = 256;
+
+/// A container summary or a byte tool with its own input arguments.
+#[derive(Debug)]
+pub enum InspectArgs {
+    Summary(SummaryArgs),
+    Bytes(ByteCommand),
+}
+
+/// Arguments for a codec-aware container summary.
+#[derive(Debug, Args)]
+pub struct SummaryArgs {
+    #[command(flatten)]
+    pub file: FileArg,
+    /// Write JSON to standard output.
+    #[arg(long)]
+    pub json: bool,
+    /// Write a JSON report to this file.
+    #[arg(short = 'o', long, visible_alias = "output")]
+    pub report: Option<PathBuf>,
+    /// Replace an existing report file.
+    #[arg(long)]
+    pub force: bool,
+    /// Resource-limit profile applied during inspection.
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    pub limits: LimitProfile,
+    #[command(flatten)]
+    pub input_args: crate::InputArgs,
+}
+
+impl clap::Args for InspectArgs {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        ByteCommand::augment_subcommands(SummaryArgs::augment_args(command))
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for InspectArgs {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        if matches.subcommand_name().is_some() {
+            ByteCommand::from_arg_matches(matches).map(Self::Bytes)
+        } else {
+            SummaryArgs::from_arg_matches(matches).map(Self::Summary)
+        }
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
 
 /// Byte-level subcommands of `cadmpeg inspect`.
 ///
@@ -80,33 +133,67 @@ pub enum ByteTool {
     Cmp(CmpArgs),
 }
 
-/// The file a single-input byte tool reads, under either spelling.
-///
-/// The positional form is canonical; `--input FILE` is a tolerated guessed
-/// spelling. Exactly one of the pair must be present, and giving both is a
-/// clap conflict error.
-#[derive(Debug, Args)]
+/// One resolved input file.
+#[derive(Debug)]
 pub struct FileArg {
-    /// File to read.
-    #[arg(value_name = "FILE", required_unless_present = "input_flag")]
-    pub file: Option<PathBuf>,
-    /// Tolerated spelling of the positional file.
-    #[arg(
-        long = "input",
-        value_name = "FILE",
-        hide = true,
-        conflicts_with = "file"
-    )]
-    pub input_flag: Option<PathBuf>,
+    path: PathBuf,
 }
 
 impl FileArg {
-    /// Returns the file under whichever spelling was given.
+    /// Returns the resolved input path.
     pub fn path(&self) -> &Path {
-        self.file
-            .as_deref()
-            .or(self.input_flag.as_deref())
-            .expect("clap requires one file spelling")
+        &self.path
+    }
+}
+
+impl clap::Args for FileArg {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        let input = clap::Arg::new("input_flag")
+            .long("input")
+            .value_name("FILE")
+            .help("Tolerated spelling of the positional file")
+            .hide(true)
+            .value_parser(clap::value_parser!(PathBuf));
+        let input = input.conflicts_with("file");
+        let value_name = if command.get_name() == "inspect" {
+            "INPUT"
+        } else {
+            "FILE"
+        };
+        command
+            .arg(
+                clap::Arg::new("file")
+                    .value_name(value_name)
+                    .help("File to read")
+                    .required_unless_present("input_flag")
+                    .value_parser(clap::value_parser!(PathBuf)),
+            )
+            .arg(input)
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for FileArg {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        matches
+            .get_one::<PathBuf>("file")
+            .or_else(|| matches.get_one::<PathBuf>("input_flag"))
+            .cloned()
+            .map(|path| Self { path })
+            .ok_or_else(|| {
+                clap::Error::raw(
+                    clap::error::ErrorKind::MissingRequiredArgument,
+                    "file is required",
+                )
+            })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
     }
 }
 
@@ -124,9 +211,8 @@ pub struct HexArgs {
     /// Bytes per output line.
     #[arg(long, default_value_t = 16)]
     pub width: usize,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
-    pub json: bool,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect read`.
@@ -148,49 +234,117 @@ pub struct ReadArgs {
     pub stride: Option<u64>,
     #[command(flatten)]
     pub endian: EndianArgs,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
-    pub json: bool,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect find`.
 #[derive(Debug, Args)]
-#[command(group(clap::ArgGroup::new("needle").args(["hex", "ascii", "utf16le"])))]
 pub struct FindArgs {
-    /// File to search.
-    #[arg(value_name = "FILE", required_unless_present = "input_flag")]
-    pub file: Option<PathBuf>,
-    /// Tolerated spelling of the positional file. Deliberately not a clap
-    /// conflict with the positional: when both appear, the positional slot
-    /// caught a misplaced search pattern, and the runner explains that.
-    #[arg(long = "input", value_name = "FILE", hide = true)]
-    pub input_flag: Option<PathBuf>,
-    /// Rejected placeholder: the pattern belongs to `--hex`, `--ascii`, or
-    /// `--utf16le`, because a bare word cannot say how to encode it.
-    #[arg(hide = true)]
-    pub misplaced_pattern: Option<String>,
-    /// Hexadecimal byte pattern; `??` matches any byte.
-    #[arg(long)]
-    pub hex: Option<String>,
-    /// ASCII string to search for.
-    #[arg(long)]
-    pub ascii: Option<String>,
-    /// String to search for encoded as UTF-16LE.
-    #[arg(long)]
-    pub utf16le: Option<String>,
+    #[command(flatten)]
+    pub input: FindInput,
+    /// Pattern encoding.
+    #[arg(long, value_enum)]
+    pub encoding: FindEncoding,
     /// Stop after this many hits; 0 reports every hit.
     #[arg(long, default_value_t = 100)]
     pub max: usize,
     /// Bytes of context dumped before and after each hit; 0 prints none.
     #[arg(long, default_value = "0", value_parser = parse_offset)]
     pub context: u64,
-    /// Rejected placeholder: `find` names the encoding by flag, not by a
-    /// `--type` value.
-    #[arg(long = "type", hide = true)]
-    pub misplaced_type: Option<String>,
-    /// Print the hits as versioned JSON instead of the table.
+    /// Print the hits as JSON instead of the table.
     #[arg(long, conflicts_with = "context")]
     pub json: bool,
+}
+
+/// A resolved search file and pattern.
+#[derive(Debug)]
+pub struct FindInput {
+    file: PathBuf,
+    needle: String,
+}
+
+impl clap::Args for FindInput {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        command
+            .arg(clap::Arg::new("search_operands")
+                .value_name("FILE NEEDLE")
+                .help("File and pattern, or just the pattern with --input; hex accepts ?? wildcards")
+                .num_args(1..=2)
+                .action(clap::ArgAction::Append)
+                .required(true)
+                .value_parser(clap::value_parser!(std::ffi::OsString)))
+            .arg(clap::Arg::new("input_flag")
+                .long("input")
+                .value_name("FILE")
+                .hide(true)
+                .value_parser(clap::value_parser!(PathBuf)))
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for FindInput {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let operands: Vec<_> = matches
+            .get_many::<std::ffi::OsString>("search_operands")
+            .into_iter()
+            .flatten()
+            .collect();
+        let (file, needle) = match (
+            matches.get_one::<PathBuf>("input_flag"),
+            operands.as_slice(),
+        ) {
+            (None, [file, needle]) => (PathBuf::from(file), *needle),
+            (Some(file), [needle]) => (file.clone(), *needle),
+            (Some(_), [_, _, ..]) => {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::ArgumentConflict,
+                    "--input cannot be used with a positional file",
+                ))
+            }
+            (None, [_, _, _, ..]) => {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::TooManyValues,
+                    "expected only FILE and NEEDLE",
+                ))
+            }
+            _ => {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::MissingRequiredArgument,
+                    "required arguments: FILE and NEEDLE",
+                ))
+            }
+        };
+        let needle = needle
+            .to_str()
+            .ok_or_else(|| {
+                clap::Error::raw(
+                    clap::error::ErrorKind::InvalidUtf8,
+                    "NEEDLE must be valid UTF-8",
+                )
+            })?
+            .to_owned();
+        Ok(Self { file, needle })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
+/// Encoding of a search pattern.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum FindEncoding {
+    /// Hexadecimal bytes with optional `??` wildcards.
+    Hex,
+    /// ASCII text.
+    Ascii,
+    /// UTF-16LE text.
+    Utf16le,
 }
 
 /// Arguments for `cadmpeg inspect strings`.
@@ -207,11 +361,10 @@ pub struct StringsArgs {
     )]
     pub min: usize,
     /// Which encodings to scan for.
-    #[arg(long, value_enum, default_value_t = search::StringEncoding::Ascii)]
-    pub encoding: search::StringEncoding,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
-    pub json: bool,
+    #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
+    pub encoding: search::StringScan,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect struct`.
@@ -228,9 +381,8 @@ pub struct StructArgs {
     /// How many consecutive records to decode.
     #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
-    pub json: bool,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect container`.
@@ -238,7 +390,7 @@ pub struct StructArgs {
 pub struct ContainerArgs {
     #[command(flatten)]
     pub file: FileArg,
-    /// Print the entries as versioned JSON instead of the table.
+    /// Print the entries as JSON instead of the table.
     #[arg(long)]
     pub json: bool,
     /// Resource-limit profile applied while reading the central directory.
@@ -263,9 +415,8 @@ pub struct ExtractArgs {
     /// Resource-limit profile applied while reading the archive.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
-    pub json: bool,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect cmp`.
@@ -284,9 +435,8 @@ pub struct CmpArgs {
     /// Bytes of context dumped on each side of the first difference.
     #[arg(long, default_value = "32", value_parser = parse_offset)]
     pub context: u64,
-    /// Rejected placeholder: this tool has no JSON form.
-    #[arg(long, hide = true)]
-    pub json: bool,
+    #[command(flatten)]
+    _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Runs one byte subcommand.
@@ -301,7 +451,10 @@ pub fn run(command: ByteCommand) -> Result<ExitCode> {
     };
     match tool {
         ByteTool::Hex(args) => hex(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Read(args) => read(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Read(args) => {
+            let mode = args.endian.mode();
+            read(&args, mode).map(|()| ExitCode::SUCCESS)
+        }
         ByteTool::Find(args) => find(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Strings(args) => strings(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Struct(args) => structure(&args).map(|()| ExitCode::SUCCESS),
@@ -352,14 +505,6 @@ fn read_whole(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn hex(args: &HexArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect hex` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     if args.width == 0 {
         bail!("--width must be at least 1");
     }
@@ -373,15 +518,7 @@ fn hex(args: &HexArgs) -> Result<()> {
     Ok(())
 }
 
-fn read(args: &ReadArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect read` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
+fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
     let width = args.ty.width() as u64;
     let stride = args.stride.unwrap_or(width);
     if args.count == 0 {
@@ -390,7 +527,6 @@ fn read(args: &ReadArgs) -> Result<()> {
     if stride == 0 {
         bail!("--stride 0 would read the same bytes forever");
     }
-    let endian = args.endian.endian();
     let file_path = args.file.path();
     let size = file_len(file_path)?;
     let name = args.ty.display_name(endian);
@@ -418,45 +554,19 @@ fn read(args: &ReadArgs) -> Result<()> {
         println!(
             "0x{offset:08x}  {name:<6}  {:<24}  {}",
             value.decimal(),
-            value.hex(args.ty)
+            value.hex()
         );
     }
     Ok(())
 }
 
 fn find(args: &FindArgs) -> Result<()> {
-    let (file, misplaced) = match (&args.input_flag, &args.file) {
-        (Some(input), Some(stray)) => (input, Some(stray.display().to_string())),
-        (Some(input), None) => (input, args.misplaced_pattern.clone()),
-        (None, Some(file)) => (file, args.misplaced_pattern.clone()),
-        (None, None) => unreachable!("clap requires one file spelling"),
-    };
-    if let Some(stray) = &misplaced {
-        bail!(
-            "`{stray}` is an extra positional argument; the search pattern is named by a flag \
-             because a bare word does not say how to encode it: pass `--hex {stray}` for a byte \
-             pattern, `--ascii {stray}` for text, or `--utf16le {stray}` for UTF-16LE text"
-        );
-    }
-    if let Some(guessed) = &args.misplaced_type {
-        let flag = match guessed.to_ascii_lowercase().as_str() {
-            "hex" | "bytes" => "--hex PATTERN",
-            text if text.starts_with("utf16") || text.starts_with("utf-16") => "--utf16le TEXT",
-            _ => "--ascii TEXT",
-        };
-        bail!(
-            "`--type {guessed}` does not select an encoding here; `find` names the pattern \
-             encoding by flag: pass `{flag}` (the choices are --hex, --ascii, and --utf16le)"
-        );
-    }
-    let (pattern, described) = if let Some(text) = &args.hex {
-        (search::parse_pattern(text), format!("hex {text}"))
-    } else if let Some(text) = &args.ascii {
-        (search::ascii_pattern(text), format!("ascii {text:?}"))
-    } else if let Some(text) = &args.utf16le {
-        (search::utf16le_pattern(text), format!("utf16le {text:?}"))
-    } else {
-        bail!("pass one of --hex, --ascii, or --utf16le")
+    let file = &args.input.file;
+    let text = &args.input.needle;
+    let (pattern, described) = match args.encoding {
+        FindEncoding::Hex => (search::parse_pattern(text), format!("hex {text}")),
+        FindEncoding::Ascii => (search::ascii_pattern(text), format!("ascii {text:?}")),
+        FindEncoding::Utf16le => (search::utf16le_pattern(text), format!("utf16le {text:?}")),
     };
     let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
     let bytes = read_whole(file)?;
@@ -464,11 +574,8 @@ fn find(args: &FindArgs) -> Result<()> {
     let hits = search::find_all(&bytes, &pattern, limit);
     let truncated = limit.is_some_and(|max| hits.len() >= max);
     if args.json {
-        let envelope = serde_json::json!({
-            "schema_version": crate::commands::CLI_SCHEMA_VERSION,
-            "command": "inspect find",
-            "status": "ok",
-            "refusal": null,
+        let payload = serde_json::json!({
+            "subcommand": "find",
             "pattern": described,
             "pattern_bytes": pattern.len(),
             "truncated": truncated,
@@ -476,7 +583,7 @@ fn find(args: &FindArgs) -> Result<()> {
         });
         println!(
             "{}",
-            serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+            crate::commands::reporting::command_report_json("inspect", &payload)?
         );
         return Ok(());
     }
@@ -511,14 +618,6 @@ fn find(args: &FindArgs) -> Result<()> {
 }
 
 fn strings(args: &StringsArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect strings` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     if args.min == 0 {
         bail!("--min must be at least 1");
     }
@@ -535,21 +634,13 @@ fn strings(args: &StringsArgs) -> Result<()> {
 }
 
 fn structure(args: &StructArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect struct` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let layout = layout::Layout::parse(&args.layout)?;
     if args.count == 0 {
         return Ok(());
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
-    let record_size = layout.size as u64;
+    let record_size = layout.size() as u64;
     let span = record_size
         .checked_mul(args.count)
         .and_then(|total| args.offset.checked_add(total))
@@ -564,15 +655,10 @@ fn structure(args: &StructArgs) -> Result<()> {
         );
     }
     let bytes = read_window(file_path, args.offset, span - args.offset)?;
-    let name_width = layout
-        .fields
-        .iter()
-        .map(|field| field.name.len())
-        .max()
-        .unwrap_or(1);
+    let name_width = layout.names().map(str::len).max().unwrap_or(1);
     for index in 0..args.count {
         let start = (index * record_size) as usize;
-        let record = &bytes[start..start + layout.size];
+        let record = &bytes[start..start + layout.size()];
         let base = args.offset + index * record_size;
         println!("record {index} @ 0x{base:08x} ({record_size} bytes)");
         for field in layout.decode(record) {
@@ -606,14 +692,6 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
 }
 
 fn extract_entry(args: &ExtractArgs) -> Result<()> {
-    if args.json {
-        bail!(
-            "`inspect extract` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let bytes = read_whole(&args.file)?;
     let payload = container::extract(&bytes, args.limits.limits(), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
@@ -641,52 +719,44 @@ fn write_payload_to_stdout(payload: &[u8]) -> Result<()> {
 }
 
 fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
-    if args.json {
-        bail!(
-            "`inspect cmp` has no JSON form; JSON lives on `inspect FILE --json` \
-             (the container summary), `inspect container --json`, and `inspect \
-             find --json`"
-        );
-    }
-
     let a = read_whole(&args.a)?;
     let b = read_whole(&args.b)?;
     let summary = diff::compare(&a, &b, args.gap);
     println!(
         "a: {} ({} bytes)\nb: {} ({} bytes)",
         args.a.display(),
-        summary.len_a,
+        summary.len_a(),
         args.b.display(),
-        summary.len_b
+        summary.len_b()
     );
     if summary.identical() {
         println!("identical");
         return Ok(ExitCode::SUCCESS);
     }
-    if summary.len_a != summary.len_b {
+    if summary.len_a() != summary.len_b() {
         println!(
             "length differs by {} bytes; only the first {} bytes are compared",
-            summary.len_a.abs_diff(summary.len_b),
-            summary.compared
+            summary.len_a().abs_diff(summary.len_b()),
+            summary.compared()
         );
     }
-    let Some(first) = summary.first else {
+    let Some(first) = summary.first() else {
         println!("the common prefix is identical");
         return Ok(ExitCode::from(1));
     };
     println!(
         "first difference: 0x{first:08x} ({first})\ndiffering bytes: {} of {}\nruns (gap {}): {}",
-        summary.differing,
-        summary.compared,
+        summary.differing(),
+        summary.compared(),
         args.gap,
-        summary.runs.len()
+        summary.runs().len()
     );
     let shown = if args.max_runs == 0 {
-        summary.runs.len()
+        summary.runs().len()
     } else {
-        args.max_runs.min(summary.runs.len())
+        args.max_runs.min(summary.runs().len())
     };
-    for run in &summary.runs[..shown] {
+    for run in &summary.runs()[..shown] {
         println!(
             "  0x{:08x}..0x{:08x}  {} bytes",
             run.start,
@@ -694,10 +764,10 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
             run.len
         );
     }
-    if shown < summary.runs.len() {
+    if shown < summary.runs().len() {
         println!(
             "  … {} more runs (raise --max-runs)",
-            summary.runs.len() - shown
+            summary.runs().len() - shown
         );
     }
     if args.context > 0 {

@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: carrier solver.
 
-use crate::decode::analytic::{
-    intersect_plane_with_two_quadrics, intersect_two_planes_with_torus, point_on_carrier,
-    solve_carriers, CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation,
-    TorusEquation,
+use crate::decode::analytic::equations::{
+    intersect_plane_with_two_quadrics, intersect_two_planes_with_torus, CarrierEquation,
+    ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
-use crate::decode::surfaces::{
+use crate::decode::analytic::planes::{point_on_carrier, solve_carriers};
+use crate::decode::surfaces::intersection_candidates::{
     apex_plane_cone_generator_candidates, axis_normal_plane_torus_circle_candidates,
-    carrier_intersection_curve, coaxial_cone_cylinder_circle_candidates,
-    coaxial_cone_sphere_circle_candidates, coaxial_cylinder_sphere_circle_candidates,
-    coaxial_cylinder_torus_circle_candidates, coaxial_sphere_torus_circle_candidates,
-    coaxial_tori_circle_candidates, fc14_held_coordinate, parallel_cylinder_generator_candidates,
-    parallel_plane_cylinder_generator_candidates, select_fc14_axis_coordinate_candidate,
-    select_unique_curve_candidate,
+    coaxial_cone_cylinder_circle_candidates, coaxial_cone_sphere_circle_candidates,
+    coaxial_cylinder_sphere_circle_candidates, coaxial_cylinder_torus_circle_candidates,
+    coaxial_sphere_torus_circle_candidates, coaxial_tori_circle_candidates,
+    parallel_cylinder_generator_candidates, parallel_plane_cylinder_generator_candidates,
+};
+use crate::decode::surfaces::intersections::carrier_intersection_curve;
+use crate::decode::surfaces::{
+    fc14_held_coordinate, select_fc14_axis_coordinate_candidate, select_unique_curve_candidate,
 };
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Point3;
@@ -58,14 +60,17 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         solve_carriers(&[x_axis_cylinder, y_axis_cylinder, tangent_plane]),
         Some([0.0, 0.0, 1.0])
     );
-    let cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 1.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     let offset_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [0.0, 1.0, 0.0],
         normal: [0.0, 1.0, 0.0],
@@ -340,27 +345,33 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         None
     );
 
-    let cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     assert!(matches!(
         carrier_intersection_curve(cap, cone),
         Some((CurveGeometry::Circle { center, radius, .. }, "plane_cone_circle"))
             if center == Point3::new(0.0, 0.0, 3.0) && (radius - 5.0).abs() < 1.0e-12
     ));
-    let elliptical_cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let elliptical_cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     assert!(matches!(
         carrier_intersection_curve(cap, elliptical_cone),
         Some((
@@ -582,7 +593,6 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         value_mm: 1.0,
         raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
         offset: 3,
-        length: 8,
     };
     let held_coordinates = crate::curve::FcCurveCoordinates {
         curve_id: 77,
@@ -591,7 +601,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         values_mm: vec![1.0; 4],
         tokens: (0..4)
             .map(|index| crate::curve::FcCurveCoordinateToken {
-                offset: held_token.offset + index * held_token.length,
+                offset: held_token.offset + index * held_token.raw.len(),
                 ..held_token.clone()
             })
             .collect(),

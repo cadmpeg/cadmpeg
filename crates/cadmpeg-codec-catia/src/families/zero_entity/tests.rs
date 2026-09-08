@@ -23,17 +23,21 @@ fn decode_zero_entity_falls_back_to_metadata() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.report().geometry_transferred);
+    assert!(!result.report().geometry_transferred());
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(
-        source.attributes.get("variant").map(String::as_str),
-        Some("zero_entity")
+        source
+            .dialect()
+            .expect("classified source")
+            .dialect()
+            .as_str(),
+        "catia:zero-entity"
     );
     assert!(result
         .report()
         .losses
         .iter()
-        .any(|l| l.message.contains("zero_entity")));
+        .any(|l| l.message.contains("catia:zero-entity")));
 }
 
 #[test]
@@ -95,7 +99,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert!(result.ir().model.points.is_empty());
     assert!(result.ir().model.vertices.is_empty());
@@ -152,23 +156,25 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert!(matches!(
         &curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Procedural {
-            construction: id
+            construction: id,
+            ..
         } if id == &construction.id
     ));
-    assert_eq!(construction.curve, curve.id);
-    assert_eq!(construction.cache_fit_tolerance, None);
+    assert_eq!(
+        result.ir().model.procedural_curve_owner(&construction.id),
+        Some(&curve.id)
+    );
+    assert_eq!(construction.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-        family,
-        context,
-        tail: None,
-    } = &construction.definition
+        family:
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+                context,
+                tail: None,
+            },
+    } = construction.definition()
     else {
         panic!("parametric surface-curve construction")
     };
-    assert_eq!(
-        *family,
-        cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric
-    );
     assert_eq!(context.parameter_range, [0.0, 1.0]);
     assert_eq!(
         context.sides[0].surface.as_ref(),
@@ -225,14 +231,14 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
-            assert_eq!((surface.u_count, surface.v_count), (7, 7));
+            assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
+            assert_eq!((surface.u_count(), surface.v_count()), (7, 7));
             assert_eq!(
-                surface.u_knots,
-                vec![0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
+                surface.u_knots(),
+                [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
             );
-            assert_eq!(surface.control_points.len(), 49);
-            assert_eq!(surface.control_points[48].x, 48.0);
+            assert_eq!(surface.control_points().len(), 49);
+            assert_eq!(surface.control_points()[48].x, 48.0);
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
@@ -277,25 +283,19 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
     assert!(matches!(
         support.pcurve,
-        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            ref control_points,
-            weights: None,
-            periodic: false,
-            ..
-        }) if control_points.len() == 2
+        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { ref nurbs })
+            if nurbs.degree() == 1
+                && nurbs.control_points().len() == 2
+                && nurbs.weights().is_none()
+                && !nurbs.periodic()
     ));
     assert!(matches!(
         support.model_curve,
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve {
-                degree: 1,
-                ref control_points,
-                weights: None,
-                periodic: false,
-                ..
-            }
-        )) if control_points.len() == 2
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs))
+            if nurbs.degree() == 1
+                && nurbs.control_points().len() == 2
+                && nurbs.weights().is_none()
+                && !nurbs.periodic()
     ));
     assert!(support.model_curve_construction.is_none());
     assert_eq!(support.model_parameters, Some([0.0, 1.0]));
@@ -442,21 +442,6 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity loop support binding");
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
 
-    let mut invalid_pcurve = native.clone();
-    let Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree, .. }) =
-        invalid_pcurve.zero_entity_support_runs[0].supports[0]
-            .pcurve
-            .as_mut()
-    else {
-        panic!("NURBS support pcurve")
-    };
-    *degree = 2;
-    let mut invalid_pcurve_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_pcurve
-        .store(&mut invalid_pcurve_namespace)
-        .expect("store invalid CATIA zero-entity support pcurve");
-    assert!(crate::native::CatiaNative::load(&invalid_pcurve_namespace).is_err());
-
     let mut invalid_model_curve = native.clone();
     let Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve)) =
         invalid_model_curve.zero_entity_support_runs[0].supports[0]
@@ -465,7 +450,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     else {
         panic!("NURBS support model curve")
     };
-    model_curve.periodic = true;
+    model_curve.set_periodic(true);
     let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_curve
         .store(&mut invalid_model_curve_namespace)
@@ -556,7 +541,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             incident_endpoint_pair_endpoints: vec![
                 crate::native::CatiaZeroEntityEndpointPairEndpoint {
                     endpoint_pair: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
-                    endpoint_index: 0,
+                    endpoint_index: crate::native::CatiaZeroEntityEndpointIndex::Start,
                 },
             ],
             representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

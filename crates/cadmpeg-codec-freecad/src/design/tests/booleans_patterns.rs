@@ -3,7 +3,7 @@
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length};
+use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -44,7 +44,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     assert!(matches!(
         feature("Cut").definition,
         cadmpeg_ir::features::FeatureDefinition::Combine {
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::BooleanKind::Cut,
             ..
         }
     ));
@@ -52,7 +52,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         feature("Cut")
             .dependencies
             .iter()
-            .map(|id| id.0.as_str())
+            .map(cadmpeg_ir::FeatureId::as_str)
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#A", "fcstd:design:feature#B"]
     );
@@ -65,7 +65,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     else {
         panic!("multi-fuse");
     };
-    assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
+    assert_eq!(*op, cadmpeg_ir::features::BooleanKind::Join);
     assert!(!keep_tools);
     assert!(matches!(
         target,
@@ -113,7 +113,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
         cadmpeg_ir::features::FeatureDefinition::Combine {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         } if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2")
@@ -123,7 +123,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
         cadmpeg_ir::features::FeatureDefinition::Combine {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
         } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
@@ -190,13 +190,13 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
         if expected_native {
             assert!(matches!(
                 definition,
-                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Boolean"
+                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Boolean"
             ));
         } else {
             assert!(matches!(
                 definition,
                 FeatureDefinition::Combine {
-                    op: BooleanOp::Join,
+                    op: cadmpeg_ir::features::BooleanKind::Join,
                     ..
                 }
             ));
@@ -541,12 +541,12 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
             };
             assert!(matches!(
                 definition(&result, target),
-                FeatureDefinition::Native { kind: actual, .. } if actual == kind
+                FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
             ));
             assert_eq!(result.report().losses.len(), 1);
             assert!(result.report().losses.iter().all(|loss| {
-                loss.code.namespace == "fcstd"
-                    && loss.code.code == "feature.native-kind-retained"
+                loss.code.namespace() == "fcstd"
+                    && loss.code.local_code() == "feature.native-kind-retained"
                     && loss.severity == cadmpeg_ir::Severity::Blocking
             }));
         }
@@ -784,14 +784,14 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         assert!(
             matches!(
                 actual,
-                FeatureDefinition::Native { kind: actual, .. } if actual == kind
+                FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
             ),
             "{name}: {actual:?}"
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     }
@@ -1244,7 +1244,7 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
     for name in ["MultipleTargets", "MultipleSelectors"] {
         assert!(matches!(
             definition(name),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::PolarPattern"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::PolarPattern"
         ));
     }
     assert!(matches!(
@@ -1258,8 +1258,8 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
     ));
     assert_eq!(result.report().losses.len(), 2);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }

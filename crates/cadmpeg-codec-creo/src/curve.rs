@@ -6,6 +6,7 @@
 //! parameter bodies are not interpreted here.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
@@ -122,14 +123,20 @@ pub struct CurveExpressionSolveBlock {
     /// Ordered one-way relations in the block that do not involve an unknown.
     pub assignments: Vec<CurveExpressionAssignment>,
     /// Ordered unknowns declared by the terminating `FOR` line.
-    pub variables: Vec<String>,
-    /// Solved scalar values aligned with `variables`; absent entries remain
-    /// nonlinear, underdetermined, inconsistent, or dependency-unresolved.
-    pub solutions: Vec<Option<CurveExpressionValue>>,
+    pub unknowns: Vec<SolveUnknown>,
     /// Byte offset of the `SOLVE` line.
     pub offset: usize,
     /// Byte offset of the terminating `FOR` line.
     pub for_offset: usize,
+}
+
+/// One declared solve unknown and its optional solution.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SolveUnknown {
+    /// Declared variable name.
+    pub name: String,
+    /// Solved value, absent when the unknown remains unresolved.
+    pub solution: Option<CurveExpressionValue>,
 }
 
 /// One equation in a simultaneous-equation block.
@@ -346,14 +353,54 @@ pub struct CurveTopologyRow {
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
     pub directions: [u8; 2],
     /// The `F0`/`F1` suffix fields: the `srf_array` face identifiers
-    /// bounding the curve's two half-edge sides.
-    pub faces: [u32; 2],
+    /// bounding the curve's two half-edge sides, absent where the side is
+    /// unbounded.
+    pub faces: [Option<NonZeroU32>; 2],
     /// The `E0`/`E1` suffix fields: the `crv_array` identifier of the next
     /// edge for each of the two half-edge sides, used to walk loops
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
     pub next_edges: [u32; 2],
     /// Byte offset of the row's `crv_id` field in the original stream.
     pub offset: usize,
+}
+
+impl CurveTopologyRow {
+    /// The face identifiers bounding the two half-edge sides, in side order,
+    /// skipping sides that bound no face.
+    pub fn bounded_face_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.faces.iter().flatten().map(|face| face.get())
+    }
+
+    /// Whether either half-edge side bounds `face_id`.
+    pub fn bounds_face(&self, face_id: u32) -> bool {
+        self.bounded_face_ids().any(|bounded| bounded == face_id)
+    }
+
+    /// The stored `F0`/`F1` fields, with `0` for a side that bounds no face.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
+}
+
+impl CurvePrototypeTopology {
+    /// The stored `crv_hdr_geom_ptr[0/1]` fields, with `0` for a side that
+    /// names no surface.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
+}
+
+/// One-sided DEPDB suffix, serialized as `[0, X1, F1, 0]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepdbCurveSuffix {
+    pub x1: u32,
+    pub face_id: u32,
+}
+
+impl serde::Serialize for DepdbCurveSuffix {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&[0, self.x1, self.face_id, 0], serializer)
+    }
 }
 
 /// One DEPDB cross-section curve row with its one-sided topology suffix.
@@ -368,7 +415,7 @@ pub struct DepdbCurveRow {
     /// Stored per-side direction flags.
     pub directions: [u8; 2],
     /// The `[0, X1, F1, 0]` one-sided suffix.
-    pub suffix: [u32; 4],
+    pub suffix: DepdbCurveSuffix,
     /// Exact bytes between the fixed prefix and one-sided suffix.
     pub body: Vec<u8>,
     /// Decoded scalar tokens with exact body-relative spans.
@@ -381,20 +428,6 @@ pub struct DepdbCurveRow {
     pub offset: usize,
 }
 
-/// Resolution state of a curve row's four-reference topology suffix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CurveSuffixStatus {
-    /// Exactly one canonical suffix boundary exists.
-    Unique,
-    /// Multiple canonical suffix boundaries exist; connectivity is withheld.
-    #[allow(dead_code)]
-    // Parser currently emits Unique only; Ambiguous is the withheld-connectivity state for multiple suffix boundaries.
-    Ambiguous {
-        /// Number of byte-valid suffix boundaries.
-        candidate_count: usize,
-    },
-}
-
 /// Bounded analytic parameter body from one positional `crv_array` row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveParameterRecord {
@@ -404,12 +437,8 @@ pub struct CurveParameterRecord {
     pub type_byte: u8,
     /// Exact bytes between direction flags and the selected suffix boundary.
     pub body: Vec<u8>,
-    /// Decoded scalar values in byte order.
-    pub scalar_values: Vec<f64>,
     /// Scalar tokens with exact body-relative spans.
     pub scalar_tokens: Vec<CurveParameterScalar>,
-    /// Canonical entity references skipped while walking the scalar lane.
-    pub skipped_references: Vec<u32>,
     /// Canonical entity references with exact body-relative spans.
     pub references: Vec<CurveParameterReference>,
     /// Maximal byte spans not claimed by scalar or reference tokens.
@@ -417,14 +446,27 @@ pub struct CurveParameterRecord {
     /// Positional `ref_geom[0]` and `ref_geom[1]` values following the four
     /// topology references.
     pub reference_geometry: [u32; 2],
-    /// Whether the topology suffix boundary is unique.
-    pub suffix: CurveSuffixStatus,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
     pub body_offset: usize,
     /// Byte offset of the selected body/suffix boundary in the original stream.
     pub suffix_offset: usize,
+}
+
+impl CurveParameterRecord {
+    /// Decoded scalar values in byte order.
+    pub fn scalar_values(&self) -> Vec<f64> {
+        self.scalar_tokens.iter().map(|token| token.value).collect()
+    }
+
+    /// Canonical entity references skipped while walking the scalar lane.
+    pub fn skipped_references(&self) -> Vec<u32> {
+        self.references
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect()
+    }
 }
 
 /// One decoded scalar token in a positional curve body.
@@ -468,13 +510,20 @@ pub struct PcurveEndpoints {
     /// Owning curve identifier.
     pub curve_id: u32,
     /// Adjacent face identifiers corresponding to face frames zero and one.
-    pub faces: [u32; 2],
+    pub faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's local UV frame.
     pub face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's local UV frame.
     pub face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source positional curve row.
     pub offset: usize,
+}
+
+impl PcurveEndpoints {
+    /// Stored face identifiers, with zero for an absent face.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
 }
 
 /// Ordered samples of one curve represented in both incident-face charts.
@@ -535,8 +584,18 @@ pub struct FcCurveCoordinateToken {
     pub raw: Vec<u8>,
     /// Token offset relative to the complete curve parameter body.
     pub offset: usize,
-    /// Number of source bytes occupied by the token.
-    pub length: usize,
+}
+
+impl serde::Serialize for FcCurveCoordinateToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("FcCurveCoordinateToken", 4)?;
+        wire.serialize_field("value_mm", &self.value_mm)?;
+        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.serialize_field("length", &self.raw.len())?;
+        wire.end()
+    }
 }
 
 /// One maximal unclaimed span in an `fc <subtype>` body.
@@ -546,8 +605,50 @@ pub struct FcCurveOpaqueSpan {
     pub raw: Vec<u8>,
     /// Span offset relative to the complete curve parameter body.
     pub offset: usize,
-    /// Number of source bytes in the span.
-    pub length: usize,
+}
+
+impl serde::Serialize for FcCurveOpaqueSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("FcCurveOpaqueSpan", 3)?;
+        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.serialize_field("length", &self.raw.len())?;
+        wire.end()
+    }
+}
+
+/// Direction of stored parameters relative to row-frame polar angles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterSense {
+    /// Parameters increase with polar angle.
+    Increasing,
+    /// Parameters decrease with polar angle.
+    Decreasing,
+}
+
+impl ParameterSense {
+    /// Signed parameter multiplier.
+    pub fn as_i8(self) -> i8 {
+        match self {
+            Self::Increasing => 1,
+            Self::Decreasing => -1,
+        }
+    }
+}
+
+/// Relation between stored circle parameters and row-frame polar angles.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Fc05AngleParameterRelation {
+    /// Neither unique parameter sense establishes a reference direction.
+    Inconsistent,
+    /// A unique parameter sense establishes a reference direction.
+    Consistent {
+        /// Direction of increasing stored parameters.
+        sense: ParameterSense,
+        /// Unit radial direction at stored parameter zero.
+        reference_direction_row_frame: [f64; 2],
+    },
 }
 
 /// Circle proven by the decoded points of an `fc 05` curve body.
@@ -561,22 +662,27 @@ pub struct Fc05Circle {
     pub radius_mm: f64,
     /// Unit radial direction from the fitted center to the first stored sample.
     pub sample_direction_row_frame: [f64; 2],
-    /// Unit radial direction at stored curve parameter zero in the row's
-    /// `(x, z)` frame.
-    pub reference_direction_row_frame: Option<[f64; 2]>,
-    /// Signed relation from stored parameter to row-frame polar angle.
-    /// `1` increases polar angle and `-1` decreases it.
-    pub parameter_sign: Option<i8>,
+    /// Stored parameter relation and its reference direction.
+    pub angle_parameter: Fc05AngleParameterRelation,
     /// Constant cap-plane ordinate when present in every point.
     pub cap_ordinate_row_frame: Option<f64>,
     /// Number of points participating in validation.
     pub point_count: usize,
     /// Maximum absolute radial residual.
     pub max_residual: f64,
-    /// Whether stored parameters match angular deltas around the circle.
-    pub angle_parameter_consistent: bool,
     /// Byte offset of the source positional curve row.
     pub offset: usize,
+}
+
+/// One circle edge joining a cylinder to a cap plane.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fc05CapEdge {
+    /// Circle curve identifier.
+    pub curve_id: u32,
+    /// Opposite cap plane identifier.
+    pub cap_plane_id: u32,
+    /// Cap ordinate in the owning feature's row frame.
+    pub cap_ordinate_row_frame: f64,
 }
 
 /// Two or more topology-bound `fc 05` cap circles that establish one native
@@ -585,12 +691,8 @@ pub struct Fc05Circle {
 pub struct Fc05CylinderCapPair {
     /// Cylinder surface identifier shared by every cap edge.
     pub surface_id: u32,
-    /// Curve identifiers of the agreeing cap circles in source order.
-    pub curve_ids: Vec<u32>,
-    /// Plane surface identifier opposite the cylinder on each cap edge.
-    pub cap_plane_ids: Vec<u32>,
-    /// Cap ordinate aligned with each `curve_ids`/`cap_plane_ids` entry.
-    pub curve_cap_ordinates_row_frame: Vec<f64>,
+    /// Agreeing cap edges in source order.
+    pub cap_edges: Vec<Fc05CapEdge>,
     /// Shared center in the owning feature's row frame.
     pub center_row_frame: [f64; 2],
     /// Shared exact radius in mm.
@@ -598,7 +700,7 @@ pub struct Fc05CylinderCapPair {
     /// Unit radial direction at parameter zero in the row's `(x, z)` frame.
     pub reference_direction_row_frame: [f64; 2],
     /// Shared signed parameter-to-polar-angle relation.
-    pub parameter_sign: i8,
+    pub parameter_sense: ParameterSense,
     /// At least two distinct cap ordinates in the owning feature's row frame.
     pub cap_ordinates_row_frame: Vec<f64>,
     /// Byte offset of the first participating curve row.
@@ -623,8 +725,9 @@ pub struct PrototypePcurveEndpoints {
 pub struct CurvePrototypeTopology {
     /// Prototype curve identifier.
     pub curve_id: u32,
-    /// Adjacent surface identifiers from `crv_hdr_geom_ptr[0/1]`.
-    pub faces: [u32; 2],
+    /// Adjacent surface identifiers from `crv_hdr_geom_ptr[0/1]`, absent
+    /// where the side names no surface.
+    pub faces: [Option<NonZeroU32>; 2],
     /// Per-face successor curve identifiers from `next_crv_hdr_ptr[0/1]`.
     pub next_edges: [u32; 2],
     /// Byte offset of the prototype namespace.
@@ -637,13 +740,20 @@ pub struct BoundPrototypePcurve {
     /// Prototype curve identifier.
     pub curve_id: u32,
     /// Adjacent face identifiers corresponding to UV frames zero and one.
-    pub faces: [u32; 2],
+    pub faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's UV frame.
     pub face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's UV frame.
     pub face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source prototype pcurve.
     pub offset: usize,
+}
+
+impl BoundPrototypePcurve {
+    /// Stored face identifiers, with zero for an absent face.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
 }
 
 /// Discover every labeled `crv_array` prototype. A label range ends at the
@@ -738,7 +848,7 @@ pub fn prototype_topology_rows(
             || !topology
                 .faces
                 .iter()
-                .all(|face_id| *face_id == 0 || face_ids.contains(face_id))
+                .all(|face_id| face_id.is_none_or(|id| face_ids.contains(&id.get())))
         {
             continue;
         }
@@ -868,13 +978,11 @@ pub(crate) fn expression_records_with_model_name(
                 }
                 evaluation.solve_solutions.clear();
             }
-            if !synchronize_solve_blocks(
+            synchronize_solve_blocks(
                 &mut solve_program.blocks,
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
-            ) {
-                continue;
-            }
+            );
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -906,15 +1014,11 @@ pub(crate) fn reevaluate_expression_records(
             }
             evaluation.solve_solutions.clear();
         }
-        if !synchronize_solve_blocks(
+        synchronize_solve_blocks(
             &mut record.solve_blocks,
             &evaluation.assignments,
             &evaluation.solve_solutions,
-        ) {
-            for block in &mut record.solve_blocks {
-                block.solutions.clear();
-            }
-        }
+        );
         record.assignments = evaluation.assignments;
     }
 }
@@ -923,7 +1027,7 @@ fn synchronize_solve_blocks(
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
-) -> bool {
+) {
     for block in blocks {
         for assignment in &mut block.assignments {
             if let Some(evaluated) = assignments
@@ -933,30 +1037,11 @@ fn synchronize_solve_blocks(
                 *assignment = evaluated.clone();
             }
         }
-        let Ok(empty_solutions) = alloc_filled(
-            block.variables.len(),
-            None,
-            "creo curve-expression solve solutions",
-        ) else {
-            return false;
-        };
-        block.solutions = solutions
-            .get(&block.offset)
-            .map_or(empty_solutions, |values| {
-                values.iter().cloned().map(Some).collect()
-            });
-        if block.solutions.len() != block.variables.len() {
-            let Ok(empty_solutions) = alloc_filled(
-                block.variables.len(),
-                None,
-                "creo curve-expression solve solutions",
-            ) else {
-                return false;
-            };
-            block.solutions = empty_solutions;
+        let values = solutions.get(&block.offset);
+        for (index, unknown) in block.unknowns.iter_mut().enumerate() {
+            unknown.solution = values.and_then(|values| values.get(index)).cloned();
         }
     }
-    true
 }
 
 fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<String> {
@@ -1226,18 +1311,18 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             continue;
         }
         if starts_relation_keyword(source, "for") {
-            let variables = conditional_keyword_expression(source, "for")
-                .and_then(curve_expression_solve_variables);
+            let unknowns = conditional_keyword_expression(source, "for")
+                .and_then(curve_expression_solve_unknowns);
             let mut block = pending.take().expect("pending solve block");
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
             let mut assignment_line_indices = Vec::new();
-            if let Some(variables) = &variables {
+            if let Some(unknowns) = &unknowns {
                 for statement in block.statements {
                     if statement.equation.dependencies.iter().any(|dependency| {
-                        variables
+                        unknowns
                             .iter()
-                            .any(|variable| variable.eq_ignore_ascii_case(dependency))
+                            .any(|unknown| unknown.name.eq_ignore_ascii_case(dependency))
                     }) {
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
@@ -1248,23 +1333,14 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     }
                 }
             }
-            if let Some(variables) = variables.filter(|_| block.valid && !equations.is_empty()) {
+            if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
                 program
                     .executable_line_indices
                     .extend(assignment_line_indices);
-                let Ok(solutions) = alloc_filled(
-                    variables.len(),
-                    None,
-                    "creo curve-expression solve solutions",
-                ) else {
-                    program.unresolved_control = true;
-                    continue;
-                };
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
-                    solutions,
-                    variables,
+                    unknowns,
                     offset: block.offset,
                     for_offset: line.offset,
                 });
@@ -1316,22 +1392,25 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
     program
 }
 
-fn curve_expression_solve_variables(source: &str) -> Option<Vec<String>> {
-    let variables = source
+fn curve_expression_solve_unknowns(source: &str) -> Option<Vec<SolveUnknown>> {
+    let unknowns = source
         .split(|character: char| character == ',' || character.is_ascii_whitespace())
         .filter(|variable| !variable.is_empty())
-        .map(str::to_owned)
+        .map(|name| SolveUnknown {
+            name: name.to_owned(),
+            solution: None,
+        })
         .collect::<Vec<_>>();
-    let keys = variables
+    let keys = unknowns
         .iter()
-        .map(|variable| expression_identifier_key(variable))
+        .map(|variable| expression_identifier_key(&variable.name))
         .collect::<BTreeSet<_>>();
-    (!variables.is_empty()
-        && keys.len() == variables.len()
-        && variables
+    (!unknowns.is_empty()
+        && keys.len() == unknowns.len()
+        && unknowns
             .iter()
-            .all(|variable| valid_scoped_expression_identifier(variable)))
-    .then_some(variables)
+            .all(|variable| valid_scoped_expression_identifier(&variable.name)))
+    .then_some(unknowns)
 }
 
 fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
@@ -1636,8 +1715,8 @@ fn evaluate_expression_program_details(
         solve_program
             .blocks
             .iter()
-            .flat_map(|block| &block.variables)
-            .map(|variable| expression_identifier_key(variable)),
+            .flat_map(|block| &block.unknowns)
+            .map(|unknown| expression_identifier_key(&unknown.name)),
     );
     let context = RelationEvaluationContext {
         model_name,
@@ -1666,8 +1745,9 @@ fn evaluate_expression_program_details(
             .find(|block| block.offset == line.offset)
         {
             let dimensions = block
-                .variables
+                .unknowns
                 .iter()
+                .map(|unknown| &unknown.name)
                 .map(|variable| {
                     values
                         .get(&expression_identifier_key(variable))
@@ -1679,13 +1759,14 @@ fn evaluate_expression_program_details(
             solve_block_initial_values.insert(
                 block.offset,
                 block
-                    .variables
+                    .unknowns
                     .iter()
+                    .map(|unknown| &unknown.name)
                     .map(|variable| values.get(&expression_identifier_key(variable)).cloned())
                     .collect::<Vec<_>>(),
             );
-            for variable in &block.variables {
-                let key = expression_identifier_key(variable);
+            for unknown in &block.unknowns {
+                let key = expression_identifier_key(&unknown.name);
                 values.remove(&key);
                 defined_symbols.insert(key.clone());
                 for assignment in &mut assignments {
@@ -1723,7 +1804,12 @@ fn evaluate_expression_program_details(
                     )
                 })
             {
-                for (variable, value) in block.variables.iter().zip(&solution) {
+                for (variable, value) in block
+                    .unknowns
+                    .iter()
+                    .map(|unknown| &unknown.name)
+                    .zip(&solution)
+                {
                     let key = expression_identifier_key(variable);
                     values.insert(key.clone(), value.clone());
                     for assignment in &mut assignments {
@@ -4773,10 +4859,11 @@ fn infer_solve_variable_dimensions(
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<RelationDimension>> {
-    (known_dimensions.len() == block.variables.len()).then_some(())?;
+    (known_dimensions.len() == block.unknowns.len()).then_some(())?;
     let variable_keys = block
-        .variables
+        .unknowns
         .iter()
+        .map(|unknown| &unknown.name)
         .map(|variable| expression_identifier_key(variable))
         .collect::<Vec<_>>();
     let unique_keys = variable_keys.iter().collect::<BTreeSet<_>>();
@@ -4965,10 +5052,11 @@ fn solve_affine_expression_block(
     variable_dimensions: &[RelationDimension],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<CurveExpressionValue>> {
-    (variable_dimensions.len() == block.variables.len()).then_some(())?;
+    (variable_dimensions.len() == block.unknowns.len()).then_some(())?;
     let variable_keys = block
-        .variables
+        .unknowns
         .iter()
+        .map(|unknown| &unknown.name)
         .map(|variable| expression_identifier_key(variable))
         .collect::<Vec<_>>();
     let mut affine_values = values
@@ -5051,7 +5139,7 @@ fn solve_nonlinear_expression_block(
     nonlinear_equations_are_smooth(block).then_some(())?;
     let variable_dimensions =
         infer_solve_variable_dimensions(block, values, known_dimensions, context)?;
-    let variable_count = block.variables.len();
+    let variable_count = block.unknowns.len();
     (variable_count > 0
         && variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES
         && block.equations.len() >= variable_count)
@@ -5316,11 +5404,15 @@ fn evaluate_nonlinear_residuals(
     point: &[f64],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<SolveResidual>> {
-    (variable_dimensions.len() == block.variables.len()
-        && point.len() == variable_dimensions.len())
-    .then_some(())?;
+    (variable_dimensions.len() == block.unknowns.len() && point.len() == variable_dimensions.len())
+        .then_some(())?;
     let mut evaluation_values = values.clone();
-    for ((variable, dimension), value) in block.variables.iter().zip(variable_dimensions).zip(point)
+    for ((variable, dimension), value) in block
+        .unknowns
+        .iter()
+        .map(|unknown| &unknown.name)
+        .zip(variable_dimensions)
+        .zip(point)
     {
         value.is_finite().then_some(())?;
         evaluation_values.insert(
@@ -5667,7 +5759,10 @@ fn parse_depdb_curve_segment(
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
         directions: prefix.directions,
-        suffix: *suffix,
+        suffix: DepdbCurveSuffix {
+            x1: suffix[1],
+            face_id: suffix[2],
+        },
         body,
         scalar_tokens,
         references,
@@ -5686,7 +5781,21 @@ struct FramedRow {
     reference_geometry: [u32; 2],
 }
 
-type TopologySuffixCandidate = (usize, [u32; 4], [u32; 2]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TopologySuffixCandidate {
+    start: usize,
+    faces: [Option<NonZeroU32>; 2],
+    next_edges: [u32; 2],
+    reference_geometry: [u32; 2],
+}
+
+impl TopologySuffixCandidate {
+    fn stored_references(self) -> [u32; 4] {
+        let [f0, f1] = self.faces.map(stored_face_reference);
+        let [e0, e1] = self.next_edges;
+        [f0, f1, e0, e1]
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct TopologyPrefix {
@@ -5762,11 +5871,10 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         let known_face_ids = face_ids.map(|face_ids| {
             let mut known = face_ids.clone();
             for &(start, end, _) in &segments {
-                let Some((_, suffix, _)) = unique_topology_suffix_in_segment(&payload[start..end])
-                else {
+                let Some(suffix) = unique_topology_suffix_in_segment(&payload[start..end]) else {
                     continue;
                 };
-                known.extend(suffix[..2].iter().copied().filter(|id| *id != 0));
+                known.extend(suffix.faces.into_iter().flatten().map(NonZeroU32::get));
             }
             known
         });
@@ -5816,13 +5924,16 @@ fn framed_segment_with_face_ids(
         if !complete_curve_row_linkage(&segment[row_end..]) {
             continue;
         }
-        let Some((suffix_start, suffix, reference_geometry)) = topology_suffix_with_face_ids(
+        let Some(candidate) = topology_suffix_with_face_ids(
             &segment[..row_end],
             materialized_face_ids,
             known_face_ids,
         ) else {
             continue;
         };
+        let suffix_start = candidate.start;
+        let suffix = candidate.stored_references();
+        let reference_geometry = candidate.reference_geometry;
         if boundary_anchored
             && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
         {
@@ -6017,22 +6128,14 @@ pub fn parameter_records_with_face_ids(
         else {
             continue;
         };
-        let scalar_values = scalar_tokens.iter().map(|token| token.value).collect();
-        let skipped_references = references
-            .iter()
-            .map(|reference| reference.entity_id)
-            .collect();
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
             body,
-            scalar_values,
             scalar_tokens,
-            skipped_references,
             references,
             opaque_spans,
             reference_geometry: framed.reference_geometry,
-            suffix: CurveSuffixStatus::Unique,
             offset: framed.start,
             body_offset: framed.start + body_start,
             suffix_offset: framed.start + suffix_start,
@@ -6051,7 +6154,6 @@ fn uniquely_bounded_parameter_records(
     records
         .iter()
         .filter(|record| counts.get(&record.curve_id) == Some(&1))
-        .filter(|record| record.suffix == CurveSuffixStatus::Unique)
         .collect()
 }
 
@@ -6251,7 +6353,7 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
 
     (record.body.get(..2) == Some(&[0xfc, 0x02])).then_some(())?;
     record.references.is_empty().then_some(())?;
-    (record.scalar_values.len() == 7 && record.scalar_tokens.len() == 7).then_some(())?;
+    let tokens: &[CurveParameterScalar; 7] = record.scalar_tokens.as_slice().try_into().ok()?;
     let [prefix, terminal] = record.opaque_spans.as_slice() else {
         return None;
     };
@@ -6261,7 +6363,7 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
         && terminal.length == 3)
         .then_some(())?;
     let mut cursor = prefix.length;
-    for token in &record.scalar_tokens {
+    for token in tokens {
         (token.offset == cursor
             && token.length != 0
             && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
@@ -6270,20 +6372,13 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
     }
     (terminal.offset == cursor && terminal.offset + terminal.length == record.body.len())
         .then_some(())?;
-    let values: [f64; 7] = record
-        .scalar_tokens
-        .iter()
-        .map(|token| token.value)
-        .collect::<Vec<_>>()
-        .try_into()
-        .ok()?;
-    (record.scalar_values.as_slice() == values.as_slice()).then_some(())?;
+    let values = tokens.each_ref().map(|token| token.value);
     (values.iter().all(|value| value.is_finite())
         && values[2] == 0.0
         && values[3] == 1.0
-        && record.scalar_tokens[2].raw.as_slice() == ZERO_MARKER
-        && record.scalar_tokens[3].raw.as_slice() == ONE_MARKER
-        && record.scalar_tokens[6].raw.as_slice() == TWO_MARKER)
+        && tokens[2].raw.as_slice() == ZERO_MARKER
+        && tokens[3].raw.as_slice() == ONE_MARKER
+        && tokens[6].raw.as_slice() == TWO_MARKER)
         .then_some(())?;
     Some([[values[0], values[1]], [values[4], values[5]]])
 }
@@ -6307,7 +6402,7 @@ pub fn fc02_short_pcurve_endpoints(
             (topology.type_byte == record.type_byte).then_some(())?;
             Some(Fc02ShortPcurveEndpoints {
                 curve_id: record.curve_id,
-                faces: topology.faces,
+                faces: topology.faces.map(stored_face_reference),
                 face_0_endpoints,
                 offset: record.offset,
             })
@@ -6336,7 +6431,6 @@ pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordin
                         value_mm: value,
                         raw: lane[cursor..next].to_vec(),
                         offset: cursor + 2,
-                        length: next - cursor,
                     });
                     cursor = next;
                     continue;
@@ -6352,16 +6446,14 @@ pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordin
                     opaque_spans.push(FcCurveOpaqueSpan {
                         raw: record.body[unclaimed..token.offset].to_vec(),
                         offset: unclaimed,
-                        length: token.offset - unclaimed,
                     });
                 }
-                unclaimed = token.offset + token.length;
+                unclaimed = token.offset + token.raw.len();
             }
             if unclaimed < record.body.len() {
                 opaque_spans.push(FcCurveOpaqueSpan {
                     raw: record.body[unclaimed..].to_vec(),
                     offset: unclaimed,
-                    length: record.body.len() - unclaimed,
                 });
             }
             result.push(FcCurveCoordinates {
@@ -6506,17 +6598,21 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
         };
         let positive = sign_matches(1.0);
         let negative = sign_matches(-1.0);
-        let angle_parameter_consistent = positive ^ negative;
-        let parameter_sign = match (positive, negative) {
-            (true, false) => Some(1),
-            (false, true) => Some(-1),
-            _ => None,
+        let angle_parameter = match (positive, negative, parameter_0) {
+            (true, false, Some(parameter_0)) | (false, true, Some(parameter_0)) => {
+                let sense = if positive {
+                    ParameterSense::Increasing
+                } else {
+                    ParameterSense::Decreasing
+                };
+                let reference_angle = angle_0 - f64::from(sense.as_i8()) * parameter_0;
+                Fc05AngleParameterRelation::Consistent {
+                    sense,
+                    reference_direction_row_frame: [reference_angle.cos(), reference_angle.sin()],
+                }
+            }
+            _ => Fc05AngleParameterRelation::Inconsistent,
         };
-        let reference_direction_row_frame =
-            parameter_sign.zip(parameter_0).map(|(sign, parameter_0)| {
-                let reference_angle = angle_0 - f64::from(sign) * parameter_0;
-                [reference_angle.cos(), reference_angle.sin()]
-            });
         let sample_direction_row_frame =
             [(first.0 - center_x) / radius, (first.1 - center_z) / radius];
         circles.push(Fc05Circle {
@@ -6524,12 +6620,10 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             center_row_frame: [center_x, center_z],
             radius_mm: radius,
             sample_direction_row_frame,
-            reference_direction_row_frame,
-            parameter_sign,
+            angle_parameter,
             cap_ordinate_row_frame: Some(ordinate),
             point_count: points.len(),
             max_residual,
-            angle_parameter_consistent,
             offset: record.offset,
         });
     }
@@ -6549,12 +6643,12 @@ pub fn fc05_cylinder_cap_pairs(
     let faces = crate::topology::uniquely_identified_rows(topology)
         .into_iter()
         .map(|row| (row.id, row.faces))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<BTreeMap<_, [Option<NonZeroU32>; 2]>>();
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
         *circle_counts.entry(circle.curve_id).or_default() += 1;
     }
-    let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32)>>::new();
+    let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32, f64)>>::new();
     for circle in circles {
         if circle_counts.get(&circle.curve_id) != Some(&1) {
             continue;
@@ -6564,58 +6658,65 @@ pub fn fc05_cylinder_cap_pairs(
         };
         let cylinders = adjacent
             .iter()
+            .flatten()
+            .map(|face| face.get())
             .filter(|face| {
-                crate::surface::unique_surface_row(surfaces, **face)
+                crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
-            .copied()
             .collect::<Vec<_>>();
         let planes = adjacent
             .iter()
+            .flatten()
+            .map(|face| face.get())
             .filter(|face| {
-                crate::surface::unique_surface_row(surfaces, **face)
+                crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             })
-            .copied()
             .collect::<Vec<_>>();
-        if cylinders.len() == 1 && planes.len() == 1 && circle.cap_ordinate_row_frame.is_some() {
+        if let ([cylinder], [plane], Some(ordinate)) = (
+            cylinders.as_slice(),
+            planes.as_slice(),
+            circle.cap_ordinate_row_frame,
+        ) {
             groups
-                .entry(cylinders[0])
+                .entry(*cylinder)
                 .or_default()
-                .push((circle, planes[0]));
+                .push((circle, *plane, ordinate));
         }
     }
 
     let mut result = Vec::new();
     for (surface_id, mut group) in groups {
-        group.sort_by_key(|(circle, _)| circle.offset);
+        group.sort_by_key(|(circle, _, _)| circle.offset);
         let first = group[0].0;
-        let (Some(reference_direction_row_frame), Some(parameter_sign)) =
-            (first.reference_direction_row_frame, first.parameter_sign)
+        let Fc05AngleParameterRelation::Consistent {
+            sense: parameter_sense,
+            reference_direction_row_frame,
+        } = first.angle_parameter
         else {
             continue;
         };
         let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm.max(1.0);
-        if !group.iter().all(|(circle, _)| {
+        if !group.iter().all(|(circle, _, _)| {
+            let Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame: direction,
+            } = circle.angle_parameter
+            else {
+                return false;
+            };
             (circle.radius_mm - first.radius_mm).abs() <= tolerance
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
                 && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
-                && circle.parameter_sign == first.parameter_sign
-                && circle
-                    .reference_direction_row_frame
-                    .is_some_and(|direction| {
-                        (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
-                            && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
-                    })
-                && circle.angle_parameter_consistent
+                && sense == parameter_sense
+                && (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
+                && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
         }) {
             continue;
         }
         let mut ordinates = Vec::new();
-        for ordinate in group
-            .iter()
-            .filter_map(|(circle, _)| circle.cap_ordinate_row_frame)
-        {
+        for ordinate in group.iter().map(|(_, _, ordinate)| *ordinate) {
             if ordinates
                 .iter()
                 .all(|existing: &f64| (*existing - ordinate).abs() > tolerance)
@@ -6628,16 +6729,18 @@ pub fn fc05_cylinder_cap_pairs(
         }
         result.push(Fc05CylinderCapPair {
             surface_id,
-            curve_ids: group.iter().map(|(circle, _)| circle.curve_id).collect(),
-            cap_plane_ids: group.iter().map(|(_, plane)| *plane).collect(),
-            curve_cap_ordinates_row_frame: group
+            cap_edges: group
                 .iter()
-                .filter_map(|(circle, _)| circle.cap_ordinate_row_frame)
+                .map(|(circle, plane, ordinate)| Fc05CapEdge {
+                    curve_id: circle.curve_id,
+                    cap_plane_id: *plane,
+                    cap_ordinate_row_frame: *ordinate,
+                })
                 .collect(),
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,
             reference_direction_row_frame,
-            parameter_sign,
+            parameter_sense,
             cap_ordinates_row_frame: ordinates,
             offset: first.offset,
         });
@@ -6737,7 +6840,7 @@ pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
         };
         result.push(CurvePrototypeTopology {
             curve_id,
-            faces: [face_0, face_1],
+            faces: [face_0, face_1].map(NonZeroU32::new),
             next_edges: [next_0, next_1],
             offset: namespace,
         });
@@ -6780,6 +6883,11 @@ pub fn bind_prototype_pcurves(
     result
 }
 
+/// The stored face identifier of a bounded half-edge side; `0` is unbounded.
+fn stored_face_reference(face: Option<NonZeroU32>) -> u32 {
+    face.map_or(0, NonZeroU32::get)
+}
+
 fn parse_topology_row(
     row: &[u8],
     absolute_offset: usize,
@@ -6792,7 +6900,7 @@ fn parse_topology_row(
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
         directions: prefix.directions,
-        faces: [f0, f1],
+        faces: [f0, f1].map(NonZeroU32::new),
         next_edges: [e0, e1],
         offset: absolute_offset,
     })
@@ -6834,10 +6942,12 @@ fn topology_suffix_with_face_ids(
     if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
         let role_matches = candidates
             .iter()
-            .filter(|(_, references, _)| {
-                references[..2]
+            .filter(|candidate| {
+                candidate
+                    .faces
                     .iter()
-                    .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+                    .flatten()
+                    .all(|id| ids.contains(&id.get()))
             })
             .copied()
             .collect::<Vec<_>>();
@@ -6848,10 +6958,12 @@ fn topology_suffix_with_face_ids(
         }
     }
     let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().filter(|(_, references, _)| {
-        references[..2]
+    let mut role_matches = candidates.into_iter().filter(|candidate| {
+        candidate
+            .faces
             .iter()
-            .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+            .flatten()
+            .all(|id| ids.contains(&id.get()))
     });
     let candidate = role_matches.next()?;
     role_matches.next().is_none().then_some(candidate)
@@ -6918,7 +7030,12 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>
                 continue;
             };
             if end == reference_geometry_start {
-                candidates.push((start, [f0, f1, e0, e1], reference_geometry));
+                candidates.push(TopologySuffixCandidate {
+                    start,
+                    faces: [f0, f1].map(NonZeroU32::new),
+                    next_edges: [e0, e1],
+                    reference_geometry,
+                });
             }
         }
     }

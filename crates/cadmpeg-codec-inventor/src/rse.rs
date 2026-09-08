@@ -9,8 +9,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::database::{
-    parse_database, parse_registry, parse_revisions, RevisionTable, RseDatabase, RseSchema,
-    SegmentRegistry,
+    parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
+    RseSchema, SegmentRegistry,
 };
 use crate::kernel::{select_active_carrier, ActiveCarrierState};
 use crate::layout::bulk_envelope as envelope;
@@ -64,12 +64,26 @@ pub(crate) struct SegmentPair {
     pub(crate) bulk: CompoundStreamId,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MetaStreamVersion(u16);
+/// The marker and version an `RSe` metadata stream declares in its first two
+/// fields, as read.
+///
+/// [`parse_meta_stream`] attempts the version-8 body grammar for every marker
+/// and version pair. The declaration is kept whether the body parses or not,
+/// because the dialect classifier reports what the file said.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct MetaStreamDeclaration {
+    pub(crate) marker: String,
+    pub(crate) version: u16,
+}
 
-impl MetaStreamVersion {
-    pub(crate) const fn value(self) -> u16 {
-        self.0
+impl MetaStreamDeclaration {
+    /// The one marker this codec implements a segment metadata grammar for.
+    pub(crate) const VERIFIED_MARKER: &'static str = "RSe Meta Stream Version 8";
+    /// The one version word this codec implements a segment metadata grammar for.
+    pub(crate) const VERIFIED_VERSION: u16 = 8;
+
+    pub(crate) fn is_verified(&self) -> bool {
+        self.marker == Self::VERIFIED_MARKER && self.version == Self::VERIFIED_VERSION
     }
 }
 
@@ -90,7 +104,13 @@ pub(crate) enum SegmentKind {
     AmRx,
     Notebook,
     DesignView,
+    Unresolved,
     Unknown(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RegistryJoin {
+    pub(crate) version_major: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,7 +119,8 @@ pub(crate) enum DocumentKind {
     Assembly,
     Drawing,
     Presentation,
-    Unknown(String),
+    Mixed,
+    Unknown,
 }
 
 impl DocumentKind {
@@ -123,7 +144,8 @@ impl DocumentKind {
             Self::Assembly => "assembly",
             Self::Drawing => "drawing",
             Self::Presentation => "presentation",
-            Self::Unknown(detail) => detail,
+            Self::Mixed => "mixed_part_assembly",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -168,6 +190,7 @@ impl SegmentKind {
             Self::AmRx => "am_rx",
             Self::Notebook => "notebook",
             Self::DesignView => "design_view",
+            Self::Unresolved => "unresolved",
             Self::Unknown(name) => name,
         }
     }
@@ -175,7 +198,9 @@ impl SegmentKind {
 
 #[derive(Debug)]
 pub(crate) struct SegmentMeta<'a> {
-    pub(crate) version: MetaStreamVersion,
+    /// The marker and version the stream declared, kept verbatim: the grammar
+    /// applied to the body is the version-8 one whatever this says.
+    pub(crate) declared: MetaStreamDeclaration,
     pub(crate) header_values: [u16; 8],
     pub(crate) display_name: String,
     pub(crate) segment_id: [u8; 16],
@@ -189,26 +214,45 @@ pub(crate) struct SegmentMeta<'a> {
 
 #[derive(Debug)]
 pub(crate) enum SegmentMetaState<'a> {
+    /// The body parsed under the version-8 grammar. The declaration it carries
+    /// is not always the verified pair: a foreign marker or version whose body
+    /// obeys the grammar is read, and its declaration is what makes the
+    /// document dialect-unverified.
     Parsed(Box<SegmentMeta<'a>>),
-    Unsupported { marker: String, version: u16 },
-    Malformed(String),
+    /// The stream did not parse. `declared` carries the marker and version when
+    /// they were read before the failure, and is `None` when the stream ended
+    /// or failed inside those two fields — in which case the stream declares no
+    /// dialect evidence at all.
+    Malformed {
+        declared: Option<MetaStreamDeclaration>,
+        detail: String,
+    },
+}
+
+impl SegmentMetaState<'_> {
+    /// The marker and version this stream declared, where it declared them.
+    ///
+    /// [`Self::Parsed`] reports the declaration it was read from, not the
+    /// verified pair: the version-8 grammar is attempted on every stream, so a
+    /// parsed stream is not evidence that it declared version 8, and reporting
+    /// the verified pair here would erase the unverified admission the
+    /// declaration earns.
+    pub(crate) fn declaration(&self) -> Option<MetaStreamDeclaration> {
+        match self {
+            Self::Parsed(meta) => Some(meta.declared.clone()),
+            Self::Malformed { declared, .. } => declared.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
-pub(crate) struct SegmentDescriptor<'a> {
+pub(crate) struct SegmentDescriptor<'a, B = SegmentBulk<'a>> {
     pub(crate) pair: SegmentPair,
-    pub(crate) registry_index: Option<usize>,
-    pub(crate) registry_version_major: Option<u8>,
+    pub(crate) registry: Option<RegistryJoin>,
     pub(crate) kind: SegmentKind,
     pub(crate) identity_issues: Vec<String>,
     pub(crate) meta: SegmentMetaState<'a>,
-    pub(crate) bulk: SegmentBulkState<'a>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BulkReadMode {
-    HeaderOnly,
-    Expand,
+    pub(crate) bulk: SegmentBulkState<B>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,20 +269,27 @@ pub(crate) struct SegmentBulk<'a> {
     pub(crate) prefix: [u8; 16],
     pub(crate) form: BulkForm,
     pub(crate) compressed: View<'a>,
-    pub(crate) expanded: Option<View<'a>>,
+    pub(crate) expanded: View<'a>,
     pub(crate) records: RecordFrameState<'a>,
 }
 
 #[derive(Debug)]
+struct BulkEnvelope<'a> {
+    prefix: [u8; 16],
+    form: BulkForm,
+    compressed: View<'a>,
+    expanded: View<'a>,
+}
+
+#[derive(Debug)]
 pub(crate) enum RecordFrameState<'a> {
-    NotExpanded,
     Framed(RseRecordTable<'a>),
     Unavailable(String),
 }
 
 #[derive(Debug)]
-pub(crate) enum SegmentBulkState<'a> {
-    Framed(SegmentBulk<'a>),
+pub(crate) enum SegmentBulkState<B> {
+    Framed(B),
     Malformed(String),
 }
 
@@ -250,10 +301,37 @@ pub(crate) enum ParsedState<T> {
 }
 
 #[derive(Debug)]
+pub(crate) enum DatabaseState {
+    Parsed(RseDatabase),
+    Unframed { schema: RseSchema, detail: String },
+    Unreadable(String),
+}
+
+#[derive(Debug)]
 pub(crate) struct DatabaseDescriptor {
     pub(crate) band: StorageBand,
     pub(crate) stream: CompoundStreamId,
-    pub(crate) state: ParsedState<RseDatabase>,
+    pub(crate) state: DatabaseState,
+}
+
+impl DatabaseDescriptor {
+    pub(crate) fn declared_schema(&self) -> Option<RseSchema> {
+        match &self.state {
+            DatabaseState::Parsed(database) => Some(database.schema),
+            DatabaseState::Unframed { schema, .. } => Some(*schema),
+            DatabaseState::Unreadable(_) => None,
+        }
+    }
+
+    pub(crate) fn issue_detail(&self) -> Option<String> {
+        match &self.state {
+            DatabaseState::Parsed(_) => None,
+            DatabaseState::Unframed { schema, detail } => {
+                Some(DatabaseHeader::unframed_detail(*schema, detail))
+            }
+            DatabaseState::Unreadable(detail) => Some(detail.clone()),
+        }
+    }
 }
 
 /// `RSe` paths established from the compound directory.
@@ -272,7 +350,6 @@ impl<'a> RseInventory<'a> {
     pub(crate) fn build(
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
-        bulk_mode: BulkReadMode,
     ) -> Result<Self, CodecError> {
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
@@ -310,10 +387,13 @@ impl<'a> RseInventory<'a> {
                     .open(ctx, stream)
                     .and_then(|view| parse_database(ctx, view.window()))
                 {
-                    Ok(database) => ParsedState::Parsed(database),
-                    Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
+                    Ok(DatabaseHeader::Supported(database)) => DatabaseState::Parsed(database),
+                    Ok(DatabaseHeader::Unframed { schema, detail }) => {
+                        DatabaseState::Unframed { schema, detail }
+                    }
+                    Err(error) => DatabaseState::Unreadable(crate::issue_detail(error)?),
                 },
-                None => ParsedState::Unavailable("RSe database stream handle is absent".into()),
+                None => DatabaseState::Unreadable("RSe database stream handle is absent".into()),
             };
             database_descriptors.push(DatabaseDescriptor {
                 band,
@@ -321,15 +401,16 @@ impl<'a> RseInventory<'a> {
                 state,
             });
         }
-        let schema = coherent_schema(&database_descriptors);
+        // The registry takes the schema-31 grammar whatever the `RSeDb` streams
+        // declared, including when they declared nothing or disagreed. What the
+        // grammar cannot frame degrades here, which is a structural outcome; the
+        // declarations decide the admission, not whether the attempt is made.
         let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
             None => ParsedState::Absent,
-            Some(_) if schema.is_none() => ParsedState::Unavailable(
-                "RSe database schemas do not select one registry grammar".into(),
-            ),
-            Some(stream) => match snapshot.open(ctx, stream).and_then(|view| {
-                parse_registry(ctx, view.window(), schema.expect("checked schema"))
-            }) {
+            Some(stream) => match snapshot
+                .open(ctx, stream)
+                .and_then(|view| parse_registry(ctx, view.window()))
+            {
                 Ok(value) => ParsedState::Parsed(value),
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
@@ -356,37 +437,43 @@ impl<'a> RseInventory<'a> {
             .collect::<Vec<_>>();
         let mut segments = pairs
             .into_iter()
-            .map(|pair| -> Result<SegmentDescriptor<'a>, CodecError> {
-                let meta = snapshot
-                    .stream_by_id(pair.metadata)
-                    .ok_or_else(|| {
-                        CodecError::Malformed("RSe metadata stream handle is absent".into())
+            .map(
+                |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
+                    let meta = snapshot
+                        .stream_by_id(pair.metadata)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("RSe metadata stream handle is absent".into())
+                        })
+                        .and_then(|entry| snapshot.open(ctx, entry))
+                        .and_then(|view| parse_meta_stream(ctx, view));
+                    let meta = match meta {
+                        Ok(meta) => meta,
+                        Err(error) => SegmentMetaState::Malformed {
+                            declared: None,
+                            detail: crate::issue_detail(error)?,
+                        },
+                    };
+                    let bulk = snapshot
+                        .stream_by_id(pair.bulk)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("RSe bulk stream handle is absent".into())
+                        })
+                        .and_then(|entry| snapshot.open(ctx, entry))
+                        .and_then(|view| parse_bulk_stream(ctx, view));
+                    let bulk = match bulk {
+                        Ok(bulk) => SegmentBulkState::Framed(bulk),
+                        Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
+                    };
+                    Ok(SegmentDescriptor {
+                        pair,
+                        registry: None,
+                        kind: SegmentKind::Unresolved,
+                        identity_issues: Vec::new(),
+                        meta,
+                        bulk,
                     })
-                    .and_then(|entry| snapshot.open(ctx, entry))
-                    .and_then(|view| parse_meta_stream_v8(ctx, view));
-                let meta = match meta {
-                    Ok(meta) => meta,
-                    Err(error) => SegmentMetaState::Malformed(crate::issue_detail(error)?),
-                };
-                let bulk = snapshot
-                    .stream_by_id(pair.bulk)
-                    .ok_or_else(|| CodecError::Malformed("RSe bulk stream handle is absent".into()))
-                    .and_then(|entry| snapshot.open(ctx, entry))
-                    .and_then(|view| parse_bulk_stream(ctx, view, bulk_mode));
-                let bulk = match bulk {
-                    Ok(bulk) => SegmentBulkState::Framed(bulk),
-                    Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
-                };
-                Ok(SegmentDescriptor {
-                    pair,
-                    registry_index: None,
-                    registry_version_major: None,
-                    kind: SegmentKind::Unknown("unresolved".into()),
-                    identity_issues: Vec::new(),
-                    meta,
-                    bulk,
-                })
-            })
+                },
+            )
             .collect::<Result<Vec<_>, _>>()?;
         if let ParsedState::Parsed(registry) = &registry {
             join_registry(&mut segments, registry);
@@ -394,13 +481,15 @@ impl<'a> RseInventory<'a> {
             for segment in &mut segments {
                 if let SegmentMetaState::Parsed(meta) = &segment.meta {
                     segment.kind = SegmentKind::classify(&meta.display_name, None);
+                } else {
+                    segment.kind = SegmentKind::Unresolved;
                 }
                 segment
                     .identity_issues
                     .push("segment registry is unavailable".into());
             }
         }
-        frame_segment_records(ctx, &mut segments)?;
+        let segments = frame_segment_records(ctx, segments)?;
         let unpaired_metadata = metadata
             .keys()
             .filter(|token| !bulk.contains_key(*token))
@@ -455,37 +544,26 @@ fn document_kind_for_segments(segments: &[SegmentDescriptor<'_>]) -> DocumentKin
     match (has_part, has_assembly) {
         (true, false) => DocumentKind::Part,
         (false, true) => DocumentKind::Assembly,
-        (true, true) => DocumentKind::Unknown("mixed_part_assembly".into()),
-        (false, false) => DocumentKind::Unknown("unknown".into()),
+        (true, true) => DocumentKind::Mixed,
+        (false, false) => DocumentKind::Unknown,
     }
 }
 
-fn coherent_schema(databases: &[DatabaseDescriptor]) -> Option<RseSchema> {
-    let mut schemas = databases
-        .iter()
-        .filter_map(|descriptor| match &descriptor.state {
-            ParsedState::Parsed(database) => Some(database.schema),
-            ParsedState::Absent | ParsedState::Unavailable(_) => None,
-        });
-    let first = schemas.next()?;
-    schemas.all(|schema| schema == first).then_some(first)
-}
-
-fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegistry) {
+fn join_registry<B>(segments: &mut [SegmentDescriptor<'_, B>], registry: &SegmentRegistry) {
     for segment in segments {
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
             segment
                 .identity_issues
                 .push("segment metadata is unavailable".into());
+            segment.kind = SegmentKind::Unresolved;
             continue;
         };
         let matches = registry
             .entries
             .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.segment_id == meta.segment_id)
+            .filter(|entry| entry.segment_id == meta.segment_id)
             .collect::<Vec<_>>();
-        let [(index, entry)] = matches.as_slice() else {
+        let [entry] = matches.as_slice() else {
             segment.identity_issues.push(if matches.is_empty() {
                 "metadata segment id is absent from the registry".into()
             } else {
@@ -494,8 +572,9 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
             segment.kind = SegmentKind::classify(&meta.display_name, None);
             continue;
         };
-        segment.registry_index = Some(*index);
-        segment.registry_version_major = Some(entry.version.major);
+        segment.registry = Some(RegistryJoin {
+            version_major: entry.version.major,
+        });
         segment.kind = SegmentKind::classify(&entry.display_name, Some(&entry.type_name));
         if entry.display_name != meta.display_name {
             segment.identity_issues.push(format!(
@@ -509,8 +588,7 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
 fn parse_bulk_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
-    mode: BulkReadMode,
-) -> Result<SegmentBulk<'a>, CodecError> {
+) -> Result<BulkEnvelope<'a>, CodecError> {
     let bytes = source.window();
     let header = bytes
         .get(..envelope::LEN)
@@ -526,59 +604,98 @@ fn parse_bulk_stream<'a>(
     let compressed = source
         .child(source.start() + header.len(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
-    let expanded = match mode {
-        BulkReadMode::HeaderOnly => None,
-        BulkReadMode::Expand => Some(inflate_zlib_exact(ctx, compressed)?),
-    };
-    Ok(SegmentBulk {
+    let expanded = inflate_zlib_exact(ctx, compressed)?;
+    Ok(BulkEnvelope {
         prefix,
         form,
         compressed,
         expanded,
-        records: RecordFrameState::NotExpanded,
     })
 }
 
 fn frame_segment_records<'a>(
     ctx: &DecodeContext<'a>,
-    segments: &mut [SegmentDescriptor<'a>],
-) -> Result<(), CodecError> {
-    for segment in segments {
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            continue;
-        };
-        let Some(expanded) = bulk.expanded else {
-            continue;
-        };
-        let result = match (&segment.meta, segment.registry_version_major) {
-            (SegmentMetaState::Parsed(meta), Some(version)) => {
-                frame_bulk_records(ctx, expanded, &meta.tables, version)
-            }
-            (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
-                "RSe record framing requires the segment registry version".into(),
-            )),
-            _ => Err(CodecError::Malformed(
-                "RSe record framing requires parsed segment metadata".into(),
-            )),
-        };
-        bulk.records = match result {
-            Ok(records) => RecordFrameState::Framed(records),
-            Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
-        };
-    }
-    Ok(())
+    segments: Vec<SegmentDescriptor<'a, BulkEnvelope<'a>>>,
+) -> Result<Vec<SegmentDescriptor<'a>>, CodecError> {
+    segments
+        .into_iter()
+        .map(|segment| {
+            let bulk = match segment.bulk {
+                SegmentBulkState::Malformed(detail) => SegmentBulkState::Malformed(detail),
+                SegmentBulkState::Framed(bulk) => {
+                    let result = match (&segment.meta, segment.registry) {
+                        (SegmentMetaState::Parsed(meta), Some(registry)) => frame_bulk_records(
+                            ctx,
+                            bulk.expanded,
+                            &meta.tables,
+                            registry.version_major,
+                        ),
+                        (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
+                            "RSe record framing requires the segment registry version".into(),
+                        )),
+                        _ => Err(CodecError::Malformed(
+                            "RSe record framing requires parsed segment metadata".into(),
+                        )),
+                    };
+                    let records = match result {
+                        Ok(records) => RecordFrameState::Framed(records),
+                        Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
+                    };
+                    SegmentBulkState::Framed(SegmentBulk {
+                        prefix: bulk.prefix,
+                        form: bulk.form,
+                        compressed: bulk.compressed,
+                        expanded: bulk.expanded,
+                        records,
+                    })
+                }
+            };
+            Ok(SegmentDescriptor {
+                pair: segment.pair,
+                registry: segment.registry,
+                kind: segment.kind,
+                identity_issues: segment.identity_issues,
+                meta: segment.meta,
+                bulk,
+            })
+        })
+        .collect()
 }
 
-fn parse_meta_stream_v8<'a>(
+/// Reads one `RSe` metadata stream, keeping its declaration through failure.
+///
+/// The marker and version are read first and then never lost: a body that
+/// fails after them is [`SegmentMetaState::Malformed`] carrying the
+/// declaration, and only a failure inside those two fields leaves the stream
+/// with no declaration to report. Charging the dialect from the declaration a
+/// failed parse actually read is what keeps the loss and the report from
+/// disagreeing about the same bytes.
+fn parse_meta_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<SegmentMetaState<'a>, CodecError> {
     let mut cursor = MetaCursor::new(source);
     let marker = cursor.length_prefixed_utf8("marker")?;
     let version = cursor.u16("version")?;
-    if marker != "RSe Meta Stream Version 8" || version != 8 {
-        return Ok(SegmentMetaState::Unsupported { marker, version });
+    let declared = MetaStreamDeclaration { marker, version };
+    // The marker and version are a declaration, never a gate: the version-8
+    // grammar is attempted on every stream, and a body that does not obey it is
+    // `Malformed` with the declaration intact.
+    match parse_meta_stream_v8(ctx, source, cursor, declared.clone()) {
+        Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
+        Err(error) => Ok(SegmentMetaState::Malformed {
+            declared: Some(declared),
+            detail: crate::issue_detail(error)?,
+        }),
     }
+}
+
+fn parse_meta_stream_v8<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    mut cursor: MetaCursor<'a>,
+    declared: MetaStreamDeclaration,
+) -> Result<SegmentMeta<'a>, CodecError> {
     let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16("display name")?;
     let mut segment_id = [0; 16];
@@ -597,8 +714,8 @@ fn parse_meta_stream_v8<'a>(
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
     let tables = parse_meta_tables(ctx, body)?;
-    Ok(SegmentMetaState::Parsed(Box::new(SegmentMeta {
-        version: MetaStreamVersion(version),
+    Ok(SegmentMeta {
+        declared,
         header_values,
         display_name,
         segment_id,
@@ -608,15 +725,15 @@ fn parse_meta_stream_v8<'a>(
         body_form,
         body,
         tables,
-    })))
+    })
 }
 
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_meta_stream_v8(ctx, source);
+    let _ = parse_meta_stream(ctx, source);
 }
 
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_bulk_stream(ctx, source, BulkReadMode::Expand);
+    let _ = parse_bulk_stream(ctx, source);
 }
 
 struct MetaCursor<'a> {
@@ -747,11 +864,11 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic metadata stream fits policy");
         let SegmentMetaState::Parsed(meta) =
-            parse_meta_stream_v8(&ctx, root).expect("synthetic metadata stream parses")
+            parse_meta_stream(&ctx, root).expect("synthetic metadata stream parses")
         else {
             panic!("version-eight metadata state")
         };
-        assert_eq!(meta.version.value(), 8);
+        assert_eq!(meta.declared.version, 8);
         assert_eq!(meta.header_values, [1, 0, 2, 0, 3, 0, 4, 0]);
         assert_eq!(meta.display_name, "PmBRepSegment");
         assert_eq!(meta.segment_id, [0x5a; 16]);
@@ -766,7 +883,19 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic metadata stream fits policy");
-        assert!(parse_meta_stream_v8(&ctx, root).is_err());
+        let state = parse_meta_stream(&ctx, root).expect("the declaration reads before the body");
+        let SegmentMetaState::Malformed { declared, detail } = state else {
+            panic!("a zlib suffix fails after the declaration")
+        };
+        assert_eq!(
+            declared,
+            Some(MetaStreamDeclaration {
+                marker: MetaStreamDeclaration::VERIFIED_MARKER.into(),
+                version: MetaStreamDeclaration::VERIFIED_VERSION,
+            }),
+            "a body failure keeps the declaration the stream did read"
+        );
+        assert!(!detail.is_empty());
     }
 
     #[test]
@@ -781,15 +910,11 @@ mod tests {
             0x0104
         );
         assert!(bytes.len() > 18);
-        let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::Expand)
-            .expect("synthetic bulk stream parses");
+        let bulk = parse_bulk_stream(&ctx, root).expect("synthetic bulk stream parses");
         assert_eq!(bulk.prefix.len(), 16);
         assert_eq!(bulk.prefix, [0x3c; 16]);
         assert_eq!(bulk.form.value(), 0x0104);
-        assert_eq!(
-            bulk.expanded.expect("expanded in decode mode").window(),
-            b"framed bulk records"
-        );
+        assert_eq!(bulk.expanded.window(), b"framed bulk records");
     }
 
     #[test]
@@ -798,19 +923,16 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("truncated envelope fits policy");
-        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly).is_err());
+        assert!(parse_bulk_stream(&ctx, root).is_err());
     }
 
     #[test]
-    fn bulk_stream_header_only_does_not_inflate_and_suffix_is_rejected() {
+    fn bulk_stream_rejects_a_suffix_after_the_exact_zlib_member() {
         let bytes = bulk_fixture(true);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic bulk stream fits policy");
-        let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly)
-            .expect("header-only framing does not consume the member");
-        assert!(bulk.expanded.is_none());
-        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::Expand).is_err());
+        assert!(parse_bulk_stream(&ctx, root).is_err());
     }
 
     fn meta_fixture(suffix: bool) -> Vec<u8> {

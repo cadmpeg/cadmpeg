@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::SourceProvenance;
+use serde::Serialize;
 use std::collections::BTreeMap;
 
-const CARD_WIDTH: usize = 80;
+pub(crate) const CARD_WIDTH: usize = 80;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Section {
     Start,
     Global,
@@ -76,9 +81,6 @@ pub(crate) struct PhysicalLine {
     pub(crate) offset: u64,
     pub(crate) payload: Vec<u8>,
     ending: LineEnding,
-    pub(crate) section: Option<Section>,
-    pub(crate) sequence: Option<u32>,
-    fused_cards: Option<usize>,
 }
 
 impl PhysicalLine {
@@ -88,9 +90,34 @@ impl PhysicalLine {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum ScannedLine {
+    Card {
+        section: Section,
+        sequence: u32,
+        line: PhysicalLine,
+    },
+    Trailing(PhysicalLine),
+}
+
+impl ScannedLine {
+    pub(crate) fn physical(&self) -> &PhysicalLine {
+        match self {
+            Self::Card { line, .. } | Self::Trailing(line) => line,
+        }
+    }
+}
+
+struct UnframedLine {
+    line: PhysicalLine,
+    section: Option<Section>,
+    sequence: Option<u32>,
+    fused_cards: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct CardScan<'a> {
     pub(crate) source: &'a [u8],
-    pub(crate) lines: Vec<PhysicalLine>,
+    pub(crate) lines: Vec<ScannedLine>,
     pub(crate) recoveries: FramingRecoveries,
 }
 
@@ -196,12 +223,10 @@ impl FramingRecoveries {
                         recovery.count,
                         defect.unit(),
                     ))
-                    .with_provenance(SourceProvenance {
-                        format: "iges".into(),
-                        stream: "iges".into(),
-                        offset: recovery.offset,
-                        tag: Some(format!("{}:framing", section.name())),
-                    })
+                .with_provenance(
+                    SourceProvenance::in_stream("iges", "iges", recovery.offset)
+                        .with_tag(format!("{}:framing", section.name())),
+                )
             })
             .collect()
     }
@@ -304,7 +329,7 @@ fn fused_card_count(payload: &[u8]) -> Option<usize> {
 fn physical_lines(
     source: &[u8],
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<PhysicalLine>, CodecError> {
+) -> Result<Vec<UnframedLine>, CodecError> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut terminated = false;
@@ -358,11 +383,14 @@ fn physical_lines(
                 LineEnding::None
             };
             charge_line(ctx)?;
-            lines.push(PhysicalLine {
-                offset: u64::try_from(card_start)
-                    .map_err(|_| CodecError::Malformed("IGES source offset exceeds u64".into()))?,
-                payload,
-                ending: card_ending,
+            lines.push(UnframedLine {
+                line: PhysicalLine {
+                    offset: u64::try_from(card_start).map_err(|_| {
+                        CodecError::Malformed("IGES source offset exceeds u64".into())
+                    })?,
+                    payload,
+                    ending: card_ending,
+                },
                 section,
                 sequence,
                 fused_cards: (cards > 1 && index == 0).then_some(cards),
@@ -372,11 +400,14 @@ fn physical_lines(
         }
         if card_start != payload_end {
             charge_line(ctx)?;
-            lines.push(PhysicalLine {
-                offset: u64::try_from(card_start)
-                    .map_err(|_| CodecError::Malformed("IGES source offset exceeds u64".into()))?,
-                payload: source[card_start..payload_end].to_vec(),
-                ending,
+            lines.push(UnframedLine {
+                line: PhysicalLine {
+                    offset: u64::try_from(card_start).map_err(|_| {
+                        CodecError::Malformed("IGES source offset exceeds u64".into())
+                    })?,
+                    payload: source[card_start..payload_end].to_vec(),
+                    ending,
+                },
                 section: None,
                 sequence: None,
                 fused_cards: None,
@@ -390,17 +421,20 @@ fn physical_lines(
 /// Order the sections and make each card's position inside its section its
 /// sequence, recording every declaration the position replaced.
 fn frame_sections(
-    lines: &mut [PhysicalLine],
+    lines: Vec<UnframedLine>,
     recoveries: &mut FramingRecoveries,
-) -> Result<(), CodecError> {
+) -> Result<Vec<ScannedLine>, CodecError> {
+    let mut scanned = Vec::with_capacity(lines.len());
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
-    for line in lines.iter_mut() {
+    for raw in lines {
         if terminated {
+            scanned.push(ScannedLine::Trailing(raw.line));
             continue;
         }
-        let current = line.section.ok_or_else(|| {
+        let line = &raw.line;
+        let current = raw.section.ok_or_else(|| {
             crate::error::malformed(format!(
                 "IGES physical line at offset {} is unsequenced before Terminate",
                 line.offset
@@ -418,7 +452,7 @@ fn frame_sections(
         }
         let recovered = u32::try_from(position)
             .map_err(|_| CodecError::Malformed("IGES section sequence overflow".into()))?;
-        if let Some(count) = line.fused_cards {
+        if let Some(count) = raw.fused_cards {
             recoveries.record(
                 current,
                 FramingDefect::CardBoundary,
@@ -431,37 +465,52 @@ fn frame_sections(
                 format!("{count} 80-column cards"),
             );
         }
-        if line.sequence != Some(recovered) {
+        if raw.sequence != Some(recovered) {
             recoveries.record(
                 current,
                 FramingDefect::Sequence,
                 position,
                 line.offset,
-                line.sequence
+                raw.sequence
                     .map_or_else(|| "no valid sequence".to_owned(), |value| value.to_string()),
                 recovered.to_string(),
             );
         }
-        line.sequence = Some(recovered);
         position = position
             .checked_add(1)
             .ok_or_else(|| CodecError::Malformed("IGES section sequence overflow".into()))?;
         terminated = current == Section::Terminate;
+        scanned.push(ScannedLine::Card {
+            section: current,
+            sequence: recovered,
+            line: raw.line,
+        });
     }
-    if lines.first().and_then(|line| line.section) != Some(Section::Start) || !terminated {
+    if !matches!(
+        scanned.first(),
+        Some(ScannedLine::Card {
+            section: Section::Start,
+            ..
+        })
+    ) || !terminated
+    {
         return Err(CodecError::Malformed(
             "IGES Fixed ASCII requires Start through Terminate sections".into(),
         ));
     }
-    Ok(())
+    Ok(scanned)
 }
 
 /// Replace each Terminate count that disagrees with the card census.
-fn terminate_counts(lines: &[PhysicalLine], recoveries: &mut FramingRecoveries) {
-    let Some(terminate) = lines
-        .iter()
-        .find(|line| line.section == Some(Section::Terminate))
-    else {
+fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
+    let Some(terminate) = lines.iter().find_map(|line| match line {
+        ScannedLine::Card {
+            section: Section::Terminate,
+            line,
+            ..
+        } => Some(line),
+        _ => None,
+    }) else {
         return;
     };
     let Some(data) = terminate.payload.get(..32) else {
@@ -481,7 +530,7 @@ fn terminate_counts(lines: &[PhysicalLine], recoveries: &mut FramingRecoveries) 
             .and_then(|text| text.parse::<usize>().ok());
         let census = lines
             .iter()
-            .filter(|line| line.section == Some(section))
+            .filter(|line| matches!(line, ScannedLine::Card { section: current, .. } if *current == section))
             .count();
         if declared != Some(census) {
             recoveries.record(
@@ -512,9 +561,9 @@ pub(crate) fn scan_with_context<'a>(
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }
-    let mut lines = physical_lines(source, ctx)?;
+    let lines = physical_lines(source, ctx)?;
     let mut recoveries = FramingRecoveries::default();
-    frame_sections(&mut lines, &mut recoveries)?;
+    let lines = frame_sections(lines, &mut recoveries)?;
     terminate_counts(&lines, &mut recoveries);
     Ok(CardScan {
         source,
@@ -527,7 +576,10 @@ fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
     ctx.map_or(Ok(()), |ctx| ctx.charge_collection_items(1, "iges_cards"))
 }
 
-pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
+pub(crate) fn summarize(
+    scan: &CardScan<'_>,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> ContainerSummary {
     let sections = [
         Section::Start,
         Section::Global,
@@ -539,9 +591,8 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
         .into_iter()
         .filter_map(|section| {
             let lines = scan
-                .lines
-                .iter()
-                .filter(|line| line.section == Some(section))
+                .section(section)
+                .map(|(_, line)| line)
                 .collect::<Vec<_>>();
             if lines.is_empty() {
                 return None;
@@ -568,49 +619,75 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
             });
             Some(ContainerEntry {
                 name: section.name().into(),
-                role: "section".into(),
-                compression: "none".into(),
+                role: ContainerRole::Section,
+                compression: EntryCompression::None,
                 compressed_size: size,
                 uncompressed_size: size,
                 attributes,
             })
         })
         .collect::<Vec<_>>();
-    let terminate_index = scan
-        .lines
-        .iter()
-        .position(|line| line.section == Some(Section::Terminate));
+    let terminate_index = scan.lines.iter().position(|line| {
+        matches!(
+            line,
+            ScannedLine::Card {
+                section: Section::Terminate,
+                ..
+            }
+        )
+    });
     let post_terminate = terminate_index
         .and_then(|index| scan.lines.get(index + 1..))
         .unwrap_or_default();
     if !post_terminate.is_empty() {
         let size = post_terminate.iter().fold(0_u64, |size, line| {
+            let line = line.physical();
             size.saturating_add(
                 u64::try_from(line.payload.len() + line.ending.bytes().len()).unwrap_or(u64::MAX),
             )
         });
         entries.push(ContainerEntry {
             name: "post-terminate".into(),
-            role: "retained-trailing-records".into(),
-            compression: "none".into(),
+            role: ContainerRole::RetainedTrailingRecords,
+            compression: EntryCompression::None,
             compressed_size: size,
             uncompressed_size: size,
             attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
         });
     }
-    ContainerSummary {
-        format: "iges".into(),
-        container_kind: "fixed-ascii".into(),
+    ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(primary),
+        cadmpeg_ir::ContainerKind::FixedAscii,
         entries,
-        notes: vec![format!("source_bytes={}", scan.source.len())],
-    }
+        Vec::new(),
+        vec![format!("source_bytes={}", scan.source.len())],
+    )
 }
 
 impl CardScan<'_> {
+    pub(crate) fn section(&self, section: Section) -> impl Iterator<Item = (u32, &PhysicalLine)> {
+        self.lines.iter().filter_map(move |line| match line {
+            ScannedLine::Card {
+                section: current,
+                sequence,
+                line,
+            } if *current == section => Some((*sequence, line)),
+            ScannedLine::Card { .. } | ScannedLine::Trailing(_) => None,
+        })
+    }
+
     pub(crate) fn post_terminate_count(&self) -> usize {
         self.lines
             .iter()
-            .position(|line| line.section == Some(Section::Terminate))
+            .position(|line| {
+                matches!(
+                    line,
+                    ScannedLine::Card {
+                        section: Section::Terminate,
+                        ..
+                    }
+                )
+            })
             .map_or(0, |index| self.lines.len().saturating_sub(index + 1))
     }
 }

@@ -2,8 +2,8 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
+use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
+use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -187,18 +187,21 @@ fn planar_segments_intersect_beyond_endpoint(
     contacts.any(|point| Some(point) != allowed_endpoint)
 }
 
-pub(crate) fn point_display_symbol_type_allowed(entity_type: i64, dialect: Dialect) -> bool {
-    match dialect {
-        Dialect::Legacy => matches!(entity_type, 308 | 408),
-        Dialect::V4_0 => entity_type == 408,
-        Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => entity_type == 308,
+pub(crate) fn point_display_symbol_type_allowed(
+    entity_type: i64,
+    global_table: GlobalTable,
+) -> bool {
+    match global_table {
+        GlobalTable::Legacy => matches!(entity_type, 308 | 408),
+        GlobalTable::V4_0 => entity_type == 408,
+        GlobalTable::V5_0 | GlobalTable::V5Later => entity_type == 308,
     }
 }
 
 fn point_display_symbol_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
     match record.value(4) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
@@ -208,7 +211,7 @@ fn point_display_symbol_valid(
                 sequence % 2 == 1
                     && entries.get(&sequence).is_some_and(|target| {
                         target.form == 0
-                            && point_display_symbol_type_allowed(target.entity_type, dialect)
+                            && point_display_symbol_type_allowed(target.entity_type, global_table)
                     })
             })
         }
@@ -230,12 +233,15 @@ fn base_geometry_table_entry(entity_type: i64, form: i64) -> bool {
 fn base_geometry_use_flag_valid(
     entity_type: i64,
     form: i64,
-    use_flag: u8,
-    dialect: Dialect,
+    use_flag: UseFlag,
+    global_table: GlobalTable,
 ) -> bool {
     !base_geometry_table_entry(entity_type, form)
-        || !matches!(dialect, Dialect::V4_0)
-        || matches!(use_flag, 0 | 1 | 2 | 5)
+        || !matches!(global_table, GlobalTable::V4_0)
+        || matches!(
+            use_flag,
+            UseFlag::Geometry | UseFlag::Annotation | UseFlag::Definition | UseFlag::Parametric
+        )
 }
 
 fn base_geometry_line_font_required(entity_type: i64, form: i64) -> bool {
@@ -248,9 +254,9 @@ fn base_geometry_line_font_valid(
     entity_type: i64,
     form: i64,
     line_font: i64,
-    dialect: Dialect,
+    global_table: GlobalTable,
 ) -> bool {
-    !matches!(dialect, Dialect::V4_0)
+    !matches!(global_table, GlobalTable::V4_0)
         || !base_geometry_line_font_required(entity_type, form)
         || line_font != 0
 }
@@ -661,14 +667,13 @@ impl Affine {
     }
 
     pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
-        cadmpeg_ir::transform::Transform {
-            rows: [
-                self.rows[0],
-                self.rows[1],
-                self.rows[2],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        }
+        cadmpeg_ir::transform::Transform::from_rows([
+            self.rows[0],
+            self.rows[1],
+            self.rows[2],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform")
     }
 }
 
@@ -879,7 +884,8 @@ pub(crate) struct BoundaryVertexSourceEndpoint {
     pub(crate) position: Point3,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum BoundaryEndpoint {
     Start,
     End,
@@ -1120,10 +1126,10 @@ pub(super) fn curve_geometry_coplanar(
             ..
         } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
         CurveGeometry::Degenerate { point } => point_valid(*point),
-        CurveGeometry::Nurbs(curve) => curve.control_points.iter().copied().all(point_valid),
-        CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
+        CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),
+        CurveGeometry::Polyline(polyline) => polyline.points().iter().copied().all(point_valid),
         CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
-            let Some(curve) = index.curves(&segment.curve.0) else {
+            let Some(curve) = index.curves(segment.curve.as_str()) else {
                 return false;
             };
             if !active.insert(segment.curve.clone()) {
@@ -1168,7 +1174,7 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
 
 pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "iges".into(),
+        format: cadmpeg_ir::CodecFormat::Iges,
         object_id: format!("D{}", entry.sequence),
         name: std::str::from_utf8(&entry.label)
             .ok()
@@ -1176,7 +1182,7 @@ pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
         color: None,
-        visible: Some(entry.status.blank == 0),
+        visible: Some(entry.status.is_visible()),
         layer: Some(entry.level.to_string()),
         instance_path: Vec::new(),
     }
@@ -1190,51 +1196,42 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
-    let dialect = global.dialect();
+    let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
-        entry.status.is_use_flag_valid(dialect)
-            && base_geometry_use_flag_valid(
-                entry.entity_type,
-                entry.form,
-                entry.status.use_flag,
-                dialect,
-            )
-            && base_geometry_line_font_valid(
-                entry.entity_type,
-                entry.form,
-                entry.line_font,
-                dialect,
-            )
-            && crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+        entry.status.use_flag().is_some_and(|use_flag| {
+            base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table)
+        }) && base_geometry_line_font_valid(
+            entry.entity_type,
+            entry.form,
+            entry.line_font,
+            global_table,
+        ) && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
     };
     let mut losses = Vec::new();
     for entry in directory {
-        if !entry.status.is_use_flag_valid(dialect) {
+        let Some(use_flag) = entry.status.use_flag() else {
             losses.push(entity_loss(
                 entry,
                 format!(
-                    "Entity Use Flag {:02} is outside the declared dialect",
-                    entry.status.use_flag
+                    "Entity Use Flag {:02} is outside the effective specification family",
+                    entry.status.use_flag_code()
                 ),
             ));
-        } else if !base_geometry_use_flag_valid(
-            entry.entity_type,
-            entry.form,
-            entry.status.use_flag,
-            dialect,
-        ) {
+            continue;
+        };
+        if !base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table) {
             losses.push(entity_loss(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
-                    entry.status.use_flag
+                    entry.status.use_flag_code()
                 ),
             ));
         } else if !base_geometry_line_font_valid(
             entry.entity_type,
             entry.form,
             entry.line_font,
-            dialect,
+            global_table,
         ) {
             losses.push(entity_loss(
                 entry,
@@ -1409,12 +1406,16 @@ pub(crate) fn project_geometry(
             angle = std::f64::consts::TAU;
         }
         let stem = format!("D{}", entry.sequence);
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-        let curve = CurveId(format!("iges:model:curve#{stem}"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1474,10 +1475,10 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "X, Y, or Z is not numeric"));
             continue;
         };
-        if !point_display_symbol_valid(record, &entries, global.dialect()) {
+        if !point_display_symbol_valid(record, &entries, global.global_table()) {
             losses.push(
                 IgesLossCode::DisplayDataNotProjected
-                    .note("Type 116 display symbol pointer is invalid for the declared dialect")
+                            .note("Type 116 display symbol pointer is invalid for the effective specification family")
                     .with_provenance(entry.loss_provenance()),
             );
         }
@@ -1501,14 +1502,18 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "scaled coordinates are not finite"));
             continue;
         }
-        let point = PointId(format!("iges:model:point#D{}", entry.sequence));
+        let point = PointId::mint(format!("iges:model:point#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
             position,
         });
-        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
-            let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
+        if entry.status.subordinate() == Some(Subordinate::Independent)
+            || !analytic_surface_locations.contains(&entry.sequence)
+        {
+            let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
+                .expect("identity grammar");
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
@@ -1586,14 +1591,18 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "scaled reference point is not finite"));
             continue;
         }
-        let point = PointId(format!("iges:model:point#D{}", entry.sequence));
+        let point = PointId::mint(format!("iges:model:point#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
             position,
         });
-        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
-            let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
+        if entry.status.subordinate() == Some(Subordinate::Independent)
+            || !analytic_surface_locations.contains(&entry.sequence)
+        {
+            let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
+                .expect("identity grammar");
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
@@ -1654,7 +1663,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         let stem = format!("D{}", entry.sequence);
-        let curve = CurveId(format!("iges:model:curve#{stem}"));
+        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Line {
@@ -1667,11 +1676,15 @@ pub(crate) fn project_geometry(
             decoded.insert(entry.sequence);
             continue;
         }
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1963,20 +1976,23 @@ pub(crate) fn project_geometry(
             continue;
         }
         let weights = (!polynomial).then_some(native_weights);
-        let nurbs = NurbsCurve {
+        let Ok(nurbs) = NurbsCurve::new(
             degree,
             knots,
             control_points,
             weights,
             // IGES PROP4 is informational; neutral evaluation uses the
             // serialized active carrier without periodic parameter wrapping.
-            periodic: false,
+            false,
+        ) else {
+            losses.push(entity_loss(entry, "spline cardinalities are inconsistent"));
+            continue;
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter_range[0],
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
@@ -1984,10 +2000,10 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter_range[1],
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
@@ -2005,12 +2021,16 @@ pub(crate) fn project_geometry(
             continue;
         }
         let stem = format!("D{}", entry.sequence);
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-        let curve = CurveId(format!("iges:model:curve#{stem}"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -2112,9 +2132,9 @@ pub(crate) fn project_geometry(
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
-        let body = BodyId("iges:model:body#free-geometry".into());
-        let region = RegionId("iges:model:region#free-geometry".into());
-        let shell = ShellId("iges:model:shell#free-geometry".into());
+        let body = BodyId::mint("iges:model:body#free-geometry").expect("identity grammar");
+        let region = RegionId::mint("iges:model:region#free-geometry").expect("identity grammar");
+        let shell = ShellId::mint("iges:model:shell#free-geometry").expect("identity grammar");
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Wire,
@@ -2187,7 +2207,9 @@ pub(crate) fn project_geometry(
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
         .iter()
-        .map(|sequence| PointId(format!("iges:model:point#D{sequence}")))
+        .map(|sequence| {
+            PointId::mint(format!("iges:model:point#D{sequence}")).expect("identity grammar")
+        })
         .collect::<BTreeSet<_>>();
     let vertex_points = ir
         .model

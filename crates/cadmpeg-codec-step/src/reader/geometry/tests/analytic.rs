@@ -15,28 +15,25 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::ids::StepIdentity;
+use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
-    let CurveGeometry::Polyline {
-        points,
-        parameters,
-        chordal_deflection,
-    } = &curve.geometry
+    let CurveGeometry::Polyline(polyline) =
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry)
     else {
         panic!("expected tessellated curve to transfer as a polyline");
     };
-    assert!(parameters.is_none());
-    assert!(chordal_deflection.abs() < EPS_TESSELLATED_CURVE_POINT);
-    assert_eq!(points.len(), expected.len());
-    for (point, &(x, y, z)) in points.iter().zip(expected) {
+    assert!(polyline.parameters().is_none());
+    assert!(polyline.chordal_deflection().abs() < EPS_TESSELLATED_CURVE_POINT);
+    assert_eq!(polyline.points().len(), expected.len());
+    for (point, &(x, y, z)) in polyline.points().iter().zip(expected) {
         assert!((point.x - x).abs() < EPS_TESSELLATED_CURVE_POINT);
         assert!((point.y - y).abs() < EPS_TESSELLATED_CURVE_POINT);
         assert!((point.z - z).abs() < EPS_TESSELLATED_CURVE_POINT);
@@ -58,10 +55,8 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let report = write_step(
         source.ir(),
         &mut bytes,
-        &StepWriteOptions {
-            schema: StepSchema::Ap242Edition3,
-            ..StepWriteOptions::default()
-        },
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
     )
     .expect("write procedural geometry");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
@@ -99,8 +94,13 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         )
         .expect("decode curve-bounded surface");
     let mut bytes = Vec::new();
-    let report = write_step(bounded.ir(), &mut bytes, &StepWriteOptions::default())
-        .expect("write curve-bounded surface");
+    let report = write_step(
+        bounded.ir(),
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
     assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
     assert!(text.contains("GEOMETRIC_SET"));
@@ -116,20 +116,9 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
-            surface.definition,
+            surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
         )));
-    let mut rejected = Vec::new();
-    assert!(write_step(
-        bounded.ir(),
-        &mut rejected,
-        &StepWriteOptions {
-            unsupported: StepUnsupportedPolicy::Reject,
-            ..StepWriteOptions::default()
-        }
-    )
-    .is_err());
-    assert!(rejected.is_empty());
 }
 
 #[test]
@@ -188,7 +177,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             .count(),
         1
     );
-    let surface_id = SurfaceId("step:data:surface#28".into());
+    let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 10.0, 0.0),
@@ -250,11 +239,10 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
         .expect("source-parameterized linear-extrusion pcurve");
     assert!(matches!(
         &used.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            ..
-        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 1
+                && nurbs.control_points()
+                    == [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
     ));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
@@ -318,7 +306,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode NURBS linear-extrusion sheet");
 
-    let surface_id = SurfaceId("step:data:surface#28".into());
+    let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
@@ -349,7 +337,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode swept-surface chart witness");
-        let surface_id = SurfaceId("step:data:surface#9".into());
+        let surface_id = SurfaceId::mint("step:data:surface#9").expect("identity grammar");
         let index = ModelIndex::new(decoded.ir());
         assert_eq!(
             model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
@@ -367,7 +355,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
             .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#22")
             .expect("swept-surface pcurve");
         assert!(matches!(
-            pcurve.geometry,
+            &pcurve.geometry,
             PcurveGeometry::Line { direction, .. }
                 if direction.u == expected_pcurve_u && direction.v == 0.0
         ));
@@ -391,7 +379,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode surface of revolution sheet");
 
-    let surface_id = SurfaceId("step:data:surface#28".into());
+    let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 0.0, 10.0),
@@ -439,7 +427,7 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ellipse carrier");
     assert!(matches!(
-        ellipse.geometry,
+        *ellipse.geometry.solved_cache().unwrap_or(&ellipse.geometry),
         CurveGeometry::Ellipse {
             major_radius,
             minor_radius,
@@ -461,11 +449,15 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
 #8=SHAPE_REPRESENTATION('',(#7),$);",
     );
     let index = ModelIndex::new(result.ir());
-    let start = model_curve_point_by_id(&index, &CurveId("step:data:curve#6".into()), 0.0)
-        .expect("trimmed ellipse start");
+    let start = model_curve_point_by_id(
+        &index,
+        &CurveId::mint("step:data:curve#6").expect("identity grammar"),
+        0.0,
+    )
+    .expect("trimmed ellipse start");
     let end = model_curve_point_by_id(
         &index,
-        &CurveId("step:data:curve#6".into()),
+        &CurveId::mint("step:data:curve#6").expect("identity grammar"),
         std::f64::consts::FRAC_PI_2,
     )
     .expect("trimmed ellipse end");
@@ -475,7 +467,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
     assert!((end.y - 6.0).abs() < 1.0e-12);
     assert!(result.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range: [start, end],
                 ..
@@ -503,7 +495,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .find(|curve| curve.id.as_str() == "step:data:curve#9")
         .expect("reversed ellipse");
     assert!(matches!(
-        reversed.geometry,
+        *reversed.geometry.solved_cache().unwrap_or(&reversed.geometry),
         CurveGeometry::Ellipse {
             major_direction,
             major_radius,
@@ -522,7 +514,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ordered ellipse");
     assert!(matches!(
-        ordered.geometry,
+        *ordered.geometry.solved_cache().unwrap_or(&ordered.geometry),
         CurveGeometry::Ellipse {
             major_direction,
             major_radius,
@@ -539,10 +531,11 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         ("#18", [-std::f64::consts::FRAC_PI_2, 0.0]),
         ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
     ] {
-        let construction_id = ProceduralCurveId(StepIdentity::construction(
+        let construction_id = ProceduralCurveId::mint(ids::construction(
             "trimmed_curve",
             curve_id.trim_start_matches('#'),
-        ));
+        ))
+        .expect("identity grammar");
         let construction = decoded
             .ir()
             .model
@@ -551,7 +544,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
             .find(|curve| curve.id == construction_id)
             .expect("trimmed ellipse construction");
         assert!(matches!(
-            &construction.definition,
+            construction.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range,
                 ..
@@ -564,7 +557,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
 
     let numeric_start = model_curve_point_by_id(
         &ModelIndex::new(decoded.ir()),
-        &CurveId("step:data:curve#13".into()),
+        &CurveId::mint("step:data:curve#13").expect("identity grammar"),
         0.0,
     )
     .expect("numeric trim start");
@@ -572,7 +565,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(numeric_start.y.abs() < 1.0e-12);
     let cartesian_end = model_curve_point_by_id(
         &ModelIndex::new(decoded.ir()),
-        &CurveId("step:data:curve#14".into()),
+        &CurveId::mint("step:data:curve#14").expect("identity grammar"),
         std::f64::consts::FRAC_PI_2,
     )
     .expect("Cartesian trim end");
@@ -582,7 +575,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     let index = ModelIndex::new(decoded.ir());
     let replica_start = model_curve_point_by_id(
         &index,
-        &CurveId("step:data:curve#17".into()),
+        &CurveId::mint("step:data:curve#17").expect("identity grammar"),
         -std::f64::consts::FRAC_PI_2,
     )
     .expect("replica start");
@@ -639,7 +632,7 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
 
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(
-            surface.geometry,
+            *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
             cadmpeg_ir::geometry::SurfaceGeometry::Cone { half_angle, .. }
                 if half_angle == 0.0
         )
@@ -674,15 +667,21 @@ fn complex_geometry_instances_decode_named_partials() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#16"
-            && matches!(curve.geometry, CurveGeometry::Line { .. })
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Line { .. }
+            )
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Plane { .. }
+            )
     }));
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(matches!(
-        decoded.ir().model.pcurves[0].geometry,
+        &decoded.ir().model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { .. }
     ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
@@ -709,7 +708,10 @@ fn complex_points_and_directions_decode_named_partials() {
     assert_eq!(decoded.ir().model.vertices.len(), 3);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Plane { .. }
+            )
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -737,13 +739,13 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#9")
+        .find(|curve| curve.id.as_str() == "step:data:curve#9")
         .expect("composite curve");
     let source = composite
         .source_object
         .as_ref()
         .expect("geometric-set owner");
-    assert_eq!(source.format, "step");
+    assert_eq!(source.format, cadmpeg_ir::CodecFormat::Step);
     assert_eq!(source.object_id, "#9");
     assert_eq!(source.name, None);
 
@@ -798,7 +800,7 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:shape_representation#4"));
+        .any(|record| record.id.as_str() == "step:data:shape_representation#4"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -929,8 +931,8 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
     ] {
         assert!(
             unknowns.iter().any(|record| {
-                (id == 3 && record.id.0.ends_with("#3") && record.id.0.contains(kind))
-                    || (id != 3 && record.id.0 == format!("step:data:{kind}#{id}"))
+                (id == 3 && record.id.as_str().ends_with("#3") && record.id.as_str().contains(kind))
+                    || (id != 3 && record.id.as_str() == format!("step:data:{kind}#{id}"))
             }),
             "missing retained source record #{id}"
         );
@@ -952,7 +954,7 @@ fn invalid_apll_leader_point_stays_source_native() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:apll_point#1"));
+        .any(|record| record.id.as_str() == "step:data:apll_point#1"));
 }
 
 #[test]
@@ -1013,9 +1015,9 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| {
-            record.id.0.ends_with("#3")
-                || record.id.0.ends_with("#4")
-                || record.id.0.ends_with("#5")
+            record.id.as_str().ends_with("#3")
+                || record.id.as_str().ends_with("#4")
+                || record.id.as_str().ends_with("#5")
         }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1039,5 +1041,5 @@ fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0.ends_with("#2")));
+        .any(|record| record.id.as_str().ends_with("#2")));
 }

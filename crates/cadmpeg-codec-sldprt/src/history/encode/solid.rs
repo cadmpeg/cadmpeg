@@ -12,11 +12,10 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
-    ExtrusionFaceMaker, FaceSelection, HoleBottom, HoleKind, HolePlacement, HoleProfileFilter,
-    HoleSpecification, InnerWireTaper, Length, ProfileRef, Termination,
+    Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
+    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
+    Length, LinearTermination, ProfileRef,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
 
 #[allow(
     clippy::too_many_arguments,
@@ -33,9 +32,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         start: &ExtrudeStart,
         extent: &ExtrudeExtent,
         op: &BooleanOp,
-        direction_source: &Option<ExtrusionDirectionSource>,
         solid: &Option<bool>,
-        face_maker: &Option<ExtrusionFaceMaker>,
+        face_maker: &Option<FaceMaker>,
         inner_wire_taper: &Option<InnerWireTaper>,
         length_along_profile_normal: &Option<bool>,
         allow_multi_profile_faces: &Option<bool>,
@@ -49,21 +47,34 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             // Writer accepts only a first-side draft; second-side draft or
             // any side offset is rejected.
+            let has_offset = |side: &cadmpeg_ir::features::ExtrudeSide| {
+                matches!(
+                    side.termination,
+                    LinearTermination::ToFace {
+                        offset: Some(_),
+                        ..
+                    } | LinearTermination::OffsetFromFace { .. }
+                )
+            };
             let (first_draft, second_side_draft, any_side_offset) = match extent {
                 ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                    (side.draft, None, side.offset.is_some())
+                    (side.draft, None, has_offset(side))
                 }
                 ExtrudeExtent::TwoSided { first, second } => (
                     first.draft,
                     second.draft,
-                    first.offset.is_some() || second.offset.is_some(),
+                    has_offset(first) || has_offset(second),
                 ),
             };
             let extent_is_unresolved = matches!(
                 extent,
                 ExtrudeExtent::OneSided { side }
-                    if matches!(side.termination, Termination::Unresolved)
+                if matches!(side.termination, LinearTermination::Unresolved)
             );
+            let direction_source = match direction {
+                ExtrudeDirection::Explicit { source, .. } => source.as_ref(),
+                _ => None,
+            };
             if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
                 || second_side_draft.is_some()
                 || direction_source.is_some()
@@ -164,8 +175,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             match extent {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
-                    Termination::Unresolved => {}
-                    Termination::Blind { length } => {
+                    LinearTermination::Unresolved => {}
+                    LinearTermination::Blind { length } => {
                         if properties.contains_key("EndCondition") || existing.is_none() {
                             properties.insert("EndCondition".into(), "Blind".into());
                         }
@@ -180,19 +191,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             ),
                         );
                     }
-                    Termination::ThroughAll => {
+                    LinearTermination::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
-                    Termination::ThroughNext => {
+                    LinearTermination::ThroughNext => {
                         properties.insert("EndCondition".into(), "ThroughNext".into());
                     }
-                    Termination::ToFirst | Termination::ToLast | Termination::ToShape { .. } => {
+                    LinearTermination::ToFirst
+                    | LinearTermination::ToLast
+                    | LinearTermination::ToShape { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination",
                             feature.id
                         )));
                     }
-                    Termination::ToFace { face, offset }
+                    LinearTermination::ToFace { face, offset }
                         if face_selection_value(face).is_some() =>
                     {
                         let selection = face_selection_value(face).expect("guarded above");
@@ -202,14 +215,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             parameters.insert("Depth".into(), format_length_mm(offset.0));
                         }
                     }
-                    Termination::ToVertex { vertex }
+                    LinearTermination::ToVertex { vertex }
                         if vertex_selection_value(vertex).is_some() =>
                     {
                         let selection = vertex_selection_value(vertex).expect("guarded above");
                         properties.insert("EndCondition".into(), "ToVertex".into());
                         properties.insert("Vertex".into(), selection);
                     }
-                    Termination::OffsetFromFace { face, offset }
+                    LinearTermination::OffsetFromFace { face, offset }
                         if face_selection_value(face).is_some() =>
                     {
                         let selection = face_selection_value(face).expect("guarded above");
@@ -217,18 +230,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         properties.insert("Face".into(), selection);
                         parameters.insert("Depth".into(), format_length_mm(offset.0));
                     }
-                    Termination::ToFace { .. }
-                    | Termination::ToVertex { .. }
-                    | Termination::OffsetFromFace { .. } => {
+                    LinearTermination::ToFace { .. }
+                    | LinearTermination::ToVertex { .. }
+                    | LinearTermination::OffsetFromFace { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination selection",
                             feature.id
                         )));
                     }
-                    Termination::Angle { .. } => return Err(unsupported_extent()),
                 },
                 ExtrudeExtent::Symmetric { side } => match &side.termination {
-                    Termination::Blind { length } => {
+                    LinearTermination::Blind { length } => {
                         properties.insert("EndCondition".into(), "Symmetric".into());
                         parameters.insert("Depth".into(), format_length_mm(length.0));
                     }
@@ -237,14 +249,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ExtrudeExtent::TwoSided { first, second } => {
                     match (&first.termination, &second.termination) {
                         (
-                            Termination::Blind { length: first },
-                            Termination::Blind { length: second },
+                            LinearTermination::Blind { length: first },
+                            LinearTermination::Blind { length: second },
                         ) => {
                             properties.insert("EndCondition".into(), "TwoSided".into());
                             parameters.insert("Depth".into(), format_length_mm(first.0));
                             parameters.insert("Depth2".into(), format_length_mm(second.0));
                         }
-                        (Termination::ThroughAll, Termination::ThroughAll) => {
+                        (LinearTermination::ThroughAll, LinearTermination::ThroughAll) => {
                             properties.insert("EndCondition".into(), "ThroughAllBoth".into());
                         }
                         _ => return Err(unsupported_extent()),
@@ -267,9 +279,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::Explicit(direction) => {
-                    require_direction(*direction, &feature.id, "extrusion direction")?;
-                    properties.insert("Direction".into(), format_vector3(*direction));
+                cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } => {
+                    require_direction(*vector, &feature.id, "extrusion direction")?;
+                    properties.insert("Direction".into(), format_vector3(*vector));
                 }
             }
             if let Some(draft) = first_draft {
@@ -318,25 +330,27 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         profile: &Option<ProfileRef>,
         profile_filter: &Option<HoleProfileFilter>,
         face: &Option<FaceSelection>,
-        position: &Option<Point3>,
-        direction: &Option<Vector3>,
-        placements: &Vec<HolePlacement>,
-        kind: &HoleKind,
+        placements: &Option<Vec<HolePlacement>>,
+        construction: &HoleConstruction,
         exit_kind: &Option<HoleKind>,
         diameter: &Option<Length>,
-        extent: &Option<Termination>,
+        extent: &Option<LinearTermination>,
         bottom: &Option<HoleBottom>,
         taper_angle: &Option<Angle>,
-        specification: &Option<Box<HoleSpecification>>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
+        let (kind, specification) = match construction {
+            HoleConstruction::Form {
+                kind,
+                specification,
+            } => (Some(kind), specification.as_ref()),
+            HoleConstruction::NativeThread { .. } => (None, None),
+        };
         Ok({
             if profile.is_some()
                 || profile_filter.is_some()
-                || position.is_some()
-                || direction.is_some()
                 || exit_kind.is_some()
                 || bottom.is_some()
                 || taper_angle.is_some()
@@ -366,111 +380,121 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(diameter) = diameter {
                 parameters.insert("Diameter".into(), format_length_mm(diameter.0));
             }
-            match kind {
-                HoleKind::Unresolved { .. } if existing.is_some() => {}
-                HoleKind::Unresolved { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved hole entry construction",
-                        feature.id
-                    )));
-                }
-                HoleKind::Simple => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.remove("DrillPointAngle");
-                }
-                HoleKind::SimpleDrilled { drill_point_angle } => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.insert(
-                        "DrillPointAngle".into(),
-                        format_angle_rad(drill_point_angle.0),
-                    );
-                }
-                HoleKind::Counterbore { diameter, depth } => {
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                    parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
-                    parameters.remove("DrillPointAngle");
-                }
-                HoleKind::CounterboreDrilled {
-                    diameter,
-                    depth,
-                    drill_point_angle,
-                } => {
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                    parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
-                    parameters.insert(
-                        "DrillPointAngle".into(),
-                        format_angle_rad(drill_point_angle.0),
-                    );
-                }
-                HoleKind::Countersink { diameter, angle } => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.remove("DrillPointAngle");
-                    parameters.insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
-                    parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
-                }
-                HoleKind::Threaded {
-                    major_diameter,
-                    thread_depth,
-                    pitch,
-                    drill_point_angle,
-                } => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.insert(
-                        "ThreadMajorDiameter".into(),
-                        format_length_mm(major_diameter.0),
-                    );
-                    parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
-                    if let Some(pitch) = pitch {
-                        parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
-                    } else {
-                        parameters.remove("ThreadPitch");
+            if let Some(kind) = kind {
+                match kind {
+                    HoleKind::Unresolved(_)
+                    | HoleKind::PartialCounterbore { .. }
+                    | HoleKind::PartialCountersink { .. }
+                        if existing.is_some() => {}
+                    HoleKind::Unresolved(_)
+                    | HoleKind::PartialCounterbore { .. }
+                    | HoleKind::PartialCountersink { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved hole entry construction",
+                            feature.id
+                        )));
                     }
-                    parameters.insert(
-                        "DrillPointAngle".into(),
-                        format_angle_rad(drill_point_angle.0),
-                    );
+                    HoleKind::Simple => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.remove("DrillPointAngle");
+                    }
+                    HoleKind::SimpleDrilled { drill_point_angle } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
+                    }
+                    HoleKind::Counterbore { diameter, depth } => {
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters
+                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.remove("DrillPointAngle");
+                    }
+                    HoleKind::CounterboreDrilled {
+                        diameter,
+                        depth,
+                        drill_point_angle,
+                    } => {
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters
+                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
+                    }
+                    HoleKind::Countersink { diameter, angle } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.remove("DrillPointAngle");
+                        parameters
+                            .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                    }
+                    HoleKind::Counterdrill { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported counterdrill construction",
+                            feature.id
+                        )));
+                    }
+                    HoleKind::Chamfer { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported chamfered-hole construction",
+                            feature.id
+                        )));
+                    }
                 }
-                HoleKind::Counterdrill { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unsupported counterdrill construction",
-                        feature.id
-                    )));
+            } else if let HoleConstruction::NativeThread {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } = construction
+            {
+                parameters.remove("CounterboreDiameter");
+                parameters.remove("CounterboreDepth");
+                parameters.remove("CountersinkDiameter");
+                parameters.remove("CountersinkAngle");
+                parameters.insert(
+                    "ThreadMajorDiameter".into(),
+                    format_length_mm(major_diameter.0),
+                );
+                parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
+                if let Some(pitch) = pitch {
+                    parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
+                } else {
+                    parameters.remove("ThreadPitch");
                 }
-                HoleKind::Chamfer { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unsupported chamfered-hole construction",
-                        feature.id
-                    )));
-                }
+                parameters.insert(
+                    "DrillPointAngle".into(),
+                    format_angle_rad(drill_point_angle.0),
+                );
             }
             let mut properties = feature.source_properties.clone();
             match face {
@@ -497,7 +521,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Face");
                 }
             }
-            match placements.as_slice() {
+            match placements.as_deref().unwrap_or_default() {
                 [cadmpeg_ir::features::HolePlacement::Directed {
                     position,
                     direction,
@@ -531,13 +555,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match extent {
-                Some(Termination::Blind {
+                Some(LinearTermination::Blind {
                     length: Length(depth),
                 }) => {
                     parameters.insert("Depth".into(), format_length_mm(*depth));
                     properties.insert("EndCondition".into(), "Blind".into());
                 }
-                Some(Termination::ThroughAll) => {
+                Some(LinearTermination::ThroughAll) => {
                     parameters.remove("Depth");
                     properties.insert("EndCondition".into(), "ThroughAll".into());
                 }

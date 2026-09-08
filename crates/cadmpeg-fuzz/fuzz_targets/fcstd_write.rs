@@ -5,7 +5,8 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 
 use libfuzzer_sys::fuzz_target;
 
@@ -27,7 +28,7 @@ fuzz_target!(|data: &[u8]| {
         );
     }
     let mut output = Vec::new();
-    if FcstdCodec.plan(cadmpeg_ir::codec::EncodeInput { ir: &ir, fidelity: None }).and_then(|plan| plan.write_to(&mut output)).is_ok() {
+    if FcstdCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit).and_then(|plan| plan.write_to(&mut output)).is_ok() {
         let _ = FcstdCodec.decode(&mut Cursor::new(output), &DecodeOptions::default());
     }
 });

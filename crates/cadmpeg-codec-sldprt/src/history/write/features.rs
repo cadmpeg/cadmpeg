@@ -73,7 +73,7 @@ pub(crate) fn synchronize_feature_input_names(
 }
 
 pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
-    format!("sldprt:generated:feature#{}", feature.0)
+    format!("sldprt:generated:feature#{}", feature.as_str())
 }
 
 pub(crate) fn generated_feature_source_ids(
@@ -124,11 +124,12 @@ pub(crate) fn generated_feature_source_ids(
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
-    features: &[cadmpeg_ir::features::Feature],
+    model: &cadmpeg_ir::document::Model,
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
             for history in &mut native.feature_histories {
@@ -139,7 +140,6 @@ pub fn sync_neutral_features(
     }
     if native.is_none() {
         *native = Some(crate::native::SldprtNative {
-            version: crate::native::SLDPRT_NATIVE_VERSION,
             feature_histories: vec![FeatureHistory {
                 id: "sldprt:generated:feature-history#0".into(),
                 part_name: None,
@@ -201,7 +201,7 @@ pub fn sync_neutral_features(
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
                 .and_then(|candidate| candidate.source_id.clone())
                 .or_else(|| generated_sources.get(&feature.id).cloned())
-                .unwrap_or_else(|| feature.id.0.clone());
+                .unwrap_or_else(|| feature.id.as_str().to_owned());
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -290,9 +290,7 @@ pub fn sync_neutral_features(
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => parent_sources
                 .get(&feature.id)
                 .map(|source| (sketch.clone(), source.clone())),
@@ -301,9 +299,8 @@ pub fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let body_sources = bodies
         .iter()
-        .map(|body| (body.id.clone(), body.id.0.clone()))
+        .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
-
     for feature in features {
         if feature
             .source_tag
@@ -373,14 +370,16 @@ pub fn sync_neutral_features(
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
-        let parent_source_id = feature
-            .parent
-            .as_ref()
-            .and_then(|parent| structural_parent_sources.get(parent).cloned().flatten());
-        let tree_parent = feature
-            .parent
-            .as_ref()
-            .and_then(|parent| record_ids.get(parent).cloned());
+        let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
+            let source_id = structural_parent_sources.get(parent).cloned().flatten();
+            match record_ids.get(parent) {
+                Some(record_id) => Some(crate::records::TreeParent::Record {
+                    record_id: record_id.clone(),
+                    source_id,
+                }),
+                None => source_id.map(crate::records::TreeParent::Source),
+            }
+        });
         if let Some(existing) = existing.as_mut() {
             if let Some(tag) = &feature.source_tag {
                 existing.xml_tag.clone_from(tag);
@@ -389,7 +388,6 @@ pub fn sync_neutral_features(
             existing.name = feature.name.clone().unwrap_or_default();
             existing.kind = kind;
             existing.suppressed = suppressed;
-            existing.parent_source_id = parent_source_id;
             existing.tree_parent = tree_parent;
             existing.parameters = parameters;
             existing.properties = properties;
@@ -414,7 +412,6 @@ pub fn sync_neutral_features(
                 xml_tag: feature_xml_tag(feature),
                 tree_parent,
                 source_id: generated_sources.get(&feature.id).cloned(),
-                parent_source_id,
                 ordinal,
                 name: feature.name.clone().unwrap_or_default(),
                 kind,
@@ -516,13 +513,13 @@ pub(crate) fn synchronize_neutral_feature_content(
                     let parameter = parameters.get(id).ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references missing parameter {}",
-                            feature.id, id.0
+                            feature.id, id.as_str()
                         ))
                     })?;
                     if parameter.owner.as_ref() != Some(&feature.id) {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
-                            feature.id, id.0
+                            feature.id, id.as_str()
                         )));
                     }
                     Ok(FeatureContent::Dimension(parameter.name.clone()))
@@ -561,7 +558,7 @@ pub(crate) fn synchronize_history_content_order(native: &mut crate::native::Sldp
         let mut features = history
             .features
             .iter()
-            .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
+            .filter(|feature| feature.tree_parent.is_none())
             .map(|feature| (feature.ordinal, feature.id.clone()))
             .collect::<Vec<_>>();
         let mut configurations = configurations;
@@ -608,9 +605,9 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
     for history in &mut native.feature_histories {
         let mut children = HashMap::<String, Vec<(u32, String)>>::new();
         for feature in &history.features {
-            if let Some(parent) = &feature.tree_parent {
+            if let Some(parent) = feature.tree_parent_record_id() {
                 children
-                    .entry(parent.clone())
+                    .entry(parent.to_owned())
                     .or_default()
                     .push((feature.ordinal, feature.id.clone()));
             }

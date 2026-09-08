@@ -2,8 +2,8 @@
 //! Views, drawings, and view-dependent presentation relationships.
 
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
-use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
+use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
@@ -54,14 +54,16 @@ fn standard_color_valid(value: i64) -> bool {
     matches!(value, 0..=8)
 }
 
-fn drawing_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn drawing_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 404
         && matches!(entry.form, 0 | 1)
-        && entry.status.subordinate == 0
-        && match dialect {
-            Dialect::V4_0 | Dialect::Legacy => entry.status.use_flag != 0,
-            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
-                entry.status.use_flag == 1
+        && entry.status.subordinate() == Some(Subordinate::Independent)
+        && match global_table {
+            GlobalTable::V4_0 | GlobalTable::Legacy => {
+                entry.status.use_flag() != Some(UseFlag::Geometry)
+            }
+            GlobalTable::V5_0 | GlobalTable::V5Later => {
+                entry.status.use_flag() == Some(UseFlag::Annotation)
                     && entry.structure == 0
                     && entry.line_font == 0
                     && entry.line_weight == 0
@@ -70,35 +72,43 @@ fn drawing_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
         }
 }
 
-fn view_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn view_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 410
         && matches!(entry.form, 0 | 1)
-        && match dialect {
-            Dialect::V4_0 | Dialect::Legacy => entry.status.use_flag != 0,
-            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
-                entry.status.use_flag == 1
+        && match global_table {
+            GlobalTable::V4_0 | GlobalTable::Legacy => {
+                entry.status.use_flag() != Some(UseFlag::Geometry)
+            }
+            GlobalTable::V5_0 | GlobalTable::V5Later => {
+                entry.status.use_flag() == Some(UseFlag::Annotation)
             }
         }
 }
 
-fn views_visible_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn views_visible_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 402
-        && match dialect {
-            Dialect::V4_0 => matches!(entry.form, 3 | 4),
+        && match global_table {
+            GlobalTable::V4_0 => matches!(entry.form, 3 | 4),
             _ => matches!(entry.form, 3 | 4 | 19),
         }
-        && entry.status.subordinate == 0
-        && (!matches!(
-            dialect,
-            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
-        ) || entry.status.use_flag == 1)
+        && entry.status.subordinate() == Some(Subordinate::Independent)
+        && (!matches!(global_table, GlobalTable::V5_0 | GlobalTable::V5Later)
+            || entry.status.use_flag() == Some(UseFlag::Annotation))
 }
 
-fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.entity_type == 108
-        && match dialect {
-            Dialect::V4_0 => matches!(entry.status.use_flag, 0 | 1 | 2 | 5),
-            _ => entry.status.use_flag == 1,
+        && match global_table {
+            GlobalTable::V4_0 => matches!(
+                entry.status.use_flag(),
+                Some(
+                    UseFlag::Geometry
+                        | UseFlag::Annotation
+                        | UseFlag::Definition
+                        | UseFlag::Parametric
+                )
+            ),
+            _ => entry.status.use_flag() == Some(UseFlag::Annotation),
         }
 }
 
@@ -146,14 +156,15 @@ fn conflicting_drawing_property_forms(
 ) -> bool {
     let Some(groups) = trailing_pointer_analysis
         .get(&record.directory_sequence)
-        .and_then(|analysis| analysis.groups.as_ref())
-        .filter(|groups| groups.fully_valid)
+        .and_then(|analysis| match analysis {
+            TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+            _ => None,
+        })
     else {
         return false;
     };
     let values = groups
-        .properties
-        .iter()
+        .properties()
         .copied()
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -270,12 +281,13 @@ pub(super) fn project(
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
                     .is_some_and(|annotation| {
-                        annotation.status.use_flag == 1
+                        annotation.status.use_flag() == Some(UseFlag::Annotation)
                             && annotation.status.is_physically_dependent()
                     })
             })
         });
-        if drawing_directory_valid(entry, global.dialect()) && views_valid && annotations_valid {
+        if drawing_directory_valid(entry, global.global_table()) && views_valid && annotations_valid
+        {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -323,7 +335,7 @@ pub(super) fn project(
                     value == 0
                         || u32::try_from(value).ok().is_some_and(|sequence| {
                             entries.get(&sequence).is_some_and(|target| {
-                                clipping_plane_valid(target, global.dialect())
+                                clipping_plane_valid(target, global.global_table())
                             })
                         })
                 })
@@ -365,7 +377,7 @@ pub(super) fn project(
                 && depth.is_some()
                 && depth_values_valid
         };
-        if view_directory_valid(entry, global.dialect())
+        if view_directory_valid(entry, global.global_table())
             && view_number_valid
             && scale_valid
             && form_valid
@@ -460,7 +472,7 @@ pub(super) fn project(
                     && weight_valid
             })
         });
-        if views_visible_directory_valid(entry, global.dialect()) && blocks_valid {
+        if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -479,7 +491,8 @@ pub(super) fn project(
             continue;
         };
         let view_count = record.count(1).filter(|count| *count > 0);
-        let entity_count = crate::parameter::view_visibility_entity_count(record, global.dialect());
+        let entity_count =
+            crate::parameter::view_visibility_entity_count(record, global.global_table());
         let block_width = if entry.form == 3 { 1 } else { 5 };
         let views_valid = view_count.is_some_and(|count| {
             (0..count).all(|index| {
@@ -493,10 +506,16 @@ pub(super) fn project(
                             && records.get(&view.sequence).is_some_and(|view_record| {
                                 trailing_pointer_analysis
                                     .get(&view_record.directory_sequence)
-                                    .and_then(|analysis| analysis.groups.as_ref())
-                                    .filter(|groups| groups.fully_valid)
+                                    .and_then(|analysis| match analysis {
+                                        TrailingPointerAnalysis::Unambiguous { groups, .. } => {
+                                            Some(groups)
+                                        }
+                                        _ => None,
+                                    })
                                     .is_some_and(|groups| {
-                                        groups.associations.contains(&entry.sequence)
+                                        groups
+                                            .associations()
+                                            .any(|sequence| sequence == &entry.sequence)
                                     })
                             })
                     })
@@ -543,7 +562,10 @@ pub(super) fn project(
                     .is_some_and(|sequence| entries.contains_key(&sequence))
             })
         });
-        if views_visible_directory_valid(entry, global.dialect()) && views_valid && entities_valid {
+        if views_visible_directory_valid(entry, global.global_table())
+            && views_valid
+            && entities_valid
+        {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(

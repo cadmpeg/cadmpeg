@@ -4,6 +4,8 @@
 
 mod nurbs;
 
+use crate::directory::UseFlag;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -14,7 +16,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurveDefi
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
@@ -23,80 +24,113 @@ use crate::IgesCodec;
 
 use super::*;
 
+fn test_nurbs(
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+) -> NurbsCurve {
+    NurbsCurve::new(degree, knots, control_points, weights, false).expect("valid test NURBS")
+}
+
 #[test]
 fn composite_child_types_follow_the_declared_dialect() {
-    assert!(composite_child_type_allowed(116, 0, Dialect::V4_0));
-    assert!(composite_child_type_allowed(132, 0, Dialect::V4_0));
-    assert!(composite_child_type_allowed(112, 0, Dialect::V4_0));
-    assert!(!composite_child_type_allowed(112, 1, Dialect::V4_0));
-    assert!(!composite_child_type_allowed(112, 3, Dialect::V5_0));
-    assert!(!composite_child_type_allowed(106, 1, Dialect::V4_0));
-    assert!(!composite_child_type_allowed(130, 0, Dialect::V4_0));
-    assert!(composite_child_type_allowed(106, 1, Dialect::V5_0));
-    assert!(composite_child_type_allowed(130, 0, Dialect::V5_0));
-    assert!(composite_child_type_allowed(142, 0, Dialect::V5_3));
+    assert!(composite_child_type_allowed(116, 0, GlobalTable::V4_0));
+    assert!(composite_child_type_allowed(132, 0, GlobalTable::V4_0));
+    assert!(composite_child_type_allowed(112, 0, GlobalTable::V4_0));
+    assert!(!composite_child_type_allowed(112, 1, GlobalTable::V4_0));
+    assert!(!composite_child_type_allowed(112, 3, GlobalTable::V5_0));
+    assert!(!composite_child_type_allowed(106, 1, GlobalTable::V4_0));
+    assert!(!composite_child_type_allowed(130, 0, GlobalTable::V4_0));
+    assert!(composite_child_type_allowed(106, 1, GlobalTable::V5_0));
+    assert!(composite_child_type_allowed(130, 0, GlobalTable::V5_0));
+    assert!(composite_child_type_allowed(142, 0, GlobalTable::V5Later));
 }
 
 #[test]
 fn composite_child_count_follows_the_declared_dialect() {
-    assert_eq!(composite_minimum_child_count(Dialect::V4_0), 2);
-    assert_eq!(composite_minimum_child_count(Dialect::V5_0), 1);
-    assert_eq!(composite_minimum_child_count(Dialect::V5_3), 1);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V4_0), 2);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V5_0), 1);
+    assert_eq!(composite_minimum_child_count(GlobalTable::V5Later), 1);
 }
 
 #[test]
 fn composite_entity_use_flag_follows_the_declared_dialect() {
-    assert!(composite_use_flag_valid(0, Dialect::V4_0));
+    assert!(UseFlag::parse(0, crate::global::GlobalTable::V5Later)
+        .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V4_0)));
     for use_flag in [1, 2, 3, 4, 5] {
         assert!(
-            !composite_use_flag_valid(use_flag, Dialect::V4_0),
+            !UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later)
+                .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V4_0)),
             "{use_flag}"
         );
     }
     for use_flag in 0..=6 {
         assert!(
-            composite_use_flag_valid(use_flag, Dialect::V5_0),
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later)
+                .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V5_0)),
             "{use_flag}"
         );
     }
-    assert!(!composite_use_flag_valid(7, Dialect::V5_0));
+    assert!(!UseFlag::parse(7, crate::global::GlobalTable::V5Later)
+        .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V5_0)));
 }
 
 #[test]
 fn composite_line_font_follows_the_declared_dialect_and_hierarchy() {
-    assert!(composite_line_font_valid(1, 0, Dialect::V4_0));
-    assert!(composite_line_font_valid(-3, 2, Dialect::V4_0));
-    assert!(!composite_line_font_valid(0, 0, Dialect::V4_0));
-    assert!(composite_line_font_valid(0, 1, Dialect::V4_0));
-    assert!(composite_line_font_valid(0, 0, Dialect::V5_0));
+    assert!(composite_line_font_valid(
+        1,
+        crate::directory::Hierarchy::parse(0),
+        GlobalTable::V4_0
+    ));
+    assert!(composite_line_font_valid(
+        -3,
+        crate::directory::Hierarchy::parse(2),
+        GlobalTable::V4_0
+    ));
+    assert!(!composite_line_font_valid(
+        0,
+        crate::directory::Hierarchy::parse(0),
+        GlobalTable::V4_0
+    ));
+    assert!(composite_line_font_valid(
+        0,
+        crate::directory::Hierarchy::parse(1),
+        GlobalTable::V4_0
+    ));
+    assert!(composite_line_font_valid(
+        0,
+        crate::directory::Hierarchy::parse(0),
+        GlobalTable::V5_0
+    ));
 }
 
 #[test]
 fn composite_logical_connector_use_flag_is_a_v5_rule() {
     assert!(composite_logical_connector_use_valid(
-        0,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later).unwrap(),
         true,
-        Dialect::V4_0
+        GlobalTable::V4_0
     ));
     assert!(!composite_logical_connector_use_valid(
-        0,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later).unwrap(),
         true,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
-        4,
+        UseFlag::parse(4, crate::global::GlobalTable::V5Later).unwrap(),
         true,
-        Dialect::V5_3
+        GlobalTable::V5Later
     ));
     assert!(!composite_logical_connector_use_valid(
-        5,
+        UseFlag::parse(5, crate::global::GlobalTable::V5Later).unwrap(),
         true,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
-        0,
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later).unwrap(),
         false,
-        Dialect::V5_0
+        GlobalTable::V5_0
     ));
 }
 
@@ -140,7 +174,7 @@ fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
         .model
         .curves
         .iter()
-        .any(|curve| curve.id.0 == "iges:model:curve#D5"));
+        .any(|curve| curve.id.as_str() == "iges:model:curve#D5"));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss
@@ -351,12 +385,21 @@ fn decode_projects_a_v5_type_142_constituent_through_its_model_curve() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.curve == CurveId("iges:model:curve#D9".into()))
+        .find(|curve| {
+            result.ir().model.procedural_curve_owner(&curve.id)
+                == Some(&CurveId::mint("iges:model:curve#D9").expect("identity grammar"))
+        })
         .expect("Type 102 neutral carrier");
-    let ProceduralCurveDefinition::Compound { components, .. } = &composite.definition else {
+    let ProceduralCurveDefinition::Compound { components, .. } = composite.definition() else {
         panic!("expected a compound neutral carrier");
     };
-    assert_eq!(components, &[CurveId("iges:model:curve#D3".into())]);
+    assert_eq!(
+        components
+            .iter()
+            .map(|item| item.component.clone())
+            .collect::<Vec<_>>(),
+        &[CurveId::mint("iges:model:curve#D3").expect("identity grammar")]
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
@@ -404,296 +447,25 @@ fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.curve == CurveId("iges:model:curve#D5".into()))
+        .find(|curve| {
+            result.ir().model.procedural_curve_owner(&curve.id)
+                == Some(&CurveId::mint("iges:model:curve#D5").expect("identity grammar"))
+        })
         .expect("Type 102 neutral carrier");
-    let ProceduralCurveDefinition::Compound { components, .. } = &composite.definition else {
+    let ProceduralCurveDefinition::Compound { components, .. } = composite.definition() else {
         panic!("expected a compound neutral carrier");
     };
-    assert_eq!(components, &[CurveId("iges:model:curve#D3".into())]);
+    assert_eq!(
+        components
+            .iter()
+            .map(|item| item.component.clone())
+            .collect::<Vec<_>>(),
+        &[CurveId::mint("iges:model:curve#D3").expect("identity grammar")]
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
         result.report().losses
-    );
-}
-
-#[test]
-fn decode_projects_a_v4_composite_with_a_point_attachment() {
-    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
-                &[
-                    OwnedTestEntity {
-                        entity_type: 116,
-                        form: 0,
-                        label: "POINT".into(),
-                        status: "00010000",
-                        parameters: "116,0,0,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD1".into(),
-                        status: "00010000",
-                        parameters: "110,0,0,0,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD2".into(),
-                        status: "00010000",
-                        parameters: "110,1,0,0,2,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 102,
-                        form: 0,
-                        label: "COMPOSIT".into(),
-                        status: "00000000",
-                        parameters: "102,3,1,3,5;".into(),
-                    },
-                ],
-                GLOBAL_V4,
-                &[],
-                &[(1, 1), (3, 1), (5, 1), (7, 1)],
-                &[],
-                &[],
-                &[],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-}
-
-#[test]
-fn decode_projects_a_v5_composite_with_a_point_attachment() {
-    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_global(
-                &[
-                    OwnedTestEntity {
-                        entity_type: 116,
-                        form: 0,
-                        label: "POINT".into(),
-                        status: "00010000",
-                        parameters: "116,0,0,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD1".into(),
-                        status: "00010000",
-                        parameters: "110,0,0,0,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD2".into(),
-                        status: "00010000",
-                        parameters: "110,1,0,0,2,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 102,
-                        form: 0,
-                        label: "COMPOSIT".into(),
-                        status: "00000000",
-                        parameters: "102,3,1,3,5;".into(),
-                    },
-                ],
-                GLOBAL_V5_0,
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-}
-
-#[test]
-fn decode_projects_a_v5_composite_with_a_connect_point_attachment() {
-    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_global(
-                &[
-                    OwnedTestEntity {
-                        entity_type: 132,
-                        form: 0,
-                        label: "CONNECT".into(),
-                        status: "00010400",
-                        parameters: "132,0,0,0,0,1,1,2HP1,0,3HCP1,0,1,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD1".into(),
-                        status: "00010000",
-                        parameters: "110,0,0,0,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD2".into(),
-                        status: "00010000",
-                        parameters: "110,1,0,0,2,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 102,
-                        form: 0,
-                        label: "COMPOSIT".into(),
-                        status: "00000000",
-                        parameters: "102,3,1,3,5;".into(),
-                    },
-                ],
-                GLOBAL_V5_0,
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-}
-
-#[test]
-fn decode_rejects_a_composite_point_attachment_at_the_wrong_curve_endpoint() {
-    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
-                &[
-                    OwnedTestEntity {
-                        entity_type: 116,
-                        form: 0,
-                        label: "POINT".into(),
-                        status: "00010000",
-                        parameters: "116,0.5,0,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD1".into(),
-                        status: "00010000",
-                        parameters: "110,0,0,0,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD2".into(),
-                        status: "00010000",
-                        parameters: "110,1,0,0,2,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 102,
-                        form: 0,
-                        label: "COMPOSIT".into(),
-                        status: "00000000",
-                        parameters: "102,3,1,3,5;".into(),
-                    },
-                ],
-                GLOBAL_V4,
-                &[],
-                &[(1, 1), (3, 1), (5, 1), (7, 1)],
-                &[],
-                &[],
-                &[],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.ir().model.procedural_curves.is_empty());
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
-            .count(),
-        1
-    );
-}
-
-#[test]
-fn decode_rejects_consecutive_point_members_in_a_composite_with_curve_members() {
-    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
-                &[
-                    OwnedTestEntity {
-                        entity_type: 116,
-                        form: 0,
-                        label: "POINT1".into(),
-                        status: "00010000",
-                        parameters: "116,0,0,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 116,
-                        form: 0,
-                        label: "POINT2".into(),
-                        status: "00010000",
-                        parameters: "116,0,0,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD1".into(),
-                        status: "00010000",
-                        parameters: "110,0,0,0,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD2".into(),
-                        status: "00010000",
-                        parameters: "110,1,0,0,2,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 102,
-                        form: 0,
-                        label: "COMPOSIT".into(),
-                        status: "00000000",
-                        parameters: "102,4,1,3,5,7;".into(),
-                    },
-                ],
-                GLOBAL_V4,
-                &[],
-                &[(1, 1), (3, 1), (5, 1), (7, 1), (9, 1)],
-                &[],
-                &[],
-                &[],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.ir().model.procedural_curves.is_empty());
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
-            .count(),
-        1
     );
 }
 
@@ -765,8 +537,8 @@ fn positive_join_tolerance_excludes_the_resolution_boundary() {
 
 #[test]
 fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
-    let curve_id = CurveId("line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -777,33 +549,33 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("start-point".into()),
+            id: PointId::mint("test:model:point#start-point").expect("identity grammar"),
             position: Point3::new(0.001, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("end-point".into()),
+            id: PointId::mint("test:model:point#end-point").expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("start".into()),
-            point: PointId("start-point".into()),
+            id: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("end".into()),
-            point: PointId("end-point".into()),
+            id: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("edge".into()),
+        id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
         curve: Some(curve_id.clone()),
-        start: VertexId("start".into()),
-        end: VertexId("end".into()),
+        start: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
+        end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
         param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
@@ -835,7 +607,7 @@ fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
 
     assert!(matches!(
         error,
-        CodecError::ResourceLimit(limit)
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Codec("iges_composite_children")
                 && limit.limit == 100_000
                 && limit.used == 100_000
@@ -845,55 +617,55 @@ fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
 
 #[test]
 fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
-    let base_id = CurveId("base".into());
-    let mut ir = CadIr::empty(Units::default());
+    let base_id = CurveId::mint("test:model:curve#base").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: base_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(test_nurbs(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+        )),
         source_object: None,
     });
     ir.model.points.extend([
         Point {
-            id: PointId("base-start-point".into()),
+            id: PointId::mint("test:model:point#base-start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("base-end-point".into()),
+            id: PointId::mint("test:model:point#base-end-point").expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("base-start".into()),
-            point: PointId("base-start-point".into()),
+            id: VertexId::mint("test:model:vertex#base-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#base-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("base-end".into()),
-            point: PointId("base-end-point".into()),
+            id: VertexId::mint("test:model:vertex#base-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#base-end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("base-edge".into()),
+        id: EdgeId::mint("test:model:edge#base-edge").expect("identity grammar"),
         curve: Some(base_id.clone()),
-        start: VertexId("base-start".into()),
-        end: VertexId("base-end".into()),
+        start: VertexId::mint("test:model:vertex#base-start").expect("identity grammar"),
+        end: VertexId::mint("test:model:vertex#base-end").expect("identity grammar"),
         param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
 
     let mut child_id = base_id;
     for level in 0..65 {
-        let composite_id = CurveId(format!("composite-{level}"));
+        let composite_id =
+            CurveId::mint(format!("test:model:curve#composite-{level}")).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: composite_id.clone(),
             geometry: CurveGeometry::Composite {
@@ -924,8 +696,8 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
 #[test]
 fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
-    let curve_id = CurveId("line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -936,78 +708,84 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("wrong-start-point".into()),
+            id: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("wrong-end-point".into()),
+            id: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-start-point".into()),
+            id: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-end-point".into()),
+            id: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("wrong-start".into()),
-            point: PointId("wrong-start-point".into()),
+            id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("wrong-end".into()),
-            point: PointId("wrong-end-point".into()),
+            id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-start".into()),
-            point: PointId("matching-start-point".into()),
+            id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-start-point")
+                .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-end".into()),
-            point: PointId("matching-end-point".into()),
+            id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.extend([
         Edge {
-            id: EdgeId("wrong-occurrence".into()),
+            id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("wrong-start".into()),
-            end: VertexId("wrong-end".into()),
+            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("matching-occurrence".into()),
+            id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id),
-            start: VertexId("matching-start".into()),
-            end: VertexId("matching-end".into()),
+            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ]);
 
-    let (carrier, range) = bounded_nurbs_for_curve(&ir, &CurveId("line".into()), None, None)
-        .expect("the curve-valid edge occurrence");
+    let (carrier, range) = bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("test:model:curve#line").expect("identity grammar"),
+        None,
+        None,
+    )
+    .expect("the curve-valid edge occurrence");
     assert_eq!(range, [0.0, 1.0]);
-    assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(carrier.control_points[1], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points()[1], Point3::new(2.0, 0.0, 0.0));
 }
 
 #[test]
 fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
-    let curve_id = CurveId("line".into());
-    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1017,10 +795,14 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         source_object: None,
     });
     for (index, end) in [(0, 1.0), (1, 2.0)] {
-        let start_point = PointId(format!("start-point-{index}"));
-        let end_point = PointId(format!("end-point-{index}"));
-        let start_vertex = VertexId(format!("start-{index}"));
-        let end_vertex = VertexId(format!("end-{index}"));
+        let start_point = PointId::mint(format!("test:model:point#start-point-{index}"))
+            .expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("test:model:point#end-point-{index}")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("test:model:vertex#start-{index}")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("test:model:vertex#end-{index}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 id: start_point.clone(),
@@ -1046,7 +828,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
             },
         ]);
         ir.model.edges.push(Edge {
-            id: EdgeId(format!("edge-{index}")),
+            id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
             curve: Some(curve_id.clone()),
             start: start_vertex,
             end: end_vertex,
@@ -1060,10 +842,10 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
 
 #[test]
 fn composite_index_lookups_match_the_unindexed_scan() {
-    let bounded = CurveId("bounded".into());
-    let edgeless = CurveId("edgeless".into());
-    let absent = CurveId("absent".into());
-    let mut ir = CadIr::empty(Units::default());
+    let bounded = CurveId::mint("test:model:curve#bounded").expect("identity grammar");
+    let edgeless = CurveId::mint("test:model:curve#edgeless").expect("identity grammar");
+    let absent = CurveId::mint("test:model:curve#absent").expect("identity grammar");
+    let mut ir = CadIr::empty();
     for id in [bounded.clone(), edgeless.clone()] {
         ir.model.curves.push(Curve {
             id,
@@ -1076,33 +858,33 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     }
     ir.model.points.extend([
         Point {
-            id: PointId("start-point".into()),
+            id: PointId::mint("test:model:point#start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("end-point".into()),
+            id: PointId::mint("test:model:point#end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("start".into()),
-            point: PointId("start-point".into()),
+            id: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("end".into()),
-            point: PointId("end-point".into()),
+            id: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
+            point: PointId::mint("test:model:point#end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("edge".into()),
+        id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
         curve: Some(bounded.clone()),
-        start: VertexId("start".into()),
-        end: VertexId("end".into()),
+        start: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
+        end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
         param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
@@ -1113,95 +895,109 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         let indexed = bounded_nurbs_for_curve(&ir, &curve_id, None, Some(&index));
         assert_eq!(
             scanned.as_ref().map(|(carrier, range)| (
-                carrier.degree,
-                carrier.control_points.clone(),
+                carrier.degree(),
+                carrier.control_points().to_vec(),
                 *range
             )),
             indexed.as_ref().map(|(carrier, range)| (
-                carrier.degree,
-                carrier.control_points.clone(),
+                carrier.degree(),
+                carrier.control_points().to_vec(),
                 *range
             )),
         );
     }
 
-    assert!(bounded_nurbs_for_curve(&ir, &CurveId("bounded".into()), None, Some(&index)).is_some());
-    assert!(
-        bounded_nurbs_for_curve(&ir, &CurveId("edgeless".into()), None, Some(&index)).is_none()
-    );
-    assert!(bounded_nurbs_for_curve(&ir, &CurveId("absent".into()), None, Some(&index)).is_none());
+    assert!(bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("test:model:curve#bounded").expect("identity grammar"),
+        None,
+        Some(&index)
+    )
+    .is_some());
+    assert!(bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("test:model:curve#edgeless").expect("identity grammar"),
+        None,
+        Some(&index)
+    )
+    .is_none());
+    assert!(bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("test:model:curve#absent").expect("identity grammar"),
+        None,
+        Some(&index)
+    )
+    .is_none());
 }
 
 #[test]
 fn rational_linear_degree_elevation_preserves_the_curve() {
-    let mut curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        weights: Some(vec![1.0, 3.0]),
-        periodic: false,
-    };
+    let mut curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![1.0, 3.0]),
+    );
     let before = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         0.25,
     )
     .expect("valid rational linear NURBS evaluates before degree elevation");
     assert!(elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         0.25,
     )
     .expect("valid rational quadratic NURBS evaluates after degree elevation");
     assert!(before.distance(after) <= 1.0e-12);
-    assert_eq!(curve.control_points[1], Point3::new(1.5, 0.0, 0.0));
-    assert_eq!(curve.weights, Some(vec![1.0, 2.0, 3.0]));
+    assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
+    assert_eq!(curve.weights(), Some(&[1.0, 2.0, 3.0][..]));
 }
 
 #[test]
 fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let curve = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let curve = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 2.0, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 2.0, 1.0]),
+    );
     let interval = [0.25, 1.5];
     let trimmed = trim_nurbs_to_interval(&curve, interval)
         .expect("a bounded active interval has an exact NURBS subrange");
 
-    assert_eq!(trimmed.knots.first(), Some(&interval[0]));
-    assert_eq!(trimmed.knots.last(), Some(&interval[1]));
+    assert_eq!(trimmed.knots().first(), Some(&interval[0]));
+    assert_eq!(trimmed.knots().last(), Some(&interval[1]));
     assert_eq!(
-        trimmed.weights.as_ref().map(Vec::len),
-        Some(trimmed.control_points.len())
+        trimmed.weights().map(<[f64]>::len),
+        Some(trimmed.control_points().len())
     );
     for parameter in [0.25, 0.5, 1.0, 1.5] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
         .expect("source NURBS evaluates");
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            trimmed.degree,
-            &trimmed.knots,
-            &trimmed.control_points,
-            trimmed.weights.as_deref(),
+            trimmed.degree(),
+            trimmed.knots(),
+            trimmed.control_points(),
+            trimmed.weights(),
             parameter,
         )
         .expect("trimmed NURBS evaluates");
@@ -1212,39 +1008,41 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
 #[test]
 fn concatenation_accepts_exact_active_nurbs_subranges() {
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let curve = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let curve = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 2.0, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 2.0, 1.0]),
+    );
     let first =
         trim_nurbs_to_interval(&curve, [0.0, 1.0]).expect("first active NURBS interval is exact");
     let second =
         trim_nurbs_to_interval(&curve, [1.0, 2.0]).expect("second active NURBS interval is exact");
-    let concatenated = concatenate_nurbs(vec![(first, [0.0, 1.0]), (second, [1.0, 2.0])], None)
-        .expect("evaluated active endpoints join exactly");
+    let concatenated = concatenate_nurbs(
+        vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
+        None,
+    )
+    .expect("evaluated active endpoints join exactly");
 
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
         .expect("source NURBS evaluates");
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            concatenated.nurbs.degree,
-            &concatenated.nurbs.knots,
-            &concatenated.nurbs.control_points,
-            concatenated.nurbs.weights.as_deref(),
+            concatenated.nurbs.degree(),
+            concatenated.nurbs.knots(),
+            concatenated.nurbs.control_points(),
+            concatenated.nurbs.weights(),
             parameter,
         )
         .expect("concatenated NURBS evaluates");
@@ -1255,25 +1053,23 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
 #[test]
 fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let piecewise_constant = NurbsCurve {
-        degree: 0,
-        knots: vec![0.0, 1.0, 2.0],
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        periodic: false,
-    };
-    let nonclamped = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
-        control_points: vec![
+    let piecewise_constant = test_nurbs(
+        0,
+        vec![0.0, 1.0, 2.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+    );
+    let nonclamped = test_nurbs(
+        2,
+        vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
 
     for (curve, interval, parameters) in [
         (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
@@ -1283,18 +1079,18 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
             .expect("a valid active interval has an exact NURBS subrange");
         for parameter in parameters {
             let before = cadmpeg_ir::eval::nurbs_curve_point(
-                curve.degree,
-                &curve.knots,
-                &curve.control_points,
-                curve.weights.as_deref(),
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
                 parameter,
             )
             .expect("source NURBS evaluates");
             let after = cadmpeg_ir::eval::nurbs_curve_point(
-                trimmed.degree,
-                &trimmed.knots,
-                &trimmed.control_points,
-                trimmed.weights.as_deref(),
+                trimmed.degree(),
+                trimmed.knots(),
+                trimmed.control_points(),
+                trimmed.weights(),
                 parameter,
             )
             .expect("trimmed NURBS evaluates");
@@ -1307,38 +1103,27 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
 fn concatenation_preserves_degree_zero_spans() {
     let point = Point3::new(1.0, 2.0, 3.0);
     let first = (
-        NurbsCurve {
-            degree: 0,
-            knots: vec![0.0, 1.0, 2.0],
-            control_points: vec![point, point],
-            weights: None,
-            periodic: false,
-        },
+        test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
         [0.0, 2.0],
     );
-    let second = (
-        NurbsCurve {
-            degree: 0,
-            knots: vec![0.0, 1.0],
-            control_points: vec![point],
-            weights: None,
-            periodic: false,
-        },
-        [0.0, 1.0],
-    );
-    let concatenated = concatenate_nurbs(vec![first, second], None)
-        .expect("degree-zero spans with an exact join concatenate");
+    let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
+    let concatenated =
+        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+            .expect("degree-zero spans with an exact join concatenate");
 
-    assert_eq!(concatenated.nurbs.degree, 0);
-    assert_eq!(concatenated.nurbs.knots, vec![0.0, 1.0, 2.0, 3.0]);
-    assert_eq!(concatenated.nurbs.control_points, vec![point, point, point]);
+    assert_eq!(concatenated.nurbs.degree(), 0);
+    assert_eq!(concatenated.nurbs.knots(), vec![0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(
+        concatenated.nurbs.control_points(),
+        vec![point, point, point]
+    );
     for parameter in [0.5, 1.5, 2.5] {
         assert_eq!(
             cadmpeg_ir::eval::nurbs_curve_point(
-                concatenated.nurbs.degree,
-                &concatenated.nurbs.knots,
-                &concatenated.nurbs.control_points,
-                concatenated.nurbs.weights.as_deref(),
+                concatenated.nurbs.degree(),
+                concatenated.nurbs.knots(),
+                concatenated.nurbs.control_points(),
+                concatenated.nurbs.weights(),
                 parameter,
             ),
             Some(point)
@@ -1348,65 +1133,58 @@ fn concatenation_preserves_degree_zero_spans() {
 
 #[test]
 fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
-    let mut curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.5, 0.5, 1.5, 2.5, 2.5],
-        control_points: vec![
+    let mut curve = test_nurbs(
+        1,
+        vec![0.5, 0.5, 1.5, 2.5, 2.5],
+        vec![
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 3.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     let before = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         2.0,
     )
     .expect("valid multi-span linear NURBS evaluates before degree elevation");
     assert!(elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         2.0,
     )
     .expect("valid multi-span linear NURBS evaluates after degree elevation");
-    assert_eq!(curve.degree, 3);
+    assert_eq!(curve.degree(), 3);
     assert!(before.distance(after) <= 1.0e-12);
 }
 
 #[test]
 fn multi_span_degree_zero_elevation_preserves_the_curve() {
     let point = Point3::new(1.0, 2.0, 3.0);
-    let source = NurbsCurve {
-        degree: 0,
-        knots: vec![0.0, 1.0, 2.0],
-        control_points: vec![point; 2],
-        weights: None,
-        periodic: false,
-    };
+    let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
     let mut elevated = source.clone();
     assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None));
-    assert_eq!(elevated.degree, 2);
+    assert_eq!(elevated.degree(), 2);
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            source.degree,
-            &source.knots,
-            &source.control_points,
-            source.weights.as_deref(),
+            source.degree(),
+            source.knots(),
+            source.control_points(),
+            source.weights(),
             parameter,
         )
         .unwrap();
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            elevated.degree,
-            &elevated.knots,
-            &elevated.control_points,
-            elevated.weights.as_deref(),
+            elevated.degree(),
+            elevated.knots(),
+            elevated.control_points(),
+            elevated.weights(),
             parameter,
         )
         .unwrap();
@@ -1417,36 +1195,35 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
 #[test]
 fn multi_span_rational_degree_elevation_preserves_the_curve() {
     const EPS_DEGREE_ELEVATION: f64 = 1.0e-9;
-    let source = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let source = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(3.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 2.0, 1.0, 3.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 2.0, 1.0, 3.0]),
+    );
     let mut elevated = source.clone();
     assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None));
-    assert_eq!(elevated.degree, 3);
-    assert_eq!(elevated.weights.as_ref().map(Vec::len), Some(7));
+    assert_eq!(elevated.degree(), 3);
+    assert_eq!(elevated.weights().map(<[f64]>::len), Some(7));
     for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            source.degree,
-            &source.knots,
-            &source.control_points,
-            source.weights.as_deref(),
+            source.degree(),
+            source.knots(),
+            source.control_points(),
+            source.weights(),
             parameter,
         )
         .unwrap();
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            elevated.degree,
-            &elevated.knots,
-            &elevated.control_points,
-            elevated.weights.as_deref(),
+            elevated.degree(),
+            elevated.knots(),
+            elevated.control_points(),
+            elevated.weights(),
             parameter,
         )
         .unwrap();
@@ -1457,32 +1234,19 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
 #[test]
 fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     let point = |x, y| Point3::new(x, y, 0.0);
-    let line = |start, end| NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![start, end],
-        weights: None,
-        periodic: false,
-    };
-    let constant = |position| NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![position; 3],
-        weights: None,
-        periodic: false,
-    };
-    let cubic = NurbsCurve {
-        degree: 3,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let line = |start, end| test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None);
+    let constant = |position| test_nurbs(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], vec![position; 3], None);
+    let cubic = test_nurbs(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+        vec![
             point(1.0, 1.0),
             point(1.666_666_666_666_666_7, 0.666_666_666_666_666_6),
             point(2.333_333_333_333_333_5, 0.333_333_333_333_333_3),
             point(3.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     let mut children = vec![
         (line(point(3.0, 0.0), point(2.0, 0.0)), [0.0, 1.0]),
         (constant(point(2.0, 0.0)), [0.0, 2.0]),
@@ -1492,18 +1256,26 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
         (line(point(3.0, 0.0), point(3.0, 0.0)), [0.0, 1.0]),
     ];
     for (index, (curve, interval)) in children.iter_mut().enumerate() {
-        if curve.degree < 3 {
+        if curve.degree() < 3 {
             assert!(
                 elevate_nurbs_to_degree(curve, *interval, 3, None),
                 "child {index} should elevate"
             );
         }
     }
-    let concatenated = concatenate_nurbs(children, None)
-        .expect("mixed-degree composite should have an exact NURBS carrier");
-    assert_eq!(concatenated.nurbs.degree, 3);
+    let concatenated = concatenate_nurbs(
+        children
+            .into_iter()
+            .map(|(curve, range)| (curve, range, ()))
+            .collect(),
+        None,
+    )
+    .expect("mixed-degree composite should have an exact NURBS carrier");
+    assert_eq!(concatenated.nurbs.degree(), 3);
     assert_eq!(
-        concatenated.boundaries,
+        std::iter::once(0.0)
+            .chain(concatenated.segments.into_iter().map(|segment| segment.end))
+            .collect::<Vec<_>>(),
         vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
     );
 }
@@ -1512,13 +1284,12 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
 fn concatenated_range_is_exactly_the_canonical_knot_domain() {
     let line = |start: f64, end: f64, x: f64| {
         (
-            NurbsCurve {
-                degree: 1,
-                knots: vec![start, start, end, end],
-                control_points: vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            },
+            test_nurbs(
+                1,
+                vec![start, start, end, end],
+                vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
+                None,
+            ),
             [start, end],
         )
     };
@@ -1526,42 +1297,41 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
     let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
 
     let concatenated =
-        concatenate_nurbs(vec![first, second], None).expect("joined lines should concatenate");
+        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+            .expect("joined lines should concatenate");
 
     assert_eq!(
-        concatenated.boundaries.last(),
-        concatenated.nurbs.knots.last()
+        Some(&concatenated.segments.end()),
+        concatenated.nurbs.knots().last()
     );
 }
 
 #[test]
 fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
-    let first_id = CurveId("first".into());
-    let second_id = CurveId("second".into());
-    let composite_id = CurveId("composite".into());
+    let first_id = CurveId::mint("test:model:curve#first").expect("identity grammar");
+    let second_id = CurveId::mint("test:model:curve#second").expect("identity grammar");
+    let composite_id = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     let first_end = Point3::new(1.0, 0.0, 0.0);
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.extend([
         Curve {
             id: first_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(0.0, 0.0, 0.0), first_end],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(test_nurbs(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), first_end],
+                None,
+            )),
             source_object: None,
         },
         Curve {
             id: second_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(test_nurbs(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                None,
+            )),
             source_object: None,
         },
         Curve {
@@ -1586,10 +1356,12 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
     ]);
     for (index, curve) in [first_id, second_id].into_iter().enumerate() {
         ir.model.edges.push(Edge {
-            id: EdgeId(format!("edge-{index}")),
+            id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
             curve: Some(curve),
-            start: VertexId(format!("start-{index}")),
-            end: VertexId(format!("end-{index}")),
+            start: VertexId::mint(format!("test:model:vertex#start-{index}"))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("test:model:vertex#end-{index}"))
+                .expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
@@ -1599,37 +1371,36 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None, None)
             .expect("carrier join within the global resolution should project");
     assert_eq!(range, [0.0, 2.0]);
-    assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
 }
 
 #[test]
 fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
-    let curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 10.0, 10.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+        None,
+    );
     let (reversed, range) = reverse_nurbs(curve, [2.0, 5.0])
         .expect("a bounded subrange should have an exact reversed carrier");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            reversed.degree,
-            &reversed.knots,
-            &reversed.control_points,
-            reversed.weights.as_deref(),
+            reversed.degree(),
+            reversed.knots(),
+            reversed.control_points(),
+            reversed.weights(),
             range[0],
         ),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            reversed.degree,
-            &reversed.knots,
-            &reversed.control_points,
-            reversed.weights.as_deref(),
+            reversed.degree(),
+            reversed.knots(),
+            reversed.control_points(),
+            reversed.weights(),
             range[1],
         ),
         Some(Point3::new(2.0, 0.0, 0.0))
@@ -1638,13 +1409,12 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
 
 #[test]
 fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
-    let curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 10.0, 10.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+        None,
+    );
     assert!(reverse_nurbs(curve, [-1.0, 5.0]).is_none());
 }
 
@@ -1663,15 +1433,19 @@ fn decode_concatenates_ordered_composite_curve_children() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+    let CurveGeometry::Nurbs(nurbs) = composite
+        .geometry
+        .solved_cache()
+        .unwrap_or(&composite.geometry)
+    else {
         panic!("expected a concatenated NURBS cache");
     };
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 1.0, 2.0, 2.0]);
-    assert_eq!(nurbs.control_points.len(), 3);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(nurbs.control_points().len(), 3);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, &nurbs.knots, &nurbs.control_points, None, 1.5),
+        cadmpeg_ir::eval::nurbs_curve_point(1, nurbs.knots(), nurbs.control_points(), None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1692,10 +1466,13 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("Type 102 curve within the Global resolution");
     assert!(matches!(
-        within_curve.geometry,
+        *within_curve
+            .geometry
+            .solved_cache()
+            .unwrap_or(&within_curve.geometry),
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
     ));
     assert!(within_resolution.report().losses.is_empty());
@@ -1711,9 +1488,12 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("degraded Type 102 curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &outside_curve.geometry
+    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = outside_curve
+        .geometry
+        .solved_cache()
+        .unwrap_or(&outside_curve.geometry)
     else {
         panic!("expected retained native Type 102 carrier")
     };
@@ -1742,10 +1522,13 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .expect("Type 102 curve at the Global resolution");
     assert!(matches!(
-        at_or_beyond_resolution_curve.geometry,
+        *at_or_beyond_resolution_curve
+            .geometry
+            .solved_cache()
+            .unwrap_or(&at_or_beyond_resolution_curve.geometry),
         cadmpeg_ir::geometry::CurveGeometry::Composite { .. }
     ));
     assert_eq!(
@@ -1772,10 +1555,10 @@ fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
         .unwrap_err();
 
     match error {
-        CodecError::StrictRefusal { loss_code, .. } => {
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert_eq!(
-                loss_code,
-                IgesLossCode::CompositeCarrierDegraded.kind().as_str()
+                rejection.loss().code.to_string(),
+                IgesLossCode::CompositeCarrierDegraded.kind().to_string()
             );
         }
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
@@ -1796,17 +1579,18 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+    let CurveGeometry::Nurbs(nurbs) = composite
+        .geometry
+        .solved_cache()
+        .unwrap_or(&composite.geometry)
+    else {
         panic!("expected an exact quadratic composite cache");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points.len(), 5);
-    assert_eq!(
-        nurbs.weights.as_ref().unwrap()[1],
-        std::f64::consts::FRAC_1_SQRT_2
-    );
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points().len(), 5);
+    assert_eq!(nurbs.weights().unwrap()[1], std::f64::consts::FRAC_1_SQRT_2);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1826,13 +1610,17 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+    let CurveGeometry::Nurbs(nurbs) = composite
+        .geometry
+        .solved_cache()
+        .unwrap_or(&composite.geometry)
+    else {
         panic!("expected an exact heterogeneous composite carrier");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points.len(), 5);
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points().len(), 5);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1856,12 +1644,14 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D7")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D7")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry)
+    else {
         panic!("expected an elevated cubic composite cache");
     };
-    assert_eq!(nurbs.degree, 3);
+    assert_eq!(nurbs.degree(), 3);
     assert_eq!(
         result
             .ir()
@@ -1871,7 +1661,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
             .find(|edge| edge
                 .curve
                 .as_ref()
-                .is_some_and(|id| id.0 == "iges:model:curve#D7"))
+                .is_some_and(|id| id.as_str() == "iges:model:curve#D7"))
             .and_then(|edge| edge.param_range),
         Some([0.0, 2.0])
     );
@@ -1880,15 +1670,17 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D11")
+        .find(|face| face.id.as_str() == "iges:model:face#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 1);
     assert_eq!(result.ir().model.pcurves.len(), 1);
-    assert!(matches!(
-        result.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 3, .. }
-    ));
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, None);
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+        &result.ir().model.pcurves[0].geometry
+    else {
+        panic!("expected an elevated cubic composite pcurve");
+    };
+    assert_eq!(nurbs.degree(), 3);
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), None);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1912,10 +1704,13 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("composite curve should be projected after its spline child");
     assert!(matches!(
-        composite.geometry,
+        *composite
+            .geometry
+            .solved_cache()
+            .unwrap_or(&composite.geometry),
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
     ));
     assert_eq!(result.report().losses.len(), 2);
@@ -1986,3 +1781,5 @@ fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
         result.report().losses
     );
 }
+
+mod attachments;

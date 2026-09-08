@@ -56,7 +56,7 @@ pub(crate) fn feature_tree_node_role(
     history_features: &[Feature],
 ) -> Option<FeatureTreeNodeRole> {
     reserved_feature_tree_node_role(feature, history_features)
-        .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node)
+        .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node())
         .or_else(|| equation_container_role(feature))
 }
 
@@ -186,7 +186,7 @@ pub(crate) fn classless_or_scene_builtin_node(feature: &Feature) -> bool {
     builtin_node_payload(feature)
         && feature.input_class.as_deref().is_none_or(|class| {
             matches!(
-                native_object_class(class).tree_node,
+                native_object_class(class).tree_node(),
                 Some(
                     FeatureTreeNodeRole::AmbientLight
                         | FeatureTreeNodeRole::DirectionalLight
@@ -408,7 +408,6 @@ pub(crate) fn principal_plane_in_history(
                     }
                     && record.source_id.is_none()
                     && record.tree_parent.is_none()
-                    && record.parent_source_id.is_none()
             }) || front.kind != top.kind
                 || front.kind != right.kind
                 || top.ordinal != front.ordinal + 1
@@ -422,7 +421,6 @@ pub(crate) fn principal_plane_in_history(
                 })
                 || successor.source_id.is_some()
                 || successor.tree_parent.is_some()
-                || successor.parent_source_id.is_some()
                 || successor.ordinal != right.ordinal + 1
                 || successor.kind == front.kind
             {

@@ -2,9 +2,12 @@
 //! Feature-tree typing, class-token, and name-binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
 use crate::SldprtCodec;
@@ -34,7 +37,7 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.features[0].xml_tag, "Extrusion");
     assert_eq!(history.features[0].parameters["Depth"], "12.5mm");
     assert_eq!(history.features[0].properties["Scope"], "Body1");
-    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("7"));
+    assert_eq!(history.features[1].parent_source_id(), Some("7"));
     assert_eq!(history.features[1].xml_tag, "EquationDrivenCurve");
     assert_eq!(result.ir().model.features.len(), 2);
     let neutral = &result.ir().model.features[0];
@@ -51,7 +54,7 @@ fn decode_extracts_parametric_history() {
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(12.5),
                     },
                     draft: None,
@@ -63,7 +66,10 @@ fn decode_extracts_parametric_history() {
         } if profile == &history.features[0].id
     ));
     assert_eq!(
-        result.ir().model.features[1].parent.as_ref(),
+        result
+            .ir()
+            .model
+            .feature_parent(&result.ir().model.features[1].id),
         Some(&neutral.id)
     );
 }
@@ -131,9 +137,10 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             ("moOriginProfileFeature_c", "Origen", 106),
         ]),
     ));
-    let mut decoded = SldprtCodec
+    let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let definitions = decoded
         .ir()
         .model
@@ -180,10 +187,10 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     decoded.ir_mut().model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let regenerated = SldprtCodec
@@ -229,7 +236,7 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
 
 #[test]
 fn reserved_tree_node_ids_require_builtin_record_shape() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -249,7 +256,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -479,7 +486,7 @@ fn keywords_root_id_does_not_create_feature_parentage() {
     let native = sldprt_native(decoded.ir());
     let history = &native.feature_histories[0];
     assert_eq!(history.properties["id"], "document");
-    assert_eq!(history.features[0].parent_source_id, None);
-    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("1"));
-    assert!(crate::validate_native(decoded.ir()).is_empty());
+    assert_eq!(history.features[0].parent_source_id(), None);
+    assert_eq!(history.features[1].parent_source_id(), Some("1"));
+    assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
 }

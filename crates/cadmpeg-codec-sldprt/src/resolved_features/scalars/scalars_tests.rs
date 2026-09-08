@@ -32,7 +32,7 @@ fn scalar_trailer_is_relative_to_variable_length_name() {
     };
     assert_eq!(scalar.object_id, 42);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
-    assert_eq!(scalar.entity_indices, [7, 9]);
+    assert_eq!(scalar.entity_indices(), [7, 9]);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn compact_scalar_header_ends_at_the_value() {
     assert_eq!(scalar.value, 0.0);
     assert_eq!(scalar.object_id, 115);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
-    assert!(scalar.entity_indices.is_empty());
+    assert!(scalar.entity_indices().is_empty());
     assert_eq!(
         scalar
             .operands
@@ -171,7 +171,7 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
     assert_eq!(scalar.offset, value_offset as u64);
     assert_eq!(scalar.object_id, 70);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
-    assert!(scalar.entity_indices.is_empty());
+    assert!(scalar.entity_indices().is_empty());
     assert_eq!(
         scalar
             .operands

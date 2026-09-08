@@ -58,7 +58,7 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
         targets: FaceSelection::Unresolved,
         tool: SplitFaceTool::Path(PathRef::Native("sketch-native".into())),
     };
-    let feature_id = FeatureId("sketch-feature".into());
+    let feature_id = FeatureId::mint("sketch-feature").expect("identity grammar");
     let sketch_id = cadmpeg_ir::sketches::SketchId("sketch-geometry".into());
 
     assert!(bind_definition_sketch(
@@ -165,7 +165,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
     assert!(projected[0].outputs.is_empty());
     assert_eq!(
         projected[1].outputs,
-        [cadmpeg_ir::ids::BodyId("sldprt:brep:body#333".into())]
+        [cadmpeg_ir::ids::BodyId::mint("sldprt:brep:body#333").expect("identity grammar")]
     );
 }
 
@@ -337,10 +337,10 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
-            continuity: None,
+            ref continuity,
             merge_result: None,
             ..
-        }
+        } if continuity.is_unresolved()
     ));
     assert!(matches!(
         projected[8].definition,
@@ -363,8 +363,10 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         projected[10].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: FaceSelection::Unresolved,
-            pull_direction: None,
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Unresolved,
+                pull: None,
+            },
             angle: Some(Angle(value)),
             outward: None,
             ..
@@ -381,10 +383,7 @@ fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
     assert!(matches!(
         project_fillet(&feature),
         FeatureDefinition::Fillet { groups }
-            if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::Unresolved { .. },
-                ..
-            }])
+            if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
 }
 
@@ -403,9 +402,6 @@ fn variable_fillet_d_dimensions_require_native_vertex_associations() {
     assert!(matches!(
         project_fillet(&feature),
         FeatureDefinition::Fillet { groups }
-            if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::Unresolved { .. },
-                ..
-            }])
+            if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
     ));
 }

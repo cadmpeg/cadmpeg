@@ -3,39 +3,46 @@
 //! Decode bare Autodesk `ShapeManager` (ASM) B-rep streams.
 //!
 //! A bare stream is an ASM serialization outside any container: a binary
-//! `.smb`/`.smbh`-style SAB stream or a text `.sat`/`.smt` stream. Content
+//! `.sab`/`.smb` SAB stream or a text `.sat`/`.smt` stream. Content
 //! selects the path, never the file extension: the `ASM BinaryFile` magic
 //! selects the binary framer and the ASCII header lines select the text
 //! parser. Both paths decode through the shared kernel decoders in
 //! [`cadmpeg_asm::brep`] into the neutral model arenas, with the kernel-side
 //! native records under the `sat` namespace.
 //!
-//! Spatial ACIS 217 and 218 binary streams use the 32-bit SAB header and the
-//! same record decoder. Other ACIS binary header bands remain identified but
-//! unsupported. A text stream frames on either branch terminator, and its
-//! decode outcome decides whether the report carries geometry.
+//! Spatial ACIS 217 and 218 binary streams use the verified 32-bit SAB grammar.
+//! Other ACIS binary header bands keep an admitted `sat:` host layer and recover
+//! through an unverified `acis:` kernel layer that names the nearest
+//! verified grammar and charges the recovery loss. Inspection and decode emit
+//! both layers. A text stream frames on either branch terminator, and its decode
+//! outcome decides whether the report carries geometry.
+//!
+//! <!-- generated: capability sat -->
+//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).
+//! <!-- /generated: capability sat -->
 
+mod coverage;
 mod decode;
 mod detect;
+mod dialect;
 #[allow(dead_code)] // Loss catalog is consumed by tests.
 mod loss;
 
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
+include!("dialect/registry_ids.rs");
 
-/// The stable format identifier and native namespace.
-pub(crate) const FORMAT: &str = "sat";
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectId;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::ContainerSummary;
 
 /// Bare ASM stream codec.
 pub struct SatCodec;
 
 impl CodecBackend for SatCodec {
-    fn id(&self) -> &'static str {
-        FORMAT
-    }
+    const FORMAT: FormatId = FormatId::new(FORMAT);
 
-    fn detect(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         detect::confidence(prefix)
     }
 
@@ -47,11 +54,7 @@ impl CodecBackend for SatCodec {
         detect::inspect(ctx, root)
     }
 
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root.window())
     }
 }

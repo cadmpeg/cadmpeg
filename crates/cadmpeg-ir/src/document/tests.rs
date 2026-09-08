@@ -1,11 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::document::Model;
+use crate::document::{EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
-use crate::report::Check;
+use crate::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 use crate::{diff, CadIr};
+use serde::{de::DeserializeOwned, Serialize};
+
+struct SerdeIdentity;
+
+impl EntityRewrite for SerdeIdentity {
+    type Error = serde_json::Error;
+
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
+        serde_json::from_value(serde_json::to_value(entity)?)
+    }
+}
 
 #[test]
 fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
@@ -51,7 +67,7 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
     let diff_kinds = diff(&ir, &ir)
         .per_arena
         .into_iter()
-        .map(|arena| arena.kind)
+        .map(|arena| arena.kind.to_string())
         .collect::<Vec<_>>();
 
     assert_eq!(
@@ -78,6 +94,143 @@ fn current_json_without_configurations_defaults_to_empty() {
 
     let decoded: CadIr = serde_json::from_value(value).unwrap();
     assert!(decoded.model.configurations.is_empty());
+}
+
+#[test]
+fn feature_parent_wire_is_derived_from_its_single_owner() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+
+    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let parent = Feature::new(
+        parent_id.clone(),
+        0,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: vec![child_id.clone()],
+            active_child: Some(child_id.clone()),
+        },
+    );
+    let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry);
+    let model = Model {
+        features: vec![parent, child],
+        ..Model::default()
+    };
+
+    let value = serde_json::to_value(&model).unwrap();
+    assert_eq!(value["features"][1]["parent"], parent_id.as_str());
+    assert_eq!(
+        value["features"][0]["definition"]["children"][0],
+        child_id.as_str()
+    );
+    assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
+
+    let mut regeneration = Model {
+        features: vec![
+            Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry),
+            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+        ],
+        ..Model::default()
+    };
+    regeneration
+        .set_feature_regeneration_parent(child_id, parent_id.clone())
+        .unwrap();
+    let value = serde_json::to_value(&regeneration).unwrap();
+    assert_eq!(value["features"][1]["parent"], parent_id.as_str());
+    assert_eq!(
+        serde_json::from_value::<Model>(value).unwrap(),
+        regeneration
+    );
+}
+
+#[test]
+fn feature_parent_wire_rejects_disagreement_with_tree_children() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+
+    let first_id = FeatureId::mint("test:model:feature#first").expect("identity grammar");
+    let second_id = FeatureId::mint("test:model:feature#second").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let model = Model {
+        features: vec![
+            Feature::new(
+                first_id,
+                0,
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: vec![child_id.clone()],
+                    active_child: None,
+                },
+            ),
+            Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry),
+            Feature::new(child_id, 2, FeatureDefinition::StoredGeometry),
+        ],
+        ..Model::default()
+    };
+    let mut value = serde_json::to_value(model).unwrap();
+    value["features"][2]["parent"] = serde_json::Value::String(second_id.into_string());
+
+    assert!(serde_json::from_value::<Model>(value).is_err());
+}
+
+#[test]
+fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
+    let mut ir = CadIr::empty();
+    let surface = SurfaceId::mint("test:model:surface#cache").expect("valid identity");
+    let surface_construction =
+        ProceduralSurfaceId::mint("test:model:surface-construction#cache").expect("valid identity");
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_surface(
+            surface.clone(),
+            ProceduralSurface::new(
+                surface_construction,
+                ProceduralSurfaceDefinition::Unknown { record: None },
+                None,
+            ),
+        )
+        .unwrap();
+
+    let curve = CurveId::mint("test:model:curve#direct").expect("valid identity");
+    let curve_construction =
+        ProceduralCurveId::mint("test:model:curve-construction#direct").expect("valid identity");
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: curve_construction.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_curve(
+            curve.clone(),
+            ProceduralCurve::new(curve_construction, ProceduralCurveDefinition::Exact),
+        )
+        .unwrap();
+
+    let value = serde_json::to_value(&ir).unwrap();
+    let model = value["model"].as_object().unwrap();
+    assert_eq!(model["surfaces"][0]["geometry"]["kind"], "plane");
+    assert!(model["surfaces"][0]["geometry"].get("cache").is_none());
+    assert_eq!(model["procedural_surfaces"][0]["surface"], surface.as_str());
+    assert_eq!(model["curves"][0]["geometry"]["kind"], "procedural");
+    assert!(model["curves"][0]["geometry"].get("cache").is_none());
+    assert_eq!(model["procedural_curves"][0]["curve"], curve.as_str());
+    assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
+
+    let mut rewritten = Model::default();
+    rewritten
+        .extend_rewritten(ir.model, &mut SerdeIdentity)
+        .unwrap();
+    assert!(rewritten.surfaces[0].geometry.solved_cache().is_some());
 }
 
 #[test]
@@ -150,23 +303,15 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
 }
 
 #[test]
-fn wrong_document_version_is_flagged() {
-    let mut ir = unit_cube();
-    ir.set_ir_version_for_test("1");
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Version));
-}
-
-#[test]
 fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let canonical = serde_json::to_value(unit_cube()).unwrap();
-    for version in [
-        Some(serde_json::Value::String("0".into())),
-        None,
-        Some(serde_json::Value::Number(1.into())),
+    let expected_version = crate::IR_VERSION;
+    for (version, found) in [
+        (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
+        (None, "None"),
+        (Some(serde_json::Value::Number(1.into())), "None"),
     ] {
+        let expected = format!("unsupported ir_version {found}; expected {expected_version}");
         let mut value = canonical.clone();
         let object = value.as_object_mut().unwrap();
         match version {
@@ -180,8 +325,9 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
         let json = serde_json::to_string(&value).unwrap();
         let error = CadIr::from_json(&json).unwrap_err();
         assert!(!error.is_syntax());
-        assert!(error.to_string().contains("unsupported ir_version"));
-        assert!(serde_json::from_str::<CadIr>(&json).is_err());
+        assert!(error.to_string().contains(&expected), "{error}");
+        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
+        assert!(direct.to_string().contains(&expected), "{direct}");
     }
 }
 
@@ -203,9 +349,111 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 
 #[test]
 fn current_document_excludes_source_byte_accounting() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let json = serde_json::to_value(&ir).unwrap();
 
     assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
+}
+
+/// A `SourceMeta` wire that omits `dialects` reads as unclassified. Writing it
+/// back states that absence explicitly as `"dialects":null`.
+#[test]
+fn unclassified_source_metadata_reads_back_and_writes_an_explicit_absence() {
+    let stored = "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"}}";
+    let source: SourceMeta = serde_json::from_str(stored).unwrap();
+
+    assert_eq!(source.format(), "rhino");
+    assert_eq!(source.dialect(), None);
+
+    let rewritten = serde_json::to_string(&source).unwrap();
+    assert_eq!(
+        rewritten,
+        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\
+         \"dialects\":null}"
+    );
+    assert_eq!(
+        serde_json::from_str::<SourceMeta>(&rewritten).unwrap(),
+        source
+    );
+}
+
+#[test]
+fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() {
+    let matched = cadmpeg_core::dialect::DialectMatch::admitted(
+        cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+    );
+    let layers = cadmpeg_core::dialect::DialectLayers::of(matched.clone());
+    let source = SourceMeta::classified(
+        layers.clone(),
+        std::collections::BTreeMap::from([("object_count".into(), "3".into())]),
+    );
+
+    assert_eq!(source.format(), "rhino");
+    assert_eq!(source.dialect(), Some(&matched));
+    assert_eq!(source.dialects(), Some(&layers));
+    let rendered = serde_json::to_string(&source).unwrap();
+    assert_eq!(
+        rendered,
+        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\"dialects\":{\"primary\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"},\"extra\":[]}}"
+    );
+    assert_eq!(
+        serde_json::from_str::<SourceMeta>(&rendered).unwrap(),
+        source
+    );
+
+    let malformed = rendered.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
+    let error = serde_json::from_str::<SourceMeta>(&malformed)
+        .expect_err("a source format must match its dialect format");
+    assert!(
+        error
+            .to_string()
+            .contains("format \"step\" does not match classified payload format \"rhino\""),
+        "{error}"
+    );
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn source_metadata_schema_requires_dialects_and_has_no_singular_dialect() {
+    let schema = serde_json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
+    let required = schema["required"].as_array().unwrap();
+
+    assert!(
+        required.iter().any(|field| field == "dialects"),
+        "{schema:#}"
+    );
+    assert!(schema["properties"].get("dialect").is_none(), "{schema:#}");
+}
+
+#[test]
+fn parent_only_wire_preserves_regeneration_without_tree_membership() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+
+    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let mut model = Model {
+        features: vec![
+            Feature::new(
+                parent_id.clone(),
+                0,
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::SolidBodies,
+                    children: Vec::new(),
+                    active_child: None,
+                },
+            ),
+            Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+        ],
+        ..Model::default()
+    };
+    model
+        .set_feature_regeneration_parent(child_id.clone(), parent_id.clone())
+        .unwrap();
+    assert_eq!(model.feature_tree_parent(&child_id), None);
+    assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
+    let wire = serde_json::to_value(&model).unwrap();
+    assert!(wire["features"][0]["definition"].get("children").is_none());
+    assert_eq!(wire["features"][1]["parent"], parent_id.as_str());
+    assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
 }

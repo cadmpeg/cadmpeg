@@ -4,14 +4,13 @@ use std::fmt::Write;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
 use crate::layout::compressed_buffer_prologue as compressed;
-use crate::layout::long_chunk_header_v50 as long_v50;
+use crate::layout::long_chunk_header_wide as long_wide;
 use crate::test_support::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
@@ -40,7 +39,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn open_nurbs_object_record_short_typecodes_decode() {
     let record = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     assert_eq!(
-        &record[long_v50::LEN..long_v50::LEN + 4],
+        &record[long_wide::LEN..long_wide::LEN + 4],
         &0x8200_0071_u32.to_le_bytes()
     );
     assert_eq!(
@@ -51,7 +50,7 @@ fn open_nurbs_object_record_short_typecodes_decode() {
     let result = decode(&archive(&[record]));
 
     assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
 }
 
 #[test]
@@ -73,10 +72,10 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
     let CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry else {
         panic!("bounded line must decode to an exact NURBS carrier");
     };
-    assert_eq!(curve.degree, 1);
-    assert_eq!(curve.knots, vec![3.0, 3.0, 7.0, 7.0]);
+    assert_eq!(curve.degree(), 1);
+    assert_eq!(curve.knots(), [3.0, 3.0, 7.0, 7.0]);
     assert_eq!(
-        curve.control_points,
+        curve.control_points(),
         vec![
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0),
             cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
@@ -102,7 +101,7 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .expect("required invariant")[1]
         .links
         .contains(&result.ir().model.curves[0].id.to_string()));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
@@ -156,29 +155,29 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let result = crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
-        context.commit()
+        crate::decode::seal_for_test(context.commit(), false)
     });
 
     let retained = &result.source_fidelity().retained_records;
-    assert_eq!(retained[0].byte_len, large.len() as u64);
-    assert_eq!(retained[0].sha256, sha256_hex(&large));
-    assert_eq!(retained[0].data, None);
-    assert_eq!(retained[1].byte_len, point.len() as u64);
-    assert_eq!(retained[1].sha256, sha256_hex(&point));
-    assert_eq!(retained[1].data.as_deref(), Some(point.as_slice()));
+    assert_eq!(retained[0].byte_len(), large.len() as u64);
+    assert_eq!(retained[0].sha256(), sha256_hex(&large));
+    assert_eq!(retained[0].data(), None);
+    assert_eq!(retained[1].byte_len(), point.len() as u64);
+    assert_eq!(retained[1].sha256(), sha256_hex(&point));
+    assert_eq!(retained[1].data(), Some(point.as_slice()));
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
     let result = crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
-        context.commit()
+        crate::decode::seal_for_test(context.commit(), false)
     });
     assert_eq!(
-        result.source_fidelity().retained_records[0].data.as_deref(),
+        result.source_fidelity().retained_records[0].data(),
         Some(point.as_slice())
     );
-    assert_eq!(result.source_fidelity().retained_records[1].data, None);
+    assert_eq!(result.source_fidelity().retained_records[1].data(), None);
 }
 
 #[test]
@@ -308,14 +307,14 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
             matches!(
                 &curve.geometry,
                 CurveGeometry::Nurbs(nurbs)
-                    if nurbs.knots == [-1.0, -1.0, 3.0, 3.0]
+                    if nurbs.knots() == [-1.0, -1.0, 3.0, 3.0]
             )
         })
         .expect("bounded line");
     let CurveGeometry::Nurbs(line) = &line.geometry else {
         panic!("line carrier");
     };
-    assert_eq!(line.knots, vec![-1.0, -1.0, 3.0, 3.0]);
+    assert_eq!(line.knots(), [-1.0, -1.0, 3.0, 3.0]);
     let polyline = result
         .ir()
         .model
@@ -325,14 +324,14 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
             matches!(
                 &curve.geometry,
                 CurveGeometry::Nurbs(nurbs)
-                    if nurbs.knots == [2.0, 2.0, 3.5, 9.0, 9.0]
+                    if nurbs.knots() == [2.0, 2.0, 3.5, 9.0, 9.0]
             )
         })
         .expect("polyline");
     let CurveGeometry::Nurbs(polyline) = &polyline.geometry else {
         panic!("polyline carrier");
     };
-    assert_eq!(polyline.knots, vec![2.0, 2.0, 3.5, 9.0, 9.0]);
+    assert_eq!(polyline.knots(), [2.0, 2.0, 3.5, 9.0, 9.0]);
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
     let root = result
         .ir()
@@ -345,14 +344,14 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         parameters,
         components,
         ..
-    } = &root.definition
+    } = root.definition()
     else {
         panic!("compound definition");
     };
     assert_eq!(parameters, &vec![0.0, 2.0, 5.0]);
     assert_eq!(components.len(), 2);
-    assert!(components[0].as_str().contains("component-0"));
-    assert!(components[1].as_str().contains("component-1"));
+    assert!(components[0].component.as_str().contains("component-0"));
+    assert!(components[1].component.as_str().contains("component-1"));
     assert_eq!(
         result
             .ir()
@@ -396,25 +395,25 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
                 result.report()
             );
             let mesh = &result.ir().model.tessellations[0];
-            assert_eq!(mesh.vertices.len(), 4);
-            assert_eq!(mesh.triangles, vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
-            assert_eq!(mesh.normals.len(), 4);
+            assert_eq!(mesh.vertices().len(), 4);
+            assert_eq!(mesh.triangles(), vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
+            assert_eq!(mesh.normals().len(), 4);
             assert!(mesh
-                .channels
+                .channels()
                 .iter()
-                .any(|channel| channel.kind == 0x5248_0001));
+                .any(|channel| channel.kind() == 0x5248_0001));
             assert!(mesh
-                .channels
+                .channels()
                 .iter()
-                .any(|channel| channel.kind == 0x5248_0002));
+                .any(|channel| channel.kind() == 0x5248_0002));
             if major == 3 && minor >= 3 {
                 assert!(mesh
-                    .channels
+                    .channels()
                     .iter()
-                    .any(|channel| channel.kind == 0x5248_0003));
+                    .any(|channel| channel.kind() == 0x5248_0003));
             }
             assert_eq!(
-                mesh.vertices[2],
+                mesh.vertices()[2],
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)
             );
             assert!(cadmpeg_ir::validate::validate_neutral(
@@ -459,7 +458,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
     ));
     let provenance = failure.provenance.as_ref().expect("failure provenance");
-    assert_eq!(provenance.format, "rhino");
+    assert_eq!(provenance.format(), "rhino");
     assert!(provenance
         .tag
         .as_deref()
@@ -477,7 +476,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "{:?}",
         result.report()
     );
-    assert!(result.ir().model.tessellations[0].normals.is_empty());
+    assert!(result.ir().model.tessellations[0].normals().is_empty());
     assert!(result
         .report()
         .losses
@@ -501,18 +500,20 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)
         .expect_err("strict mode refuses an undecodable framed object record");
 
-    let CodecError::StrictRefusal { loss_code, message } = &error else {
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
         panic!("a strict refusal is a policy class, not a container defect: {error:?}");
     };
     assert_eq!(
-        loss_code,
-        &crate::loss::RhinoLossCode::ObjectFramingUndecodable
-            .kind()
-            .to_string()
+        rejection.loss().code,
+        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
     );
     assert!(
-        message.starts_with("1 framed object record(s)"),
-        "the refusal carries the loss message alone: {message}"
+        rejection
+            .loss()
+            .message
+            .starts_with("1 framed object record(s)"),
+        "the refusal carries the loss message alone: {}",
+        rejection.loss().message
     );
 }
 
@@ -651,7 +652,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert!(model
         .pcurves
         .iter()
-        .all(|pcurve| pcurve.fit_tolerance == Some(0.04)));
+        .all(|pcurve| pcurve.fit_tolerance() == Some(0.04)));
     assert_eq!(
         result
             .ir()
@@ -666,7 +667,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .expect("required invariant")[0]
         .links
         .contains(&body.id.to_string()));
-    assert!(result.report().geometry_transferred);
+    assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
@@ -796,9 +797,9 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .native_unknowns("rhino")
             .expect("required invariant")[0];
         let retained = &result.source_fidelity().retained_records[0];
-        assert_eq!(retained.byte_len, failure.len() as u64);
-        assert_eq!(retained.sha256, sha256_hex(&failure));
-        assert_eq!(retained.data.as_deref(), Some(failure.as_slice()));
+        assert_eq!(retained.byte_len(), failure.len() as u64);
+        assert_eq!(retained.sha256(), sha256_hex(&failure));
+        assert_eq!(retained.data(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
         assert!(!result
             .ir()
@@ -823,11 +824,11 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
     let nested_length = i64::from_le_bytes(
-        payload[(1 + long_v50::DECLARED_LENGTH)..=long_v50::LEN]
+        payload[(1 + long_wide::DECLARED_LENGTH)..=long_wide::LEN]
             .try_into()
             .expect("required invariant"),
     ) as usize;
-    let nested_end = 1 + long_v50::LEN + nested_length;
+    let nested_end = 1 + long_wide::LEN + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 1.0, 1.0]));
@@ -854,7 +855,7 @@ fn impossible_outer_object_bound_is_blocking() {
         .windows(typecode.len())
         .position(|window| window == typecode)
         .expect("object record");
-    bytes[record + long_v50::DECLARED_LENGTH..record + long_v50::LEN]
+    bytes[record + long_wide::DECLARED_LENGTH..record + long_wide::LEN]
         .copy_from_slice(&i64::MAX.to_le_bytes());
     RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

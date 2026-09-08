@@ -5,15 +5,16 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, ParameterId, PatternForm, PatternKind, PrincipalPlane,
-    SketchSpace,
+    Feature, FeatureDefinition, FeatureId, ParameterId, PatternKind, PrincipalPlane,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
-    CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaEntityRecord, CatiaNative,
-    CatiaObjectRecord, CatiaRangeInterval, CatiaRangeNominalFraming,
+    CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
+    CatiaRangeInterval, CatiaRangeNominalFraming,
 };
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
@@ -117,6 +118,24 @@ impl DesignFeatureTransfer {
     /// that does not precede its child is omitted rather than creating an
     /// invalid neutral history.
     pub(crate) fn assign_feature_parents(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let parents = self.feature_parents(ir, native);
+        for feature in &mut ir.model.features {
+            feature.dependencies.retain(|dependency| {
+                parents
+                    .get(&feature.id)
+                    .is_none_or(|parent| dependency != parent)
+            });
+        }
+        for (child, parent) in parents {
+            let _ = ir.model.set_feature_regeneration_parent(child, parent);
+        }
+    }
+
+    pub(crate) fn feature_parent_count(&self, ir: &CadIr, native: &CatiaNative) -> usize {
+        self.feature_parents(ir, native).len()
+    }
+
+    fn feature_parents(&self, ir: &CadIr, native: &CatiaNative) -> HashMap<FeatureId, FeatureId> {
         let design_objects = native
             .design_objects
             .iter()
@@ -128,7 +147,7 @@ impl DesignFeatureTransfer {
             .iter()
             .map(|feature| (feature.id.clone(), feature.ordinal))
             .collect::<HashMap<_, _>>();
-        let parents = ir
+        let mut parents = ir
             .model
             .features
             .iter()
@@ -146,18 +165,13 @@ impl DesignFeatureTransfer {
                     .then(|| (feature.id.clone(), parent))
             })
             .collect::<HashMap<_, _>>();
-
-        for feature in &mut ir.model.features {
-            if feature.parent.is_some() {
-                continue;
-            }
-            let Some(parent) = parents.get(&feature.id) else {
-                continue;
-            };
-            if feature_parent_chain_is_acyclic(&feature.id, &parents) {
-                feature.parent = Some(parent.clone());
-            }
-        }
+        let acyclic = parents
+            .keys()
+            .filter(|feature| feature_parent_chain_is_acyclic(feature, &parents))
+            .cloned()
+            .collect::<HashSet<_>>();
+        parents.retain(|feature, _| acyclic.contains(feature));
+        parents
     }
 
     /// Bind exact payload references to earlier transferred features as
@@ -230,7 +244,7 @@ impl DesignFeatureTransfer {
 
 fn assign_feature_parameter_ordinals(
     ir: &mut CadIr,
-    entities: &HashMap<&str, &crate::native::CatiaEntityRecord>,
+    entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
     feature_ids: &HashMap<String, FeatureId>,
@@ -346,9 +360,10 @@ fn assign_native_operation_parameter_values(
                     *parameters = values;
                 }
             }
-            FeatureDefinition::ExtrudeUnresolved
-            | FeatureDefinition::RevolveUnresolved
-            | FeatureDefinition::FilletUnresolved
+            FeatureDefinition::Unresolved {
+                family:
+                    UnresolvedFamily::Extrude | UnresolvedFamily::Revolve | UnresolvedFamily::Fillet,
+            }
             | FeatureDefinition::Pattern { .. }
             | FeatureDefinition::Sweep { .. } => {
                 for (name, expression) in values {
@@ -573,13 +588,13 @@ fn transfer_principal_plane(
     candidate: PrincipalPlaneCandidate<'_>,
 ) {
     let object = candidate.object;
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id =
+        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some(candidate.declaration_class.to_string()),
@@ -606,20 +621,22 @@ fn transfer_reference_plane(
     candidate: &ReferencePlaneCandidate<'_>,
 ) {
     let object = candidate.object;
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id =
+        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some(candidate.kind.to_string()),
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPlaneUnresolved,
+        definition: FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -635,7 +652,8 @@ fn transfer_sketch(
     owner_record: &CatiaObjectRecord,
 ) {
     let sketch_id = SketchId(neutral_history_id(&object.id, "sketch"));
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id =
+        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -650,7 +668,6 @@ fn transfer_sketch(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Sketch".to_string()),
@@ -658,8 +675,7 @@ fn transfer_sketch(
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Unresolved,
-            sketch: Some(sketch_id),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
         },
         native_ref: Some(object.id.clone()),
     });
@@ -689,9 +705,9 @@ fn reference_plane_candidate<'a>(
     is_admitted_native_reference_plane_class(&owner_class.name).then_some(())?;
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name.as_deref() == Some(owner_class.name.as_str())
-        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
-        && owner_record.entity_id == Some(object.owner_entity_id)
+    (owner_record.class_name() == Some(owner_class.name.as_str())
+        && owner_record.class_entry() == Some(owner_class.entry.as_str())
+        && owner_record.entity_id() == Some(object.owner_entity_id)
         && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
     .then_some(ReferencePlaneCandidate {
         object,
@@ -712,9 +728,9 @@ fn native_operation_candidate<'a>(
     let owner_class_name = owner_class.name.as_str();
     let owner_class_entry = owner_class.entry.as_str();
     is_admitted_native_operation_class(owner_class_name).then_some(())?;
-    (owner_record.class_name.as_deref() == Some(owner_class_name)
-        && owner_record.class_entry.as_deref() == Some(owner_class_entry)
-        && owner_record.entity_id == Some(object.owner_entity_id)
+    (owner_record.class_name() == Some(owner_class_name)
+        && owner_record.class_entry() == Some(owner_class_entry)
+        && owner_record.entity_id() == Some(object.owner_entity_id)
         && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
     .then_some(NativeOperationCandidate {
         object,
@@ -768,13 +784,13 @@ fn transfer_native_operation(
     );
     let (definition, source_properties) =
         native_operation_definition(&kind, &object.id, properties);
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id =
+        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties,
         source_tag: Some(kind.clone()),
@@ -814,14 +830,16 @@ fn native_operation_definition(
 ) -> (FeatureDefinition, BTreeMap<String, String>) {
     let definition = match kind {
         "Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2" => {
-            FeatureDefinition::ExtrudeUnresolved
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Extrude,
+            }
         }
-        "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
+        "Revol_ThickThin1" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Revolve,
+        },
         "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Circular),
-            },
+            pattern: PatternKind::UnresolvedCircular,
         },
         "Sweep_ThickThin1" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),
@@ -842,18 +860,15 @@ fn native_operation_definition(
             scale: None,
             allow_multi_profile_faces: None,
         },
-        "EdgeFillet" => FeatureDefinition::FilletUnresolved,
+        "EdgeFillet" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Fillet,
+        },
         _ => FeatureDefinition::Native {
-            kind: kind.to_string(),
+            kind: kind.into(),
             parameters: BTreeMap::new(),
-            properties: properties.clone(),
         },
     };
-    if matches!(definition, FeatureDefinition::Native { .. }) {
-        (definition, BTreeMap::new())
-    } else {
-        (definition, properties)
-    }
+    (definition, properties)
 }
 
 /// Exact source properties and records retained for one native operation.
@@ -905,7 +920,7 @@ fn native_operation_definition_properties(
         .iter()
         .flat_map(|owned| owned.definition_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter(|entity| entity.definition_value.is_some())
+        .filter(|entity| entity.definition_value().is_some())
         .collect::<Vec<_>>();
     definition_values.sort_by(|left, right| {
         left.byte_offset
@@ -919,8 +934,7 @@ fn native_operation_definition_properties(
         let prefix = format!("catia_definition_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         let value = entity
-            .definition_value
-            .as_ref()
+            .definition_value()
             .expect("definition values were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
@@ -945,7 +959,7 @@ fn native_operation_definition_properties(
         .iter()
         .flat_map(|owned| owned.definition_chain_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter(|entity| entity.definition_chain_value.is_some())
+        .filter(|entity| entity.definition_chain_value().is_some())
         .collect::<Vec<_>>();
     definition_chain_values.sort_by(|left, right| {
         left.byte_offset
@@ -959,8 +973,7 @@ fn native_operation_definition_properties(
         let prefix = format!("catia_definition_chain_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         let value = entity
-            .definition_chain_value
-            .as_ref()
+            .definition_chain_value()
             .expect("definition chains were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
@@ -984,7 +997,7 @@ fn native_operation_definition_properties(
             })
         })
         .filter_map(|field| {
-            let entity_id = field.entity_record.as_deref()?;
+            let entity_id = field.entity_record()?;
             let entity = entities.get(entity_id).copied()?;
             (entity.object_record == field.id && entity.range_interval.is_some()).then_some(entity)
         })
@@ -1219,7 +1232,9 @@ fn insert_selected_value_properties(
         crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
             properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
         }
-        crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
+        crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector {
+            offset, ordinal, ..
+        } => {
             properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
             properties.insert(format!("{prefix}_offset"), offset.to_string());
             properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
@@ -1270,17 +1285,14 @@ fn insert_schema_selected_value_properties(
         crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset,
             ordinal,
-            entry,
-            name,
+            resolution,
         } => {
             properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
             properties.insert(format!("{prefix}_offset"), offset.to_string());
             properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
-            if let Some(entry) = entry {
-                properties.insert(format!("{prefix}_entry"), entry.clone());
-            }
-            if let Some(name) = name {
-                properties.insert(format!("{prefix}_name"), name.clone());
+            if let Some(class) = resolution {
+                properties.insert(format!("{prefix}_entry"), class.entry.clone());
+                properties.insert(format!("{prefix}_name"), class.name.clone());
             }
         }
     }
@@ -1329,14 +1341,14 @@ fn principal_plane_candidate<'a>(
         .map(|field| records.get(field.as_str()).copied())
         .collect::<Option<Vec<_>>>()?;
     let first = declarations.first()?;
-    let class_name = first.class_name.as_deref()?;
-    let class_entry = first.class_entry.as_deref()?;
+    let class_name = first.class_name()?;
+    let class_entry = first.class_entry()?;
     let plane = principal_plane(class_name)?;
     declarations
         .iter()
         .all(|record| {
-            record.class_name.as_deref() == Some(class_name)
-                && record.class_entry.as_deref() == Some(class_entry)
+            record.class_name() == Some(class_name)
+                && record.class_entry() == Some(class_entry)
                 && complete_empty_declaration(record, &object.id, object.owner_entity_id)
         })
         .then_some(PrincipalPlaneCandidate {
@@ -1355,8 +1367,8 @@ fn sketch_candidate<'a>(
     (owner_class.name == "Sketch").then_some(())?;
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name.as_deref() == Some("Sketch")
-        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
+    (owner_record.class_name() == Some("Sketch")
+        && owner_record.class_entry() == Some(owner_class.entry.as_str())
         && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
     .then_some(owner_record)
 }
@@ -1385,9 +1397,9 @@ fn complete_empty_declaration(
     owner_entity_id: u32,
 ) -> bool {
     bound_declaration(record, design_object, owner_entity_id)
-        && record.storage_ref.is_none()
+        && record.storage_ref().is_none()
         && record.references.is_empty()
-        && record.subtype == PayloadSubtype::Empty
+        && record.subtype() == PayloadSubtype::Empty
         && record.payload.size == 1
         && record.payload.fields == [PayloadField::Terminator]
 }

@@ -99,9 +99,7 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(id),
-            ..
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
         } if id == &sketch.id
     ));
 }
@@ -226,7 +224,7 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
     assert!(matches!(
         &decoded.ir().model.configurations[0].feature_states[&feature.id].definition,
         FeatureDefinition::Sketch {
-            sketch: Some(configuration_sketch),
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(configuration_sketch)),
             ..
         } if decoded.ir().model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
     ));
@@ -279,8 +277,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(value), ..
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(value)),
         } if value == &sketch_id
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
@@ -296,9 +293,12 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
-        .unwrap();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -310,9 +310,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .any(|feature| matches!(
             feature.definition,
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(_),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
             }
         )));
 }
@@ -322,8 +320,8 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, ProfileRef,
-        Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, LinearTermination,
+        ProfileRef,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
@@ -347,11 +345,10 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     };
     let neutral =
         |id: &str, name: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-            id: FeatureId(id.into()),
+            id: FeatureId::mint(id).expect("identity grammar"),
             ordinal: 0,
             name: Some(name.into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Sketch".into()),
@@ -367,8 +364,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "Profile",
             "native-base",
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         ),
         neutral(
@@ -376,8 +372,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "Profile<3>",
             "native-alias",
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         ),
         neutral(
@@ -385,8 +380,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "Profile<4>",
             "native-different",
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         ),
         neutral(
@@ -399,13 +393,11 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Unresolved,
+                        termination: LinearTermination::Unresolved,
                         draft: None,
-                        offset: None,
                     },
                 },
                 op: BooleanOp::Join,
-                direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
@@ -420,7 +412,6 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: None,
-        parent_source_id: None,
         ordinal: 0,
         name: name.into(),
         kind: "Sketch".into(),
@@ -449,18 +440,32 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
 
     assert!(matches!(
         &features[1].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
-    assert_eq!(features[1].dependencies, vec![FeatureId("base".into())]);
+    assert_eq!(
+        features[1].dependencies,
+        vec![FeatureId::mint("base").expect("identity grammar")]
+    );
     assert!(matches!(
         &features[2].definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     ));
     assert!(matches!(
         &features[3].definition,
         FeatureDefinition::Extrude { profile: ProfileRef::Sketch(id), .. } if id == &sketch_id
     ));
-    assert_eq!(features[3].dependencies, vec![FeatureId("base".into())]);
+    assert_eq!(
+        features[3].dependencies,
+        vec![FeatureId::mint("base").expect("identity grammar")]
+    );
 }
 
 #[test]
@@ -483,9 +488,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch),
-                ..
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some(sketch.clone()),
             _ => None,
         })
@@ -540,7 +543,11 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
     assert_eq!(decoded.ir().model.sketches.len(), 2);
     assert!(decoded.ir().model.features.iter().all(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch { sketch: None, .. }
+        FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            ..
+        }
     )));
 }
 
@@ -583,8 +590,7 @@ fn decode_projects_full_ellipse_sketch_geometry() {
             major_angle: Angle(value),
             major_radius: Length(2000.0),
             minor_radius: Length(1000.0),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
         } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 }
@@ -605,27 +611,19 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
         .sketch_entities
         .iter()
         .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                periodic,
-            } => Some((degree, knots, control_points, weights, periodic)),
+            SketchGeometry::Nurbs { curve } => Some(curve),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(splines.len(), 2);
-    assert!(splines.iter().all(|(degree, knots, points, _, periodic)| {
-        **degree == 2
-            && knots.as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-            && points.len() == 3
-            && !**periodic
+    assert!(splines.iter().all(|curve| {
+        curve.degree() == 2
+            && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && curve.control_points().len() == 3
+            && !curve.periodic()
     }));
+    assert!(splines.iter().any(|curve| curve.weights().is_none()));
     assert!(splines
         .iter()
-        .any(|(_, _, _, weights, _)| weights.is_none()));
-    assert!(splines
-        .iter()
-        .any(|(_, _, _, weights, _)| { weights.as_deref() == Some(&[1.0, 0.5, 1.0]) }));
+        .any(|curve| curve.weights() == Some(&[1.0, 0.5, 1.0])));
 }

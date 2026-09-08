@@ -6,40 +6,6 @@
 
 #![allow(dead_code)] // Not every generated constant is referenced yet.
 
-/// Tag constants from the table inventory.
-pub(crate) mod token {
-    /// `named-record header` (`e0`). Spec §2.2.
-    pub(crate) const NAMED_RECORD_HEADER: [u8; 2] = *b"e0";
-    /// `array opener` (`f8`). Spec §2.2.
-    pub(crate) const ARRAY_OPENER: [u8; 2] = *b"f8";
-    /// `count-bounded scalar body` (`f9`). Spec §2.2.
-    pub(crate) const COUNT_BOUNDED_SCALAR_BODY: [u8; 2] = *b"f9";
-    /// `entity reference` (`f7`). Spec §2.2.
-    pub(crate) const ENTITY_REFERENCE: [u8; 2] = *b"f7";
-    /// `array close` (`fb`). Spec §2.2.
-    pub(crate) const ARRAY_CLOSE: [u8; 2] = *b"fb";
-    /// `nested compound-body opener or continuation` (`e2`). Spec §2.2.
-    pub(crate) const NESTED_COMPOUND_BODY_OPENER_OR_CONTINUATION: [u8; 2] = *b"e2";
-    /// `compound close or row terminator` (`e3`). Spec §2.2.
-    pub(crate) const COMPOUND_CLOSE_OR_ROW_TERMINATOR: [u8; 2] = *b"e3";
-    /// `IEEE-fill, byte0 3F, repeated fill` (`29`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_3F_REPEATED_FILL: u8 = 29;
-    /// `IEEE-fill, byte0 3F, zero fill` (`2a`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_3F_ZERO_FILL: [u8; 2] = *b"2a";
-    /// `IEEE-fill, byte0 40, repeated fill` (`2e`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_40_REPEATED_FILL: [u8; 2] = *b"2e";
-    /// `IEEE-fill, byte0 40, zero fill` (`2f`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_40_ZERO_FILL: [u8; 2] = *b"2f";
-    /// `IEEE-fill, byte0 BF, repeated fill` (`42`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_BF_REPEATED_FILL: u8 = 42;
-    /// `IEEE-fill, byte0 BF, zero fill` (`43`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_BF_ZERO_FILL: u8 = 43;
-    /// `IEEE-fill, byte0 C0, repeated fill` (`47`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_C0_REPEATED_FILL: u8 = 47;
-    /// `IEEE-fill, byte0 C0, zero fill` (`48`). Spec §Three-byte IEEE-fill form.
-    pub(crate) const IEEE_FILL_BYTE0_C0_ZERO_FILL: u8 = 48;
-}
-
 /// Byte offsets for the `unix_compress_header` record.
 ///
 /// Spec §1. Record length 3 B.

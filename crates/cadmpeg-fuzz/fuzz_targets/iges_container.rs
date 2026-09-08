@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::IgesCodec;
-use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use libfuzzer_sys::fuzz_target;
 

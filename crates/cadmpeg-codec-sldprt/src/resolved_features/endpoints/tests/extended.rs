@@ -79,8 +79,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.0, 0.0075]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut curve = SketchInputEntity {
         id: "curve".into(),
@@ -93,8 +92,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
 
     assert_eq!(
@@ -146,8 +144,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.01, 0.012]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -160,8 +157,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: Some([0.007, 0.0075]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
 
     assert_eq!(
@@ -263,8 +259,7 @@ fn extended_declared_line_uses_its_typed_point_selector() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m: Some([0.014, 0.016]),
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -277,8 +272,7 @@ fn extended_declared_line_uses_its_typed_point_selector() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
 
     assert_eq!(
@@ -447,8 +441,7 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         kind: SketchInputKind::LineOrCircle,
@@ -473,16 +466,19 @@ fn extended_direct_object_line_uses_exact_point_identities() {
     let wrong_first = entity("wrong-first", Some(5), Some([5.0, 6.0]));
     let wrong_second = entity("wrong-second", Some(6), Some([7.0, 8.0]));
     let mut linked_curve = curve.clone();
-    linked_curve.links = vec![
-        SketchInputLink {
-            local_id: 5,
-            entity_ref: wrong_first.id.clone(),
-        },
-        SketchInputLink {
-            local_id: 6,
-            entity_ref: wrong_second.id.clone(),
-        },
-    ];
+    linked_curve.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 5,
+                entity_ref: wrong_first.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 6,
+                entity_ref: wrong_second.id.clone(),
+            },
+        ],
+    );
     let markers = [
         &linked_curve,
         &implicit,
@@ -637,8 +633,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("curve", Some(8), None, SketchInputKind::LineOrCircle),
@@ -788,8 +783,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
         kind,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         entity("curve", 0, Some(8), SketchInputKind::LineOrCircle, None),
@@ -1093,8 +1087,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -1107,8 +1100,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         point("first", 0, Some([1.0, 2.0])),
@@ -1188,8 +1180,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -1202,8 +1193,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let entities = [
         point("first", 0, Some([1.0, 2.0])),
@@ -1276,8 +1266,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::Point,
         state_value: Some(1.0),
         coordinates_m,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let curve = SketchInputEntity {
         id: "curve".into(),
@@ -1290,8 +1279,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         kind: SketchInputKind::LineOrCircle,
         state_value: Some(1.0),
         coordinates_m: None,
-        links: Vec::new(),
-        link_selector: None,
+        links: None,
     };
     let mut entities = (0..8)
         .map(|index| {

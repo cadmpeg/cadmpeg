@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "5",
+    "ir_version": "6",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -87,61 +87,58 @@
     },
     "native": {
       "rhino": {
-        "arenas": {
-          "annotation_settings": [],
-          "annotations": [],
-          "applications": [],
-          "construction_planes": [],
-          "dimension_styles": [],
-          "document_notes": [],
-          "document_settings": [
-            {
-              "archive_file_name": null,
-              "current_color": null,
-              "current_color_source": null,
-              "current_dimension_style_index": null,
-              "current_font_index": null,
-              "current_layer_index": null,
-              "current_material_index": null,
-              "current_material_source": null,
-              "current_wire_density": null,
-              "id": "rhino:document:settings#current",
-              "model_url": null,
-              "writer_version": null
-            }
-          ],
-          "embedded_images": [],
-          "external_references": [],
-          "grid_defaults": [],
-          "groups": [],
-          "hatch_patterns": [],
-          "history_records": [],
-          "layers": [],
-          "lights": [],
-          "linetypes": [],
-          "materials": [],
-          "object_presentation": [],
-          "previews": [],
-          "product_definitions": [],
-          "product_occurrences": [],
-          "render_settings": [],
-          "revisions": [],
-          "setting_records": [],
-          "text_dots": [],
-          "text_styles": [],
-          "texture_mappings": [],
-          "unknowns": [
-            {
-              "id": "rhino:object:record#000000",
-              "links": [
-                "rhino:object:body#record-000000-offset-177"
-              ]
-            }
-          ],
-          "views": [],
-          "windows_bitmaps": []
-        },
-        "version": 2
+        "annotation_settings": [],
+        "annotations": [],
+        "applications": [],
+        "construction_planes": [],
+        "dimension_styles": [],
+        "document_notes": [],
+        "document_settings": [
+          {
+            "archive_file_name": null,
+            "current_color": null,
+            "current_color_source": null,
+            "current_dimension_style_index": null,
+            "current_font_index": null,
+            "current_layer_index": null,
+            "current_material_index": null,
+            "current_material_source": null,
+            "current_wire_density": null,
+            "id": "rhino:document:settings#current",
+            "model_url": null,
+            "writer_version": null
+          }
+        ],
+        "embedded_images": [],
+        "external_references": [],
+        "grid_defaults": [],
+        "groups": [],
+        "hatch_patterns": [],
+        "history_records": [],
+        "layers": [],
+        "lights": [],
+        "linetypes": [],
+        "materials": [],
+        "object_presentation": [],
+        "previews": [],
+        "product_definitions": [],
+        "product_occurrences": [],
+        "render_settings": [],
+        "revisions": [],
+        "setting_records": [],
+        "text_dots": [],
+        "text_styles": [],
+        "texture_mappings": [],
+        "unknowns": [
+          {
+            "id": "rhino:object:record#000000",
+            "links": [
+              "rhino:object:body#record-000000-offset-177"
+            ]
+          }
+        ],
+        "views": [],
+        "windows_bitmaps": []
       }
     },
     "source": {
@@ -156,6 +153,17 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "50"
+          },
+          "dialect": "rhino:archive-50",
+          "format": "rhino"
+        }
+      },
       "format": "rhino"
     },
     "tolerances": {
@@ -168,6 +176,17 @@
   },
   "report": {
     "container_only": false,
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "50"
+        },
+        "dialect": "rhino:archive-50",
+        "format": "rhino"
+      }
+    },
     "format": "rhino",
     "geometry_transferred": true,
     "losses": [
@@ -209,9 +228,6 @@
         "rhino:object:body#record-000000-offset-177": {
           "entity": "derived"
         },
-        "rhino:object:point#record-000000-offset-177": {
-          "entity": "byte_exact"
-        },
         "rhino:object:region#record-000000-offset-177": {
           "entity": "derived"
         },
@@ -232,7 +248,6 @@
         "sha256": "dda1cf6feb6f78e7d5916d0bdb7d32c7ab532dd051407f748b47a783228f5b31",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

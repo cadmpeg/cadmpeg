@@ -5,11 +5,12 @@
 
 use std::io::Cursor;
 
-use cadmpeg_codec_iges::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::{CadIr, UnknownRecord};
+use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -32,33 +33,35 @@ fuzz_target!(|data: &[u8]| {
         1 => IgesVersion::V5_2,
         _ => IgesVersion::V5_3,
     };
-    let encoder = IgesEncoder::new(IgesWriteOptions { version });
+    let encoder = IgesCodec;
 
     if control & 0x80 != 0 {
-        ir.set_native_unknowns_owned(
-            "iges",
-            vec![UnknownRecord {
-                id: UnknownId("iges:fuzz:unsupported#0".into()),
-                offset: 0,
-                byte_len: 1,
-                sha256: cadmpeg_ir::hash::sha256_hex(&[control]),
-                data: Some(vec![control]),
-                links: Vec::new(),
-            }],
-        );
+        let mut source_fidelity = SourceFidelity::default();
+        source_fidelity
+            .attach_native_unknown_records(
+                &mut ir,
+                "iges",
+                [UnknownRecord::retained(
+                    UnknownId::mint("iges:fuzz:unsupported#0").expect("identity grammar"),
+                    0,
+                    vec![control],
+                    Vec::new(),
+                )],
+            )
+            .expect("fuzz retained record converts to native identity");
         assert!(encoder
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
+            .plan(
+                EncodeInput::new(&ir, Some(&source_fidelity)),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
             .is_err());
         return;
     }
 
-    let Ok(plan) = encoder.plan(EncodeInput {
-        ir: &ir,
-        fidelity: None,
-    }) else {
+    let Ok(plan) = encoder.plan(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(version.descriptor().id.as_str()),
+    ) else {
         return;
     };
     let mut encoded = Vec::new();
@@ -75,13 +78,13 @@ fuzz_target!(|data: &[u8]| {
         )
         .is_ok());
     let mut decode = Cursor::new(encoded.as_slice());
-    let mut decoded = codec
+    let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+    let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
 
     if control & 0x40 != 0 {
-        let mut decoded_ir = decoded.ir_mut();
         let source = decoded_ir
             .source
             .as_mut()
@@ -92,15 +95,15 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let replay = encoder
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: Some(decoded.source_fidelity()),
-        })
+            .plan(
+                EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
         .expect("writer output must plan after the optional source edit");
     if control & 0x40 == 0 {
-        assert_eq!(replay.write_path(), WritePath::VerbatimReplay);
+        assert_eq!(replay.report().write_path(), WritePath::VerbatimReplay);
     } else {
-        assert_ne!(replay.write_path(), WritePath::VerbatimReplay);
+        assert_ne!(replay.report().write_path(), WritePath::VerbatimReplay);
     }
     let mut replayed = Vec::new();
     replay

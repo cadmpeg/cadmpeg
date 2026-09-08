@@ -4,12 +4,12 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 
 use crate::container;
-use crate::container::{Container, DirEntry, Region};
+use crate::container::{test_modern_layout, Container, ContainerLayout, DirEntry, Region};
 use crate::test_support::*;
 use crate::NxCodec;
 
@@ -32,11 +32,21 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 #[test]
 fn container_parses_header_and_directory() {
     let c = container::scan_bytes(single_part_prt()).unwrap();
-    assert_eq!(c.version, 0x06);
-    assert_eq!(c.file_tag, 0x33_22_11);
-    assert_eq!(c.header_entry_count, 1);
-    assert_eq!(c.footer_entry_count, 0);
-    assert_eq!(c.footer_fingerprint, [0; 4]);
+    assert_eq!(c.layout.version(), 0x06);
+    let ContainerLayout::Modern {
+        header_entry_count,
+        file_tag,
+        footer_entry_count,
+        footer_fingerprint,
+        ..
+    } = c.layout
+    else {
+        panic!("SPLMSSTR input must have modern layout facts");
+    };
+    assert_eq!(header_entry_count, 1);
+    assert_eq!(file_tag, 0x33_22_11);
+    assert_eq!(footer_entry_count, 0);
+    assert_eq!(footer_fingerprint, [0; 4]);
     assert!(c
         .entries
         .iter()
@@ -48,14 +58,11 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let payload = [1, 2, 3, 4, 5, 6];
     let container = Container {
         data: payload.as_slice().into(),
-        version: 0,
-        file_tag: 0,
-        footer_offset: 0,
-        header_entry_count: 2,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size: payload.len() as u64,
-        legacy_cfb: true,
+        layout: ContainerLayout::LegacyCfb {
+            version: 0,
+            entry_count: 2,
+        },
         entries: vec![
             DirEntry {
                 name: "/Root/first".into(),
@@ -69,7 +76,6 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
             },
         ],
         indexed_section_layouts: std::sync::OnceLock::new(),
-        om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
     assert_eq!(container.bounded_entry_bytes(1, 2), Some(&payload[1..3]));
@@ -85,27 +91,19 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
         data: payload.as_slice().into(),
-        version: 0,
-        file_tag: 0,
-        footer_offset: 0,
-        header_entry_count: 1,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size: payload.len() as u64,
-        legacy_cfb: false,
+        layout: test_modern_layout(0, 1),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
             file_span: Some((0, payload.len() as u64)),
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
-        om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
     let direct = crate::om::sections(&payload);
     let cached = container.om_sections();
     assert_eq!(cached.len(), direct.len());
-    assert!(container.om_operation_label_layouts.get().is_some());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
         assert_eq!(entry.name, "/Root/om");
@@ -133,21 +131,14 @@ fn container_caches_owned_section_layouts() {
     let physical_size = file.len() as u64;
     let container = Container {
         data: file.into(),
-        version: 0,
-        file_tag: 0,
-        footer_offset: 0,
-        header_entry_count: 1,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size,
-        legacy_cfb: false,
+        layout: test_modern_layout(0, 1),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
             file_span: Some((17, payload_len)),
         }],
         indexed_section_layouts: std::sync::OnceLock::new(),
-        om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
     let first = container.om_sections();
@@ -155,10 +146,12 @@ fn container_caches_owned_section_layouts() {
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
     assert_eq!(first[0].1, crate::om::sections(&container.data[17..])[0]);
-    assert!(container
-        .om_section_cache
-        .get()
-        .is_some_and(|cache| cache.sections.is_none() && cache.layouts.len() == 1));
+    assert!(container.om_section_cache.get().is_some_and(|cache| {
+        matches!(
+            cache,
+            container::FramedSectionCache::Owned { layouts } if layouts.len() == 1
+        )
+    }));
 }
 
 #[test]
@@ -173,10 +166,27 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
         &first[0].1.types,
         &second[0].1.types
     ));
-    assert!(std::sync::Arc::ptr_eq(
-        &first[0].1.records,
-        &second[0].1.records
-    ));
+    match (&first[0].1.store, &second[0].1.store) {
+        (
+            crate::om::IndexedStore::Fixed {
+                records: first_records,
+            },
+            crate::om::IndexedStore::Fixed {
+                records: second_records,
+            },
+        ) => assert!(std::sync::Arc::ptr_eq(first_records, second_records)),
+        (
+            crate::om::IndexedStore::OffsetOnly {
+                records: first_records,
+                ..
+            },
+            crate::om::IndexedStore::OffsetOnly {
+                records: second_records,
+                ..
+            },
+        ) => assert!(std::sync::Arc::ptr_eq(first_records, second_records)),
+        _ => panic!("indexed section store kind changed between cache hits"),
+    }
 }
 
 #[test]
@@ -272,19 +282,32 @@ fn container_reads_rmfastload_active_ids() {
     assert_eq!(entry.name, "/Root/FastLoad/RMFastLoad");
     assert_eq!(table.registry_offset, 0);
     assert_eq!(table.count_offset, b"UGS::Solid::Topol".len());
-    assert_eq!(table.raw_count, 50u32.to_le_bytes());
+    assert_eq!(table.object_ids.count().to_le_bytes(), 50u32.to_le_bytes());
     assert_eq!(
         table
             .object_ids
+            .as_slice()
             .iter()
             .map(|object_id| object_id.value)
             .collect::<Vec<_>>(),
         (1..=50).collect::<Vec<_>>()
     );
-    assert_eq!(table.object_ids[0].offset, table.count_offset + 4);
-    assert_eq!(table.object_ids[0].raw, 1u32.to_le_bytes());
-    assert_eq!(table.object_ids[49].offset, table.count_offset + 4 + 49 * 4);
-    assert_eq!(table.object_ids[49].raw, 50u32.to_le_bytes());
+    assert_eq!(
+        table.object_ids.as_slice()[0].offset,
+        table.count_offset + 4
+    );
+    assert_eq!(
+        table.object_ids.as_slice()[0].value.to_le_bytes(),
+        1u32.to_le_bytes()
+    );
+    assert_eq!(
+        table.object_ids.as_slice()[49].offset,
+        table.count_offset + 4 + 49 * 4
+    );
+    assert_eq!(
+        table.object_ids.as_slice()[49].value.to_le_bytes(),
+        50u32.to_le_bytes()
+    );
 }
 
 #[test]
@@ -296,10 +319,11 @@ fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() 
     let (_, table) = container
         .rmfastload_object_id_table()
         .expect("product-bounded RMFastLoad table");
-    assert_eq!(table.object_ids.len(), 3);
+    assert_eq!(table.object_ids.as_slice().len(), 3);
     assert_eq!(
         table
             .object_ids
+            .as_slice()
             .iter()
             .map(|object_id| object_id.value)
             .collect::<Vec<_>>(),
@@ -336,6 +360,7 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
     assert_eq!(
         table
             .object_ids
+            .as_slice()
             .iter()
             .map(|object_id| object_id.value)
             .collect::<Vec<_>>(),

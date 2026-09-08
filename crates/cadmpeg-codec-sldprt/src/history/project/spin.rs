@@ -4,9 +4,9 @@
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
-    Termination,
+    Angle, AngularTermination, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef,
+    RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
+    SweepMode,
 };
 use std::collections::HashMap;
 
@@ -91,8 +91,9 @@ pub(crate) fn project_loft(
     )?;
     Some(FeatureDefinition::Loft {
         sections,
-        guides: guides.into_iter().map(PathRef::Native).collect(),
-        centerline: None,
+        guidance: cadmpeg_ir::features::LoftGuidance::Guides(
+            guides.into_iter().map(PathRef::Native).collect(),
+        ),
         op: feature
             .properties
             .get("Operation")
@@ -172,15 +173,13 @@ pub(crate) fn project_sweep(
     } else if feature_input_class(feature, NativeClassKind::Sweep)
         || feature_input_class(feature, NativeClassKind::SweepCut)
     {
-        SweepMode::Solid {
-            op: feature_sweep_operation(feature),
-        }
+        sweep_mode(feature_sweep_operation(feature))
     } else if let Some(op) = feature
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
     {
-        SweepMode::Solid { op }
+        sweep_mode(op)
     } else {
         SweepMode::Unresolved
     };
@@ -218,6 +217,22 @@ pub(crate) fn project_sweep(
         scale,
         allow_multi_profile_faces: None,
     })
+}
+
+fn sweep_mode(op: BooleanOp) -> SweepMode {
+    match op {
+        BooleanOp::Unresolved => SweepMode::Unresolved,
+        BooleanOp::NewBody => SweepMode::NewBody,
+        BooleanOp::Join => SweepMode::Solid {
+            op: cadmpeg_ir::features::BooleanKind::Join,
+        },
+        BooleanOp::Cut => SweepMode::Solid {
+            op: cadmpeg_ir::features::BooleanKind::Cut,
+        },
+        BooleanOp::Intersect => SweepMode::Solid {
+            op: cadmpeg_ir::features::BooleanKind::Intersect,
+        },
+    }
 }
 
 pub(crate) fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
@@ -275,16 +290,16 @@ pub(crate) fn project_revolve(
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {
-            termination: Termination::Angle { angle },
+            termination: AngularTermination::Angle { angle },
         }),
         Some("Symmetric") => angle("Angle", 0).map(|angle| RevolveExtent::Symmetric {
-            termination: Termination::Angle { angle },
+            termination: AngularTermination::Angle { angle },
         }),
         Some("TwoSided") => angle("Angle", 0)
             .zip(angle("Angle2", 1))
             .map(|(first, second)| RevolveExtent::TwoSided {
-                first: Termination::Angle { angle: first },
-                second: Termination::Angle { angle: second },
+                first: AngularTermination::Angle { angle: first },
+                second: AngularTermination::Angle { angle: second },
             }),
         Some(_) => None,
     };
@@ -303,7 +318,11 @@ pub(crate) fn project_revolve(
                 .get("AxisDirection")
                 .and_then(|value| parse_valid_direction(value)),
         )
-        .map(|(origin, direction)| RevolutionAxis { origin, direction });
+        .map(|(origin, direction)| RevolutionAxis {
+            origin,
+            direction,
+            reference: None,
+        });
     let op = feature
         .properties
         .get("Operation")
@@ -313,16 +332,7 @@ pub(crate) fn project_revolve(
         })
         .unwrap_or(BooleanOp::Unresolved);
     FeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile,
-            axis,
-            extent,
-            axis_reference: None,
-            solid: Some(true),
-            face_maker_class: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+        construction: RevolveConstruction::new(profile, axis, extent, Some(true), None, None, None),
         op,
     }
 }

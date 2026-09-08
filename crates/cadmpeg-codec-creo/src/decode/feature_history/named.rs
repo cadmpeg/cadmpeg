@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Named and referenced feature definitions.
 
-use super::super::sketch_transfer::{
-    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
-    feature_schema_class, feature_section_sweep_semantics_conflict,
-};
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
     feature_reference_name, feature_revolution_axis_for_transfer,
@@ -14,11 +10,16 @@ use super::{
     sweep_output_kind, sweep_solid, thicken_feature_definition,
 };
 use crate::container::ContainerScan;
+use crate::decode::sketch_transfer::recipe::{
+    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
+    feature_schema_class, feature_section_sweep_semantics_conflict,
+};
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, PatternForm, PatternKind,
-    ProfileRef, RevolutionConstruction, Termination,
+    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternKind,
+    ProfileRef, RevolveConstruction, UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -92,9 +93,7 @@ pub(in super::super) fn named_feature_definition(
     if kind == "Mirror" {
         return Some(IrFeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Mirror),
-            },
+            pattern: PatternKind::UnresolvedMirror,
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
@@ -122,18 +121,18 @@ pub(in super::super) fn named_feature_definition(
         ));
     }
     let schema_class = match kind {
-        "Datum Plane" | "Bezugsebene" => 923,
-        "Hole" => 911,
-        "Round" | "Rundung" => 913,
-        "Chamfer" => 914,
-        "Draft" | "Schräge" => 927,
+        "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
+        "Hole" => SchemaClass::Hole,
+        "Round" | "Rundung" => SchemaClass::Round,
+        "Chamfer" => SchemaClass::Chamfer,
+        "Draft" | "Schräge" => SchemaClass::Draft,
         _ => return None,
     };
     Some(schema_feature_definition(
         scan,
         ir,
         feature_id,
-        schema_class,
+        Some(schema_class),
         kind,
     ))
 }
@@ -154,7 +153,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         feature_reference_name(scan, feature_id)
             .filter(|reference_name| *reference_name != kind)
             .and_then(|reference_name| {
-                named_feature_definition(scan, ir, feature_id, reference_name)
+                named_feature_definition(scan, ir, feature_id, &reference_name)
             })
     })
 }
@@ -177,7 +176,10 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
         |(extent, direction)| {
             (
-                ExtrudeDirection::Explicit(Vector3::new(direction[0], direction[1], direction[2])),
+                ExtrudeDirection::Explicit {
+                    vector: Vector3::new(direction[0], direction[1], direction[2]),
+                    source: None,
+                },
                 extent,
             )
         },
@@ -188,7 +190,6 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent,
         op,
-        direction_source: None,
         solid: sweep_solid(output_kind),
         face_maker: None,
         inner_wire_taper: None,
@@ -206,16 +207,15 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     IrFeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile: unique_feature_profile_ref(scan, ir, feature_id),
-            axis: feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
+        construction: RevolveConstruction::new(
+            unique_feature_profile_ref(scan, ir, feature_id),
+            feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
             extent,
-            axis_reference: None,
-            solid: sweep_solid(output_kind),
-            face_maker_class: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+            sweep_solid(output_kind),
+            None,
+            None,
+            None,
+        ),
         op,
     }
 }
@@ -223,9 +223,8 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
 pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     ExtrudeExtent::OneSided {
         side: ExtrudeSide {
-            termination: Termination::Unresolved,
+            termination: LinearTermination::Unresolved,
             draft: None,
-            offset: None,
         },
     }
 }
@@ -237,17 +236,17 @@ pub(in super::super) fn surface_intersect_feature_definition(
 ) -> Option<IrFeatureDefinition> {
     numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
     let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == Some(feature_id)
+        table.feature_id == feature_id
             && table.table_class_id == 29
-            && !table.surface_ids.is_empty()
+            && !table.surface_ids().is_empty()
             && table
-                .surface_ids
+                .surface_ids()
                 .iter()
                 .copied()
                 .collect::<BTreeSet<_>>()
                 .len()
-                == table.surface_ids.len()
-            && table.surface_ids.iter().all(|surface_id| {
+                == table.surface_ids().len()
+            && table.surface_ids().iter().all(|surface_id| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
                     .is_some_and(|surface| surface.feature_id == feature_id)
             })
@@ -265,7 +264,9 @@ pub(in super::super) fn reference_named_feature_definition(
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
     if numbered_feature_name_has_family(kind, "Boundary Blend") {
-        return Some(IrFeatureDefinition::BoundarySurfaceUnresolved);
+        return Some(IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BoundarySurface,
+        });
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return Some(IrFeatureDefinition::Thicken {
@@ -295,5 +296,105 @@ pub(in super::super) fn retain_native_feature_parameters(
     }
     for (name, value) in parameters {
         source_properties.insert(format!("native_parameter.{name}"), value.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{surface_intersect_feature_definition, BodySelection, IrFeatureDefinition};
+
+    #[test]
+    fn numbered_intersect_name_identifies_section_shape_feature() {
+        let table = || {
+            crate::feature::FeatureEntityTable {
+                feature_id: 50,
+                table_class_id: 29,
+                entries: vec![
+                    crate::feature::dummy_table_entry(61, true),
+                    crate::feature::dummy_table_entry(75, true),
+                ],
+                offset: 0,
+            }
+            .with_surface_ids([61, 75])
+        };
+        let surface = |id, feature_id| crate::surface::SurfaceRow {
+            id,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        };
+        let valid_scan = || {
+            let mut scan = crate::container::scan_bytes(Vec::new());
+            scan.features.entity_tables.push(table());
+            scan.surfaces
+                .rows
+                .extend([surface(61, 50), surface(75, 50)]);
+            scan
+        };
+
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            None
+        );
+        scan = valid_scan();
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            Some(IrFeatureDefinition::SectionShape {
+                first: BodySelection::Unresolved,
+                second: BodySelection::Unresolved,
+                approximate: None,
+            })
+        );
+        scan.surfaces.rows.pop();
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            None
+        );
+
+        let mut duplicate_surface_row = valid_scan();
+        duplicate_surface_row.surfaces.rows.push(surface(61, 50));
+        assert_eq!(
+            surface_intersect_feature_definition(&duplicate_surface_row, 50, "Intersect 1"),
+            None
+        );
+
+        let mut foreign_surface = valid_scan();
+        foreign_surface.surfaces.rows[1].feature_id = 51;
+        assert_eq!(
+            surface_intersect_feature_definition(&foreign_surface, 50, "Intersect 1"),
+            None
+        );
+
+        let mut duplicate_surface_id = valid_scan();
+        duplicate_surface_id.features.entity_tables[0]
+            .entries
+            .push(crate::feature::dummy_table_entry(61, true));
+        assert_eq!(
+            surface_intersect_feature_definition(&duplicate_surface_id, 50, "Intersect 1"),
+            None
+        );
+
+        let mut multiple_materialized_tables = valid_scan();
+        multiple_materialized_tables
+            .features
+            .entity_tables
+            .push(table());
+        assert_eq!(
+            surface_intersect_feature_definition(&multiple_materialized_tables, 50, "Intersect 1"),
+            None
+        );
+
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect"),
+            None
+        );
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect copy"),
+            None
+        );
     }
 }

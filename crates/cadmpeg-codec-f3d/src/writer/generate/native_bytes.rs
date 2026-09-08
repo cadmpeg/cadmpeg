@@ -7,7 +7,7 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::native::F3dNative;
 use crate::writer::generate::index::NativeGenerationIndex;
-use crate::writer::primitives::{history_change_kind, native_bool};
+use crate::writer::primitives::native_bool;
 
 pub(crate) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x0d, value)
@@ -137,29 +137,29 @@ pub(crate) fn native_transform(
     native_ident(bytes, "transform")?;
     for vector in [
         [
-            transform.rows[0][0],
-            transform.rows[1][0],
-            transform.rows[2][0],
+            transform.rows()[0][0],
+            transform.rows()[1][0],
+            transform.rows()[2][0],
         ],
         [
-            transform.rows[0][1],
-            transform.rows[1][1],
-            transform.rows[2][1],
+            transform.rows()[0][1],
+            transform.rows()[1][1],
+            transform.rows()[2][1],
         ],
         [
-            transform.rows[0][2],
-            transform.rows[1][2],
-            transform.rows[2][2],
+            transform.rows()[0][2],
+            transform.rows()[1][2],
+            transform.rows()[2][2],
         ],
         [
-            transform.rows[0][3] / 600.0,
-            transform.rows[1][3] / 600.0,
-            transform.rows[2][3] / 600.0,
+            transform.rows()[0][3] / 600.0,
+            transform.rows()[1][3] / 600.0,
+            transform.rows()[2][3] / 600.0,
         ],
     ] {
         native_vector(bytes, vector);
     }
-    native_f64(bytes, transform.rows[3][3]);
+    native_f64(bytes, transform.rows()[3][3]);
     let hints = topology.transform_hints.get(body.id.as_str()).map_or_else(
         || derived_transform_hints(transform),
         |hints| [hints.rotation, hints.reflection, hints.shear],
@@ -173,19 +173,19 @@ pub(crate) fn native_transform(
 fn derived_transform_hints(transform: Transform) -> [bool; 3] {
     let linear = [
         [
-            transform.rows[0][0],
-            transform.rows[0][1],
-            transform.rows[0][2],
+            transform.rows()[0][0],
+            transform.rows()[0][1],
+            transform.rows()[0][2],
         ],
         [
-            transform.rows[1][0],
-            transform.rows[1][1],
-            transform.rows[1][2],
+            transform.rows()[1][0],
+            transform.rows()[1][1],
+            transform.rows()[1][2],
         ],
         [
-            transform.rows[2][0],
-            transform.rows[2][1],
-            transform.rows[2][2],
+            transform.rows()[2][0],
+            transform.rows()[2][1],
+            transform.rows()[2][2],
         ],
     ];
     let determinant = linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
@@ -224,40 +224,31 @@ pub(crate) fn native_history_tail(
         ));
     }
     let history = &histories[0];
-    match (history.stream_size, history.history_entry_count) {
-        (Some(stream_size), Some(history_entry_count)) => {
-            if history
-                .states
-                .first()
-                .is_none_or(|state| state.state_id != stream_size)
-                || history_entry_count < 0
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
-                    history.id
-                )));
-            }
-            for name in ["Begin", "of", "ASM", "History"] {
-                native_subident(bytes, name)?;
-            }
-            native_ident(bytes, "Data")?;
-            native_ident(bytes, "history_stream")?;
-            native_i64(bytes, stream_size);
-            native_i64(bytes, stream_size);
-            native_i64(bytes, 0);
-            native_i64(bytes, history_entry_count);
-            for reference in [-1, 0, 1, -1] {
-                native_ref(bytes, reference);
-            }
-            bytes.push(0x11);
-        }
-        (None, None) => {}
-        _ => {
+    if let Some(preamble) = history.preamble {
+        if history
+            .states
+            .first()
+            .is_none_or(|state| state.state_id != preamble.stream_size)
+            || preamble.history_entry_count < 0
+        {
             return Err(CodecError::malformed(format_args!(
-                "F3D history {} has an incomplete history-stream preamble",
+                "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                 history.id
             )));
         }
+        for name in ["Begin", "of", "ASM", "History"] {
+            native_subident(bytes, name)?;
+        }
+        native_ident(bytes, "Data")?;
+        native_ident(bytes, "history_stream")?;
+        native_i64(bytes, preamble.stream_size);
+        native_i64(bytes, preamble.stream_size);
+        native_i64(bytes, 0);
+        native_i64(bytes, preamble.history_entry_count);
+        for reference in [-1, 0, 1, -1] {
+            native_ref(bytes, reference);
+        }
+        bytes.push(0x11);
     }
     for state in &history.states {
         native_ident(bytes, "delta_state")?;
@@ -275,15 +266,9 @@ pub(crate) fn native_history_tail(
             native_ref(bytes, board.owner_ref);
             native_i64(bytes, board.number);
             for change in &board.changes {
-                if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D entity change {} has a kind inconsistent with its references",
-                        change.id
-                    )));
-                }
                 native_i64(bytes, 1);
-                native_ref(bytes, change.old_ref.unwrap_or(-1));
-                native_ref(bytes, change.new_ref.unwrap_or(-1));
+                native_ref(bytes, change.old_ref().unwrap_or(-1));
+                native_ref(bytes, change.new_ref().unwrap_or(-1));
             }
             native_i64(bytes, 0);
         }
