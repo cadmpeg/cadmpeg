@@ -1625,7 +1625,7 @@ fn empty_reference_runs_have_one_representation() {
     let header = crate::records::DesignEntityHeader {
         id: "header".into(),
         byte_offset: 10,
-        entity_id: "Sketch:7".to_owned().try_into().unwrap(),
+        entity_id: crate::records::DesignEntityId::from_parts("Sketch", 7),
         class_tag: "256".to_owned().try_into().unwrap(),
         optional_slot_present: false,
         registration: crate::records::DesignEntityRegistration::new(
@@ -1639,7 +1639,7 @@ fn empty_reference_runs_have_one_representation() {
         )
         .unwrap(),
     };
-    let wire = r#"{"id":"header","byte_offset":10,"entity_suffix":7,"entity_id":"Sketch:7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
+    let wire = r#"{"id":"header","byte_offset":10,"entity_suffix":7,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     assert_eq!(
         serde_json::from_str::<crate::records::DesignEntityHeader>(wire).unwrap(),

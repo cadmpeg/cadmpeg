@@ -773,7 +773,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             2 => {
                 tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
                     DesignOperandRole::BODIES_B,
-                )
+                );
             }
             3 => {
                 tool.members = vec![crate::records::Located {
@@ -791,9 +791,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             0 => target.scope_reference_ordinal = 3,
             1 => target.record_index = 401,
             2 => {
-                target.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-                    DesignOperandRole::ROLE_0X5,
-                )
+                target.operand_role =
+                    crate::records::topology::DesignConstructionOperandRole::Other(
+                        DesignOperandRole::ROLE_0X5,
+                    );
             }
             3 => {
                 target.members = vec![crate::records::Located {
