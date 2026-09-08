@@ -471,11 +471,7 @@ fn compound_streams<'a>(
         })
         .map(|entry| {
             let view = snapshot.open(ctx, entry)?;
-            let payload = ctx.copy_retained(
-                view.window(),
-                "retain SolidWorks CFB stream",
-                Some(view.location()),
-            )?;
+            let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
             let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
             Ok(compound_stream(
                 entry.path().to_owned(),
@@ -528,12 +524,8 @@ fn decode_wrapped_payload_budgeted<'a>(
     if consumed != compressed_size {
         return Ok(None);
     }
-    ctx.copy_retained(
-        decoded.window(),
-        "retain decoded SolidWorks CFB stream",
-        Some(source.location()),
-    )
-    .map(Some)
+    ctx.copy_retained(decoded.window(), "retain decoded SolidWorks CFB stream")
+        .map(Some)
 }
 
 /// A block plus the preamble length needed to advance past it.

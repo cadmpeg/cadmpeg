@@ -513,7 +513,6 @@ fn parse_properties(
                     ctx.charge_retained(
                         u64::try_from(len).unwrap_or(u64::MAX),
                         "fcstd_property_value_xml",
-                        None,
                     )?;
                 }
                 Ok(ValueRecord {

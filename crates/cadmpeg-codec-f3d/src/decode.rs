@@ -2795,6 +2795,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     materials.untyped_distance_properties,
                 );
+                self.report.notes.extend(materials.notes);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
@@ -2832,6 +2833,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 );
+                self.report.notes.extend(decoded_materials.notes);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(&mut self.source_attributes, scan);

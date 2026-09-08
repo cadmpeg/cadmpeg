@@ -6,13 +6,13 @@ use cadmpeg_core::container::{ContainerRole, EntryCompression};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read};
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 
-use crate::archive::{PhysicalSpan, SpanRole};
+use crate::archive::{CfbSpanRole, PhysicalSpan, SpanRole};
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -47,11 +47,6 @@ impl CompoundStreamId {
     /// Returns the CFB directory-entry index.
     pub const fn directory_id(self) -> u32 {
         self.0
-    }
-
-    /// Reconstruct a stream identity from a CFB directory-entry index.
-    pub const fn from_directory_id(id: u32) -> Self {
-        Self(id)
     }
 }
 
@@ -112,6 +107,17 @@ enum EmptyStreamStart {
 struct SectorChain {
     first: u32,
     rest: Vec<u32>,
+}
+
+impl SectorChain {
+    fn len(&self) -> usize {
+        1 + self.rest.len()
+    }
+
+    fn into_vec(mut self) -> Vec<u32> {
+        self.rest.insert(0, self.first);
+        self.rest
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,10 +203,38 @@ impl CompoundEntry {
 }
 
 #[derive(Debug, Clone)]
-struct DirectoryEntry {
+enum DirectorySlot {
+    Free,
+    Live(LiveEntry),
+}
+
+impl DirectorySlot {
+    fn live(&self) -> Option<&LiveEntry> {
+        match self {
+            Self::Free => None,
+            Self::Live(entry) => Some(entry),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectoryKind {
+    Storage,
+    Stream,
+    Root,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectoryColor {
+    Red,
+    Black,
+}
+
+#[derive(Debug, Clone)]
+struct LiveEntry {
     name: String,
-    object_type: u8,
-    color: u8,
+    kind: DirectoryKind,
+    color: DirectoryColor,
     left: u32,
     right: u32,
     child: u32,
@@ -244,7 +278,7 @@ struct CompoundState {
     sector_count: usize,
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
-    directory: Vec<DirectoryEntry>,
+    directory: Vec<DirectorySlot>,
     directory_chain: Vec<u32>,
     mini_fat_chain: Vec<u32>,
     root_mini_chain: Vec<u32>,
@@ -286,11 +320,7 @@ impl<'a> CompoundSnapshot<'a> {
                 })
                 .and_then(|bytes| bytes.checked_add(std::mem::size_of::<(Vec<Vec<u16>>, usize)>()))
                 .ok_or_else(|| CodecError::Malformed("CFB path index size overflow".into()))?;
-            ctx.charge_retained(
-                key_bytes as u64,
-                "retain CFB path index",
-                Some(root.location()),
-            )?;
+            ctx.charge_retained(key_bytes as u64, "retain CFB path index")?;
             ctx.charge_collection_items(1, "index CFB path")?;
             let key = path_key(entry.path());
             if by_path.insert(key, index).is_some() {
@@ -300,7 +330,6 @@ impl<'a> CompoundSnapshot<'a> {
                 ctx.charge_retained(
                     std::mem::size_of::<(CompoundStreamId, usize)>() as u64,
                     "retain CFB stream index",
-                    Some(root.location()),
                 )?;
                 ctx.charge_collection_items(1, "index CFB stream")?;
                 streams_by_id.insert(stream.id(), index);
@@ -447,16 +476,16 @@ impl<'a> CompoundSnapshot<'a> {
     pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         let mut structural = BTreeMap::new();
         for &sector in &self.parsed.fat_sectors {
-            structural.insert(sector, SpanRole::CfbFat);
+            structural.insert(sector, CfbSpanRole::Fat);
         }
         for &sector in &self.parsed.difat_sectors {
-            structural.insert(sector, SpanRole::CfbDifat);
+            structural.insert(sector, CfbSpanRole::Difat);
         }
         for &sector in &self.parsed.directory_chain {
-            structural.insert(sector, SpanRole::CfbDirectory);
+            structural.insert(sector, CfbSpanRole::Directory);
         }
         for &sector in &self.parsed.mini_fat_chain {
-            structural.insert(sector, SpanRole::CfbMiniFat);
+            structural.insert(sector, CfbSpanRole::MiniFat);
         }
         let mut regular = BTreeMap::new();
         let mut mini = BTreeMap::new();
@@ -485,9 +514,9 @@ impl<'a> CompoundSnapshot<'a> {
         let mut spans = vec![PhysicalSpan {
             start: 0,
             end: self.parsed.version.sector_size() as u64,
-            role: SpanRole::CfbHeader,
+            role: SpanRole::Cfb(CfbSpanRole::Header),
         }];
-        let root_size = self.parsed.directory[0].size;
+        let root_size = directory_root(&self.parsed.directory)?.size;
         let root_sectors = self
             .parsed
             .root_mini_chain
@@ -522,7 +551,7 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     sector_length,
-                    SpanRole::CfbRangeLockSector,
+                    CfbSpanRole::RangeLockSector,
                 );
             } else if let Some(role) = structural.get(&sector) {
                 push_span(&mut spans, start, sector_length, role.clone());
@@ -534,13 +563,13 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     *payload,
-                    SpanRole::CfbRegularStreamPayload(entry.clone()),
+                    CfbSpanRole::RegularStreamPayload(entry.clone()),
                 );
                 push_span(
                     &mut spans,
                     start + *payload as u64,
                     sector_length - *payload,
-                    SpanRole::CfbPadding {
+                    CfbSpanRole::Padding {
                         entry: Some(entry.clone()),
                     },
                 );
@@ -572,13 +601,13 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start,
                             *payload,
-                            SpanRole::CfbMiniStreamPayload(entry.clone()),
+                            CfbSpanRole::MiniStreamPayload(entry.clone()),
                         );
                         push_span(
                             &mut spans,
                             mini_start + *payload as u64,
                             mini_length - *payload,
-                            SpanRole::CfbPadding {
+                            CfbSpanRole::Padding {
                                 entry: Some(entry.clone()),
                             },
                         );
@@ -587,13 +616,13 @@ impl<'a> CompoundSnapshot<'a> {
                             &mut spans,
                             mini_start,
                             mapped,
-                            SpanRole::CfbMiniStreamPadding,
+                            CfbSpanRole::MiniStreamPadding,
                         );
                         push_span(
                             &mut spans,
                             mini_start + mapped as u64,
                             mini_length - mapped,
-                            SpanRole::CfbPadding { entry: None },
+                            CfbSpanRole::Padding { entry: None },
                         );
                     }
                 }
@@ -602,7 +631,7 @@ impl<'a> CompoundSnapshot<'a> {
                     &mut spans,
                     start,
                     sector_length,
-                    SpanRole::CfbUnallocatedSector,
+                    CfbSpanRole::UnallocatedSector,
                 );
             }
         }
@@ -730,12 +759,10 @@ impl CompoundState {
         let allocation_id_scratch = ctx.reserve_scoped(
             allocation_id_bytes as u64,
             "collect CFB allocation sector ids",
-            None,
         )?;
         ctx.charge_retained(
             allocation_id_bytes as u64,
             "retain CFB allocation sector ids",
-            None,
         )?;
         let sector = |id| sector_slice(bytes, sector_size, sector_count, id);
         let mut fat_sectors = Vec::with_capacity(fat_count);
@@ -801,7 +828,6 @@ impl CompoundState {
                 .ok_or_else(|| CodecError::Malformed("CFB FAT byte size overflow".into()))?
                 as u64,
             "retain CFB FAT",
-            None,
         )?;
         let mut fat = Vec::with_capacity(fat_word_count);
         for &id in &fat_sectors {
@@ -838,7 +864,10 @@ impl CompoundState {
         if range_lock_sector.is_some_and(|id| fat.get(id as usize) != Some(&END_OF_CHAIN)) {
             return malformed("CFB range lock sector is not allocated as an end-of-chain sector");
         }
-        let directory_expected = (version == CompoundVersion::V4).then_some(directory_sector_count);
+        let directory_expected = match version {
+            CompoundVersion::V3 => None,
+            CompoundVersion::V4 => NonZeroUsize::new(directory_sector_count),
+        };
         let directory_chain = chain(
             Some(ctx),
             &fat,
@@ -846,7 +875,8 @@ impl CompoundState {
             directory_start,
             directory_expected,
             "directory",
-        )?;
+        )?
+        .into_vec();
         let directory_byte_count = directory_chain
             .len()
             .checked_mul(sector_size)
@@ -854,7 +884,6 @@ impl CompoundState {
         let directory_scratch = ctx.reserve_scoped(
             directory_byte_count as u64,
             "assemble CFB directory sectors",
-            None,
         )?;
         let directory_bytes = join_sectors(bytes, sector_size, sector_count, &directory_chain)?;
         let directory = parse_directory(Some(ctx), &directory_bytes, version)?;
@@ -871,28 +900,26 @@ impl CompoundState {
                 &fat,
                 sector_count,
                 mini_fat_start,
-                Some(mini_fat_count),
+                NonZeroUsize::new(mini_fat_count),
                 "mini FAT",
             )?
+            .into_vec()
         };
         let mini_fat_byte_count = mini_fat_chain
             .len()
             .checked_mul(sector_size)
             .ok_or_else(|| CodecError::Malformed("CFB mini FAT byte size overflow".into()))?;
-        let mini_fat_scratch = ctx.reserve_scoped(
-            mini_fat_byte_count as u64,
-            "assemble CFB mini FAT sectors",
-            None,
-        )?;
+        let mini_fat_scratch =
+            ctx.reserve_scoped(mini_fat_byte_count as u64, "assemble CFB mini FAT sectors")?;
         let mini_fat_word_count = mini_fat_byte_count / 4;
         ctx.charge_collection_items(mini_fat_word_count as u64, "parse CFB mini FAT words")?;
-        ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT", None)?;
+        ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT")?;
         let mini_fat = join_sectors(bytes, sector_size, sector_count, &mini_fat_chain)?
             .chunks_exact(4)
             .map(|word| le_u32(word, 0).expect("four-byte chunk"))
             .collect::<Vec<_>>();
         drop(mini_fat_scratch);
-        let root = &directory[0];
+        let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
@@ -909,9 +936,10 @@ impl CompoundState {
                 &fat,
                 sector_count,
                 root.start_sector,
-                Some(root_sectors),
+                NonZeroUsize::new(root_sectors),
                 "root mini stream",
             )?
+            .into_vec()
         };
         Ok(Self {
             version,
@@ -940,13 +968,13 @@ impl CompoundState {
                 std::mem::size_of::<u32>().saturating_add(std::mem::size_of::<(u32, String)>()),
             )
             .ok_or_else(|| CodecError::Malformed("CFB traversal scratch size overflow".into()))?;
-        let _scratch = ctx.reserve_scoped(scratch_bytes as u64, "traverse CFB directory", None)?;
+        let _scratch = ctx.reserve_scoped(scratch_bytes as u64, "traverse CFB directory")?;
         let mut output = Vec::new();
         let mut reached = BTreeSet::new();
         self.walk_tree(
             ctx,
             snapshot_id,
-            self.directory[0].child,
+            directory_root(&self.directory)?.child,
             "",
             &mut reached,
             &mut output,
@@ -956,7 +984,9 @@ impl CompoundState {
             .iter()
             .enumerate()
             .skip(1)
-            .any(|(id, entry)| entry.object_type != 0 && !reached.contains(&(id as u32)))
+            .any(|(id, entry)| {
+                matches!(entry, DirectorySlot::Live(_)) && !reached.contains(&(id as u32))
+            })
         {
             return malformed("CFB directory contains an unreachable live entry");
         }
@@ -978,9 +1008,13 @@ impl CompoundState {
         validate_sibling_tree(&self.directory, root)?;
         let mut pending = vec![root];
         while let Some(id) = pending.pop() {
-            let entry = self.directory.get(id as usize).ok_or_else(|| {
-                CodecError::Malformed("CFB directory link is out of range".into())
-            })?;
+            let entry = self
+                .directory
+                .get(id as usize)
+                .and_then(DirectorySlot::live)
+                .ok_or_else(|| {
+                    CodecError::Malformed("CFB directory link is out of range".into())
+                })?;
             if !reached.insert(id) {
                 return malformed("CFB directory entry belongs to more than one storage");
             }
@@ -996,7 +1030,6 @@ impl CompoundState {
                         .saturating_add(std::mem::size_of::<CompoundEntry>())
                         as u64,
                     "retain CFB entry",
-                    None,
                 )?;
                 entry.name.clone()
             } else {
@@ -1012,19 +1045,18 @@ impl CompoundState {
                             CodecError::Malformed("CFB entry storage size overflow".into())
                         })? as u64,
                     "retain CFB entry",
-                    None,
                 )?;
                 format!("{parent}/{}", entry.name)
             };
-            match entry.object_type {
-                1 => {
+            match entry.kind {
+                DirectoryKind::Storage => {
                     output.push(CompoundEntry::Storage(CompoundStorageEntry {
                         id: CompoundStorageId(id),
                         path: path.clone(),
                     }));
                     self.walk_tree(ctx, snapshot_id, entry.child, &path, reached, output)?;
                 }
-                2 => {
+                DirectoryKind::Stream => {
                     let data = if let Some(logical_size) = NonZeroU64::new(entry.size) {
                         let allocation = if entry.size < MINI_STREAM_CUTOFF {
                             CompoundAllocation::Mini
@@ -1040,13 +1072,13 @@ impl CompoundState {
                                 CodecError::Malformed("CFB stream size does not fit memory".into())
                             })?
                             .div_ceil(sector_size);
-                        let mut sectors = match allocation {
+                        let sectors = match allocation {
                             CompoundAllocation::Regular => chain(
                                 Some(ctx),
                                 &self.fat,
                                 self.sector_count,
                                 entry.start_sector,
-                                Some(expected),
+                                NonZeroUsize::new(expected),
                                 "stream",
                             )?,
                             CompoundAllocation::Mini => chain(
@@ -1054,17 +1086,13 @@ impl CompoundState {
                                 &self.mini_fat,
                                 self.mini_fat.len(),
                                 entry.start_sector,
-                                Some(expected),
+                                NonZeroUsize::new(expected),
                                 "mini stream",
                             )?,
                         };
-                        let first = sectors.remove(0);
                         StreamData::Allocated {
                             logical_size,
-                            chain: SectorChain {
-                                first,
-                                rest: sectors,
-                            },
+                            chain: sectors,
                         }
                     } else {
                         let start = match entry.start_sector {
@@ -1085,7 +1113,9 @@ impl CompoundState {
                         data,
                     }));
                 }
-                _ => return malformed("root or empty object appears in a storage child tree"),
+                DirectoryKind::Root => {
+                    return malformed("root or empty object appears in a storage child tree")
+                }
             }
             if entry.left != NO_STREAM {
                 pending.push(entry.left);
@@ -1112,7 +1142,7 @@ impl CompoundState {
             }
         }
         let mut mini_used = BTreeSet::new();
-        let mini_capacity = usize::try_from(self.directory[0].size)
+        let mini_capacity = usize::try_from(directory_root(&self.directory)?.size)
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
@@ -1133,7 +1163,7 @@ impl CompoundState {
                             || u64::from(sector)
                                 .saturating_mul(MINI_SECTOR_SIZE as u64)
                                 .saturating_add(payload)
-                                > self.directory[0].size)
+                                > directory_root(&self.directory)?.size)
                     {
                         return malformed("CFB mini stream escapes the root mini stream");
                     }
@@ -1357,20 +1387,24 @@ impl CompoundPrefixProbe {
             Ok(value) => value,
             Err(error) => return Self::Malformed(error.to_string()),
         };
+        let root = match directory_root(&directory) {
+            Ok(root) => root,
+            Err(error) => return Self::Malformed(error.to_string()),
+        };
         if let Err(error) = validate_root(&directory) {
             return Self::Malformed(error.to_string());
         }
-        if let Err(error) = validate_sibling_tree(&directory, directory[0].child) {
+        if let Err(error) = validate_sibling_tree(&directory, root.child) {
             return Self::Malformed(error.to_string());
         }
         let mut names = Vec::new();
-        let mut pending = vec![(directory[0].child, String::new())];
+        let mut pending = vec![(root.child, String::new())];
         let mut seen = BTreeSet::new();
         while let Some((id, parent)) = pending.pop() {
             if id == NO_STREAM {
                 continue;
             }
-            let Some(entry) = directory.get(id as usize) else {
+            let Some(entry) = directory.get(id as usize).and_then(DirectorySlot::live) else {
                 return Self::Malformed("CFB directory link is out of range".into());
             };
             if !seen.insert(id) {
@@ -1384,19 +1418,16 @@ impl CompoundPrefixProbe {
             names.push(path.clone());
             pending.push((entry.left, parent.clone()));
             pending.push((entry.right, parent.clone()));
-            if entry.object_type == 1 {
+            if entry.kind == DirectoryKind::Storage {
                 if let Err(error) = validate_sibling_tree(&directory, entry.child) {
                     return Self::Malformed(error.to_string());
                 }
                 pending.push((entry.child, path));
             }
         }
-        if directory
-            .iter()
-            .enumerate()
-            .skip(1)
-            .any(|(id, entry)| entry.object_type != 0 && !seen.contains(&(id as u32)))
-        {
+        if directory.iter().enumerate().skip(1).any(|(id, entry)| {
+            matches!(entry, DirectorySlot::Live(_)) && !seen.contains(&(id as u32))
+        }) {
             return Self::Malformed("CFB directory contains an unreachable live entry".into());
         }
         Self::DirectoryEvidence(names)
@@ -1472,42 +1503,34 @@ fn parse_directory(
     ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
     version: CompoundVersion,
-) -> Result<Vec<DirectoryEntry>, CodecError> {
-    if !bytes.len().is_multiple_of(128) {
+) -> Result<Vec<DirectorySlot>, CodecError> {
+    let (records, remainder) = bytes.as_chunks::<128>();
+    if !remainder.is_empty() {
         return malformed("CFB directory stream has a partial entry");
     }
-    let entry_count = bytes.len() / 128;
+    let entry_count = records.len();
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(entry_count as u64, "parse CFB directory entries")?;
         let retained = entry_count
-            .checked_mul(std::mem::size_of::<DirectoryEntry>())
+            .checked_mul(std::mem::size_of::<DirectorySlot>())
             .and_then(|size| size.checked_add(bytes.len()))
             .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
-        ctx.charge_retained(retained as u64, "retain CFB directory", None)?;
+        ctx.charge_retained(retained as u64, "retain CFB directory")?;
     }
     let mut entries = Vec::with_capacity(entry_count);
-    for raw in bytes.chunks_exact(128) {
+    for raw in records {
         let object_type = raw[66];
         if object_type == 0 {
-            // An unallocated slot has no directory identity. Several writers
-            // leave stale bytes in such slots; preserve its index for links,
-            // but do not interpret any of those bytes as a live entry.
-            entries.push(DirectoryEntry {
-                name: String::new(),
-                object_type: 0,
-                color: 0,
-                left: NO_STREAM,
-                right: NO_STREAM,
-                child: NO_STREAM,
-                start_sector: FREE_SECTOR,
-                size: 0,
-            });
+            entries.push(DirectorySlot::Free);
             continue;
         }
-        if !matches!(object_type, 1 | 2 | 5) {
-            return malformed("invalid CFB directory object type");
-        }
-        let name_len = usize::from(le_u16(raw, 64).expect("directory name length"));
+        let kind = match object_type {
+            1 => DirectoryKind::Storage,
+            2 => DirectoryKind::Stream,
+            5 => DirectoryKind::Root,
+            _ => return malformed("invalid CFB directory object type"),
+        };
+        let name_len = usize::from(le_u16_array(raw.as_chunks::<2>().0[64 / 2]));
         let name = {
             if !(2..=64).contains(&name_len)
                 || !name_len.is_multiple_of(2)
@@ -1525,60 +1548,74 @@ fn parse_directory(
             }
             name
         };
-        let color = raw[67];
-        if color > 1 {
-            return malformed("invalid CFB directory node color");
-        }
-        let mut size = le_u64(raw, 120).expect("directory stream size");
+        let color = match raw[67] {
+            0 => DirectoryColor::Red,
+            1 => DirectoryColor::Black,
+            _ => return malformed("invalid CFB directory node color"),
+        };
+        let mut size = le_u64_array(raw.as_chunks::<8>().0[120 / 8]);
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
-        entries.push(DirectoryEntry {
+        entries.push(DirectorySlot::Live(LiveEntry {
             name,
-            object_type,
+            kind,
             color,
-            left: le_u32(raw, 68).expect("directory left pointer"),
-            right: le_u32(raw, 72).expect("directory right pointer"),
-            child: le_u32(raw, 76).expect("directory child pointer"),
-            start_sector: le_u32(raw, 116).expect("directory start sector"),
+            left: le_u32_array(raw.as_chunks::<4>().0[68 / 4]),
+            right: le_u32_array(raw.as_chunks::<4>().0[72 / 4]),
+            child: le_u32_array(raw.as_chunks::<4>().0[76 / 4]),
+            start_sector: le_u32_array(raw.as_chunks::<4>().0[116 / 4]),
             size,
-        });
+        }));
     }
     Ok(entries)
 }
 
-fn validate_root(directory: &[DirectoryEntry]) -> Result<(), CodecError> {
-    let root = directory
+fn directory_root(directory: &[DirectorySlot]) -> Result<&LiveEntry, CodecError> {
+    directory
         .first()
-        .ok_or_else(|| CodecError::Malformed("empty CFB directory".into()))?;
-    if root.object_type != 5
+        .ok_or_else(|| CodecError::Malformed("empty CFB directory".into()))?
+        .live()
+        .ok_or_else(|| CodecError::Malformed("invalid CFB root directory entry".into()))
+}
+
+fn validate_root(directory: &[DirectorySlot]) -> Result<(), CodecError> {
+    let root = directory_root(directory)?;
+    if root.kind != DirectoryKind::Root
         || root.name != "Root Entry"
         || root.left != NO_STREAM
         || root.right != NO_STREAM
     {
         return malformed("invalid CFB root directory entry");
     }
-    if directory.iter().skip(1).any(|entry| entry.object_type == 5) {
+    if directory.iter().skip(1).any(|entry| {
+        entry
+            .live()
+            .is_some_and(|entry| entry.kind == DirectoryKind::Root)
+    }) {
         return malformed("CFB directory has more than one root entry");
     }
     Ok(())
 }
 
-fn validate_sibling_tree(directory: &[DirectoryEntry], root: u32) -> Result<(), CodecError> {
+fn validate_sibling_tree(directory: &[DirectorySlot], root: u32) -> Result<(), CodecError> {
     if root == NO_STREAM {
         return Ok(());
     }
     let root_entry = directory
         .get(root as usize)
         .ok_or_else(|| CodecError::Malformed("CFB sibling root is out of range".into()))?;
-    if root_entry.color != 1 {
+    if !root_entry
+        .live()
+        .is_some_and(|entry| entry.color == DirectoryColor::Black)
+    {
         return malformed("CFB sibling-tree root is not black");
     }
     visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new())
 }
 
 fn visit_sibling_tree(
-    directory: &[DirectoryEntry],
+    directory: &[DirectorySlot],
     id: u32,
     lower: Option<&str>,
     upper: Option<&str>,
@@ -1591,7 +1628,10 @@ fn visit_sibling_tree(
     let entry = directory
         .get(id as usize)
         .ok_or_else(|| CodecError::Malformed("CFB sibling link is out of range".into()))?;
-    if !matches!(entry.object_type, 1 | 2) || !seen.insert(id) {
+    let Some(entry) = entry.live() else {
+        return malformed("CFB sibling tree contains an invalid node or cycle");
+    };
+    if !matches!(entry.kind, DirectoryKind::Storage | DirectoryKind::Stream) || !seen.insert(id) {
         return malformed("CFB sibling tree contains an invalid node or cycle");
     }
     if lower.is_some_and(|name| cfb_name_cmp(name, &entry.name) != Ordering::Less)
@@ -1599,7 +1639,7 @@ fn visit_sibling_tree(
     {
         return malformed("CFB sibling tree violates directory-name ordering");
     }
-    let red = entry.color == 0;
+    let red = entry.color == DirectoryColor::Red;
     if red && parent_red {
         return malformed("CFB sibling tree contains adjacent red nodes");
     }
@@ -1649,36 +1689,41 @@ fn chain(
     fat: &[u32],
     sector_count: usize,
     start: u32,
-    expected: Option<usize>,
+    expected: Option<NonZeroUsize>,
     role: &str,
-) -> Result<Vec<u32>, CodecError> {
-    if expected == Some(0) {
-        return if matches!(start, END_OF_CHAIN | FREE_SECTOR) {
-            Ok(Vec::new())
-        } else {
-            malformed(format!("empty CFB {role} has an invalid start sector"))
-        };
-    }
-    let limit = expected.unwrap_or(sector_count);
+) -> Result<SectorChain, CodecError> {
+    let limit = expected.map_or(sector_count, NonZeroUsize::get);
     if let (Some(ctx), Some(count)) = (ctx, expected) {
-        ctx.charge_collection_items(count as u64, "retain CFB sector chain")?;
+        ctx.charge_collection_items(count.get() as u64, "retain CFB sector chain")?;
         ctx.charge_retained(
             count
+                .get()
                 .checked_mul(std::mem::size_of::<u32>())
                 .ok_or_else(|| CodecError::Malformed("CFB sector chain size overflow".into()))?
                 as u64,
             "retain CFB sector chain",
-            None,
         )?;
     }
     let mut traversal_scratch = ctx
-        .map(|ctx| ctx.reserve_scoped(0, "walk CFB sector chain", None))
+        .map(|ctx| ctx.reserve_scoped(0, "walk CFB sector chain"))
         .transpose()?;
-    let mut output = Vec::with_capacity(expected.unwrap_or(0));
+    if start == END_OF_CHAIN {
+        return if expected.is_some() {
+            malformed(format!(
+                "CFB {role} chain length does not match its declaration"
+            ))
+        } else {
+            malformed(format!("empty CFB {role}"))
+        };
+    }
+    let mut output = SectorChain {
+        first: start,
+        rest: Vec::with_capacity(expected.map_or(0, NonZeroUsize::get)),
+    };
     let mut seen = BTreeSet::new();
     let mut current = start;
     while current != END_OF_CHAIN {
-        if current >= sector_count as u32 || !seen.insert(current) || output.len() >= limit {
+        if current >= sector_count as u32 || !seen.insert(current) || seen.len() > limit {
             return malformed(format!(
                 "CFB {role} chain is cyclic, overlong, or out of range"
             ));
@@ -1686,17 +1731,15 @@ fn chain(
         if expected.is_none() {
             if let Some(ctx) = ctx {
                 ctx.charge_collection_items(1, "retain CFB sector chain")?;
-                ctx.charge_retained(
-                    std::mem::size_of::<u32>() as u64,
-                    "retain CFB sector chain",
-                    None,
-                )?;
+                ctx.charge_retained(std::mem::size_of::<u32>() as u64, "retain CFB sector chain")?;
             }
         }
         if let Some(scratch) = &mut traversal_scratch {
             scratch.grow(std::mem::size_of::<u32>() as u64)?;
         }
-        output.push(current);
+        if current != start {
+            output.rest.push(current);
+        }
         current = *fat
             .get(current as usize)
             .ok_or_else(|| CodecError::malformed(format_args!("CFB {role} FAT link is absent")))?;
@@ -1704,7 +1747,7 @@ fn chain(
             return malformed(format!("CFB {role} chain enters a reserved sector role"));
         }
     }
-    if expected.is_some_and(|count| output.len() != count) {
+    if expected.is_some_and(|count| output.len() != count.get()) {
         return malformed(format!(
             "CFB {role} chain length does not match its declaration"
         ));
@@ -1734,14 +1777,14 @@ fn join_sectors(
     Ok(output)
 }
 
-fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: SpanRole) {
+fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: CfbSpanRole) {
     if length == 0 {
         return;
     }
     spans.push(PhysicalSpan {
         start,
         end: start + length as u64,
-        role,
+        role: SpanRole::Cfb(role),
     });
 }
 
@@ -1784,8 +1827,14 @@ fn le_u16(bytes: &[u8], offset: usize) -> Option<u16> {
 fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     View::u32_le_at(bytes, offset)
 }
-fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    View::u64_le_at(bytes, offset)
+fn le_u16_array(bytes: [u8; 2]) -> u16 {
+    u16::from_le_bytes(bytes)
+}
+fn le_u32_array(bytes: [u8; 4]) -> u32 {
+    u32::from_le_bytes(bytes)
+}
+fn le_u64_array(bytes: [u8; 8]) -> u64 {
+    u64::from_le_bytes(bytes)
 }
 fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
     Err(CodecError::Malformed(message.into()))
@@ -2089,11 +2138,15 @@ mod tests {
         );
         assert_eq!(
             parse_directory(None, &directory, CompoundVersion::V4).expect("v4 directory parses")[0]
+                .live()
+                .expect("live root")
                 .size,
             0x1_0000_0001
         );
         assert_eq!(
             parse_directory(None, &directory, CompoundVersion::V3).expect("v3 directory parses")[0]
+                .live()
+                .expect("live root")
                 .size,
             1
         );
@@ -2189,9 +2242,7 @@ mod tests {
         let entries = parse_directory(None, &directory, CompoundVersion::V3)
             .expect("unallocated slot is skipped");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].object_type, 0);
-        assert_eq!(entries[0].left, NO_STREAM);
-        assert_eq!(entries[0].start_sector, FREE_SECTOR);
+        assert!(matches!(entries[0], DirectorySlot::Free));
     }
 
     #[test]

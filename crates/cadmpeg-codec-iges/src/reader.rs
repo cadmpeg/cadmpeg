@@ -130,7 +130,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ),
         };
         charge_work(ctx, bytes.len() as u64, card_scan)?;
-        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage, None)?;
+        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage)?;
         let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan)?;
         let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
@@ -299,7 +299,7 @@ fn decode_with_occurrence_limits(
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
-    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image", None)?;
+    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image")?;
     source_fidelity
         .retained_records
         .push(RetainedSourceRecord::retained(

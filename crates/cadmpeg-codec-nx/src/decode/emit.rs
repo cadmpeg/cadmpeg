@@ -1166,7 +1166,7 @@ pub(crate) fn unknown_stream(
     si: usize,
     stream: &Stream,
 ) -> Result<UnknownRecord, CodecError> {
-    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?;
+    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?;
     Ok(unknown_stream_record(si, stream, Some(data)))
 }
 
@@ -1180,11 +1180,7 @@ pub(crate) fn retain_unknown_stream_data(
     unknown: &mut UnknownRecord,
 ) -> Result<(), CodecError> {
     if unknown.data().is_none() {
-        unknown.retain_data(ctx.copy_retained(
-            &stream.inflated,
-            "retain NX unknown stream",
-            None,
-        )?);
+        unknown.retain_data(ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?);
     }
     Ok(())
 }

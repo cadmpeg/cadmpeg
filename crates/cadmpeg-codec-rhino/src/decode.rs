@@ -1878,7 +1878,7 @@ impl<'a> DecodeContext<'a> {
         let _nested = self
             .expand
             .ctx()
-            .enter_nested("rhino_instance_nesting", None)
+            .enter_nested("rhino_instance_nesting")
             .map_err(|error| error.to_string())?;
         self.expansion_budget.reference()?;
         self.charge_session_collections(1, "rhino_instance_reference")?;
