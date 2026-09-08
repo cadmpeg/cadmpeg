@@ -72,7 +72,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         expression: "5".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -878,7 +878,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(format!("scalar-{ordinal}")),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
     };
     let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));

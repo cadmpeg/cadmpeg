@@ -414,7 +414,10 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
                 && parameter.native_ref.as_deref() == Some("f3d:A:parameter#40")
         })
         .expect("projected stream A Width parameter");
-    assert_eq!(half.dependencies, std::slice::from_ref(&a_width.id));
+    assert_eq!(
+        half.dependencies.as_slice(),
+        std::slice::from_ref(&a_width.id)
+    );
     assert_eq!(
         parameters
             .iter()

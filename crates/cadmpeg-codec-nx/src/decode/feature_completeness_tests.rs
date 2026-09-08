@@ -1278,8 +1278,10 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         name: "length".into(),
         expression: "2".into(),
         display: None,
-        value: Some(ParameterValue::Real(2.0)),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+        )),
+        dependencies: Default::default(),
         properties: Default::default(),
         pmi: None,
         native_ref: None,

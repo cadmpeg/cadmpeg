@@ -927,9 +927,15 @@ fn append_spreadsheet(
             expression: content.to_owned(),
             display: None,
             value: (!content.starts_with('='))
-                .then(|| content.parse::<f64>().ok().map(ParameterValue::Real))
+                .then(|| {
+                    content
+                        .parse::<f64>()
+                        .ok()
+                        .and_then(cadmpeg_ir::features::FiniteReal::new)
+                        .map(ParameterValue::Real)
+                })
                 .flatten(),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: retained,
             pmi: None,
             native_ref: Some(property.id.clone()),
@@ -1168,7 +1174,7 @@ fn append_operation_parameters(
             } else {
                 Length::new(value).map(ParameterValue::Length)
             },
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: retained,
             pmi: None,
             native_ref: Some(property.id.clone()),
@@ -2096,7 +2102,9 @@ fn parse_constraints(
                     .expect("identity grammar");
                     let value = match type_code {
                         Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle::new(value)?),
-                        Some(16 | 19) => ParameterValue::Real(value),
+                        Some(16 | 19) => {
+                            ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(value)?)
+                        }
                         _ => ParameterValue::Length(Length::new(value)?),
                     };
                     let path = format!("Constraints[{index}]");
@@ -2125,7 +2133,7 @@ fn parse_constraints(
                         ),
                         display: None,
                         value: Some(value),
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         properties: parameter_properties,
                         pmi: None,
                         native_ref: Some(property.id.clone()),
@@ -2394,7 +2402,7 @@ fn bind_parameter_dependencies(
             // The native property record retains the expression. A neutral
             // parameter edge would create an invented evaluation order for
             // a history that FreeCAD itself could not topologically sort.
-            Vec::new()
+            Default::default()
         } else {
             dependencies.into_iter().collect()
         };

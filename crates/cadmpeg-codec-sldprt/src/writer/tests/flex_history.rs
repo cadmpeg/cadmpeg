@@ -324,7 +324,7 @@ fn encoder_writes_source_less_curved_sketches() {
             expression: expression.into(),
             display,
             value: Some(value),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,

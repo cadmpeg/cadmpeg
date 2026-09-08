@@ -1384,7 +1384,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         expression: "7mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1397,7 +1397,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         expression: "7".into(),
         display: None,
         value: Some(ParameterValue::Integer(7)),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1443,18 +1443,20 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         ParameterValue::Integer(7)
     );
 
-    ir.model.configurations[0]
-        .parameter_values
-        .insert(count_id.clone(), ParameterValue::Real(7.0));
+    ir.model.configurations[0].parameter_values.insert(
+        count_id.clone(),
+        ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(7.0).unwrap()),
+    );
     align_configuration_parameter_kinds(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
     );
 
-    ir.model.configurations[0]
-        .parameter_values
-        .insert(count_id.clone(), ParameterValue::Real(7.5));
+    ir.model.configurations[0].parameter_values.insert(
+        count_id.clone(),
+        ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(7.5).unwrap()),
+    );
     align_configuration_parameter_kinds(&mut ir);
     assert!(!ir.model.configurations[0]
         .parameter_values

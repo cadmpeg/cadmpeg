@@ -1509,32 +1509,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 entity: Some(parameter.id.as_str().to_owned()),
             });
         }
-        if parameter
-            .value
-            .as_ref()
-            .is_some_and(|value| !parameter_value_is_valid(value))
-        {
-            geometry_error(
-                findings,
-                parameter.id.as_str(),
-                "parameter value is invalid",
-            );
-        }
-        let mut dependencies = HashSet::new();
         for dependency in &parameter.dependencies {
-            if !dependencies.insert(dependency) {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: format!(
-                        "parameter {} repeats dependency `{}`",
-                        parameter.id.as_str(),
-                        dependency.as_str()
-                    ),
-                    entity: Some(parameter.id.as_str().to_owned()),
-                });
-                continue;
-            }
             let Some((owner, ordinal)) = parameters.get(dependency) else {
                 ref_error(
                     findings,
@@ -2049,10 +2024,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     parameter.as_str(),
                 ),
                 Some(baseline)
-                    if !parameter_value_is_valid(value)
-                        || baseline.is_some_and(|baseline| {
-                            std::mem::discriminant(baseline) != std::mem::discriminant(value)
-                        }) =>
+                    if baseline.is_some_and(|baseline| {
+                        std::mem::discriminant(baseline) != std::mem::discriminant(value)
+                    }) =>
                 {
                     geometry_error(
                         findings,
@@ -4075,17 +4049,6 @@ fn check_historical_members<'a, I, F>(
 
 fn positive_feature_length(value: Length) -> bool {
     value.get() > 0.0
-}
-
-fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
-    match value {
-        crate::features::ParameterValue::Real(value) => value.is_finite(),
-        crate::features::ParameterValue::Length(_)
-        | crate::features::ParameterValue::Angle(_)
-        | crate::features::ParameterValue::Integer(_)
-        | crate::features::ParameterValue::Boolean(_)
-        | crate::features::ParameterValue::String(_) => true,
-    }
 }
 
 fn regeneration_references(

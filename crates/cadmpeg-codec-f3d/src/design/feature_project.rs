@@ -1542,7 +1542,8 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(unit) if design_angle_unit(unit) => {
                     Angle::new(parameter.evaluated_value).map(ParameterValue::Angle)
                 }
-                None => Some(ParameterValue::Real(parameter.evaluated_value)),
+                None => cadmpeg_ir::features::FiniteReal::new(parameter.evaluated_value)
+                    .map(ParameterValue::Real),
                 Some(unit) => {
                     properties.insert("unit".into(), unit.into());
                     properties.insert(
@@ -1568,7 +1569,7 @@ pub fn project_parameter_design_with_edge_identities(
                     None
                 },
                 value,
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 properties,
                 pmi: None,
                 native_ref: Some(parameter.id.clone()),

@@ -654,7 +654,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         expression: "D1@Sketch1 * 2".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

@@ -1923,7 +1923,7 @@ mod tests {
                 expression: "2".into(),
                 display: None,
                 value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: None,

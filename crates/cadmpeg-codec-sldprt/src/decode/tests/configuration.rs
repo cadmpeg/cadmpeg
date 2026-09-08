@@ -329,7 +329,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         expression: "12mm".into(),
         display: None,
         value: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

@@ -92,7 +92,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         expression: expression.clone(),
                         display,
                         value,
-                        dependencies: Vec::new(),
+                        dependencies: Default::default(),
                         native_ref: None,
                         pmi: None,
                     }
@@ -559,9 +559,6 @@ pub(crate) fn evaluate_parameter_expressions(
             else {
                 continue;
             };
-            if !parameter_value_is_finite(&value) {
-                continue;
-            }
             values.insert(parameter.id.clone(), value.clone());
             parameter.value = Some(value);
             changed = true;
@@ -618,8 +615,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                 let evaluated =
                     ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
-                        .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression))
-                        .filter(parameter_value_is_finite);
+                        .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression));
                 if let Some(value) = own {
                     values.insert(parameter.id.clone(), value);
                 }
@@ -659,9 +655,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
             states.iter_mut().any(|values| {
                 let actual = values.remove(&parameter.id);
                 let evaluated =
-                    ParameterExpressionParser::new(&parameter.expression, aliases, values)
-                        .parse()
-                        .filter(parameter_value_is_finite);
+                    ParameterExpressionParser::new(&parameter.expression, aliases, values).parse();
                 if let Some(value) = actual.clone() {
                     values.insert(parameter.id.clone(), value);
                 }
@@ -714,12 +708,12 @@ pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &Paramet
         (ParameterValue::Angle(left), ParameterValue::Angle(right)) => {
             close(left.get(), right.get())
         }
-        (ParameterValue::Real(left), ParameterValue::Real(right)) => close(*left, *right),
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => close(left.get(), right.get()),
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left == right,
         (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left == right,
         (ParameterValue::Integer(integer), ParameterValue::Real(real))
         | (ParameterValue::Real(real), ParameterValue::Integer(integer)) => {
-            exact_integer_f64(*integer) == Some(*real)
+            exact_integer_f64(*integer) == Some(real.get())
         }
         _ => false,
     }

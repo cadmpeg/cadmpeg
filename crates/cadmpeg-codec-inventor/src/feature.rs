@@ -1821,7 +1821,7 @@ mod tests {
             expression: String::new(),
             display: None,
             value: Some(value),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some(raw.id()),

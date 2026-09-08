@@ -313,7 +313,14 @@ pub(crate) fn bind_parameter_scalars<'a>(
                                 ))
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
-                                Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
+                                Some(cadmpeg_ir::features::ParameterValue::Real(
+                                    cadmpeg_ir::features::FiniteReal::new(scalar.value)
+                                        .ok_or_else(|| {
+                                            cadmpeg_core::CodecError::Malformed(
+                                                "SolidWorks projected real must be finite".into(),
+                                            )
+                                        })?,
+                                ))
                             }
                             _ => None,
                         }
@@ -454,7 +461,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 expression,
                 display,
                 value: Some(value),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 properties,
                 pmi: None,
                 native_ref: None,
@@ -528,6 +535,7 @@ pub(crate) fn type_display_relation_parameters(
         match family {
             FeatureInputRelationFamily::Angle => {
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
+                    let value = value.get();
                     parameter.expression = crate::history::format_angle_rad(value);
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(
                         cadmpeg_ir::features::Angle::new(value).ok_or_else(|| {
@@ -545,6 +553,7 @@ pub(crate) fn type_display_relation_parameters(
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => {
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
+                    let value = value.get();
                     let value = value * 1000.0;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
                         format!("<MOD-DIAM>{}", crate::history::format_length_mm(value))

@@ -326,7 +326,7 @@ pub(crate) fn sync_changed_feature_scalars(
                     {
                         Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                         Some(ParameterValue::Angle(value)) => value.get(),
-                        Some(ParameterValue::Real(value)) => value,
+                        Some(ParameterValue::Real(value)) => value.get(),
                         _ => continue,
                     };
                 updates.push((*scalar_index, value));

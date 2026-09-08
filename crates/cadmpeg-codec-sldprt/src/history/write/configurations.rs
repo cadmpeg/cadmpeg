@@ -340,7 +340,7 @@ pub(crate) fn patch_configuration_parameter_scalars(
             let encoded = match value {
                 ParameterValue::Length(value) => value.get() / 1000.0,
                 ParameterValue::Angle(value) => value.get(),
-                ParameterValue::Real(value) => *value,
+                ParameterValue::Real(value) => value.get(),
                 ParameterValue::Integer(value) => exact_integer_f64(*value).ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT configuration parameter {} cannot be represented by a native scalar",

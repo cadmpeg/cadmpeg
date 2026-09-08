@@ -467,7 +467,7 @@ pub(crate) fn apply_to_parameters(
             expression,
             display,
             value,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: BTreeMap::new(),
             pmi: Some(semantic),
             native_ref: None,

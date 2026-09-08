@@ -2663,7 +2663,7 @@ fn relation_parameter_matches_display_scalar(
                 same_dimension_angle(value.get(), scalar.value)
             }
             Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                same_dimension_angle(*value, scalar.value)
+                same_dimension_angle(value.get(), scalar.value)
             }
             _ => false,
         },
@@ -2684,7 +2684,7 @@ fn relation_parameter_matches_display_scalar(
                 // An untyped native real is still in the source scalar's SI
                 // units until relation typing applies the family unit.
                 Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                    same_dimension_length(*value, scalar.value)
+                    same_dimension_length(value.get(), scalar.value)
                 }
                 _ => false,
             }
@@ -2879,7 +2879,7 @@ mod relation_geometry_tests {
             expression: "7mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("terminal".into()),
@@ -3094,7 +3094,7 @@ mod relation_geometry_tests {
             expression: "5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3426,7 +3426,7 @@ mod relation_geometry_tests {
             expression: "6.5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(6.5).unwrap())),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
