@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 mod admission;
 mod blind_circular;
 mod carrier_solver;
+mod chamfer;
 mod equation_constraints;
 mod equation_scalar_propagation;
 mod generated_nurbs;

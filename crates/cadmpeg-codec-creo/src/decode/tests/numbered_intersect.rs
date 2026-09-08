@@ -4,17 +4,16 @@
 use crate::decode::sketch::axis::SectionAxis;
 
 use super::parameter_slot;
-use crate::decode::analytic::{ConeEquation, PlaneEquation};
 use crate::decode::build::has_transferred_geometry;
 use crate::decode::feature_history::{
-    add_surface_prototype_feature_dependencies, chamfer_constant_distance,
-    equal_distance_chamfer_setback, feature_edge_selection, feature_entity_dependencies,
-    feature_generated_dependencies, feature_output_surface_dependencies, feature_result_edge_ids,
-    feature_result_surface_ids, feature_result_topology, generated_curve_edge_refs,
-    generated_surface_face_refs, geometry_generator_features, knit_class_100_operand_entity_ids,
-    knit_operand_surface_ids, model_feature_ids, native_feature_dependency_ids,
-    profile_segment_ids, reconciled_dependencies, surface_intersect_feature_definition,
-    surface_merge_entity_dependencies, surface_merge_quilt_ids, GeometryGeneratorFeature,
+    add_surface_prototype_feature_dependencies, feature_edge_selection,
+    feature_entity_dependencies, feature_generated_dependencies,
+    feature_output_surface_dependencies, feature_result_edge_ids, feature_result_surface_ids,
+    feature_result_topology, generated_curve_edge_refs, generated_surface_face_refs,
+    geometry_generator_features, knit_class_100_operand_entity_ids, knit_operand_surface_ids,
+    model_feature_ids, native_feature_dependency_ids, profile_segment_ids, reconciled_dependencies,
+    surface_intersect_feature_definition, surface_merge_entity_dependencies,
+    surface_merge_quilt_ids, GeometryGeneratorFeature,
 };
 use crate::decode::holes::{
     cylinder_from_complementary_outline_bounds, extrusion_extent_and_direction, hole_placement,
@@ -136,55 +135,6 @@ fn numbered_intersect_name_identifies_section_shape_feature() {
         surface_intersect_feature_definition(&scan, 50, "Intersect copy"),
         None
     );
-}
-
-#[test]
-fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
-    let cone = |origin, axis| {
-        ConeEquation::new(
-            origin,
-            axis,
-            [0.0, 0.0, 1.0],
-            0.0,
-            1.0,
-            std::f64::consts::FRAC_PI_4,
-        )
-        .expect("valid test cone")
-    };
-    let cones = [
-        cone([10.5, 0.0, 0.0], [-1.0, 0.0, 0.0]),
-        cone([-10.5, 0.0, 0.0], [1.0, 0.0, 0.0]),
-    ];
-    let supports = [
-        PlaneEquation {
-            origin: [10.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-        },
-        PlaneEquation {
-            origin: [-10.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-        },
-        PlaneEquation {
-            origin: [0.0, 2.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-        },
-    ];
-
-    assert_eq!(equal_distance_chamfer_setback(&cones, &supports), Some(0.5));
-
-    let mut non_equal = cones;
-    let mut origin = non_equal[1].origin();
-    origin[0] = -10.25;
-    non_equal[1] = ConeEquation::new(
-        origin,
-        non_equal[1].axis(),
-        non_equal[1].ref_direction(),
-        non_equal[1].radius(),
-        non_equal[1].ratio(),
-        non_equal[1].half_angle(),
-    )
-    .expect("valid test cone");
-    assert_eq!(equal_distance_chamfer_setback(&non_equal, &supports), None);
 }
 
 #[test]
@@ -320,93 +270,6 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         ),
         Some(SectionAxis::U)
     );
-}
-
-#[test]
-fn chamfer_requires_every_affected_support_plane_to_be_placed() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    let empty_ir = CadIr::empty();
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 10,
-        kind: crate::surface::SurfaceKind::Cone,
-        feature_id: 914,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 10,
-    });
-    scan.surfaces
-        .parameters
-        .push(crate::surface::SurfaceParameterRecord {
-            surface_id: 10,
-            body: Vec::new(),
-            scalar_tokens: Vec::new(),
-            opaque_spans: Vec::new(),
-            scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
-            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-                crate::surface::InlineSurfaceCarrier::Cone(crate::surface::PositionalConeFrame {
-                    apex: [0.5, 0.0, 0.0],
-                    axis: [-1.0, 0.0, 0.0],
-                    ref_direction: [0.0, 1.0, 0.0],
-                    half_angle: std::f64::consts::FRAC_PI_4,
-                }),
-            ),
-            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-            offset: 10,
-            body_offset: 11,
-        });
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 31,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 3,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 31,
-    });
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 98,
-        kind: crate::surface::SurfaceKind::Cylinder,
-        feature_id: 3,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 98,
-    });
-    scan.planes
-        .positional_frames
-        .push(crate::surface::OutlinePlane {
-            surface_id: 31,
-            origin: [0.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
-            offset: 31,
-        });
-    scan.features
-        .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
-            feature_id: 914,
-            kind: crate::feature::AffectedIdKind::Geometry,
-            ids: vec![31],
-            offset: 0,
-        });
-
-    assert_eq!(chamfer_constant_distance(&scan, &empty_ir, 914), Some(0.5));
-    scan.features.affected_ids[0].ids.extend([98, 99]);
-    assert_eq!(chamfer_constant_distance(&scan, &empty_ir, 914), Some(0.5));
-
-    scan.features.affected_ids[0].ids.push(32);
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 32,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 3,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 32,
-    });
-    assert_eq!(chamfer_constant_distance(&scan, &empty_ir, 914), None);
 }
 
 #[test]
