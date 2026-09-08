@@ -1232,32 +1232,40 @@ fn reconcile_direct_circle_dimension_carriers(
     if removed.is_empty() {
         return;
     }
-    entities.retain(|entity| !removed.contains_key(entity.id()));
     if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
-        for profile in &mut sketch.profiles {
-            let usages = std::mem::take(profile);
-            let mut present = usages
-                .iter()
-                .filter(|usage| !removed.contains_key(&usage.entity))
-                .map(|usage| usage.entity.clone())
-                .collect::<HashSet<_>>();
-            let mut updated = Vec::with_capacity(usages.len());
-            for usage in usages {
-                let Some(replacement) = removed.get(&usage.entity) else {
-                    updated.push(usage);
-                    continue;
-                };
-                if present.insert(replacement.clone()) {
-                    updated.push(SketchEntityUse {
-                        entity: replacement.clone(),
-                        reversed: usage.reversed,
-                    });
+        if sketch
+            .profiles
+            .edit(|profiles| {
+                for profile in profiles.iter_mut() {
+                    let usages = std::mem::take(profile);
+                    let mut present = usages
+                        .iter()
+                        .filter(|usage| !removed.contains_key(&usage.entity))
+                        .map(|usage| usage.entity.clone())
+                        .collect::<HashSet<_>>();
+                    let mut updated = Vec::with_capacity(usages.len());
+                    for usage in usages {
+                        let Some(replacement) = removed.get(&usage.entity) else {
+                            updated.push(usage);
+                            continue;
+                        };
+                        if present.insert(replacement.clone()) {
+                            updated.push(SketchEntityUse {
+                                entity: replacement.clone(),
+                                reversed: usage.reversed,
+                            });
+                        }
+                    }
+                    *profile = updated;
                 }
-            }
-            *profile = updated;
+                profiles.retain(|profile| !profile.is_empty());
+            })
+            .is_err()
+        {
+            return;
         }
-        sketch.profiles.retain(|profile| !profile.is_empty());
     }
+    entities.retain(|entity| !removed.contains_key(entity.id()));
 }
 
 /// Materialize marker-only circles whose radial witnesses have exact radial
@@ -1429,10 +1437,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     else {
                         continue;
                     };
-                    for profile in &mut sketch.profiles {
-                        profile.retain(|usage| usage.entity != removed);
-                    }
-                    sketch.profiles.retain(|profile| !profile.is_empty());
+                    sketch.profiles.retain_uses(|usage| usage.entity != removed);
                     let feature_key = feature
                         .id
                         .as_str()
@@ -1472,10 +1477,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                             )
                             .with_geometry_ref(parameter.native_ref.clone()),
                         );
-                        sketch.profiles.push(vec![SketchEntityUse {
+                        sketch.profiles.push_single(SketchEntityUse {
                             entity: entity_id,
                             reversed: false,
-                        }]);
+                        });
                     }
                     continue;
                 }
@@ -1610,10 +1615,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                 else {
                     continue;
                 };
-                for profile in &mut sketch.profiles {
-                    profile.retain(|usage| !removed.contains(&usage.entity));
-                }
-                sketch.profiles.retain(|profile| !profile.is_empty());
+                sketch
+                    .profiles
+                    .retain_uses(|usage| !removed.contains(&usage.entity));
                 for (index, geometry) in transformed.into_iter().enumerate() {
                     let entity_id = match SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
@@ -1625,10 +1629,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                             )
                             .with_geometry_ref(parameter.native_ref.clone()),
                     );
-                    sketch.profiles.push(vec![SketchEntityUse {
+                    sketch.profiles.push_single(SketchEntityUse {
                         entity: entity_id,
                         reversed: false,
-                    }]);
+                    });
                 }
                 continue 'feature;
             }
@@ -1754,10 +1758,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                     else {
                         continue;
                     };
-                    for profile in &mut sketch.profiles {
-                        profile.retain(|usage| !removed.contains(&usage.entity));
-                    }
-                    sketch.profiles.retain(|profile| !profile.is_empty());
+                    sketch
+                        .profiles
+                        .retain_uses(|usage| !removed.contains(&usage.entity));
                     for (record, geometry) in transformed {
                         let lane_key = record
                             .0
@@ -1781,10 +1784,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 .with_geometry_ref(record.5.native_ref.clone()),
                         );
                         if !record.2 {
-                            sketch.profiles.push(vec![SketchEntityUse {
+                            sketch.profiles.push_single(SketchEntityUse {
                                 entity: entity_id,
                                 reversed: false,
-                            }]);
+                            });
                         }
                     }
                     continue;
@@ -1901,10 +1904,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .with_construction(construction)
                 .with_geometry_ref(parameter.native_ref.clone()),
             );
-            sketch.profiles.push(vec![SketchEntityUse {
+            sketch.profiles.push_single(SketchEntityUse {
                 entity: entity_id,
                 reversed: false,
-            }]);
+            });
         }
     }
 }

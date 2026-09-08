@@ -215,12 +215,13 @@ fn encoder_writes_source_less_curved_sketches() {
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             profile(&[0]),
             profile(&[1, 5]),
             profile(&[2, 6]),
@@ -234,7 +235,8 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[4]),
             profile(&[22]),
             profile(&[23, 24]),
-        ],
+        ])
+        .unwrap(),
         native_ref: None,
     });
     let feature_id = FeatureId::mint("synthetic:test:feature#curves").expect("identity grammar");
@@ -879,12 +881,13 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             name: Some(name.into()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, ordinal as f64),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, ordinal as f64),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: Default::default(),
             native_ref: None,
         });
         ir.model.sketch_entities.push(SketchEntity::new(

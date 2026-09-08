@@ -857,12 +857,13 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("lane".into()),
     }];
     let parameter = |ordinal: u32, diameter: f64| DesignParameter {
@@ -1123,20 +1124,24 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: (0..profile_count)
-            .map(|index| {
-                vec![SketchEntityUse {
-                    entity: SketchEntityId::mint(format!("synthetic:test:id#entity-{index}"))
-                        .unwrap(),
-                    reversed: false,
-                }]
-            })
-            .collect(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(
+            (0..profile_count)
+                .map(|index| {
+                    vec![SketchEntityUse {
+                        entity: SketchEntityId::mint(format!("synthetic:test:id#entity-{index}"))
+                            .unwrap(),
+                        reversed: false,
+                    }]
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap(),
         native_ref: None,
     };
     let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];

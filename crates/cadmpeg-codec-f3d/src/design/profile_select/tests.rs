@@ -783,7 +783,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: Default::default(),
         native_ref: None,
     }];
     let group = group();
@@ -904,6 +904,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
             neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id).unwrap()
         })
         .collect::<Vec<_>>();
+    let unselected = SketchEntityId::mint("synthetic:test:sketch-entity#unselected").unwrap();
     let sketch_entities = [
         SketchEntity::new(
             curve_ids[0].clone(),
@@ -923,6 +924,14 @@ fn entity_selection_profile_requires_unique_profile_membership() {
             })
             .unwrap(),
         ),
+        SketchEntity::new(
+            unselected.clone(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(2.0, 0.0),
+            })
+            .unwrap(),
+        ),
     ];
     let mut sketches = [Sketch {
         id: sketch.clone(),
@@ -930,8 +939,11 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: vec![
-            Vec::new(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
+            vec![SketchEntityUse {
+                entity: unselected,
+                reversed: false,
+            }],
             curve_ids
                 .iter()
                 .cloned()
@@ -940,7 +952,8 @@ fn entity_selection_profile_requires_unique_profile_membership() {
                     reversed: false,
                 })
                 .collect(),
-        ],
+        ])
+        .unwrap(),
         native_ref: None,
     }];
     let mut group = group();
@@ -964,10 +977,15 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         })
     );
 
-    sketches[0].profiles[0].push(SketchEntityUse {
-        entity: curve_ids[0].clone(),
-        reversed: false,
-    });
+    sketches[0]
+        .profiles
+        .edit(|profiles| {
+            profiles[0].push(SketchEntityUse {
+                entity: curve_ids[0].clone(),
+                reversed: false,
+            })
+        })
+        .unwrap();
     let ambiguous_resolution = EntitySelectionPathResolution {
         operands: &operands,
         placements: std::slice::from_ref(&placement),
@@ -1001,7 +1019,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: Default::default(),
         native_ref: None,
     }];
     let mut group = group();
@@ -1064,7 +1082,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: vec![
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             vec![SketchEntityUse {
                 entity: first_entity.clone(),
                 reversed: false,
@@ -1073,7 +1091,8 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                 entity: second_entity.clone(),
                 reversed: false,
             }],
-        ],
+        ])
+        .unwrap(),
         native_ref: None,
     };
     let operand = DesignSketchProfileOperand {
@@ -1133,10 +1152,15 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     )
     .is_none());
 
-    source.profiles[1].push(SketchEntityUse {
-        entity: first_entity,
-        reversed: false,
-    });
+    source
+        .profiles
+        .edit(|profiles| {
+            profiles[1].push(SketchEntityUse {
+                entity: first_entity,
+                reversed: false,
+            })
+        })
+        .unwrap();
     assert!(resolved_sketch_profile_regions(
         "stream",
         &operand,
@@ -1156,15 +1180,17 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(10.0, 20.0, 5.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(10.0, 20.0, 5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     };
     let entity = SketchEntity::new(
@@ -1196,16 +1222,21 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     let mut branched_sketch = sketch.clone();
     let start_branch_id = SketchEntityId::mint("synthetic:test:id#start-branch").unwrap();
     let end_branch_id = SketchEntityId::mint("synthetic:test:id#end-branch").unwrap();
-    branched_sketch.profiles.extend([
-        vec![SketchEntityUse {
-            entity: start_branch_id.clone(),
-            reversed: false,
-        }],
-        vec![SketchEntityUse {
-            entity: end_branch_id.clone(),
-            reversed: false,
-        }],
-    ]);
+    branched_sketch
+        .profiles
+        .edit(|profiles| {
+            profiles.extend([
+                vec![SketchEntityUse {
+                    entity: start_branch_id.clone(),
+                    reversed: false,
+                }],
+                vec![SketchEntityUse {
+                    entity: end_branch_id.clone(),
+                    reversed: false,
+                }],
+            ]);
+        })
+        .unwrap();
     let branch_entity = |id, start, end| {
         SketchEntity::new(
             id,
@@ -1234,7 +1265,10 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
 
-    sketch.profiles.push(sketch.profiles[0].clone());
+    sketch
+        .profiles
+        .try_push(sketch.profiles[0].clone())
+        .unwrap();
     assert_eq!(
         region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
         None
@@ -1554,15 +1588,17 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: circle_id,
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     };
     let topology = AsmHistoricalTopology {
@@ -1804,12 +1840,13 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
     let transition_selection = |selections| {

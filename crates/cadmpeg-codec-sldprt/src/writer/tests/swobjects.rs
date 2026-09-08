@@ -309,19 +309,21 @@ fn encoder_writes_source_less_line_sketches() {
         name: Some("Profile".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![entity_ids
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![entity_ids
             .iter()
             .cloned()
             .map(|entity| SketchEntityUse {
                 entity,
                 reversed: false,
             })
-            .collect()],
+            .collect()])
+        .unwrap(),
         native_ref: None,
     });
     let sketch_feature_id =
@@ -836,15 +838,17 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         name: Some("Profile".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(

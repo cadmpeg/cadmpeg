@@ -61,7 +61,7 @@ pub(in super::super) fn transfer_sketches(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> SketchSegmentTransferCoverage {
+) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
     let mut available_parameter_ids = ir
         .model
@@ -83,6 +83,27 @@ pub(in super::super) fn transfer_sketches(
                 section.offset,
             )
         });
+        let placement = match transform {
+            Some(transform) => cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(
+                    transform.origin[0],
+                    transform.origin[1],
+                    transform.origin[2],
+                ),
+                Vector3::new(
+                    transform.normal[0],
+                    transform.normal[1],
+                    transform.normal[2],
+                ),
+                Vector3::new(
+                    transform.u_axis[0],
+                    transform.u_axis[1],
+                    transform.u_axis[2],
+                ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+            None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        };
         let sketch_id = match model_sketch_id(scan, definition) {
             Some(id) => id,
             None => continue,
@@ -442,6 +463,8 @@ pub(in super::super) fn transfer_sketches(
             profiles,
             &profile_entities,
         );
+        let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         for (external_id, offset) in solver_only_section_entities(definition) {
             let id = match sketch_entity_id(&sketch_id, external_id) {
                 Some(id) => id,
@@ -814,26 +837,7 @@ pub(in super::super) fn transfer_sketches(
             name: None,
             configuration: None,
             visible: None,
-            placement: transform.map_or(
-                cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-                |transform| cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin: Point3::new(
-                        transform.origin[0],
-                        transform.origin[1],
-                        transform.origin[2],
-                    ),
-                    normal: Vector3::new(
-                        transform.normal[0],
-                        transform.normal[1],
-                        transform.normal[2],
-                    ),
-                    u_axis: Vector3::new(
-                        transform.u_axis[0],
-                        transform.u_axis[1],
-                        transform.u_axis[2],
-                    ),
-                },
-            ),
+            placement,
             profiles,
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });
@@ -867,5 +871,5 @@ pub(in super::super) fn transfer_sketches(
             });
         }
     }
-    coverage
+    Ok(coverage)
 }

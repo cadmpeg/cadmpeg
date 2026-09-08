@@ -81,7 +81,7 @@ fn sketch(sketch: &SketchId, profiles: Vec<Vec<SketchEntityUse>>) -> Sketch {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles,
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: Some("lane".into()),
     }
 }

@@ -68,10 +68,11 @@ fn sketch() -> Sketch {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: vec![vec![SketchEntityUse {
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity,
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     }
 }
@@ -95,7 +96,10 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
 
     let mut duplicate_profile = sketch.clone();
     let repeated_use = duplicate_profile.profiles[0][0].clone();
-    duplicate_profile.profiles[0].push(repeated_use);
+    duplicate_profile
+        .profiles
+        .edit(|profiles| profiles[0].push(repeated_use))
+        .unwrap();
     assert!(!sketch_profiles_cover_generated_extrusion_sides(
         &scan,
         &definition,
@@ -157,10 +161,16 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         .rows
         .extend([surface_row(32, 7, crate::surface::SurfaceKind::Plane)]);
     let mut sketch = sketch();
-    sketch.profiles[0].push(SketchEntityUse {
-        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#7:13".to_string()).unwrap(),
-        reversed: false,
-    });
+    sketch
+        .profiles
+        .edit(|profiles| {
+            profiles[0].push(SketchEntityUse {
+                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#7:13".to_string())
+                    .unwrap(),
+                reversed: false,
+            })
+        })
+        .unwrap();
 
     assert!(sketch_profiles_cover_generated_extrusion_sides(
         &scan,

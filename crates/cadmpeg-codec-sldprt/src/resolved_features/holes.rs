@@ -3447,12 +3447,13 @@ pub(crate) fn project_bore_backed_position_sketches(
                 name: model_position.name.clone(),
                 configuration: lane.configuration.clone(),
                 visible: None,
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
+                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    *origin, *normal, *u_axis,
+                ) {
+                    Ok(placement) => placement,
+                    Err(_) => continue,
                 },
-                profiles: Vec::new(),
+                profiles: Default::default(),
                 native_ref: Some(lane.id.clone()),
             },
             entities: projected_entities,

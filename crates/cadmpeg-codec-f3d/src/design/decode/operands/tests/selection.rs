@@ -754,15 +754,17 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     };
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
@@ -803,10 +805,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     group.members.extend(remaining_members);
     let mut sketch = sketch;
     let second_profile_id = SketchEntityId::mint("synthetic:test:id#second-profile").unwrap();
-    sketch.profiles.push(vec![SketchEntityUse {
+    sketch.profiles.push_single(SketchEntityUse {
         entity: second_profile_id.clone(),
         reversed: false,
-    }]);
+    });
     let point_entity = SketchEntity::new(
         neutral_sketch_point_id(&sketch_id, 587).unwrap(),
         sketch_id.clone(),
@@ -886,7 +888,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         } if actual_sketch == &sketch_id && actual_selections == &[group.id.clone()]
     ));
     let mut single_profile_sketch = sketch.clone();
-    single_profile_sketch.profiles.truncate(1);
+    single_profile_sketch
+        .profiles
+        .edit(|profiles| profiles.truncate(1))
+        .unwrap();
     assert!(matches!(
         resolved_extrude_profile_selection(
             &sketch_id,

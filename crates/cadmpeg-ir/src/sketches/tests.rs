@@ -99,12 +99,13 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
     let members = (0..3)
@@ -319,12 +320,13 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(
@@ -418,12 +420,13 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
     ir.model.sketch_entities.extend(
@@ -2038,4 +2041,103 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
     profile.set_origin(moved).unwrap();
     assert_eq!(profile.origin(), moved);
     assert_eq!(profile.boundary(), before.boundary());
+}
+
+#[test]
+fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
+    use crate::sketches::SketchPlacement;
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(3.0, 0.0, 0.0);
+    let placement = SketchPlacement::try_resolved(origin, normal, u_axis).unwrap();
+    assert_eq!(placement.resolved(), Some((origin, normal, u_axis)));
+    let wire = serde_json::json!({
+        "kind": "resolved",
+        "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "normal": {"x": 0.0, "y": 0.0, "z": 2.0},
+        "u_axis": {"x": 3.0, "y": 0.0, "z": 0.0}
+    });
+    assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<SketchPlacement>(wire.clone()).unwrap(),
+        placement
+    );
+    for axis in [
+        Vector3::new(0.0, 0.0, 0.0),
+        normal,
+        Vector3::new(f64::NAN, 0.0, 0.0),
+    ] {
+        assert!(SketchPlacement::try_resolved(origin, normal, axis).is_err());
+    }
+    assert!(
+        SketchPlacement::try_resolved(Point3::new(f64::INFINITY, 0.0, 0.0), normal, u_axis)
+            .is_err()
+    );
+    for (field, invalid) in [
+        ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),
+        ("normal", serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0})),
+        ("u_axis", serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})),
+    ] {
+        let mut invalid_wire = wire.clone();
+        invalid_wire[field] = invalid;
+        assert!(serde_json::from_value::<SketchPlacement>(invalid_wire).is_err());
+    }
+    let unresolved = serde_json::json!({"kind": "unresolved"});
+    assert_eq!(
+        serde_json::to_value(SketchPlacement::Unresolved).unwrap(),
+        unresolved
+    );
+    assert_eq!(
+        serde_json::from_value::<SketchPlacement>(unresolved).unwrap(),
+        SketchPlacement::Unresolved
+    );
+}
+
+#[test]
+fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() {
+    use crate::sketches::{SketchEntityId, SketchEntityUse, SketchProfiles};
+
+    let usage = SketchEntityUse {
+        entity: SketchEntityId::mint("synthetic:test:sketch-entity#profile").unwrap(),
+        reversed: false,
+    };
+    let mut profiles = SketchProfiles::try_from(vec![vec![usage.clone()]]).unwrap();
+    let wire = serde_json::json!([[{"entity": "synthetic:test:sketch-entity#profile", "reversed": false}]]);
+    assert_eq!(serde_json::to_value(&profiles).unwrap(), wire);
+    assert_eq!(
+        serde_json::from_value::<SketchProfiles>(wire).unwrap(),
+        profiles
+    );
+    assert!(SketchProfiles::try_from(vec![vec![]]).is_err());
+    assert!(serde_json::from_value::<SketchProfiles>(serde_json::json!([[]])).is_err());
+    assert!(
+        serde_json::from_value::<SketchProfiles>(serde_json::json!([]))
+            .unwrap()
+            .is_empty()
+    );
+    let before = profiles.clone();
+    assert!(profiles.try_push(vec![]).is_err());
+    assert_eq!(profiles, before);
+    assert!(profiles.edit(|chains| chains[0].clear()).is_err());
+    assert_eq!(profiles, before);
+    profiles
+        .edit(|chains| chains.push(vec![usage.clone()]))
+        .unwrap();
+    assert_eq!(profiles.len(), 2);
+    profiles.push_single(usage);
+    assert_eq!(profiles.len(), 3);
+    let before_filter = profiles.clone();
+    let mut calls = 0;
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        profiles.retain_uses(|_| {
+            calls += 1;
+            assert_ne!(calls, 2, "filter interruption");
+            false
+        });
+    }))
+    .is_err());
+    assert_eq!(profiles, before_filter);
+    profiles.retain_uses(|_| false);
+    assert!(profiles.is_empty());
 }

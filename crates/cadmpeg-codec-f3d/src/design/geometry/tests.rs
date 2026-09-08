@@ -62,12 +62,13 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let arrangement_budget = local_arrangement_budget();
@@ -146,12 +147,13 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(10.0, 20.0, 5.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(10.0, 20.0, 5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
 
@@ -169,10 +171,10 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
 
     let mut incomplete = sketch.clone();
     let ellipse = SketchEntityId::mint("synthetic:test:id#unsupported-ellipse").unwrap();
-    incomplete.profiles.push(vec![SketchEntityUse {
+    incomplete.profiles.push_single(SketchEntityUse {
         entity: ellipse.clone(),
         reversed: false,
-    }]);
+    });
     entities.push(SketchEntity::new(
         ellipse,
         incomplete.id.clone(),
@@ -242,12 +244,13 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
 
@@ -366,12 +369,13 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![outer, inner],
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![outer, inner]).unwrap(),
         native_ref: None,
     };
 
@@ -424,12 +428,13 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             vec![
                 SketchEntityUse {
                     entity: line_id.clone(),
@@ -444,7 +449,8 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
                 entity: circle_id,
                 reversed: false,
             }],
-        ],
+        ])
+        .unwrap(),
         native_ref: None,
     };
     (sketch, entities, line_id, arc_id)
@@ -566,18 +572,20 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             outer,
             vec![SketchEntityUse {
                 entity: circle,
                 reversed: false,
             }],
-        ],
+        ])
+        .unwrap(),
         native_ref: None,
     };
     let expected = SketchProfileRegion::Loops {

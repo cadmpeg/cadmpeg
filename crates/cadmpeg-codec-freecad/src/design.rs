@@ -1608,12 +1608,10 @@ fn parse_sketch(
             name: Some(object.name.clone()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin,
-                normal,
-                u_axis,
-            },
-            profiles,
+            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: Some(object.id.clone()),
         },
         entities,

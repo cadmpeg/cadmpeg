@@ -137,15 +137,17 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 1.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 1.0),
+        )
+        .unwrap(),
+        profiles: crate::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: circle_id.clone(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(
@@ -207,12 +209,13 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
     let source = SketchEntityId::mint("synthetic:test:nurbs#source").unwrap();
@@ -359,12 +362,13 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles,
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: crate::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
     ir.model.sketches.extend([
@@ -565,12 +569,13 @@ fn sketch_feature_ownership_and_order_are_validated() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -648,12 +653,13 @@ fn sketch_profile_subselections_are_bounds_checked() {
         name: None,
         configuration: None,
         visible: None,
-        placement: crate::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     });
     let feature = |suffix: &str, ordinal, profile| Feature {

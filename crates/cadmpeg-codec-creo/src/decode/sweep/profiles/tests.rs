@@ -14,10 +14,11 @@ fn sketch(id: &SketchId, entity: &SketchEntityId) -> Sketch {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: vec![vec![SketchEntityUse {
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: entity.clone(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     }
 }

@@ -484,42 +484,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
-        let Some((origin, normal_axis, u_axis)) = sketch.resolved_placement() else {
+        if sketch.resolved_placement().is_none() {
             continue;
-        };
-        let normal = normal_axis.norm();
-        let u_norm = u_axis.norm();
-        let dot = normal_axis.x * u_axis.x + normal_axis.y * u_axis.y + normal_axis.z * u_axis.z;
-        if !normal.is_finite() || normal <= 0.0 || !u_norm.is_finite() || u_norm <= 0.0 {
-            finding(
-                findings,
-                Check::Bounds,
-                sketch.id.as_str(),
-                "sketch plane has a degenerate axis",
-            );
-        } else if dot.abs() > EPS_SKETCHES_CHECK_SKETCHES_E9 * normal * u_norm {
-            finding(
-                findings,
-                Check::GeometricConsistency,
-                sketch.id.as_str(),
-                "sketch plane axes are not perpendicular",
-            );
-        }
-        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
-            finding(
-                findings,
-                Check::Bounds,
-                sketch.id.as_str(),
-                "sketch origin is not finite",
-            );
-        }
-        if sketch.profiles.iter().any(Vec::is_empty) {
-            finding(
-                findings,
-                Check::Counts,
-                sketch.id.as_str(),
-                "sketch contains an empty profile",
-            );
         }
         for profile in &sketch.profiles {
             for adjacent in profile.windows(2) {

@@ -662,7 +662,7 @@ fn transfer_sketch(
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: Default::default(),
         native_ref: Some(object.id.clone()),
     });
     ir.model.features.push(Feature {

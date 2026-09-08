@@ -1076,13 +1076,19 @@ pub(crate) fn project(
             unresolved_sketches += 1;
             continue;
         };
+        let Ok(profiles) =
+            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&referenced_entities))
+        else {
+            unresolved_sketches += 1;
+            continue;
+        };
         sketches.push(Sketch {
             id,
             name: None,
             configuration: None,
             visible: None,
             placement,
-            profiles: build_profiles(&referenced_entities),
+            profiles,
             native_ref: Some(sketch.id()),
         });
     }
@@ -1635,15 +1641,18 @@ fn project_placement(
     {
         return None;
     }
-    Some(SketchPlacement::Resolved {
-        origin: Point3::new(
-            matrix[0][3] * 10.0,
-            matrix[1][3] * 10.0,
-            matrix[2][3] * 10.0,
-        ),
-        normal,
-        u_axis,
-    })
+    Some(
+        SketchPlacement::try_resolved(
+            Point3::new(
+                matrix[0][3] * 10.0,
+                matrix[1][3] * 10.0,
+                matrix[2][3] * 10.0,
+            ),
+            normal,
+            u_axis,
+        )
+        .ok()?,
+    )
 }
 
 fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {

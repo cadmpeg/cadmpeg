@@ -133,8 +133,8 @@ pub struct Sketch {
     /// Placement of sketch coordinates in model space.
     pub placement: SketchPlacement,
     /// Ordered closed or open profile chains.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub profiles: Vec<Vec<SketchEntityUse>>,
+    #[serde(default, skip_serializing_if = "SketchProfiles::is_empty")]
+    pub profiles: SketchProfiles,
     /// Identifier of the full-fidelity native input lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -149,26 +149,178 @@ pub enum SketchPlacement {
     Unresolved,
     /// Complete model-space sketch frame.
     Resolved {
-        /// Sketch-plane origin in model space.
-        origin: Point3,
-        /// Sketch-plane unit normal.
-        normal: Vector3,
-        /// Sketch-plane u-axis.
-        u_axis: Vector3,
+        /// Checked origin and nonzero perpendicular axes.
+        #[serde(flatten)]
+        frame: SketchPlaneFrame,
     },
 }
 
+const EPS_SKETCH_PLANE_ORTHOGONALITY: f64 = 1.0e-9;
+
+/// A finite origin with nonzero perpendicular sketch axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchPlaneFrameWire")]
+pub struct SketchPlaneFrame {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPlaneFrameWire {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+}
+
+impl TryFrom<SketchPlaneFrameWire> for SketchPlaneFrame {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchPlaneFrameWire) -> Result<Self, Self::Error> {
+        let normal = wire.normal.norm();
+        let u_norm = wire.u_axis.norm();
+        let dot = wire.normal.x * wire.u_axis.x
+            + wire.normal.y * wire.u_axis.y
+            + wire.normal.z * wire.u_axis.z;
+        if !normal.is_finite() || normal <= 0.0 || !u_norm.is_finite() || u_norm <= 0.0 {
+            return Err("sketch normal and u_axis must have finite positive length");
+        }
+        if dot.abs() > EPS_SKETCH_PLANE_ORTHOGONALITY * normal * u_norm {
+            return Err("sketch normal and u_axis must be perpendicular");
+        }
+        if !wire.origin.x.is_finite() || !wire.origin.y.is_finite() || !wire.origin.z.is_finite() {
+            return Err("sketch origin must be finite");
+        }
+        Ok(Self {
+            origin: wire.origin,
+            normal: wire.normal,
+            u_axis: wire.u_axis,
+        })
+    }
+}
+
 impl SketchPlacement {
+    /// Admit a resolved sketch frame with finite origin and nonzero perpendicular axes.
+    pub fn try_resolved(
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::Resolved {
+            frame: SketchPlaneFrameWire {
+                origin,
+                normal,
+                u_axis,
+            }
+            .try_into()?,
+        })
+    }
+
     /// Return the complete frame when placement is resolved.
     pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
         match self {
             Self::Unresolved => None,
-            Self::Resolved {
-                origin,
-                normal,
-                u_axis,
-            } => Some((origin, normal, u_axis)),
+            Self::Resolved { frame } => Some((frame.origin, frame.normal, frame.u_axis)),
         }
+    }
+}
+
+/// An ordered collection of nonempty sketch profile chains.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vec<Vec<SketchEntityUse>>")]
+pub struct SketchProfiles(Vec<Vec<SketchEntityUse>>);
+
+impl TryFrom<Vec<Vec<SketchEntityUse>>> for SketchProfiles {
+    type Error = &'static str;
+
+    fn try_from(profiles: Vec<Vec<SketchEntityUse>>) -> Result<Self, Self::Error> {
+        if profiles.iter().any(Vec::is_empty) {
+            return Err("sketch profiles must contain no empty chain");
+        }
+        Ok(Self(profiles))
+    }
+}
+
+impl std::ops::Deref for SketchProfiles {
+    type Target = [Vec<SketchEntityUse>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a SketchProfiles {
+    type Item = &'a Vec<SketchEntityUse>;
+    type IntoIter = std::slice::Iter<'a, Vec<SketchEntityUse>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for SketchProfiles {
+    type Item = Vec<SketchEntityUse>;
+    type IntoIter = std::vec::IntoIter<Vec<SketchEntityUse>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl SketchProfiles {
+    /// Borrow the ordered nonempty profile chains.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Vec<SketchEntityUse>] {
+        &self.0
+    }
+
+    /// Whether the sketch has no profile chains.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Append a profile containing one entity use.
+    pub fn push_single(&mut self, entity: SketchEntityUse) {
+        self.0.push(vec![entity]);
+    }
+
+    /// Retain matching entity uses and remove chains emptied by the filter.
+    pub fn retain_uses(&mut self, mut keep: impl FnMut(&SketchEntityUse) -> bool) {
+        let mut profiles = self.0.clone();
+        for profile in &mut profiles {
+            profile.retain(&mut keep);
+        }
+        profiles.retain(|profile| !profile.is_empty());
+        self.0 = profiles;
+    }
+
+    /// Append a nonempty profile chain.
+    pub fn try_push(&mut self, profile: Vec<SketchEntityUse>) -> Result<(), &'static str> {
+        if profile.is_empty() {
+            return Err("sketch profile chain must be nonempty");
+        }
+        self.0.push(profile);
+        Ok(())
+    }
+
+    /// Replace profile chains only after every edited chain passes admission.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut Vec<Vec<SketchEntityUse>>),
+    ) -> Result<(), &'static str> {
+        let mut profiles = self.0.clone();
+        edit(&mut profiles);
+        *self = profiles.try_into()?;
+        Ok(())
+    }
+
+    /// Remove all profile chains.
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 }
 

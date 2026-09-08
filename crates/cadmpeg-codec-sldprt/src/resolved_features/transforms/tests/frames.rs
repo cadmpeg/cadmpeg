@@ -644,12 +644,13 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(28.65, -35.0, 0.35),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(28.65, -35.0, 0.35),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("axis frame");
@@ -733,12 +734,13 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(10.0, 3.0, 20.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(diagonal, 0.0, -diagonal),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(10.0, 3.0, 20.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(diagonal, 0.0, -diagonal),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: None,
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("rotated frame");
@@ -1115,12 +1117,13 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("lane".into()),
     };
     let circle = SketchEntity::new(
@@ -1293,12 +1296,13 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("lane".into()),
     }];
     let mut entities = vec![SketchEntity::new(
