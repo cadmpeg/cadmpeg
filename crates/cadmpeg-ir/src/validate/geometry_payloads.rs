@@ -1328,13 +1328,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 && control_range[0] < control_range[1]
                         }
                         crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                            coordinate,
                             function_parameter_offset,
                             function_parameter_scale,
                             ..
                         } => {
-                            matches!(coordinate, 1..=3)
-                                && function_parameter_offset.is_finite()
+                            function_parameter_offset.is_finite()
                                 && function_parameter_scale.is_finite()
                                 && *function_parameter_scale != 0.0
                         }

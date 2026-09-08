@@ -1056,3 +1056,5 @@ fn composite_curve_requires_a_segment_on_construction_and_serde() {
     empty["segments"] = serde_json::json!([]);
     assert!(serde_json::from_value::<CurveGeometry>(empty).is_err());
 }
+
+mod offset_coordinate;

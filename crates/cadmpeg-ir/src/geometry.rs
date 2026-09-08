@@ -10511,6 +10511,41 @@ pub enum CurveOffsetLawBasis {
     Parameter,
 }
 
+/// A one-based coordinate of a curve-offset distance function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub struct CurveOffsetCoordinate(u8);
+
+impl CurveOffsetCoordinate {
+    /// Admit coordinate one, two, or three.
+    pub fn try_new(coordinate: u8) -> Result<Self, &'static str> {
+        match coordinate {
+            1..=3 => Ok(Self(coordinate)),
+            _ => Err("curve offset coordinate must be 1, 2, or 3"),
+        }
+    }
+
+    /// One-based coordinate number.
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for CurveOffsetCoordinate {
+    type Error = &'static str;
+    fn try_from(coordinate: u8) -> Result<Self, Self::Error> {
+        Self::try_new(coordinate)
+    }
+}
+
+impl From<CurveOffsetCoordinate> for u8 {
+    fn from(coordinate: CurveOffsetCoordinate) -> Self {
+        coordinate.get()
+    }
+}
+
 /// Variable signed distance law for a planar curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -10530,7 +10565,7 @@ pub enum CurveOffsetDistanceLaw {
         /// Curve carrying the distance function.
         function: CurveId,
         /// One-based coordinate number on `function`.
-        coordinate: u8,
+        coordinate: CurveOffsetCoordinate,
         /// Independent-variable interpretation.
         basis: CurveOffsetLawBasis,
         /// Function parameter at zero source parameter or arc length.
