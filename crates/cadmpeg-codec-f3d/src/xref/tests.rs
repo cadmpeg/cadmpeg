@@ -203,7 +203,7 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = super::occurrence_path(&bytes).expect("synthetic path").2;
+    let path_end = super::occurrence_path(&bytes).expect("synthetic path").1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
@@ -267,8 +267,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements.len(), 6);
-    assert_eq!(placements[0].discriminators, vec![1]);
-    assert_eq!(placements[1].discriminators, vec![1]);
+
     assert_eq!(
         super::occurrence_transforms(&placements, role),
         vec![None, None, None, Some(matrix), Some(matrix), Some(matrix)]
@@ -347,7 +346,7 @@ fn grouped_identity_carriers_decode_as_identity_placements() {
         placements,
         vec![OccurrencePlacement {
             link_names: vec![role.into()],
-            discriminators: vec![1],
+
             transform: None,
         }]
     );
@@ -426,8 +425,7 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements.len(), 2);
-    assert_eq!(placements[0].discriminators, vec![1]);
-    assert_eq!(placements[1].discriminators, vec![1]);
+
     assert_eq!(
         super::occurrence_transforms(&placements, role),
         vec![None, Some(matrix)]
@@ -728,7 +726,6 @@ fn placement_keeps_the_instance_discriminator_of_every_path_element() {
     let bytes = occurrence_record("role", 10, &[7, 4, 2], None);
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
-    assert_eq!(placements[0].discriminators, vec![7, 4, 2]);
     assert_eq!(placements[0].link_names, vec!["role".to_owned()]);
 }
 
@@ -781,7 +778,7 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     ];
     let structured = OccurrencePlacement {
         link_names: vec!["role".into()],
-        discriminators: vec![1],
+
         transform: Some([
             [1.0, 0.0, 0.0, -5.0],
             [0.0, 1.0, 0.0, 0.0],
