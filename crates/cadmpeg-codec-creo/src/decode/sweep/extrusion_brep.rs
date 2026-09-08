@@ -141,7 +141,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         };
         if profiles
             .iter()
-            .flat_map(|profile| profile.entities())
+            .flat_map(super::profiles::ValidatedProfile::entities)
             .any(|entity| {
                 let geometry = entity.geometry();
                 let start = entity.start();
@@ -154,7 +154,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         }
         if profiles
             .iter()
-            .flat_map(|profile| profile.entities())
+            .flat_map(super::profiles::ValidatedProfile::entities)
             .any(|entity| {
                 let geometry = entity.geometry();
                 let reversed = entity.reversed();

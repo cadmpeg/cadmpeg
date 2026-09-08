@@ -1071,8 +1071,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         )
         .unwrap(),
     };
-    let segment =
-        crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false).unwrap();
+    let segment = crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false)
+        .expect("valid profile entity");
     let surface =
         revolved_brep_surface(&transform, &spline, false, &axis).expect("revolved spline surface");
     let SurfaceGeometry::Nurbs(surface) = &surface else {
