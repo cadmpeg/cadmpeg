@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable presentation-document identity.
     PresentationId
 );

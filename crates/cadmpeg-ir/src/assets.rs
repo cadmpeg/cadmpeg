@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-crate::ids::local_id_type!(
+crate::ids::id_type!(
     /// Stable identity of one document asset.
     AssetId
 );

@@ -722,7 +722,8 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
             },
         )
     };
-    let parameter = cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+        .expect("identity grammar");
     let mut entities = vec![
         point("synthetic:test:id#first", -30.0, 2.0),
         point("synthetic:test:id#second", -30.0, 0.0),
@@ -789,7 +790,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &entities,
             &sketch,
             2.0,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ).as_slice(),
         [SketchConstraintDefinition::Distance { entities, .. }]
@@ -814,7 +815,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &entities_with_endpoints,
             &sketch,
             2.0,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ).as_slice(),
         [SketchConstraintDefinition::Distance { entities, .. }]
@@ -854,7 +855,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ),
         Some(SketchConstraintDefinition::Distance {
@@ -886,7 +887,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &fragmented_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
         ),
         Some(SketchConstraintDefinition::ParallelLineSetDistance {
@@ -914,7 +915,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &point_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
         ),
         Some(SketchConstraintDefinition::Distance {
@@ -934,7 +935,8 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             0.0,
         )
         .is_none()
@@ -945,7 +947,8 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &point_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             1.0e-6,
         )
         .is_none()
@@ -955,7 +958,8 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
 #[test]
 fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let parameter = cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+        .expect("identity grammar");
     let point = |name: &str, u, v| {
         SketchEntity::new(
             SketchEntityId::mint(name).unwrap(),
@@ -1071,7 +1075,8 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         &circles,
         &sketch,
         &parameter,
-        &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+            .expect("identity grammar"),
         0.0,
     )
     .expect("two disjoint concentric pairs");
@@ -1110,7 +1115,8 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             &circles,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             0.0,
         )
         .is_none()

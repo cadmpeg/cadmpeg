@@ -65,8 +65,8 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .collect(),
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("width").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#width").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "width".into(),
         expression: "5".into(),
@@ -132,14 +132,14 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         native_ref: Some(native_ref.into()),
     };
     let producer = feature(
-        "producer",
+        "synthetic:test:id#producer",
         "producer-native",
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
         },
     );
     let target = feature(
-        "target",
+        "synthetic:test:id#target",
         "target-native",
         FeatureDefinition::Fillet {
             groups: vec![cadmpeg_ir::features::FilletGroup {
@@ -211,7 +211,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     );
     assert_eq!(
         features[1].dependencies,
-        vec![FeatureId::mint("producer").expect("identity grammar")]
+        vec![FeatureId::mint("synthetic:test:id#producer").expect("identity grammar")]
     );
 }
 
@@ -370,7 +370,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     };
     let mut features = vec![
         feature(
-            "plane",
+            "synthetic:test:id#plane",
             "plane-native",
             0,
             FeatureDefinition::DatumPrincipalPlane {
@@ -378,7 +378,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             },
         ),
         feature(
-            "sketch",
+            "synthetic:test:id#sketch",
             "sketch-native",
             1,
             FeatureDefinition::Sketch {
@@ -672,7 +672,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         features: vec![native_feature],
     }];
     let mut features = vec![Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: Some("generated-profile".into()),
         suppressed: Some(false),
@@ -844,7 +844,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
 fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -873,7 +873,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         native_ref: Some("lane".into()),
     }];
     let parameter = |ordinal: u32, diameter: f64| DesignParameter {
-        id: ParameterId::mint(format!("parameter-{ordinal}")).expect("identity grammar"),
+        id: ParameterId::mint(format!("synthetic:test:id#parameter-{ordinal}"))
+            .expect("identity grammar"),
         owner: Some(feature.id.clone()),
         name: format!("D{}", ordinal + 1),
         ordinal,
@@ -1048,38 +1049,47 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     let single = SketchId::mint("synthetic:test:id#single").unwrap();
     let multiple = SketchId::mint("synthetic:test:id#multiple").unwrap();
     let mut features = vec![
-        feature("owner", "owner-native", Vec::new(), Some(single.clone())),
         feature(
-            "child",
+            "synthetic:test:id#owner",
+            "owner-native",
+            Vec::new(),
+            Some(single.clone()),
+        ),
+        feature(
+            "synthetic:test:id#child",
             "child-native",
-            vec![FeatureId::mint("owner").expect("identity grammar")],
+            vec![FeatureId::mint("synthetic:test:id#owner").expect("identity grammar")],
             None,
         ),
         feature(
-            "multi-owner",
+            "synthetic:test:id#multi-owner",
             "owner-native",
             Vec::new(),
             Some(multiple.clone()),
         ),
         feature(
-            "multi-child",
+            "synthetic:test:id#multi-child",
             "multi-child-native",
-            vec![FeatureId::mint("multi-owner").expect("identity grammar")],
+            vec![FeatureId::mint("synthetic:test:id#multi-owner").expect("identity grammar")],
             None,
         ),
         Feature {
-            id: FeatureId::mint("consumer").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#consumer").expect("identity grammar"),
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: vec![FeatureId::mint("child").expect("identity grammar")],
+            dependencies: vec![
+                FeatureId::mint("synthetic:test:id#child").expect("identity grammar")
+            ],
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
-                profile: ProfileRef::Feature(FeatureId::mint("child").expect("identity grammar")),
+                profile: ProfileRef::Feature(
+                    FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
+                ),
                 direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
@@ -1101,13 +1111,17 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         },
     ];
     let mut multi_consumer = features[4].clone();
-    multi_consumer.id = FeatureId::mint("multi-consumer").expect("identity grammar");
+    multi_consumer.id =
+        FeatureId::mint("synthetic:test:id#multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
-    multi_consumer.dependencies = vec![FeatureId::mint("multi-child").expect("identity grammar")];
+    multi_consumer.dependencies =
+        vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")];
     let FeatureDefinition::Extrude { profile, .. } = &mut multi_consumer.definition else {
         unreachable!();
     };
-    *profile = ProfileRef::Feature(FeatureId::mint("multi-child").expect("identity grammar"));
+    *profile = ProfileRef::Feature(
+        FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar"),
+    );
     features.push(multi_consumer);
     let sketch = |id: SketchId, profile_count: usize| Sketch {
         id,
@@ -1157,17 +1171,17 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     ));
     assert_eq!(
         features[4].dependencies,
-        [FeatureId::mint("owner").expect("identity grammar")]
+        [FeatureId::mint("synthetic:test:id#owner").expect("identity grammar")]
     );
     assert!(matches!(
         &features[5].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(feature),
             ..
-        } if feature == &FeatureId::mint("multi-child").expect("identity grammar")
+        } if feature == &FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")
     ));
     assert_eq!(
         features[5].dependencies,
-        [FeatureId::mint("multi-child").expect("identity grammar")]
+        [FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")]
     );
 }

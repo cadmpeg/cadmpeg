@@ -64,7 +64,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
 
 fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
     let mut feature = Feature::new(
-        FeatureId::mint("neutral-feature").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#neutral-feature").expect("identity grammar"),
         0,
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),

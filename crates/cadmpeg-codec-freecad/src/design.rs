@@ -58,8 +58,8 @@ pub(crate) fn transfer(
     let feature_ids = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
-        .map(|object| (object.id.as_str(), feature_id(object)))
-        .collect::<HashMap<_, _>>();
+        .map(|object| Ok((object.id.as_str(), feature_id(object)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let parent_by_member = objects
         .iter()
         .filter(|object| is_body(&object.type_name))
@@ -70,9 +70,9 @@ pub(crate) fn transfer(
                 .into_iter()
                 .flat_map(PropertyRecord::links)
                 .filter_map(|link| link.object())
-                .map(move |member| (member, feature_id(body)))
+                .map(move |member| Ok((member, feature_id(body)?)))
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut sketch_ids = objects
         .iter()
         .filter(|object| is_sketch(&object.type_name))
@@ -92,19 +92,19 @@ pub(crate) fn transfer(
         .collect::<Vec<_>>();
     let source_order = objects
         .iter()
-        .map(|candidate| (feature_id(candidate), candidate.order))
-        .collect::<HashMap<_, _>>();
+        .map(|candidate| Ok((feature_id(candidate)?, candidate.order)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         objects,
         &properties_by_owner,
         &parent_by_member,
         &source_order,
-    );
+    )?;
     let ordinal_by_feature = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
-        .map(|object| (feature_id(object), feature_ordinals[object.id.as_str()]))
-        .collect::<HashMap<_, _>>();
+        .map(|object| Ok((feature_id(object)?, feature_ordinals[object.id.as_str()])))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
 
     for object in objects {
         if !is_design_object(&object.type_name) {
@@ -114,7 +114,7 @@ pub(crate) fn transfer(
             .get(object.id.as_str())
             .cloned()
             .unwrap_or_default();
-        let id = feature_id(object);
+        let id = feature_id(object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
             ir.model.spreadsheets.push(append_spreadsheet(
                 &mut ir.model.parameters,
@@ -392,7 +392,7 @@ pub(crate) fn transfer(
             _ => Vec::new(),
         };
         let definition = post_processed_definition(definition, &object.type_name, &owned);
-        append_operation_parameters(&mut ir.model.parameters, object, &owned);
+        append_operation_parameters(&mut ir.model.parameters, object, &owned)?;
         let outputs = payloads
             .iter()
             .filter(|payload| owned.iter().any(|property| property.id == payload.property))
@@ -474,14 +474,14 @@ pub(crate) fn transfer(
         .iter()
         .filter(|object| cycle_affected.contains(object.id.as_str()))
         .map(feature_id)
-        .collect::<BTreeSet<_>>();
+        .collect::<Result<BTreeSet<_>, _>>()?;
     let parameter_cycle_features = bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,
         &initial_cycle_affected_features,
-    );
+    )?;
     for object in objects {
-        if !parameter_cycle_features.contains(&feature_id(object)) {
+        if !parameter_cycle_features.contains(&feature_id(object)?) {
             continue;
         }
         cycle_affected.insert(object.id.clone());
@@ -589,7 +589,7 @@ fn feature_ordinals<'a>(
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
     source_order: &HashMap<FeatureId, usize>,
-) -> (HashMap<&'a str, u64>, BTreeSet<String>) {
+) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
     let design_objects = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
@@ -604,8 +604,8 @@ fn feature_ordinals<'a>(
         .collect::<HashMap<_, _>>();
     let object_by_feature = design_objects
         .iter()
-        .map(|object| (feature_id(object), object.id.as_str()))
-        .collect::<HashMap<_, _>>();
+        .map(|object| Ok((feature_id(object)?, object.id.as_str())))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut source_ordinals = design_objects
         .iter()
         .map(|object| object.order as u64)
@@ -680,7 +680,8 @@ fn feature_ordinals<'a>(
                                     | "Sections"
                                     | "Source"
                                     | "Spine"
-                            ) || source_order[&feature_id(dependency)] < object.order
+                            ) || feature_id(dependency)
+                                .is_ok_and(|id| source_order[&id] < object.order)
                         })
                     })
                     .all(|(_, dependency)| emitted.contains(dependency))
@@ -705,7 +706,7 @@ fn feature_ordinals<'a>(
         ordinals.insert(next.id.as_str(), ordinal);
     }
 
-    (ordinals, cycle_affected)
+    Ok((ordinals, cycle_affected))
 }
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
@@ -903,7 +904,7 @@ fn append_spreadsheet(
             "fcstd:design:parameter#{}:cell:{address}",
             object.name
         ))
-        .expect("identity grammar");
+        .map_err(CodecError::malformed)?;
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has invalid address", property.id))
         })?;
@@ -921,7 +922,7 @@ fn append_spreadsheet(
         }
         parameters.push(DesignParameter {
             id,
-            owner: Some(feature_id(object)),
+            owner: Some(feature_id(object)?),
             ordinal: index as u32,
             name: name.to_owned(),
             expression: content.to_owned(),
@@ -937,8 +938,8 @@ fn append_spreadsheet(
     }
     Ok(Spreadsheet {
         id: SpreadsheetId::mint(format!("fcstd:design:spreadsheet#{}", object.name))
-            .expect("identity grammar"),
-        feature: feature_id(object),
+            .map_err(CodecError::malformed)?,
+        feature: feature_id(object)?,
         cells: cell_ids,
         column_widths: spreadsheet_dimensions(
             properties,
@@ -1108,7 +1109,8 @@ fn append_operation_parameters(
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
-) {
+) -> Result<(), CodecError> {
+    let owner = feature_id(object)?;
     const NAMES: &[&str] = &[
         "Angle",
         "Angle2",
@@ -1136,7 +1138,7 @@ fn append_operation_parameters(
         .filter(|property| NAMES.contains(&property.name.as_str()))
     {
         if parameters.iter().any(|parameter| {
-            parameter.owner.as_ref() == Some(&feature_id(object)) && parameter.name == property.name
+            parameter.owner.as_ref() == Some(&owner) && parameter.name == property.name
         }) {
             continue;
         }
@@ -1154,8 +1156,8 @@ fn append_operation_parameters(
                 "fcstd:design:parameter#{}:{}",
                 object.name, property.name
             ))
-            .expect("identity grammar"),
-            owner: Some(feature_id(object)),
+            .map_err(CodecError::malformed)?,
+            owner: Some(owner.clone()),
             ordinal: property.order as u32,
             name: property.name.clone(),
             expression: expression.map_or_else(
@@ -1174,6 +1176,7 @@ fn append_operation_parameters(
             native_ref: Some(property.id.clone()),
         });
     }
+    Ok(())
 }
 
 struct SketchTransfer {
@@ -2100,7 +2103,7 @@ fn parse_constraints(
                         object.name,
                         index + 1
                     ))
-                    .expect("identity grammar");
+                    .map_err(CodecError::malformed)?;
                     let value = match type_code {
                         Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
                         Some(16 | 19) => ParameterValue::Real(value),
@@ -2123,7 +2126,7 @@ fn parse_constraints(
                     }
                     parameters.push(DesignParameter {
                         id: id.clone(),
-                        owner: Some(feature_id(object)),
+                        owner: Some(feature_id(object)?),
                         ordinal: index as u32,
                         name: format!("Constraint{}", index + 1),
                         expression: expression.map_or_else(
@@ -2137,8 +2140,9 @@ fn parse_constraints(
                         pmi: None,
                         native_ref: Some(property.id.clone()),
                     });
-                    id
+                    Ok::<_, CodecError>(id)
                 })
+                .transpose()?
         } else {
             None
         };
@@ -2339,11 +2343,11 @@ fn bind_parameter_dependencies(
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
-) -> BTreeSet<FeatureId> {
+) -> Result<BTreeSet<FeatureId>, CodecError> {
     let object_names = objects
         .iter()
-        .map(|object| (feature_id(object), object.name.as_str()))
-        .collect::<HashMap<_, _>>();
+        .map(|object| Ok((feature_id(object)?, object.name.as_str())))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let candidates = parameters
         .iter()
         .map(|parameter| {
@@ -2436,7 +2440,7 @@ fn bind_parameter_dependencies(
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
         *index += 1;
     }
-    parameter_cycle_features
+    Ok(parameter_cycle_features)
 }
 
 fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
@@ -5917,8 +5921,8 @@ fn operation_boolean(kind: &str) -> BooleanOp {
     }
 }
 
-fn feature_id(object: &ObjectRecord) -> FeatureId {
-    FeatureId::mint(format!("fcstd:design:feature#{}", object.name)).expect("identity grammar")
+fn feature_id(object: &ObjectRecord) -> Result<FeatureId, CodecError> {
+    FeatureId::mint(format!("fcstd:design:feature#{}", object.name)).map_err(CodecError::malformed)
 }
 
 fn feature_base_definition(

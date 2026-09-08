@@ -1507,21 +1507,21 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let planar_sketch = SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap();
     let spatial_sketch = SpatialSketchId::mint("synthetic:test:id#f3d:sketch:spatial").unwrap();
     let planar_feature = feature(
-        "f3d:feature:planar-sketch",
+        "synthetic:test:id#f3d:feature:planar-sketch",
         0,
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar_sketch.clone())),
         },
     );
     let spatial_feature = feature(
-        "f3d:feature:spatial-sketch",
+        "synthetic:test:id#f3d:feature:spatial-sketch",
         1,
         FeatureDefinition::SpatialSketch {
             sketch: Some(spatial_sketch.clone()),
         },
     );
     let base_flange = feature(
-        "f3d:feature:base-flange",
+        "synthetic:test:id#f3d:feature:base-flange",
         2,
         FeatureDefinition::SheetMetalBaseFlange {
             profile: ProfileRef::Sketch(planar_sketch.clone()),
@@ -1530,7 +1530,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         },
     );
     let loft = feature(
-        "f3d:feature:loft",
+        "synthetic:test:id#f3d:feature:loft",
         3,
         FeatureDefinition::Loft {
             sections: vec![

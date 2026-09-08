@@ -243,7 +243,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         configurations: Vec::new(),
         features: vec![native_feature],
     };
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("sketch").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#sketch")
+        .expect("identity grammar");
     let unresolved = FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
     };
@@ -315,7 +316,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         native_ref: Some("lane".into()),
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
+            .expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -458,8 +460,8 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
-        neutral("owner", "Sketch1", "owner-native", 0),
-        neutral("alias", "Sketch1<3>", "alias-native", 1),
+        neutral("synthetic:test:id#owner", "Sketch1", "owner-native", 0),
+        neutral("synthetic:test:id#alias", "Sketch1<3>", "alias-native", 1),
     ];
     bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history));
     assert!(matches!(
@@ -551,8 +553,10 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     });
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId::mint(format!("configuration-{ordinal}"))
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ConfigurationId::mint(format!(
+                "synthetic:test:id#configuration-{ordinal}"
+            ))
+            .expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
             source_index: Some(ordinal),
@@ -679,8 +683,8 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
     };
 
-    let producer_id = FeatureId::mint("producer").expect("identity grammar");
-    let consumer_id = FeatureId::mint("consumer").expect("identity grammar");
+    let producer_id = FeatureId::mint("synthetic:test:id#producer").expect("identity grammar");
+    let consumer_id = FeatureId::mint("synthetic:test:id#consumer").expect("identity grammar");
     let unresolved = FeatureDefinition::Chamfer {
         groups: vec![ChamferGroup {
             edges: EdgeSelection::Unresolved,
@@ -720,7 +724,8 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
+            .expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(1),

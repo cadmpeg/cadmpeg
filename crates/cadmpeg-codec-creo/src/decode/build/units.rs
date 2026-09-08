@@ -1611,7 +1611,8 @@ mod tests {
     fn scales_model_geometry_and_feature_dimensions() {
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("feature").expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
+                .expect("identity grammar"),
             0,
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Unresolved("profile".into()),
@@ -1645,7 +1646,8 @@ mod tests {
         ir.model
             .parameters
             .push(cadmpeg_ir::features::DesignParameter {
-                id: cadmpeg_ir::features::ParameterId::mint("length").expect("identity grammar"),
+                id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
+                    .expect("identity grammar"),
                 owner: None,
                 ordinal: 0,
                 name: "length".into(),

@@ -3297,7 +3297,8 @@ mod parser_tests {
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
             parameter: DesignParameter {
-                id: ParameterId::mint("parameter".to_string()).expect("identity grammar"),
+                id: ParameterId::mint("synthetic:test:id#parameter".to_string())
+                    .expect("identity grammar"),
                 owner: None,
                 ordinal: 0,
                 name: "Value".to_string(),

@@ -41,7 +41,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ),
     ];
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -463,7 +463,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     };
     let parameter = |id: &str, display| DesignParameter {
         id: ParameterId::mint(id).expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: id.into(),
         expression: String::new(),
@@ -475,7 +475,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         native_ref: None,
     };
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let distance = parameter("distance", None);
+    let distance = parameter("synthetic:test:id#distance", None);
     assert!(matches!(
         typed_relation_definition(
             &relation,
@@ -524,7 +524,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         }],
         ..relation
     };
-    let radius = parameter("circle", Some(DimensionDisplay::Radius));
+    let radius = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Radius));
     assert!(matches!(
         typed_relation_definition(
             &circle,
@@ -537,7 +537,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(SketchConstraintDefinition::Radius { parameter, .. })
             if parameter.as_str() == "circle"
     ));
-    let diameter = parameter("circle", Some(DimensionDisplay::Diameter));
+    let diameter = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Diameter));
     assert!(matches!(
         typed_relation_definition(
             &circle,
@@ -550,7 +550,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(SketchConstraintDefinition::Diameter { parameter, .. })
             if parameter.as_str() == "circle"
     ));
-    let undisplayed = parameter("circle", None);
+    let undisplayed = parameter("synthetic:test:id#circle", None);
     assert_eq!(
         typed_relation_definition(
             &circle,
@@ -647,7 +647,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         ),
     ];
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -834,7 +834,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         .with_construction(true)
     });
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),

@@ -749,8 +749,8 @@ mod idless_history_binding_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let profile_id =
-            cadmpeg_ir::features::FeatureId::mint("profile").expect("identity grammar");
+        let profile_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile")
+            .expect("identity grammar");
         let mut features = vec![
             cadmpeg_ir::features::Feature {
                 id: profile_id.clone(),
@@ -769,7 +769,8 @@ mod idless_history_binding_tests {
                 native_ref: Some("profile-native".into()),
             },
             cadmpeg_ir::features::Feature {
-                id: cadmpeg_ir::features::FeatureId::mint("extrusion").expect("identity grammar"),
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrusion")
+                    .expect("identity grammar"),
                 ordinal: 1,
                 name: None,
                 suppressed: Some(false),

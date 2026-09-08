@@ -2814,7 +2814,7 @@ mod relation_geometry_tests {
 
         let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
-            id: FeatureId::mint("feature").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -2909,7 +2909,7 @@ mod relation_geometry_tests {
             ],
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId::mint("distance").expect("identity grammar"),
+            id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
             name: "distance".into(),
@@ -2996,7 +2996,7 @@ mod relation_geometry_tests {
         const LANE: &str = "lane#test";
         let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
-            id: FeatureId::mint("feature").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -3124,7 +3124,7 @@ mod relation_geometry_tests {
             ],
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId::mint("distance").expect("identity grammar"),
+            id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
             name: "distance".into(),
@@ -3196,7 +3196,7 @@ mod relation_geometry_tests {
             }
         }
         let fallback_parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId::mint("fallback-distance").expect("identity grammar"),
+            id: ParameterId::mint("synthetic:test:id#fallback-distance").expect("identity grammar"),
             native_ref: Some("fallback-scalar".into()),
             ..parameter.clone()
         };
@@ -3464,7 +3464,7 @@ mod relation_geometry_tests {
             native_ref: Some(FEATURE.into()),
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
-            id: ParameterId::mint("parameter").expect("identity grammar"),
+            id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
             name: "distance".into(),
@@ -3501,7 +3501,7 @@ mod relation_geometry_tests {
         };
         assert_eq!(
             parameter,
-            &ParameterId::mint("parameter").expect("identity grammar")
+            &ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
         );
         let point_entity = entities
             .iter()

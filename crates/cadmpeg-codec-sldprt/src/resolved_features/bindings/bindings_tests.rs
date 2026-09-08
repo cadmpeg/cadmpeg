@@ -194,7 +194,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         sketch_entities: Vec::new(),
     };
     let mut feature = Feature {
-        id: FeatureId::mint("mirror").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#mirror").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -458,7 +458,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     };
     let mut features = vec![
         Feature {
-            id: FeatureId::mint("pattern").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
             ordinal: 0,
             name: Some("CirPattern1".into()),
             suppressed: Some(false),
@@ -475,7 +475,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             native_ref: Some("pattern-native".into()),
         },
         Feature {
-            id: FeatureId::mint("seed").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
             ordinal: 1,
             name: Some("HoleWizard1".into()),
             suppressed: Some(false),
@@ -501,12 +501,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
 
     assert_eq!(
         features[0].dependencies,
-        vec![FeatureId::mint("seed").expect("identity grammar")]
+        vec![FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")]
     );
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Pattern { seeds, pattern: PatternKind::UnresolvedCircular }
-            if seeds == &[PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))]
+            if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))]
     ));
 }
 
@@ -594,11 +594,11 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         sketch_entities: Vec::new(),
     };
     let mut features = vec![Feature {
-        id: FeatureId::mint("pattern").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: vec![FeatureId::mint("seed").expect("identity grammar")],
+        dependencies: vec![FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -606,7 +606,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(
-                FeatureId::mint("seed").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
             )],
             pattern: PatternKind::UnresolvedCircular,
         },

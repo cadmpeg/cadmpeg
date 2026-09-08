@@ -213,7 +213,8 @@ fn governing_dimension_identity_uses_parameter_identity() {
     let same = neutral_dimension_constraint_id(&parameter, "pair").unwrap();
     let other_form = neutral_dimension_constraint_id(&parameter, "null-pair").unwrap();
     let other_parameter = neutral_dimension_constraint_id(
-        &cadmpeg_ir::features::ParameterId::mint("parameter:Design/A").expect("identity grammar"),
+        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:Design/A")
+            .expect("identity grammar"),
         "12:pair",
     )
     .unwrap();

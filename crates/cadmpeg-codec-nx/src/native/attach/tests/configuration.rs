@@ -315,20 +315,20 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     let mut ir = CadIr::empty();
     ir.model.parameters = vec![
         parameter(
-            "length",
+            "synthetic:test:id#length",
             0,
             Some(ParameterValue::Length(Length(25.4))),
             Vec::new(),
         ),
         parameter(
-            "angle",
+            "synthetic:test:id#angle",
             1,
             Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
-            vec![ParameterId::mint("length").expect("identity grammar")],
+            vec![ParameterId::mint("synthetic:test:id#length").expect("identity grammar")],
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("active").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#active").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -349,11 +349,11 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         ir.model.configurations[0].parameter_values,
         BTreeMap::from([
             (
-                ParameterId::mint("angle").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#angle").expect("identity grammar"),
                 ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))
             ),
             (
-                ParameterId::mint("length").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#length").expect("identity grammar"),
                 ParameterValue::Length(Length(25.4))
             ),
         ])
@@ -376,7 +376,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         native_ref: None,
     };
     let configuration = || DesignConfiguration {
-        id: ConfigurationId::mint("active").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#active").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -390,22 +390,34 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         native_ref: None,
     };
     let mut cases = [
-        vec![parameter("p1", None, Vec::new())],
+        vec![parameter("synthetic:test:id#p1", None, Vec::new())],
         vec![parameter(
-            "p1",
+            "synthetic:test:id#p1",
             Some(ParameterValue::Real(1.0)),
-            vec![ParameterId::mint("missing").expect("identity grammar")],
+            vec![ParameterId::mint("synthetic:test:id#missing").expect("identity grammar")],
         )],
         vec![
-            parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
-            parameter("p1", Some(ParameterValue::Real(2.0)), Vec::new()),
+            parameter(
+                "synthetic:test:id#p1",
+                Some(ParameterValue::Real(1.0)),
+                Vec::new(),
+            ),
+            parameter(
+                "synthetic:test:id#p1",
+                Some(ParameterValue::Real(2.0)),
+                Vec::new(),
+            ),
         ],
         vec![
-            parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
             parameter(
-                "p2",
+                "synthetic:test:id#p1",
+                Some(ParameterValue::Real(1.0)),
+                Vec::new(),
+            ),
+            parameter(
+                "synthetic:test:id#p2",
                 Some(ParameterValue::Real(2.0)),
-                vec![ParameterId::mint("p1").expect("identity grammar")],
+                vec![ParameterId::mint("synthetic:test:id#p1").expect("identity grammar")],
             ),
         ],
     ];
@@ -443,7 +455,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             native_ref: None,
         };
     let configuration = |active, bodies| DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active,
         source_index: Some(0),
@@ -459,14 +471,14 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.features = vec![
-        feature("dependency", Vec::new(), Vec::new(), None),
+        feature("synthetic:test:id#dependency", Vec::new(), Vec::new(), None),
         feature(
-            "writer",
-            vec![FeatureId::mint("dependency").expect("identity grammar")],
+            "synthetic:test:id#writer",
+            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
             vec![body.clone()],
             None,
         ),
-        feature("unrelated", Vec::new(), Vec::new(), None),
+        feature("synthetic:test:id#unrelated", Vec::new(), Vec::new(), None),
     ];
     for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
         feature.ordinal = ordinal as u64;
@@ -486,16 +498,17 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     assert_eq!(
         states.keys().cloned().collect::<Vec<_>>(),
         [
-            FeatureId::mint("dependency").expect("identity grammar"),
-            FeatureId::mint("writer").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")
         ]
     );
     assert_eq!(
-        states[&FeatureId::mint("writer").expect("identity grammar")].dependencies,
-        [FeatureId::mint("dependency").expect("identity grammar")]
+        states[&FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")]
+            .dependencies,
+        [FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")]
     );
     assert_eq!(
-        states[&FeatureId::mint("writer").expect("identity grammar")]
+        states[&FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")]
             .evaluation
             .outputs(),
         [BodyId::mint("test:model:entity#body").expect("identity grammar")]
@@ -528,14 +541,14 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     body_record.id = body.clone();
     ir.model.bodies.push(body_record);
     ir.model.features = vec![
-        feature("dependency", 1, Vec::new(), Vec::new()),
+        feature("synthetic:test:id#dependency", 1, Vec::new(), Vec::new()),
         feature(
-            "writer",
+            "synthetic:test:id#writer",
             2,
-            vec![FeatureId::mint("dependency").expect("identity grammar")],
+            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
             vec![body],
         ),
-        feature("unrelated", 3, Vec::new(), Vec::new()),
+        feature("synthetic:test:id#unrelated", 3, Vec::new(), Vec::new()),
     ];
     let mut annotations = AnnotationBuilder::new();
 
@@ -552,13 +565,15 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     )
     .is_err());
     ir.model.features[0].ordinal = 1;
-    ir.model.features[2].id = FeatureId::mint("writer").expect("identity grammar");
+    ir.model.features[2].id =
+        FeatureId::mint("synthetic:test:id#writer").expect("identity grammar");
     assert!(super::active_feature_closure(
         &ir,
         &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
     )
     .is_err());
-    ir.model.features[2].id = FeatureId::mint("unrelated").expect("identity grammar");
+    ir.model.features[2].id =
+        FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
     assert!(super::active_feature_closure(
         &ir,
@@ -570,7 +585,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
 #[test]
 fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_atomically() {
     let producer = |dependency: &str| Feature {
-        id: FeatureId::mint("writer").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#writer").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -604,7 +619,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     let mut missing_dependency = CadIr::empty();
     missing_dependency.model.features = vec![producer("missing")];
     missing_dependency.model.configurations = vec![configuration(
-        "active",
+        "synthetic:test:id#active",
         true,
         ConfigurationBodies::Resolved(vec![
             BodyId::mint("test:model:entity#body").expect("identity grammar")
@@ -621,7 +636,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.features = vec![producer("writer")];
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations = vec![configuration(
-        "active",
+        "synthetic:test:id#active",
         true,
         ConfigurationBodies::Unresolved,
     )];
@@ -636,7 +651,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     contradicted.model.features[0].dependencies.clear();
     contradicted.model.features[0].suppressed = Some(true);
     contradicted.model.configurations = vec![configuration(
-        "active",
+        "synthetic:test:id#active",
         true,
         ConfigurationBodies::Resolved(vec![
             BodyId::mint("test:model:entity#body").expect("identity grammar")
@@ -653,14 +668,14 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     ambiguous.model.features[0].dependencies.clear();
     ambiguous.model.configurations = vec![
         configuration(
-            "first",
+            "synthetic:test:id#first",
             true,
             ConfigurationBodies::Resolved(vec![
                 BodyId::mint("test:model:entity#body").expect("identity grammar")
             ]),
         ),
         configuration(
-            "second",
+            "synthetic:test:id#second",
             true,
             ConfigurationBodies::Resolved(vec![
                 BodyId::mint("test:model:entity#body").expect("identity grammar")
@@ -1184,7 +1199,8 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
         BooleanOp::Unresolved
     );
 
-    let prior = super::FeatureId::mint("prior-offset-writer").expect("identity grammar");
+    let prior =
+        super::FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
     let offset_body = "store:block#7";
     let mut offset_history = super::BodyWriterHistory::default();
     offset_history.record_writer(None, Some(offset_body), &[], &prior);
@@ -1734,7 +1750,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         }
     );
     let feature = Feature {
-        id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1826,8 +1842,10 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         panic!("Boolean definition");
     };
 
-    let native_prior = FeatureId::mint("native-prior".to_string()).expect("identity grammar");
-    let offset_prior = FeatureId::mint("offset-prior".to_string()).expect("identity grammar");
+    let native_prior =
+        FeatureId::mint("synthetic:test:id#native-prior".to_string()).expect("identity grammar");
+    let offset_prior =
+        FeatureId::mint("synthetic:test:id#offset-prior".to_string()).expect("identity grammar");
     let mut history = super::BodyWriterHistory::default();
     history.record_writer(Some(401), None, &[], &native_prior);
     history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);

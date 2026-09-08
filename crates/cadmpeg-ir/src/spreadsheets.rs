@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::features::{FeatureId, ParameterId};
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable spreadsheet identity.
     SpreadsheetId
 );

@@ -407,7 +407,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     let sketch = SketchId::mint("synthetic:test:id#path-sketch").unwrap();
     let mut features = vec![
         model_feature(
-            "pattern",
+            "synthetic:test:id#pattern",
             "pattern-native",
             FeatureDefinition::Pattern {
                 seeds: Vec::new(),
@@ -419,14 +419,14 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             },
         ),
         model_feature(
-            "path",
+            "synthetic:test:id#path",
             "path-native",
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             },
         ),
         model_feature(
-            "seed",
+            "synthetic:test:id#seed",
             "seed-native",
             FeatureDefinition::Native {
                 kind: "Extrude".into(),
@@ -903,7 +903,7 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1014,8 +1014,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         native_ref: Some(scalar.into()),
     };
     let parameters = vec![
-        parameter("lower", "lower-scalar"),
-        parameter("upper", "upper-scalar"),
+        parameter("synthetic:test:id#lower", "lower-scalar"),
+        parameter("synthetic:test:id#upper", "upper-scalar"),
     ];
     let mut constraints = Vec::new();
     project_relation_bindings(
@@ -1087,7 +1087,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 fn roster_point_line_distance_materializes_one_solver_line() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1185,7 +1185,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
@@ -1260,7 +1260,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1372,7 +1372,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
@@ -1432,7 +1432,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1544,9 +1544,9 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         native_ref: Some(scalar.into()),
     };
     let parameters = vec![
-        parameter("distance-a", "scalar-a", 5.0),
-        parameter("distance-b", "scalar-b", 7.0),
-        parameter("distance-c", "scalar-c", 7.0),
+        parameter("synthetic:test:id#distance-a", "scalar-a", 5.0),
+        parameter("synthetic:test:id#distance-b", "scalar-b", 7.0),
+        parameter("synthetic:test:id#distance-c", "scalar-c", 7.0),
     ];
 
     project_relation_point_geometry(

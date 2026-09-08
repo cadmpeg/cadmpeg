@@ -2962,7 +2962,8 @@ mod detached_legacy_sketch_tests {
         };
         let expected_sketch = SketchId::mint("sldprt:model:sketch#markers:1:30").unwrap();
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
+                .expect("identity grammar"),
             30,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -3038,7 +3039,8 @@ mod detached_legacy_sketch_tests {
             sketch_entities: vec![unbound],
         };
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
+                .expect("identity grammar"),
             30,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
