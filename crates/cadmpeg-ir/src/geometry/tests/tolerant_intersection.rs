@@ -6,7 +6,7 @@ use crate::{ids::SurfaceId, math::Point3};
 use serde_json::json;
 
 fn supports() -> [SurfaceId; 2] {
-    ["test:surface#1", "test:surface#2"].map(|id| SurfaceId::mint(id).unwrap())
+    ["test:model:surface#1", "test:model:surface#2"].map(|id| SurfaceId::mint(id).unwrap())
 }
 
 #[test]
