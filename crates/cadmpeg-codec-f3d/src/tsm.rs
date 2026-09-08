@@ -552,12 +552,13 @@ fn grip_block(
                     let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
                         malformed(name, "derived-grip entry names a deleted grip")
                     })?;
-                    Ok(SubdSecondaryGrip {
-                        source_index: u32::try_from(index)
+                    SubdSecondaryGrip::new(
+                        u32::try_from(index)
                             .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
-                        point: point.point,
-                        weight: point.weight,
-                    })
+                        point.point,
+                        point.weight,
+                    )
+                    .map_err(|error| malformed(name, &error.to_string()))
                 })
                 .transpose()
         })
