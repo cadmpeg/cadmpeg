@@ -498,7 +498,7 @@ impl SldprtNative {
                     .find(|class| class.id == record.class_ref)
                     .is_none_or(|class| {
                         !matches!(
-                            crate::classification::native_object_class(&class.name).kind,
+                            crate::classification::native_object_class(&class.name),
                             crate::classification::NativeClassKind::SketchRelation(family)
                                 if family == record.family
                         )
@@ -1131,7 +1131,7 @@ fn relation_instance_shape_valid(
         return false;
     };
     if !matches!(
-        crate::classification::native_object_class(&class.name).kind,
+        crate::classification::native_object_class(&class.name),
         crate::classification::NativeClassKind::SketchRelation(family)
             if family == record.family
     ) {

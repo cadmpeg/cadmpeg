@@ -1793,7 +1793,6 @@ pub(crate) fn project_sketch_block_profiles(
                         .iter()
                         .filter(|(_, feature)| {
                             native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                                .kind
                                 == NativeClassKind::SketchBlockDefinition
                         })
                         .filter_map(|(_, feature)| {
@@ -1824,7 +1823,7 @@ pub(crate) fn project_sketch_block_profiles(
                 let mut block_feature_ids = HashMap::<String, String>::new();
                 let mut definitions_complete = true;
                 for (_, native_definition) in intervening.iter().filter(|(_, feature)| {
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockDefinition
                 }) {
                     let Some(source) = native_definition.source_id.as_deref().filter(|source| {
@@ -1871,7 +1870,7 @@ pub(crate) fn project_sketch_block_profiles(
                 let mut instances = Vec::new();
                 let mut instances_complete = true;
                 for (_, native_instance) in intervening.iter().filter(|(_, feature)| {
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockInstance
                 }) {
                     let Some(instance_index) = features.iter().position(|feature| {
@@ -1963,7 +1962,7 @@ fn dissectable_child_sources(value: &str) -> Option<HashSet<u32>> {
 
 fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
     matches!(
-        native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
+        native_object_class(feature.input_class.as_deref().unwrap_or_default()),
         NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
     )
 }

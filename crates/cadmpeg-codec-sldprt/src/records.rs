@@ -793,7 +793,7 @@ pub(crate) struct FeatureInputClass {
 
 impl FeatureInputClass {
     pub(crate) fn role(&self) -> FeatureInputClassRole {
-        crate::classification::native_object_class(&self.name).role
+        crate::classification::native_object_class(&self.name).role()
     }
 }
 
@@ -812,7 +812,7 @@ mod feature_class_wire {
     pub(super) fn serialize<S: Serializer>(name: &str, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("name", name)?;
-        map.serialize_entry("role", &native_object_class(name).role)?;
+        map.serialize_entry("role", &native_object_class(name).role())?;
         map.end()
     }
 
@@ -822,7 +822,7 @@ mod feature_class_wire {
         let wire = Wire::deserialize(deserializer)?;
         if wire
             .role
-            .is_some_and(|role| role != native_object_class(&wire.name).role)
+            .is_some_and(|role| role != native_object_class(&wire.name).role())
         {
             return Err(serde::de::Error::custom(
                 "role must match the native class name",

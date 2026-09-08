@@ -215,7 +215,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 continue;
             }
             let is_cosmetic_thread = |candidate: &crate::records::Feature| {
-                native_object_class(candidate.input_class.as_deref().unwrap_or_default()).kind
+                native_object_class(candidate.input_class.as_deref().unwrap_or_default())
                     == NativeClassKind::CosmeticThread
             };
             let has_depth =
@@ -253,7 +253,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .is_some_and(|feature| {
                         let class = feature.input_class.as_deref().unwrap_or_default();
                         is_profile_feature_object(feature)
-                            || native_object_class(class).kind == NativeClassKind::CosmeticThread
+                            || native_object_class(class) == NativeClassKind::CosmeticThread
                     });
                 if !skip {
                     break;
@@ -479,7 +479,7 @@ fn compact_termination_face_vote(
 }
 
 pub(super) fn is_extrusion_end_spec_owner(feature: &crate::records::Feature) -> bool {
-    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+    native_object_class(feature.input_class.as_deref().unwrap_or_default())
         == NativeClassKind::Extrusion
         || matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
 }
@@ -510,7 +510,7 @@ pub(crate) fn enrich_history_combine_selections(
             else {
                 continue;
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::Combine
             {
                 continue;
@@ -647,7 +647,7 @@ pub(crate) fn enrich_history_sweep_paths(
                 continue;
             };
             if !matches!(
-                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
+                native_object_class(feature.input_class.as_deref().unwrap_or_default()),
                 NativeClassKind::Sweep | NativeClassKind::SweepReferenceSurface
             ) || feature.properties.contains_key("Path")
             {
@@ -779,7 +779,7 @@ pub(crate) fn project_surface_sweep_profiles(
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, &(start, feature)) in objects.iter().enumerate() {
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::SweepReferenceSurface
             {
                 continue;
