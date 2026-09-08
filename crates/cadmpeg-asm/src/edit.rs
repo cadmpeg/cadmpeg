@@ -908,28 +908,6 @@ fn record_slice<'a>(bytes: &'a [u8], record: &Record, label: &str) -> Result<&'a
         .ok_or_else(|| CodecError::malformed(format_args!("{label} record is truncated")))
 }
 
-fn apply_f64_patches(
-    bytes: &mut [u8],
-    record_offset: usize,
-    patches: impl IntoIterator<Item = (usize, f64)>,
-) {
-    for (offset, value) in patches {
-        let at = record_offset + offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-}
-
-fn apply_vector_payload(bytes: &mut [u8], base_at: usize, components: [f64; 3]) {
-    apply_f64_patches(
-        bytes,
-        base_at,
-        components
-            .into_iter()
-            .enumerate()
-            .map(|(component, value)| (component * 8, value)),
-    );
-}
-
 const fn native_bool(value: bool) -> u8 {
     if value {
         0x0a
@@ -966,11 +944,11 @@ fn patch_helix_definition(
                 record.index
             ))
         })?;
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout.angle_range.into_iter().zip(*angle_range),
-    );
+    )?;
     for (offset, value) in layout.frame_vectors.into_iter().zip([
         [
             center.x / LEN_TO_MM,
@@ -993,11 +971,11 @@ fn patch_helix_definition(
             pitch.z / LEN_TO_MM,
         ],
     ]) {
-        apply_vector_payload(bytes, record.offset + offset, value);
+        AsmEditSet::patch_vector_payload(bytes, record.offset + offset, value)?;
     }
     let apex_at = record.offset + layout.apex_factor;
-    bytes[apex_at..apex_at + 8].copy_from_slice(&apex_factor.to_le_bytes());
-    apply_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z]);
+    AsmEditSet::patch_f64_payload(bytes, apex_at, *apex_factor)?;
+    AsmEditSet::patch_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z])?;
     Ok(())
 }
 
@@ -1016,12 +994,12 @@ fn patch_vector_offset_definition(
             record.index
         ))
     })?;
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout.parameter_range.into_iter().zip(parameter_range),
-    );
-    apply_vector_payload(
+    )?;
+    AsmEditSet::patch_vector_payload(
         bytes,
         record.offset + layout.offset,
         [
@@ -1029,7 +1007,7 @@ fn patch_vector_offset_definition(
             offset.y / LEN_TO_MM,
             offset.z / LEN_TO_MM,
         ],
-    );
+    )?;
     Ok(())
 }
 
@@ -1047,11 +1025,11 @@ fn patch_subset_definition(
                 record.index
             ))
         })?;
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout.parameter_range.into_iter().zip(parameter_range),
-    );
+    )?;
     Ok(())
 }
 
@@ -1077,7 +1055,7 @@ fn patch_compound_definition(
             "compound edit changes native parameter cardinality".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1090,7 +1068,7 @@ fn patch_compound_definition(
                     .copied()
                     .chain(components.iter().map(|item| item.parameter)),
             ),
-    );
+    )?;
     Ok(())
 }
 
@@ -1197,7 +1175,7 @@ fn patch_surface_offset_definition(
             "surface-offset context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1221,7 +1199,7 @@ fn patch_surface_offset_definition(
                         *scale,
                     ])),
             ),
-    );
+    )?;
     bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
@@ -1262,7 +1240,7 @@ fn patch_spring_definition(
     {
         return Err(CodecError::Malformed("spring context is incomplete".into()));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1275,7 +1253,7 @@ fn patch_spring_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     AsmEditSet::patch_tagged_integer_at(
         bytes,
@@ -1340,14 +1318,14 @@ fn patch_projection_definition(
                 ));
             }
             bytes[record.offset + flag_offset] = native_bool(*flag);
-            apply_f64_patches(
+            AsmEditSet::patch_f64_payloads(
                 bytes,
                 record.offset,
                 range_offsets
                     .iter()
                     .zip(parameter_range)
                     .map(|(offset, value)| (*offset, *value)),
-            );
+            )?;
             let role_range = role_range.range();
             let role_target = record.offset + role_range.start..record.offset + role_range.end;
             bytes[role_target].copy_from_slice(role.as_str().as_bytes());
@@ -1358,7 +1336,7 @@ fn patch_projection_definition(
             ));
         }
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1371,7 +1349,7 @@ fn patch_projection_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     Ok(())
 }
@@ -1406,7 +1384,7 @@ fn patch_intersection_definition(
             "intersection context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1419,7 +1397,7 @@ fn patch_intersection_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     Ok(())
 }
@@ -1455,7 +1433,7 @@ fn patch_three_surface_intersection_definition(
             "three-surface intersection context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1468,7 +1446,7 @@ fn patch_three_surface_intersection_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.selector,
@@ -1512,7 +1490,7 @@ fn patch_surface_curve_definition(
             "surface-curve context is incomplete".into(),
         ));
     }
-    apply_f64_patches(
+    AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
@@ -1525,7 +1503,7 @@ fn patch_surface_curve_definition(
                     .into_iter()
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
-    );
+    )?;
     Ok(())
 }
 
@@ -1557,17 +1535,17 @@ fn patch_silhouette_definition(
     let layout =
         crate::nurbs::proc_curve::silhouette_patch_layout(record_bytes, stream_width, silhouette)
             .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
-    apply_vector_payload(
+    AsmEditSet::patch_vector_payload(
         bytes,
         record.offset + layout.light_direction,
         [light_direction.x, light_direction.y, light_direction.z],
-    );
+    )?;
     if let Some(draft_factor) = draft_factor {
         let draft_offset = layout
             .draft_factor
             .ok_or_else(|| CodecError::Malformed("silhouette draft factor is missing".into()))?;
         let draft_offset = record.offset + draft_offset;
-        bytes[draft_offset..draft_offset + 8].copy_from_slice(&draft_factor.to_le_bytes());
+        AsmEditSet::patch_f64_payload(bytes, draft_offset, draft_factor)?;
     }
     Ok(())
 }
@@ -1989,6 +1967,24 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn procedural_writer_returns_malformed_for_a_truncated_framed_record() {
+        let original = b"\x0d\x08intcurve\x11";
+        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let mut truncated = original[..original.len() - 1].to_vec();
+        let before = truncated.clone();
+        let error = super::patch_subset_definition(
+            &mut truncated,
+            RefWidth::Eight,
+            &records[0],
+            [0.0, 1.0],
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(error.to_string().contains("truncated"));
+        assert_eq!(truncated, before);
+    }
 
     #[test]
     fn intcurve_uv_cache_rejects_pcurve_wrapper_edits() {
