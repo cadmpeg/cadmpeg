@@ -2353,7 +2353,9 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_dimension_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
                 &dimension_inputs,
-            )?;
+            )?
+            .try_into()
+            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                 &dimension_inputs,
@@ -2374,7 +2376,9 @@ impl<'a> F3dDecodeSession<'a> {
                 &dimension_inputs,
                 &self.native.design_dimension_locus_pairs,
                 &self.native.design_dimension_locus_groups,
-            )?;
+            )?
+            .try_into()
+            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         crate::design::dimensions::remove_dimension_frame_relations(
             &mut self.native.sketch_relations,
             &self.native.design_dimension_locus_pairs,

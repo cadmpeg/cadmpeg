@@ -8724,4 +8724,5 @@ pub struct XrefReference {
 #[cfg(test)]
 mod tests;
 
+pub(crate) mod dimension_locus_arenas;
 pub(crate) mod dimension_null_locus_wire;

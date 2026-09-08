@@ -1,5 +1,5 @@
 use super::{DesignDimensionLocusPair, DesignDimensionLocusPairWire};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -82,18 +82,4 @@ impl TryFrom<Wire> for Entry {
         })
         .map(Self)
     }
-}
-
-pub(crate) fn serialize<S: Serializer>(
-    pairs: &[DesignDimensionLocusPair],
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.collect_seq(pairs.iter().map(Wire::from))
-}
-
-pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<DesignDimensionLocusPair>, D::Error> {
-    Vec::<Entry>::deserialize(deserializer)
-        .map(|entries| entries.into_iter().map(|entry| entry.0).collect())
 }

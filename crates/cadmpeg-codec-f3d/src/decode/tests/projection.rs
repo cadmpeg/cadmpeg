@@ -1775,76 +1775,80 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         });
     assert_eq!(unresolved_dimension_companion_count(&recipe_backed, &ir), 0);
 
-    native
-        .design_dimension_locus_pairs
-        .push(DesignDimensionLocusPair {
-            id: format!("{stream}:design-dimension-locus-pair#278"),
-            companion_record_index: 99,
-            governing_companion_record_index: 30,
-            byte_offset: 278,
-            class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
-            record_index: 31,
-            frame_length: 100,
-            opaque_index: Some(crate::records::Located {
-                value: 0,
-                offset: 300,
-            }),
-            loci: [
-                crate::records::DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(40),
-                    geometry_reference_offset: 305,
-                    role: 1,
-                    role_offset: 315,
-                },
-                crate::records::DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(41),
-                    geometry_reference_offset: 320,
-                    role: 2,
-                    role_offset: 330,
-                },
-            ],
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-            paired_byte_offset: 378,
-        });
+    native.design_dimension_locus_pairs = vec![DesignDimensionLocusPair {
+        id: format!("{stream}:design-dimension-locus-pair#278"),
+        companion_record_index: 99,
+        governing_companion_record_index: 30,
+        byte_offset: 278,
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        record_index: 31,
+        frame_length: 100,
+        opaque_index: Some(crate::records::Located {
+            value: 0,
+            offset: 300,
+        }),
+        loci: [
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(40),
+                geometry_reference_offset: 305,
+                role: 1,
+                role_offset: 315,
+            },
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(41),
+                geometry_reference_offset: 320,
+                role: 2,
+                role_offset: 330,
+            },
+        ],
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_byte_offset: 378,
+    }]
+    .try_into()
+    .expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
     assert!(container_only_dimension_parameters(&native).is_empty());
-    native.design_dimension_locus_pairs[0].companion_record_index = 30;
-    native.design_dimension_locus_pairs[0].governing_companion_record_index = 99;
+    let mut pairs = native.design_dimension_locus_pairs.to_vec();
+    pairs[0].companion_record_index = 30;
+    pairs[0].governing_companion_record_index = 99;
+    native.design_dimension_locus_pairs = pairs.try_into().expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
     assert_eq!(container_only_dimension_parameters(&native).len(), 1);
 
-    native.design_dimension_locus_pairs.clear();
-    native
-        .design_dimension_null_locus_pairs
-        .push(DesignDimensionLocusPair {
-            id: format!("{stream}:design-dimension-null-locus-pair#278"),
-            companion_record_index: 99,
-            governing_companion_record_index: 30,
-            byte_offset: 278,
-            class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
-            record_index: 31,
-            frame_length: 100,
-            opaque_index: None,
-            loci: [
-                crate::records::DesignDimensionAnnotationOperand {
-                    geometry_record_index: None,
-                    geometry_reference_offset: 300,
-                    role: 14,
-                    role_offset: 305,
-                },
-                crate::records::DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(40),
-                    geometry_reference_offset: 310,
-                    role: 3,
-                    role_offset: 320,
-                },
-            ],
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-            paired_byte_offset: 378,
-        });
+    native.design_dimension_locus_pairs = Default::default();
+    native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair {
+        id: format!("{stream}:design-dimension-null-locus-pair#278"),
+        companion_record_index: 99,
+        governing_companion_record_index: 30,
+        byte_offset: 278,
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        record_index: 31,
+        frame_length: 100,
+        opaque_index: None,
+        loci: [
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: None,
+                geometry_reference_offset: 300,
+                role: 14,
+                role_offset: 305,
+            },
+            crate::records::DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(40),
+                geometry_reference_offset: 310,
+                role: 3,
+                role_offset: 320,
+            },
+        ],
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_byte_offset: 378,
+    }]
+    .try_into()
+    .expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    native.design_dimension_null_locus_pairs[0].companion_record_index = 30;
-    native.design_dimension_null_locus_pairs[0].governing_companion_record_index = 99;
+    let mut pairs = native.design_dimension_null_locus_pairs.to_vec();
+    pairs[0].companion_record_index = 30;
+    pairs[0].governing_companion_record_index = 99;
+    native.design_dimension_null_locus_pairs = pairs.try_into().expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
 }
 

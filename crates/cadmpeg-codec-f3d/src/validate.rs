@@ -8221,7 +8221,6 @@ fn validate_dimension_null_locus_pairs<'a>(
             && !companion_has_typed_frame
             && pair.frame_length > 54
             && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
-            && pair.opaque_index.is_none()
             && pair.loci[0].geometry_reference_offset == pair.byte_offset.saturating_add(25)
             && pair.loci[0].role_offset == pair.byte_offset.saturating_add(35)
             && pair.loci[1].geometry_reference_offset == pair.byte_offset.saturating_add(40)

@@ -31,6 +31,9 @@ use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
+use crate::records::dimension_locus_arenas::{
+    DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
+};
 use crate::records::feature::{
     DesignComponentOccurrence, DesignEdgeTreatmentVertexOperand, DesignParameterScope,
     DesignSurfaceTrimOperation,
@@ -45,13 +48,13 @@ use crate::records::{
     ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
     ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
     DesignCanvasImage, DesignComponentNamingSpace, DesignConfiguration, DesignDecalImage,
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionPresentationFrame, DesignDimensionRecipeRecord, DesignEntityHeader,
-    DesignFeatureTimeline, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
-    DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader, DesignSketchPlacement,
-    LostEdgeReference, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
-    SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface,
-    SketchText, XrefDesign, XrefReference,
+    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionPresentationFrame,
+    DesignDimensionRecipeRecord, DesignEntityHeader, DesignFeatureTimeline,
+    DesignMaterialAssignment, DesignMeshFeature, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
+    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SegmentType,
+    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
+    XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
@@ -1182,17 +1185,13 @@ pub struct F3dNative {
     pub design_dimension_presentation_frames: Vec<DesignDimensionPresentationFrame>,
     /// Typed paired loci recovered from dimensional companion graphs.
     #[serde(default)]
-    pub design_dimension_locus_pairs: Vec<DesignDimensionLocusPair>,
+    pub design_dimension_locus_pairs: DesignDimensionLocusPairs,
     /// Counted typed loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
     /// Null-plus-typed loci recovered from dimensional companion graphs.
-    #[serde(default, with = "crate::records::dimension_null_locus_wire")]
-    #[cfg_attr(
-        feature = "schema",
-        schemars(with = "Vec<crate::records::dimension_null_locus_wire::Wire>")
-    )]
-    pub design_dimension_null_locus_pairs: Vec<DesignDimensionLocusPair>,
+    #[serde(default)]
+    pub design_dimension_null_locus_pairs: DesignDimensionNullLocusPairs,
     /// Indexed records containing dimension-owned construction recipes.
     #[serde(default)]
     pub design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
@@ -1381,14 +1380,18 @@ impl F3dNative {
             design_dimension_presentation_frames: namespace
                 .arena_as("design_dimension_presentation_frames")?,
             design_dimension_locus_groups: namespace.arena_as("design_dimension_locus_groups")?,
-            design_dimension_locus_pairs: namespace.arena_as("design_dimension_locus_pairs")?,
-            design_dimension_null_locus_pairs: namespace
-                .arena_as::<crate::records::dimension_null_locus_wire::Entry>(
+            design_dimension_locus_pairs: DesignDimensionLocusPairs::try_from(
+                namespace.arena_as::<crate::records::DesignDimensionLocusPair>(
+                    "design_dimension_locus_pairs",
+                )?,
+            )
+            .map_err(<serde_json::Error as serde::de::Error>::custom)?,
+            design_dimension_null_locus_pairs: DesignDimensionNullLocusPairs::try_from(
+                namespace.arena_as::<crate::records::dimension_null_locus_wire::Entry>(
                     "design_dimension_null_locus_pairs",
-                )?
-                .into_iter()
-                .map(|entry| entry.0)
-                .collect(),
+                )?,
+            )
+            .map_err(<serde_json::Error as serde::de::Error>::custom)?,
             design_dimension_recipe_records: namespace
                 .arena_as("design_dimension_recipe_records")?,
             design_edge_operands: namespace.arena_as("design_edge_operands")?,
