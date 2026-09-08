@@ -320,7 +320,8 @@ impl BrepTransferDiagnostics {
         );
         coverage.record(
             crate::coverage::BREP_VERTEX_CARRIER_ZERO_CANDIDATE_COUNT,
-            self.vertex_solve.carrier_zero_candidate_vertices,
+            self.vertex_solve.carrier_no_geometric_candidate_vertices
+                + self.vertex_solve.carrier_no_valid_candidate_vertices,
         );
         if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
             coverage.record(
