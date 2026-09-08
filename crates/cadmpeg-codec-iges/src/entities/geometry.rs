@@ -1149,14 +1149,9 @@ pub(super) fn curve_geometry_coplanar(
         CurveGeometry::Transformed {
             basis,
             transform: map,
-        } => curve_geometry_coplanar(
-            basis,
-            index,
-            transform.compose(*map),
-            plane,
-            resolution,
-            active,
-        ),
+        } => transform.compose(*map).is_ok_and(|transform| {
+            curve_geometry_coplanar(basis, index, transform, plane, resolution, active)
+        }),
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
     }
 }

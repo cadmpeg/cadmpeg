@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
@@ -24,7 +25,7 @@ pub(super) fn decode(
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, CodecError> {
     let coordinates = exchange
         .records
         .iter()
@@ -78,7 +79,7 @@ pub(super) fn decode(
             active: BTreeSet::new(),
         };
         for item in item_ids {
-            associator.visit(item, 0, None);
+            associator.visit(item, 0, None)?;
         }
         typed.insert(id);
     }
@@ -128,7 +129,7 @@ pub(super) fn decode(
             active: BTreeSet::new(),
         };
         for item in items {
-            associator.visit(item, 0, None);
+            associator.visit(item, 0, None)?;
         }
     }
     for (&id, record) in &exchange.records {
@@ -155,7 +156,7 @@ pub(super) fn decode(
             mode: AssociationMode::DetachedAnnotation,
             active: BTreeSet::new(),
         };
-        associator.visit(item, 0, None);
+        associator.visit(item, 0, None)?;
     }
     for id in unresolved_placements {
         let message = format!(
@@ -428,13 +429,13 @@ pub(super) fn decode(
             }
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
@@ -467,13 +468,18 @@ struct TessellationItemAssociator<'a> {
 }
 
 impl TessellationItemAssociator<'_> {
-    fn visit(&mut self, id: u64, depth: usize, inherited_placement: Option<Transform>) {
+    fn visit(
+        &mut self,
+        id: u64,
+        depth: usize,
+        inherited_placement: Option<Transform>,
+    ) -> Result<(), CodecError> {
         if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
-            return;
+            return Ok(());
         }
         let Some(record) = self.exchange.records.get(&id) else {
             self.active.remove(&id);
-            return;
+            return Ok(());
         };
         let local_placement = if has_entity(record, "REPOSITIONED_TESSELLATED_ITEM") {
             let placement = repositioned_placement(record, self.geometry);
@@ -484,9 +490,15 @@ impl TessellationItemAssociator<'_> {
         } else {
             None
         };
-        let placement = local_placement.map_or(inherited_placement, |local| {
-            Some(inherited_placement.map_or(local, |parent| parent.compose(local)))
-        });
+        let placement = match (inherited_placement, local_placement) {
+            (Some(parent), Some(local)) => Some(parent.compose(local).map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "invalid STEP tessellation placement #{id}: {error}"
+                ))
+            })?),
+            (parent, None) => parent,
+            (None, local) => local,
+        };
         if entity_kind(
             record,
             &[
@@ -541,7 +553,7 @@ impl TessellationItemAssociator<'_> {
                 })
                 .unwrap_or_default();
             for item in item_ids {
-                self.visit(item, depth + 1, placement);
+                self.visit(item, depth + 1, placement)?;
             }
         } else if self.mode == AssociationMode::BodyItems {
             self.declared_items.insert(id);
@@ -551,6 +563,7 @@ impl TessellationItemAssociator<'_> {
                 .extend(self.bodies.iter().cloned());
         }
         self.active.remove(&id);
+        Ok(())
     }
 }
 

@@ -1172,7 +1172,16 @@ impl<'a> Builder<'a> {
             let Some(&from) = product_origins.get(child_product) else {
                 continue;
             };
-            let transform = occurrence.effective_transform();
+            let transform = match occurrence.effective_transform() {
+                Ok(transform) => transform,
+                Err(error) => {
+                    self.loss(
+                        StepLossCode::AssemblyGraphInvalid,
+                        format!("occurrence '{}': {error}", occurrence.id),
+                    );
+                    return;
+                }
+            };
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 continue;
             }
@@ -1261,7 +1270,16 @@ impl<'a> Builder<'a> {
 
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                let transform = occurrence.effective_transform();
+                let transform = match occurrence.effective_transform() {
+                    Ok(transform) => transform,
+                    Err(error) => {
+                        self.loss(
+                            StepLossCode::AssemblyGraphInvalid,
+                            format!("occurrence '{}': {error}", occurrence.id),
+                        );
+                        return;
+                    }
+                };
                 if !is_identity(&transform.rows()) || occurrence.scale != [1.0; 3] {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
@@ -1309,7 +1327,16 @@ impl<'a> Builder<'a> {
             else {
                 continue;
             };
-            let transform = occurrence.effective_transform();
+            let transform = match occurrence.effective_transform() {
+                Ok(transform) => transform,
+                Err(error) => {
+                    self.loss(
+                        StepLossCode::AssemblyGraphInvalid,
+                        format!("occurrence '{}': {error}", occurrence.id),
+                    );
+                    return;
+                }
+            };
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,

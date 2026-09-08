@@ -3780,7 +3780,7 @@ fn curve_parameter_at_point(
         }
         CurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
             basis,
-            transform.try_inverse_affine()?.apply_point(point),
+            transform.try_inverse_affine().ok()?.apply_point(point),
             tolerance,
         ),
         _ => None,

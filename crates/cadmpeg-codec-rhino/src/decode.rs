@@ -1942,7 +1942,7 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "document units are unavailable".to_string())?;
         let local = crate::instances::scale_translation(reference.transform, scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
-        let transform = parent.compose(local);
+        let transform = parent.compose(local).map_err(|error| error.to_string())?;
         let definition_id = definition.id;
         let definition_members = definition.members.clone();
         stack.push(definition_id);
@@ -2011,7 +2011,7 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Body>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing bodies".to_string())?
         {
-            compose_body_transform(body, transform);
+            compose_body_transform(body, transform).map_err(|error| error.to_string())?;
             links.push(body.id.to_string());
             derived_ids.push(body.id.to_string());
         }
@@ -5091,11 +5091,15 @@ fn decoded_curve_entity_count(curve: &crate::curves::DecodedCurve) -> usize {
         .saturating_add(usize::from(curve.is_compound()))
 }
 
-fn compose_body_transform(body: &mut Body, transform: Transform) {
+fn compose_body_transform(
+    body: &mut Body,
+    transform: Transform,
+) -> Result<(), cadmpeg_ir::transform::TransformError> {
     body.transform = Some(match body.transform {
-        Some(existing) => transform.compose(existing),
+        Some(existing) => transform.compose(existing)?,
         None => transform,
     });
+    Ok(())
 }
 
 fn hatch_plane_transform(plane: &crate::settings::Plane, scale: f64) -> Transform {
