@@ -546,8 +546,6 @@ struct Ctx<'a> {
     ir: &'a CadIr,
     /// The loaded native namespace.
     native: &'a native::F3dNative,
-    /// Design record indices keyed by `(stream, record_index)`.
-    record_indices: HashSet<(&'a str, u32)>,
     /// Design record headers keyed by `(stream, record_index)`.
     records_by_index: HashMap<(&'a str, u32), &'a records::DesignRecordHeader>,
     /// Construction recipes keyed by recipe id.
@@ -574,8 +572,6 @@ struct Ctx<'a> {
     /// Extrude selection members keyed by `(stream, group_record_index, ordinal)`.
     members_by_slot:
         HashMap<(&'a str, u32, u32), &'a records::topology::DesignExtrudeSelectionMember>,
-    /// Sketch owner entity suffixes keyed by `(stream, suffix)`.
-    sketch_owners: HashSet<(&'a str, u32)>,
     /// Sketch owner entity ids keyed by `(stream, suffix)`.
     sketch_owner_ids: HashMap<(&'a str, u32), &'a str>,
 }
@@ -585,11 +581,6 @@ impl<'a> Ctx<'a> {
     /// emit no findings, so their eager construction does not affect the
     /// observable finding order.
     fn new(ir: &'a CadIr, native: &'a native::F3dNative) -> Self {
-        let record_indices = native
-            .design_record_headers
-            .iter()
-            .map(|record| (design_stream(&record.id), record.record_index))
-            .collect::<HashSet<_>>();
         let records_by_index = native
             .design_record_headers
             .iter()
@@ -685,17 +676,6 @@ impl<'a> Ctx<'a> {
                 )
             })
             .collect::<std::collections::HashMap<_, _>>();
-        let sketch_owners = native
-            .design_entity_headers
-            .iter()
-            .filter(|header| header.in_sketch_module())
-            .filter_map(|header| {
-                Some((
-                    design_stream(&header.id),
-                    u32::try_from(header.entity_id.suffix()).ok()?,
-                ))
-            })
-            .collect::<HashSet<_>>();
         let sketch_owner_ids = native
             .design_entity_headers
             .iter()
@@ -713,7 +693,6 @@ impl<'a> Ctx<'a> {
         Ctx {
             ir,
             native,
-            record_indices,
             records_by_index,
             recipes_by_id,
             parameters_by_index,
@@ -726,7 +705,6 @@ impl<'a> Ctx<'a> {
             groups_by_index,
             operand_groups_by_index,
             members_by_slot,
-            sketch_owners,
             sketch_owner_ids,
         }
     }
@@ -1800,7 +1778,6 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
 /// Validate feature parameter scopes and their paired feature-operation frames.
 fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let record_indices = &ctx.record_indices;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
     let placements_by_scope = &ctx.placements_by_scope;
@@ -2148,7 +2125,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 .reference_members
                                 .values()
                                 .any(|value| value == record_index)
-                                && record_indices.contains(&(native_stream, *record_index))
+                                && records_by_index.contains_key(&(native_stream, *record_index))
                         })
                     && construction
                         .owner_record_indices
@@ -2763,9 +2740,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.angle.is_finite()
                     && operation.angle_offset > scope.paired_byte_offset
                     && operation.opposite_angle_offset > operation.angle_offset
-                    && record_indices.contains(&(native_stream, operation.angle_record_index))
-                    && record_indices
-                        .contains(&(native_stream, operation.opposite_angle_record_index))
+                    && records_by_index.contains_key(&(native_stream, operation.angle_record_index))
+                    && records_by_index
+                        .contains_key(&(native_stream, operation.opposite_angle_record_index))
             }
         };
         let combine_link = match scope.combine_operation() {
@@ -2954,7 +2931,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         records::feature::DesignThreadForm::Compact(Some(reference)) => {
                             reference.offset > construction.designation_offset
                                 && reference.offset < scope.paired_byte_offset
-                                && record_indices.contains(&(native_stream, reference.value.get()))
+                                && records_by_index
+                                    .contains_key(&(native_stream, reference.value.get()))
                         }
                         records::feature::DesignThreadForm::Compact(None)
                         | records::feature::DesignThreadForm::Standard
@@ -3832,8 +3810,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && scope
                 .reference_members
                 .values()
-                .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
-            && record_indices.contains(&(native_stream, scope.record_index))
+                .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
+            && records_by_index.contains_key(&(native_stream, scope.record_index))
             && entity_link
                 .unwrap_or(scope.kind() != crate::records::feature::DesignFeatureKind::Sketch)
             && extrude_profile_link
@@ -4221,7 +4199,6 @@ fn valid_component_pattern_occurrences(
 /// Validate Extrude selection groups and their counted member frames.
 fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let record_indices = &ctx.record_indices;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
     let mut group_slots = HashSet::new();
@@ -4266,7 +4243,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && group
                 .members
                 .iter()
-                .all(|member| record_indices.contains(&(native_stream, member.value)))
+                .all(|member| records_by_index.contains_key(&(native_stream, member.value)))
             && group_slots.insert((
                 native_stream,
                 group.scope_record_index,
@@ -4287,7 +4264,6 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
 /// Validate construction operand groups and their role discriminators.
 fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let record_indices = &ctx.record_indices;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
     let mut operand_group_slots = HashSet::new();
@@ -4345,7 +4321,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .iter()
                 .map(|record| &record.value)
                 .chain(frame.trailing_records.iter().map(|record| &record.value))
-                .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
+                .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
             && frame.trailing_transforms.iter().all(|transform| {
                 frame
                     .trailing_records
@@ -4762,7 +4738,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .members
                 .iter()
                 .map(|member| &member.value)
-                .all(|member| record_indices.contains(&(native_stream, *member)))
+                .all(|member| records_by_index.contains_key(&(native_stream, *member)))
             && operand_group_slots.insert((
                 native_stream,
                 group.scope_record_index,
@@ -7507,7 +7483,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
 /// Validate parameter owner frames and their indexed parameter links.
 fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let record_indices = &ctx.record_indices;
+    let records_by_index = &ctx.records_by_index;
     let parameters_by_index = &ctx.parameters_by_index;
     let companions_by_index = &ctx.companions_by_index;
     let mut owner_indices = HashSet::new();
@@ -7552,8 +7528,8 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 owner.evaluated_value_offset == parameter.evaluated_value_offset
             });
         let frame_layout = modern_frame_layout || legacy_68_frame || legacy_88_frame;
-        let scope_resolves =
-            legacy_68_frame || record_indices.contains(&(native_stream, owner.scope_record_index));
+        let scope_resolves = legacy_68_frame
+            || records_by_index.contains_key(&(native_stream, owner.scope_record_index));
         let unique_local_ordinal = legacy_68_frame
             || owner_local_ordinals.insert((
                 native_stream,
@@ -7564,8 +7540,8 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && frame_layout
             && (owner_first || parameter_first || companion_first)
             && scope_resolves
-            && record_indices.contains(&(native_stream, owner.parameter_record_index))
-            && record_indices.contains(&(native_stream, owner.companion_record_index))
+            && records_by_index.contains_key(&(native_stream, owner.parameter_record_index))
+            && records_by_index.contains_key(&(native_stream, owner.companion_record_index))
             && companions_by_index
                 .get(&(native_stream, owner.companion_record_index))
                 .is_some_and(|companion| companion.owner_record_index == owner.record_index)
@@ -7590,7 +7566,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
 /// Validate parameter companion prefixes and owned recipe runs.
 fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let record_indices = &ctx.record_indices;
+    let records_by_index = &ctx.records_by_index;
     let owners_by_index = &ctx.owners_by_index;
     let mut companion_indices = HashSet::new();
     let mut companion_owners = HashSet::new();
@@ -7626,7 +7602,7 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .iter()
                 .map(String::as_str)
                 .eq(expected_recipe_ids)
-            && record_indices.contains(&(native_stream, companion.record_index))
+            && records_by_index.contains_key(&(native_stream, companion.record_index))
             && owner.is_some_and(|owner| owner.companion_record_index == companion.record_index)
             && unique_index
             && unique_owner;
@@ -8280,13 +8256,13 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
 /// Validate design entity reference runs and suffix uniqueness.
 fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let record_indices = &ctx.record_indices;
+    let records_by_index = &ctx.records_by_index;
     let mut entity_suffixes = HashSet::new();
     for header in &native.design_entity_headers {
         let native_stream = design_stream(&header.id);
         let references_resolve = header
             .reference_values()
-            .all(|index| record_indices.contains(&(native_stream, *index)));
+            .all(|index| records_by_index.contains_key(&(native_stream, *index)));
         if !references_resolve {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
@@ -8309,7 +8285,6 @@ fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
 /// Validate sketch relation owners and byte frames.
 fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let sketch_owners = &ctx.sketch_owners;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
@@ -8326,7 +8301,7 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .and_then(|offset| offset.checked_add(4))
                     .is_some_and(|end| end <= relation.raw_bytes.len())
             });
-        let valid = sketch_owners.contains(&(native_stream, relation.owner_reference))
+        let valid = sketch_owner_ids.contains_key(&(native_stream, relation.owner_reference))
             && sketch_owner_ids
                 .get(&(native_stream, relation.owner_reference))
                 .copied()
@@ -8470,7 +8445,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let owners_by_index = &ctx.owners_by_index;
     let companions_by_index = &ctx.companions_by_index;
     let placements_by_scope = &ctx.placements_by_scope;
-    let sketch_owners = &ctx.sketch_owners;
+    let sketch_owner_ids = &ctx.sketch_owner_ids;
     let typed_sketch_records = native
         .sketch_points
         .iter()
@@ -8542,7 +8517,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             continue;
         };
         let native_stream = design_stream(id);
-        if sketch_owners.contains(&(native_stream, owner_reference)) {
+        if sketch_owner_ids.contains_key(&(native_stream, owner_reference)) {
             relation_owners.insert((native_stream, record_index), owner_reference);
         }
     }
