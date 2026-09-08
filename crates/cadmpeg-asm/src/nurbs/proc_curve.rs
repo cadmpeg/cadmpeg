@@ -361,14 +361,14 @@ pub enum EmbeddedSurfaceOffsetLayout {
     /// The support context precedes the cache.
     ContextFirst {
         /// The explicit support context.
-        context: EmbeddedIntersection,
+        context: Box<EmbeddedIntersection>,
         /// The flag after the discontinuity arrays.
         discontinuity_flag: bool,
     },
     /// The solved cache precedes the support context.
     CacheFirst {
         /// The cache-first source context.
-        context: CacheFirstCurveContext,
+        context: Box<CacheFirstCurveContext>,
         /// The base curve endpoint bounds.
         base_endpoints: [Option<f64>; 2],
     },
@@ -1615,7 +1615,7 @@ fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<Embed
         ];
         return Some(EmbeddedSurfaceOffset {
             layout: EmbeddedSurfaceOffsetLayout::CacheFirst {
-                context,
+                context: Box::new(context),
                 base_endpoints,
             },
             base_u_range,
@@ -1642,12 +1642,12 @@ fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<Embed
     let base_range = [cur.take_range_value()?, cur.take_range_value()?];
     Some(EmbeddedSurfaceOffset {
         layout: EmbeddedSurfaceOffsetLayout::ContextFirst {
-            context: EmbeddedIntersection {
+            context: Box::new(EmbeddedIntersection {
                 surfaces: surfaces.map(SupportSlot::Surface),
                 pcurves: pcurves.map(Some),
                 parameter_range,
                 discontinuities,
-            },
+            }),
             discontinuity_flag,
         },
         base_u_range,

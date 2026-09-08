@@ -3070,7 +3070,7 @@ fn emit_surface_offset_curve(
         EmbeddedSurfaceOffsetLayout::ContextFirst {
             context,
             discontinuity_flag,
-        } => (context, discontinuity_flag, [None; 2], None),
+        } => (*context, discontinuity_flag, [None; 2], None),
         EmbeddedSurfaceOffsetLayout::CacheFirst {
             context,
             base_endpoints,
