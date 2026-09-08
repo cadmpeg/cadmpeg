@@ -6448,8 +6448,8 @@ mod tests {
             None,
         );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.1, 0.9]);
-        assert!(match resolution {
-            super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
+        assert!(
+            matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
                 line_pcurve,
             )) if {
                 let (origin, direction) = line_pcurve.parts();
@@ -6457,12 +6457,8 @@ mod tests {
                     && origin.v.abs() <= f64::EPSILON * 64.0
                     && direction.u.abs() <= f64::EPSILON * 64.0
                     && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
-            } =>
-            {
-                true
-            }
-            _ => false,
-        });
+            })
+        );
         let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
             .expect("clamped quadratic segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -6501,8 +6497,8 @@ mod tests {
             Some(vec![0.8, 1.4]),
         );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
-        assert!(match resolution {
-            super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
+        assert!(
+            matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
                 line_pcurve,
             )) if {
                 let (origin, direction) = line_pcurve.parts();
@@ -6510,12 +6506,8 @@ mod tests {
                     && origin.v.abs() <= f64::EPSILON * 64.0
                     && direction.u.abs() <= f64::EPSILON * 64.0
                     && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
-            } =>
-            {
-                true
-            }
-            _ => false,
-        });
+            })
+        );
         let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
             .expect("clamped rational segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(

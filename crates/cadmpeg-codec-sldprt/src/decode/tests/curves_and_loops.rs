@@ -46,7 +46,7 @@ fn edge_uses_decoded_line_curve() {
     match &result.ir().model.curves[0].geometry {
         CurveGeometry::Line(line_curve) => {
             let (_, direction) = line_curve.parts();
-            assert_eq!(direction.x, 1.0)
+            assert_eq!(direction.x, 1.0);
         }
         other => panic!("expected line, got {other:?}"),
     }

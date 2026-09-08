@@ -489,7 +489,7 @@ Fa
     match &pcurve.geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let (origin, _) = line_pcurve.parts();
-            assert_eq!(origin.v, 0.0)
+            assert_eq!(origin.v, 0.0);
         }
         geometry => panic!("unexpected pcurve geometry: {geometry:?}"),
     }

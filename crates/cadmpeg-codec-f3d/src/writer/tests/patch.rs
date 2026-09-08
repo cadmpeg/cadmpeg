@@ -207,20 +207,14 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
     )
     .expect("patched sphere record");
     assert!(
-        match cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]) {
-            Some((SurfaceGeometry::Sphere(sphere_surface), false))
-                if {
-                    let (center, axis, ref_direction, radius) = sphere_surface.parts();
-                    *center == Point3::new(10.0, 20.0, 30.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == -25.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SurfaceGeometry::Sphere(sphere_surface), false))
+        if {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            *center == Point3::new(10.0, 20.0, 30.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == -25.0
+        })
     );
 }
 
@@ -303,22 +297,16 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
     )
     .expect("patched torus record");
     assert!(
-        match cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]) {
-            Some((SurfaceGeometry::Torus(torus_surface), false))
-                if {
-                    let (center, axis, ref_direction, major_radius, minor_radius) =
-                        torus_surface.parts();
-                    *center == Point3::new(10.0, 20.0, 30.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 20.0
-                        && *minor_radius == -35.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SurfaceGeometry::Torus(torus_surface), false))
+        if {
+            let (center, axis, ref_direction, major_radius, minor_radius) =
+                torus_surface.parts();
+            *center == Point3::new(10.0, 20.0, 30.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *major_radius == 20.0
+                && *minor_radius == -35.0
+        })
     );
 }
 
@@ -402,20 +390,14 @@ fn generated_cylinder_preserves_native_angle_branch() {
     // The patch preserves the record's native negative-cosine angle
     // branch, so decode reports the inward-normal flag.
     assert!(
-        match cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]) {
-            Some((SurfaceGeometry::Cylinder(cylinder_surface), true))
-                if {
-                    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
-                    *origin == Point3::new(10.0, 20.0, 30.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 40.0
-                } =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SurfaceGeometry::Cylinder(cylinder_surface), true))
+        if {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            *origin == Point3::new(10.0, 20.0, 30.0)
+                && *axis == Vector3::new(0.0, 1.0, 0.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 40.0
+        })
     );
 }
 

@@ -489,7 +489,7 @@ fn compact_carrier_shapes_decode() {
             ..
         }) => {
             let (_, _, _, radius) = circle_curve.parts();
-            assert_eq!(*radius, 3.0)
+            assert_eq!(*radius, 3.0);
         }
         other => panic!("expected circle, got {other:?}"),
     }
