@@ -1489,23 +1489,28 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Spring { layout, .. } => {
-                let Ok(context) = layout.support_context() else {
-                    continue;
-                };
-                for side in context.sides() {
-                    if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
-                            ref_error(
-                                findings,
-                                procedural.id.as_str(),
-                                "surface",
-                                surface.as_str(),
-                            );
+            ProceduralCurveDefinition::Spring { layout, .. } => match layout.support_context() {
+                Ok(context) => {
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            if ids.surfaces(surface.as_str()).is_none() {
+                                ref_error(
+                                    findings,
+                                    procedural.id.as_str(),
+                                    "surface",
+                                    surface.as_str(),
+                                );
+                            }
                         }
                     }
                 }
-            }
+                Err(error) => ref_error(
+                    findings,
+                    procedural.id.as_str(),
+                    "spring support context",
+                    error,
+                ),
+            },
             ProceduralCurveDefinition::Deformable {
                 context, source, ..
             } => {
