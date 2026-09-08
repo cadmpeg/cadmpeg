@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
+use std::num::NonZeroU16;
 
 pub(crate) mod target;
 
@@ -3223,10 +3224,21 @@ fn write_nurbs_curve(
         be16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
-    f64_array(out, 0x2d, control, &poles, entity)?;
-    let (unique, mult) = unique_knots(nurbs.knots(), entity)?;
-    u16_array(out, multiplicity, &mult, entity)?;
-    f64_array(out, 0x80, knots, &unique, entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    let unique = unique_knots(nurbs.knots(), entity)?;
+    u16_array(
+        out,
+        multiplicity,
+        unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        knots,
+        unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
     Ok(())
 }
 
@@ -3258,8 +3270,8 @@ fn write_nurbs_surface(
             "NURBS surface degree must be positive".into(),
         ));
     }
-    let (u_unique, u_mult) = unique_knots(nurbs.u_knots(), entity)?;
-    let (v_unique, v_mult) = unique_knots(nurbs.v_knots(), entity)?;
+    let u_unique = unique_knots(nurbs.u_knots(), entity)?;
+    let v_unique = unique_knots(nurbs.v_knots(), entity)?;
     if !nurbs
         .u_knots()
         .iter()
@@ -3314,11 +3326,33 @@ fn write_nurbs_surface(
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
-    f64_array(out, 0x2d, control, &poles, entity)?;
-    u16_array(out, u_multiplicity, &u_mult, entity)?;
-    u16_array(out, v_multiplicity, &v_mult, entity)?;
-    f64_array(out, 0x80, u_knots, &u_unique, entity)?;
-    f64_array(out, 0x80, v_knots, &v_unique, entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    u16_array(
+        out,
+        u_multiplicity,
+        u_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    u16_array(
+        out,
+        v_multiplicity,
+        v_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        u_knots,
+        u_unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        v_knots,
+        v_unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
     Ok(())
 }
 
@@ -3353,30 +3387,29 @@ fn homogeneous_poles(
     Ok(out)
 }
 
-fn unique_knots(knots: &[f64], entity: &str) -> Result<(Vec<f64>, Vec<u16>), CodecError> {
-    let mut unique = Vec::new();
-    let mut multiplicities: Vec<u16> = Vec::new();
+fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, CodecError> {
+    let mut out: Vec<(f64, NonZeroU16)> = Vec::new();
     for &knot in knots {
-        if unique.last() == Some(&knot) {
-            let multiplicity = multiplicities.last_mut().expect("matching unique knot");
-            *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
-                ))
-            })?;
-        } else {
-            unique.push(knot);
-            multiplicities.push(1);
+        if let Some((previous, multiplicity)) = out.last_mut() {
+            if *previous == knot {
+                *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
+                    ))
+                })?;
+                continue;
+            }
         }
+        out.push((knot, NonZeroU16::MIN));
     }
-    Ok((unique, multiplicities))
+    Ok(out)
 }
 
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
     attr: u16,
-    values: &[f64],
+    values: impl ExactSizeIterator<Item = f64>,
     entity: &str,
 ) -> Result<(), CodecError> {
     let count = u32::try_from(values.len()).map_err(|_| {
@@ -3389,12 +3422,17 @@ fn f64_array(
     be32(out, count);
     be16(out, attr);
     for value in values {
-        bef64(out, *value);
+        bef64(out, value);
     }
     Ok(())
 }
 
-fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Result<(), CodecError> {
+fn u16_array(
+    out: &mut Vec<u8>,
+    attr: u16,
+    values: impl ExactSizeIterator<Item = u16>,
+    entity: &str,
+) -> Result<(), CodecError> {
     let count = u32::try_from(values.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
@@ -3405,7 +3443,7 @@ fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Resu
     be32(out, count);
     be16(out, attr);
     for value in values {
-        be16(out, *value);
+        be16(out, value);
     }
     Ok(())
 }
