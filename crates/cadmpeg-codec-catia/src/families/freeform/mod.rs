@@ -214,25 +214,21 @@ pub(crate) fn append_consolidated_revolutions(
 
 fn typed_face_counts(
     records: &std::collections::BTreeMap<u32, crate::families::b5::graph::B5FaceRecord>,
-    resolved_count: usize,
+    resolved_faces: &[crate::families::b5::graph::B5Face],
 ) -> [usize; 4] {
-    let controls = records.values().fold([0usize; 3], |mut counts, face| {
+    let resolved_ids = resolved_faces
+        .iter()
+        .map(|face| face.object_id)
+        .collect::<HashSet<_>>();
+    records.values().fold([0usize; 4], |mut counts, face| {
         match face.terminal_control {
             Some(B5FramingControl::Control03) => counts[0] += 1,
             Some(B5FramingControl::Control05) => counts[1] += 1,
             None => counts[2] += 1,
         }
+        counts[3] += usize::from(!resolved_ids.contains(&face.object_id));
         counts
-    });
-    [
-        controls[0],
-        controls[1],
-        controls[2],
-        records
-            .len()
-            .checked_sub(resolved_count)
-            .expect("resolved faces are a subset of typed face records"),
-    ]
+    })
 }
 
 fn typed_multi_surface_face_count(graph: &crate::families::b5::graph::B5Graph) -> usize {
@@ -347,11 +343,11 @@ pub(crate) fn try_decode_freeform_surfaces(
         })
     });
     let typed_face_counts = if let Some(graph) = &b5_graph {
-        Some(typed_face_counts(&graph.face_records, graph.faces.len()))
+        Some(typed_face_counts(&graph.face_records, &graph.faces))
     } else {
         let records =
             crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
-        (!records.is_empty()).then(|| typed_face_counts(&records, 0))
+        (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
     };
     let typed_multi_surface_face_count = b5_graph
         .as_ref()
@@ -2790,6 +2786,42 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn typed_face_counts_partition_the_parsed_record_identities() {
+        use crate::families::b5::graph::{parse, parse_from_records, B5Record};
+        use crate::test_support::{append_b5_record, b5_closed_triangle_stream};
+
+        let mut bytes = b5_closed_triangle_stream();
+        append_b5_record(
+            &mut bytes,
+            0x5f,
+            902,
+            &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
+        );
+        let graph = parse(&bytes).expect("one resolved and one unresolved face");
+        assert_eq!(graph.face_records.len(), 2);
+        assert_eq!(graph.faces.len(), 1);
+        assert!(graph
+            .faces
+            .iter()
+            .all(|face| graph.face_records.contains_key(&face.object_id)));
+        assert_eq!(
+            typed_face_counts(&graph.face_records, &graph.faces),
+            [1, 1, 0, 1]
+        );
+        assert_eq!(typed_face_counts(&graph.face_records, &[]), [1, 1, 0, 2]);
+
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x5f,
+            object_id: 902,
+            payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
+        };
+        assert!(parse_from_records(&[], std::slice::from_ref(&record), &[], false).is_some());
+        assert!(parse_from_records(&[], &[record.clone(), record], &[], false).is_none());
+    }
 
     #[test]
     fn object_stream_selection_uses_the_unique_topology_root_run() {
