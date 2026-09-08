@@ -2308,7 +2308,7 @@ pub(super) fn project(
                 ) {
                     Ok(surface) => surface,
                     Err(error) => {
-                        losses.push(entity_loss(entry, &error.to_string()));
+                        losses.push(entity_loss(entry, error.to_string()));
                         continue;
                     }
                 },
