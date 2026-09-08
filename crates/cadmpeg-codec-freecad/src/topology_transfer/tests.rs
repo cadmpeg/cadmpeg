@@ -97,7 +97,6 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         transform: translated,
     }];
     let tshapes = [TextTShape {
-        index: 1,
         geometry: geometry_for_kind(TextShapeKind::Edge),
         flags: [false; 7],
         children: Vec::new(),
@@ -153,28 +152,27 @@ fn source_indices_follow_depth_first_topology_order() {
         orientation: TextOrientation::Forward,
         location: 0.into(),
     };
-    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
-        index,
+    let empty = |kind: TextShapeKind, children: Vec<usize>| TextTShape {
         geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
     let tshapes = vec![
-        empty(1, TextShapeKind::Compound, vec![2, 3]),
-        empty(2, TextShapeKind::Solid, vec![4]),
-        empty(3, TextShapeKind::Solid, vec![5]),
-        empty(4, TextShapeKind::Shell, vec![6]),
-        empty(5, TextShapeKind::Shell, vec![7]),
-        empty(6, TextShapeKind::Face, vec![8]),
-        empty(7, TextShapeKind::Face, vec![9]),
-        empty(8, TextShapeKind::Wire, vec![10]),
-        empty(9, TextShapeKind::Wire, vec![11]),
-        empty(10, TextShapeKind::Edge, vec![12, 13]),
-        empty(11, TextShapeKind::Edge, vec![14, 15]),
-        empty(12, TextShapeKind::Vertex, Vec::new()),
-        empty(13, TextShapeKind::Vertex, Vec::new()),
-        empty(14, TextShapeKind::Vertex, Vec::new()),
-        empty(15, TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Compound, vec![2, 3]),
+        empty(TextShapeKind::Solid, vec![4]),
+        empty(TextShapeKind::Solid, vec![5]),
+        empty(TextShapeKind::Shell, vec![6]),
+        empty(TextShapeKind::Shell, vec![7]),
+        empty(TextShapeKind::Face, vec![8]),
+        empty(TextShapeKind::Face, vec![9]),
+        empty(TextShapeKind::Wire, vec![10]),
+        empty(TextShapeKind::Wire, vec![11]),
+        empty(TextShapeKind::Edge, vec![12, 13]),
+        empty(TextShapeKind::Edge, vec![14, 15]),
+        empty(TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Vertex, Vec::new()),
+        empty(TextShapeKind::Vertex, Vec::new()),
     ];
     let roots = [use_shape(1)];
     let tables = Tables {
@@ -216,17 +214,16 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         orientation: TextOrientation::Forward,
         location: 0.into(),
     };
-    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
-        index,
+    let empty = |kind: TextShapeKind, children: Vec<usize>| TextTShape {
         geometry: geometry_for_kind(kind),
         flags: [false; 7],
         children: children.into_iter().map(use_shape).collect(),
     };
     let tshapes = vec![
-        empty(1, TextShapeKind::Compound, vec![2, 2, 4]),
-        empty(2, TextShapeKind::Compound, vec![3]),
-        empty(3, TextShapeKind::Solid, Vec::new()),
-        empty(4, TextShapeKind::Compound, Vec::new()),
+        empty(TextShapeKind::Compound, vec![2, 2, 4]),
+        empty(TextShapeKind::Compound, vec![3]),
+        empty(TextShapeKind::Solid, Vec::new()),
+        empty(TextShapeKind::Compound, Vec::new()),
     ];
     let roots = [use_shape(1)];
     let tables = Tables {

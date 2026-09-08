@@ -248,7 +248,7 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_pcurves(&self, ir: &mut CadIr) {
-        for shape in self.tables.tshapes {
+        for (position, shape) in self.tables.tshapes.iter().enumerate() {
             let TextTShapeGeometry::Edge {
                 representations, ..
             } = &shape.geometry
@@ -284,7 +284,7 @@ impl<'a> Builder<'a> {
                 let primary_range =
                     normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
                 ir.model.pcurves.push(Pcurve {
-                    id: self.pcurve_id(shape.index, representation_index, false),
+                    id: self.pcurve_id(position + 1, representation_index, false),
                     geometry: primary_geometry,
                     metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                         None,
@@ -305,7 +305,7 @@ impl<'a> Builder<'a> {
                         Some(parameter_range),
                     );
                     ir.model.pcurves.push(Pcurve {
-                        id: self.pcurve_id(shape.index, representation_index, true),
+                        id: self.pcurve_id(position + 1, representation_index, true),
                         geometry: secondary_geometry,
                         metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                             None,
