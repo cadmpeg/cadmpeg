@@ -1578,14 +1578,16 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if !matches!(record.integer(1), Some(0..=3)) || !matches!(record.integer(5), Some(0..=3)) {
+        let Some(preference) = record
+            .integer(5)
+            .filter(|value| matches!(value, 0..=3) && matches!(record.integer(1), Some(0..=3)))
+        else {
             losses.push(entity_loss(
                 entry,
                 "curve-on-surface creation or preference flag is invalid",
             ));
             continue;
-        }
-        let preference = record.integer(5).expect("validated preference flag");
+        };
         let Some(surface) = pointer(record, 2) else {
             losses.push(entity_loss(
                 entry,
@@ -1657,11 +1659,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        if !matches!(record.integer(2), Some(0..=3)) {
+        let Some(preference) = record.integer(2).filter(|value| matches!(value, 0..=3)) else {
             losses.push(entity_loss(entry, "boundary preference flag is invalid"));
             continue;
-        }
-        let preference = record.integer(2).expect("validated preference flag");
+        };
         let Some(surface) = pointer(record, 3) else {
             losses.push(entity_loss(entry, "boundary support pointer is invalid"));
             continue;
