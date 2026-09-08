@@ -36,7 +36,33 @@ const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
 const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
+struct IndexedPolygon {
+    nodes: Vec<Point3>,
+    parameters: Option<Vec<f64>>,
+    deflection: f64,
+}
+
+impl IndexedPolygon {
+    fn try_new(
+        nodes: Vec<Point3>,
+        parameters: Option<Vec<f64>>,
+        deflection: f64,
+    ) -> Result<Self, CodecError> {
+        if parameters
+            .as_ref()
+            .is_some_and(|values| values.len() != nodes.len())
+        {
+            return Err(CodecError::Malformed(
+                "polygon parameters length must equal nodes length".into(),
+            ));
+        }
+        Ok(Self {
+            nodes,
+            parameters,
+            deflection,
+        })
+    }
+}
 type FacePcurve = (PcurveId, Option<[f64; 2]>);
 
 pub(crate) struct TopologyOccurrence {
@@ -1019,14 +1045,18 @@ impl<'a> Builder<'a> {
     ) -> Result<CurveId, CodecError> {
         let carrier_transform = transform.compose(self.tables.location(representation.location())?);
         let scale = uniform_scale(carrier_transform)?;
-        let (points, parameters, deflection) = match representation {
+        let IndexedPolygon {
+            nodes: points,
+            parameters,
+            deflection,
+        } = match representation {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 let polygon = &self.tables.polygons3d[polygon - 1];
-                (
+                IndexedPolygon::try_new(
                     polygon.nodes.clone(),
                     polygon.parameters.clone(),
                     polygon.deflection,
-                )
+                )?
             }
             TextEdgeRepresentation::PolygonOnTriangulation {
                 polygon,
@@ -1067,8 +1097,11 @@ impl<'a> Builder<'a> {
             ..
         } = representation
         {
-            let (points, parameters, deflection) =
-                self.indexed_polygon(polygons[1], *triangulation)?;
+            let IndexedPolygon {
+                nodes: points,
+                parameters,
+                deflection,
+            } = self.indexed_polygon(polygons[1], *triangulation)?;
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("{edge}:polygon:{}:secondary", ordinal + 1))
                     .expect("identity grammar"),
@@ -1111,7 +1144,7 @@ impl<'a> Builder<'a> {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok((points, polygon.parameters.clone(), polygon.deflection))
+        IndexedPolygon::try_new(points, polygon.parameters.clone(), polygon.deflection)
     }
 
     fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[f64]> {
