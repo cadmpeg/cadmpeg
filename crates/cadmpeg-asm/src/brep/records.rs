@@ -312,7 +312,6 @@ pub enum TolerantCoedgeExtension {
         /// Nullable record reference preceding the one selector.
         target: Option<i64>,
         /// Whether the embedded intcurve is evaluated with parameter negation.
-        #[serde(alias = "flag")]
         curve_reversed: bool,
         /// Number of tokens inside the balanced outer subtype delimiters.
         payload_token_count: u32,
@@ -455,6 +454,31 @@ mod tests {
     use super::{EndpointSlot, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
+
+    #[test]
+    fn tolerant_coedge_curve_sense_requires_the_current_wire_name() {
+        let extension = super::TolerantCoedgeExtension::EmbeddedCurve {
+            target: None,
+            curve_reversed: true,
+            payload_token_count: 0,
+            parameter_range: None,
+        };
+        let wire = serde_value::to_value(&extension).unwrap();
+        assert_eq!(
+            super::TolerantCoedgeExtension::deserialize(wire.clone()).unwrap(),
+            extension
+        );
+        let serde_value::Value::Map(mut fields) = wire else {
+            panic!("extension map")
+        };
+        let value = fields
+            .remove(&serde_value::Value::String("curve_reversed".into()))
+            .unwrap();
+        fields.insert(serde_value::Value::String("flag".into()), value);
+        let error = super::TolerantCoedgeExtension::deserialize(serde_value::Value::Map(fields))
+            .unwrap_err();
+        assert!(error.to_string().contains("curve_reversed"));
+    }
 
     #[test]
     fn body_native_key_requires_explicit_body_ordinal() {
