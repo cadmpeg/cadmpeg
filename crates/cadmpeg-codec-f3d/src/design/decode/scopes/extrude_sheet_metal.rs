@@ -1549,10 +1549,13 @@ fn exact_shifted_reference_aware_extrude_prologue(
     };
     let trailing_reference =
         marked_record_reference(bytes, start.checked_add(trailing_reference_offset)?)?;
-    let trailing_reference_valid = if tail_form != TailForm::Unordered {
-        reference_members.contains(&trailing_reference)
-    } else {
-        trailing_reference != 0 && !reference_members.contains(&trailing_reference)
+    let trailing_reference_valid = match tail_form {
+        TailForm::Unordered => {
+            trailing_reference != 0 && !reference_members.contains(&trailing_reference)
+        }
+        TailForm::Ordered | TailForm::SymmetricThroughAll => {
+            reference_members.contains(&trailing_reference)
+        }
     };
     let zero_range = |range_start: usize, range_end: usize| {
         bytes
