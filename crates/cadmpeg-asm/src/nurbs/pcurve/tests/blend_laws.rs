@@ -329,7 +329,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         push_f64(&mut straight, 3.0);
         let mut position = 0;
         assert!(
-            match decode_rolling_ball_curve(&straight, &mut position, int_width, None) {
+            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width, None),
                 Some(RollingBallSupportCurve {
                     curve: CurveGeometry::Line(line_curve),
                     parameter_range: [Some(-2.0), Some(3.0)],
@@ -337,12 +337,8 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
                     let (origin, direction) = line_curve.parts();
                     *origin == Point3::new(10.0, 20.0, 30.0)
                         && *direction == Vector3::new(0.0, 1.0, 0.0)
-                } =>
-                {
-                    true
                 }
-                _ => false,
-            }
+            )
         );
         assert_eq!(position, straight.len());
 

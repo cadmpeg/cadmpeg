@@ -1060,10 +1060,10 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         };
         assert!(!flag);
         assert_eq!(context.parameter_range, [0.0, 1.0]);
-        assert!(match context.surfaces[0] {
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane(_)) => true,
-            _ => false,
-        });
+        assert!(matches!(
+            context.surfaces[0],
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane(_))
+        ));
         assert!(matches!(
             context.surfaces[1],
             crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Nurbs(_))
