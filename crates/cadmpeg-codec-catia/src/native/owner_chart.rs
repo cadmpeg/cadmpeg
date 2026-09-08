@@ -479,6 +479,24 @@ mod tests {
     }
 
     #[test]
+    fn bridge_preserves_independent_middle_control_bytes() {
+        let native =
+            crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
+        let relation = native.consolidated_owner_packets[0].owner_chart().unwrap();
+        let original = serde_json::to_value(relation).unwrap();
+        for first in [0x03, 0x05] {
+            for second in [0x03, 0x05] {
+                let mut wire = original.clone();
+                wire["bridge"]["controls"][2] = json!(first);
+                wire["bridge"]["controls"][3] = json!(second);
+                let decoded: CatiaOwnerChartRelation =
+                    serde_json::from_value(wire.clone()).unwrap();
+                assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+            }
+        }
+    }
+
+    #[test]
     fn relation_wire_checks_the_carrier_derived_axis() {
         for carrier_class in [0x28, 0x2b, 0x32] {
             let bytes = crate::test_support::b2_owner_chart_stream(carrier_class);
