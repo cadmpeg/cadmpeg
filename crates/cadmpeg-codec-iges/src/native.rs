@@ -104,7 +104,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 section: "directory-entry",
                 sequence: record.sequence,
                 source_offset: record.source_offset,
-                cards: record.cards,
+                cards: record.cards(),
                 bytes: &record.bytes,
                 defect: record.defect,
             }
