@@ -484,6 +484,10 @@ pub struct DisplayJtTopologyPacketSequence {
 
 /// Polygon connectivity reconstructed from one JT topological dual mesh.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DisplayJtPolygonMeshWire",
+    into = "DisplayJtPolygonMeshWire"
+)]
 pub struct DisplayJtPolygonMesh {
     /// Globally unique polygon-mesh identity.
     pub id: String,
@@ -492,15 +496,63 @@ pub struct DisplayJtPolygonMesh {
     /// Coordinate-array header indexed by the polygons.
     pub coordinate_header: String,
     /// Ordered polygon vertex indices.
-    pub polygons: Vec<Vec<u32>>,
+    polygons: Vec<Vec<u32>>,
     /// Per-corner vertex-attribute indices parallel to `polygons`.
-    pub vertex_attribute_indices: Vec<Vec<Option<u32>>>,
+    vertex_attribute_indices: Vec<Vec<Option<u32>>>,
     /// Per-polygon group identifiers.
-    pub polygon_groups: Vec<i32>,
+    polygon_groups: Vec<i32>,
     /// Per-polygon flag words.
-    pub polygon_flags: Vec<u16>,
+    polygon_flags: Vec<u16>,
     /// Absolute source offset of the topology packet sequence.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtPolygonMeshWire {
+    id: String,
+    topology: String,
+    coordinate_header: String,
+    polygons: Vec<Vec<u32>>,
+    vertex_attribute_indices: Vec<Vec<Option<u32>>>,
+    polygon_groups: Vec<i32>,
+    polygon_flags: Vec<u16>,
+    source_offset: u64,
+}
+impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
+    type Error = &'static str;
+    fn try_from(wire: DisplayJtPolygonMeshWire) -> Result<Self, Self::Error> {
+        let count = wire.polygons.len();
+        if wire.vertex_attribute_indices.len() != count
+            || wire.polygon_groups.len() != count
+            || wire.polygon_flags.len() != count
+        {
+            return Err("polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree");
+        }
+        Ok(Self {
+            id: wire.id,
+            topology: wire.topology,
+            coordinate_header: wire.coordinate_header,
+            polygons: wire.polygons,
+            vertex_attribute_indices: wire.vertex_attribute_indices,
+            polygon_groups: wire.polygon_groups,
+            polygon_flags: wire.polygon_flags,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<DisplayJtPolygonMesh> for DisplayJtPolygonMeshWire {
+    fn from(value: DisplayJtPolygonMesh) -> Self {
+        Self {
+            id: value.id,
+            topology: value.topology,
+            coordinate_header: value.coordinate_header,
+            polygons: value.polygons,
+            vertex_attribute_indices: value.vertex_attribute_indices,
+            polygon_groups: value.polygon_groups,
+            polygon_flags: value.polygon_flags,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Fixed header of the vertex records following a JT 9 topology envelope.
@@ -2653,7 +2705,7 @@ pub fn display_jt_polygon_meshes(
         }) {
             return Vec::new();
         }
-        meshes.push(DisplayJtPolygonMesh {
+        let Ok(mesh) = DisplayJtPolygonMesh::try_from(DisplayJtPolygonMeshWire {
             id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
             topology: sequence.id.clone(),
             coordinate_header: coordinate_header.id.clone(),
@@ -2668,7 +2720,10 @@ pub fn display_jt_polygon_meshes(
                 .map(|polygon| polygon.vertex_indices)
                 .collect(),
             source_offset: sequence.source_offset,
-        });
+        }) else {
+            return Vec::new();
+        };
+        meshes.push(mesh);
     }
     meshes
 }
@@ -4861,7 +4916,7 @@ mod tests {
             DisplayJtVertexTextureCoordinates,
         };
 
-        let mesh = DisplayJtPolygonMesh {
+        let mesh = DisplayJtPolygonMesh::try_from(super::DisplayJtPolygonMeshWire {
             id: "native-mesh".into(),
             topology: "topology".into(),
             coordinate_header: "coordinate-header".into(),
@@ -4870,7 +4925,23 @@ mod tests {
             polygon_groups: vec![4, -1],
             polygon_flags: vec![0, 0],
             source_offset: 80,
-        };
+        })
+        .unwrap();
+        let wire = serde_json::to_value(&mesh).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DisplayJtPolygonMesh>(wire.clone()).unwrap(),
+            mesh
+        );
+        for field in [
+            "polygons",
+            "vertex_attribute_indices",
+            "polygon_groups",
+            "polygon_flags",
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field].as_array_mut().unwrap().pop();
+            assert!(serde_json::from_value::<DisplayJtPolygonMesh>(invalid).is_err());
+        }
         let coordinates = DisplayJtVertexCoordinates {
             id: "coordinates".into(),
             header: "coordinate-header".into(),
