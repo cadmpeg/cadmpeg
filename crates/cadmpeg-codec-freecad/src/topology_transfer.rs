@@ -749,7 +749,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
                     .collect::<Vec<_>>();
-                let scale = similarity(face_transform)?.scale;
+                let scale = uniform_scale(face_transform)?;
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
             .transpose()?;
@@ -1018,7 +1018,7 @@ impl<'a> Builder<'a> {
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
         let carrier_transform = transform.compose(self.tables.location(representation.location())?);
-        let scale = similarity(carrier_transform)?.scale;
+        let scale = uniform_scale(carrier_transform)?;
         let (points, parameters, deflection) = match representation {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 let polygon = &self.tables.polygons3d[polygon - 1];
@@ -1181,7 +1181,7 @@ impl<'a> Builder<'a> {
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: positive_tolerance(tolerance * similarity(transform)?.scale),
+            tolerance: positive_tolerance(tolerance * uniform_scale(transform)?),
         });
         self.bind_topology(
             TextShapeKind::Vertex,
@@ -1560,12 +1560,11 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {
     })
 }
 
-#[derive(Clone, Copy)]
-struct Similarity {
-    scale: f64,
+fn ensure_similarity(transform: Transform) -> Result<(), CodecError> {
+    uniform_scale(transform).map(|_| ())
 }
 
-fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
+fn uniform_scale(transform: Transform) -> Result<f64, CodecError> {
     let columns = [
         Vector3::new(
             transform.rows()[0][0],
@@ -1598,14 +1597,14 @@ fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
             "B-rep location is not a finite similarity transform".into(),
         ));
     }
-    Ok(Similarity { scale })
+    Ok(scale)
 }
 
 fn transform_curve(
     geometry: &CurveGeometry,
     transform: Transform,
 ) -> Result<CurveGeometry, CodecError> {
-    similarity(transform)?;
+    ensure_similarity(transform)?;
     Ok(CurveGeometry::Transformed {
         basis: Box::new(geometry.clone()),
         transform,
@@ -1616,7 +1615,7 @@ fn transform_surface(
     geometry: &SurfaceGeometry,
     transform: Transform,
 ) -> Result<SurfaceGeometry, CodecError> {
-    similarity(transform)?;
+    ensure_similarity(transform)?;
     Ok(SurfaceGeometry::Transformed {
         basis: Box::new(geometry.clone()),
         transform,
