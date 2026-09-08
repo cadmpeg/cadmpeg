@@ -27,8 +27,8 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
         TextShapeKind::Face => TextTShapeGeometry::Face {
             natural_restriction: false,
             tolerance: 0.0,
-            surface: 0,
-            location: 0,
+            surface: None,
+            location: crate::brep::LocationRef::Identity,
             triangulation: None,
         },
         TextShapeKind::Wire => TextTShapeGeometry::Wire,
@@ -96,17 +96,17 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Forward,
-            location: 1,
+            location: 1.into(),
         },
     ];
     let tables = Tables {
@@ -121,7 +121,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables);
+    let indices = source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -141,7 +141,7 @@ fn source_indices_follow_depth_first_topology_order() {
     let use_shape = |shape: usize| TextShapeUse {
         shape,
         orientation: TextOrientation::Forward,
-        location: 0,
+        location: 0.into(),
     };
     let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
         index,
@@ -178,7 +178,7 @@ fn source_indices_follow_depth_first_topology_order() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = source_topology_indices(tables);
+    let indices = source_topology_indices(tables).expect("valid locations");
     let index =
         |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
 
@@ -204,7 +204,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
     let use_shape = |shape: usize| TextShapeUse {
         shape,
         orientation: TextOrientation::Forward,
-        location: 0,
+        location: 0.into(),
     };
     let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
         index,
@@ -231,7 +231,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         roots: &roots,
     };
 
-    let indices = source_topology_indices(tables);
+    let indices = source_topology_indices(tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -269,22 +269,22 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 1,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 2,
             orientation: TextOrientation::Internal,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 4,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 5,
             orientation: TextOrientation::External,
-            location: 0,
+            location: 0.into(),
         },
     ];
     let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
@@ -295,12 +295,12 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 7,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         TextShapeUse {
             shape: 7,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
     ];
     let (start, end) = edge_endpoint_uses(9, &closed).expect("closed edge endpoints");
@@ -315,7 +315,7 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 3,
             orientation: TextOrientation::Forward,
-            location: 0,
+            location: 0.into(),
         },
         children[2].clone(),
     ];
@@ -329,7 +329,7 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
         TextShapeUse {
             shape: 5,
             orientation: TextOrientation::Reversed,
-            location: 0,
+            location: 0.into(),
         },
     ];
     assert!(matches!(

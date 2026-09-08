@@ -309,7 +309,7 @@ pub struct TextShapeUse {
     /// Use orientation.
     pub orientation: TextOrientation,
     /// One-based location index, or zero for identity.
-    pub location: usize,
+    pub location: LocationRef,
 }
 
 /// One vertex point representation.
@@ -842,9 +842,9 @@ pub enum TextTShapeGeometry {
     Face {
         natural_restriction: bool,
         tolerance: f64,
-        surface: usize,
-        location: usize,
-        triangulation: Option<usize>,
+        surface: Option<TableRef<TextSurface>>,
+        location: LocationRef,
+        triangulation: Option<TableRef<TextTriangulation>>,
     },
     Wire,
     Shell,
@@ -866,6 +866,101 @@ impl TextTShapeGeometry {
             Self::CompSolid => TextShapeKind::CompSolid,
             Self::Compound => TextShapeKind::Compound,
         }
+    }
+}
+
+/// An identity placement or a nonzero location-table reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "usize", into = "usize")]
+pub enum LocationRef {
+    /// The identity placement.
+    Identity,
+    /// A stored placement.
+    Table(TableRef<TextLocation>),
+}
+
+impl From<usize> for LocationRef {
+    fn from(index: usize) -> Self {
+        std::num::NonZeroUsize::new(index).map_or(Self::Identity, |index| {
+            Self::Table(TableRef {
+                index,
+                table: std::marker::PhantomData,
+            })
+        })
+    }
+}
+
+impl From<LocationRef> for usize {
+    fn from(value: LocationRef) -> Self {
+        value.index()
+    }
+}
+
+impl LocationRef {
+    /// Returns the location wire index.
+    pub fn index(self) -> usize {
+        match self {
+            Self::Identity => 0,
+            Self::Table(index) => index.index(),
+        }
+    }
+
+    /// Resolves a placement against the location table.
+    pub fn resolve(self, table: &[TextLocation]) -> Result<Transform, CodecError> {
+        match self {
+            Self::Identity => Ok(Transform::identity()),
+            Self::Table(index) => Ok(index.resolve(table)?.transform),
+        }
+    }
+}
+
+/// A nonzero one-based reference to an owned table.
+#[derive(Debug)]
+pub struct TableRef<T> {
+    index: std::num::NonZeroUsize,
+    table: std::marker::PhantomData<fn() -> T>,
+}
+
+impl<T> PartialEq for TableRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl<T> Eq for TableRef<T> {}
+
+impl<T> Copy for TableRef<T> {}
+
+impl<T> Clone for TableRef<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> TableRef<T> {
+    /// Admits a nonzero table index.
+    pub fn new(index: usize) -> Result<Self, String> {
+        std::num::NonZeroUsize::new(index)
+            .map(|index| Self {
+                index,
+                table: std::marker::PhantomData,
+            })
+            .ok_or_else(|| "table reference must be nonzero".to_owned())
+    }
+
+    /// Returns the one-based wire index.
+    pub fn index(self) -> usize {
+        self.index.get()
+    }
+
+    /// Resolves the reference against its table.
+    pub fn resolve(self, table: &[T]) -> Result<&T, CodecError> {
+        table.get(self.index.get() - 1).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "table reference {} is out of range",
+                self.index
+            ))
+        })
     }
 }
 
@@ -959,9 +1054,9 @@ impl From<TextTShape> for TextTShapeWire {
             } => TextTShapeGeometryWire::Face {
                 natural_restriction,
                 tolerance,
-                surface,
-                location,
-                triangulation,
+                surface: surface.map_or(0, TableRef::index),
+                location: location.index(),
+                triangulation: triangulation.map(TableRef::index),
             },
             TextTShapeGeometry::Wire
             | TextTShapeGeometry::Shell
@@ -1024,9 +1119,15 @@ impl TryFrom<TextTShapeWire> for TextTShape {
             ) => TextTShapeGeometry::Face {
                 natural_restriction,
                 tolerance,
-                surface,
-                location,
-                triangulation,
+                surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
+                    index,
+                    table: std::marker::PhantomData,
+                }),
+                location: location.into(),
+                triangulation: triangulation
+                    .map(TableRef::new)
+                    .transpose()
+                    .map_err(|error| format!("triangulation: {error}"))?,
             },
             (TextShapeKind::Wire, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Wire,
             (TextShapeKind::Shell, TextTShapeGeometryWire::Empty) => TextTShapeGeometry::Shell,
@@ -1937,7 +2038,8 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> 
                     locations.len(),
                     true,
                     "root location",
-                )?,
+                )?
+                .into(),
                 orientation: binary_orientation(orientation)?,
             }]
         }
@@ -2137,9 +2239,15 @@ fn parse_binary_tshape(
             TextTShapeGeometry::Face {
                 natural_restriction,
                 tolerance,
-                surface,
-                location,
-                triangulation,
+                surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
+                    index,
+                    table: std::marker::PhantomData,
+                }),
+                location: location.into(),
+                triangulation: triangulation
+                    .map(TableRef::new)
+                    .transpose()
+                    .map_err(CodecError::Malformed)?,
             }
         }
         TextShapeKind::Wire => TextTShapeGeometry::Wire,
@@ -2178,7 +2286,8 @@ fn parse_binary_tshape(
                 location_count,
                 true,
                 "child location",
-            )?,
+            )?
+            .into(),
         });
     }
     Ok(TextTShape {
@@ -3835,9 +3944,15 @@ fn parse_face_geometry(
     Ok(TextTShapeGeometry::Face {
         natural_restriction,
         tolerance,
-        surface,
-        location,
-        triangulation,
+        surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
+            index,
+            table: std::marker::PhantomData,
+        }),
+        location: location.into(),
+        triangulation: triangulation
+            .map(TableRef::new)
+            .transpose()
+            .map_err(CodecError::Malformed)?,
     })
 }
 
@@ -3887,7 +4002,7 @@ fn parse_shape_use(
     Ok(TextShapeUse {
         shape,
         orientation,
-        location,
+        location: location.into(),
     })
 }
 
@@ -5053,6 +5168,33 @@ pub(crate) mod tests {
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    #[test]
+    fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
+        let mut wire = serde_json::json!({
+            "index": 1, "kind": "face",
+            "geometry": { "kind": "face", "natural_restriction": false,
+                "tolerance": 0.0, "surface": 0, "location": 0, "triangulation": null },
+            "flags": [false, false, false, false, false, false, false], "children": []
+        });
+        let shape: TextTShape = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(shape).unwrap(), wire);
+        wire["geometry"]["triangulation"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<TextTShape>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("triangulation"));
+        assert!(TableRef::<TextSurface>::new(0).is_err());
+        assert!(TableRef::<TextSurface>::new(1)
+            .unwrap()
+            .resolve(&[])
+            .is_err());
+        assert_eq!(
+            LocationRef::Identity.resolve(&[]).unwrap(),
+            Transform::identity()
+        );
+        assert!(LocationRef::from(1).resolve(&[]).is_err());
+    }
 
     #[test]
     fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
