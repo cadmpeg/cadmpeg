@@ -2872,7 +2872,12 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         let stable_identities = stable_object_record_identities(&entry.name, &record_bytes);
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
-        for (source, _, _, reference) in section.references() {
+        for (source, reference) in records.iter().enumerate().flat_map(|(source, record)| {
+            record
+                .references(records.len())
+                .into_iter()
+                .map(move |reference| (source, reference))
+        }) {
             let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                 continue;
             };
@@ -3665,18 +3670,24 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section.as_fixed().is_none() {
+            let Some(records) = section.as_fixed() else {
                 return Vec::new();
-            }
+            };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .string_values()
-                .into_iter()
-                .filter_map(move |(record_ordinal, value_ordinal, object_id, value)| {
-                    let object_id = object_id?;
+            records
+                .iter()
+                .enumerate()
+                .flat_map(|(record_ordinal, record)| {
+                    record.string_values().into_iter().enumerate().map(
+                        move |(value_ordinal, value)| {
+                            (record_ordinal, value_ordinal, record.object_id.0, value)
+                        },
+                    )
+                })
+                .map(move |(record_ordinal, value_ordinal, object_id, value)| {
                     let record =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
-                    Some(StringValue {
+                    StringValue {
                         id: format!(
                             "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
                             value.offset
@@ -3687,7 +3698,7 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         value: value.value.into_owned(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
-                    })
+                    }
                 })
                 .collect()
         })
@@ -3701,20 +3712,21 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section.as_fixed().is_none() {
+            let Some(records) = section.as_fixed() else {
                 return Vec::new();
-            }
+            };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .references()
-                .into_iter()
-                .filter_map(
+            records.iter().enumerate().flat_map(|(record_ordinal, record)| {
+                record.references(records.len()).into_iter().enumerate().map(move |(reference_ordinal, reference)| {
+                    (record_ordinal, reference_ordinal, record.object_id.0, reference)
+                })
+            })
+                .map(
                     move |(record_ordinal, reference_ordinal, object_id, reference)| {
-                        let object_id = object_id?;
                         let record = format!(
                             "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
                         );
-                        Some(ObjectReference {
+                        ObjectReference {
                             id: format!(
                                 "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
                                 reference.offset
@@ -3731,7 +3743,7 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                             },
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + reference.offset as u64,
-                        })
+                        }
                     },
                 )
                 .collect()
@@ -5088,6 +5100,10 @@ mod tests {
         assert_eq!(blocks[0].block_ordinal, 0);
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
         assert_eq!(blocks[1].role, super::DataBlockRole::Column);
+        for (ordinal, block) in blocks.iter().enumerate() {
+            assert_eq!(block.block_ordinal as usize, ordinal);
+            assert_eq!(block.id, format!("nx:om-data-blocks-0:block#{ordinal}"));
+        }
         assert!(blocks[0].byte_len > 0);
         assert!(blocks[0].stable_identity.is_some());
         let forms = super::data_block_control_forms(&container);
