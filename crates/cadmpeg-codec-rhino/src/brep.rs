@@ -127,7 +127,7 @@ pub(crate) struct RawBrepEdge {
     /// C3 curve slot.
     pub(crate) curve: i32,
     /// Proxy reversal flag.
-    pub(crate) proxy_reversed: i32,
+    pub(crate) proxy_reversed: bool,
     /// Proxy domain.
     pub(crate) proxy_domain: Interval,
     /// Endpoint vertex indexes.
@@ -156,7 +156,7 @@ pub(crate) struct RawBrepTrim {
     /// Start and end vertex indexes.
     pub(crate) vertices: [i32; 2],
     /// Three-dimensional reversal flag.
-    pub(crate) reversed_3d: i32,
+    pub(crate) reversed_3d: bool,
     /// Raw trim-type value.
     pub(crate) trim_type: i32,
     /// Raw ISO value.
@@ -168,7 +168,7 @@ pub(crate) struct RawBrepTrim {
     /// Native trim domain.
     pub(crate) domain: Interval,
     /// Proxy reversal byte.
-    pub(crate) proxy_reversed: u8,
+    pub(crate) proxy_reversed: bool,
     /// Reserved bytes from the current layout.
     pub(crate) reserved: Vec<u8>,
     /// Legacy 2D and 3D tolerances appended after the proxy block.
@@ -202,7 +202,7 @@ pub(crate) struct RawBrepFace {
     /// Surface slot.
     pub(crate) surface: i32,
     /// Surface reversal flag.
-    pub(crate) reversed_surface: i32,
+    pub(crate) reversed_surface: bool,
     /// Material channel.
     pub(crate) material_channel: i32,
     /// Optional face UUID.
@@ -390,12 +390,6 @@ impl ValidatedRawBrep {
             finite_interval(edge.proxy_domain, "edge proxy domain")?;
             finite_interval(edge.domain, "edge domain")?;
             finite_tolerance(edge.tolerance, "edge tolerance")?;
-            if edge.proxy_reversed != 0 && edge.proxy_reversed != 1 {
-                return Err(error(
-                    edge.source_range.start,
-                    "invalid edge proxy reversal",
-                ));
-            }
             for trim in &edge.trims {
                 if !raw.trims[*trim as usize].edge.eq(&(index as i32)) {
                     return Err(error(
@@ -434,9 +428,6 @@ impl ValidatedRawBrep {
             finite_interval(trim.domain, "trim domain")?;
             for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
                 finite_tolerance(tolerance, "trim tolerance")?;
-            }
-            if trim.proxy_reversed > 1 || trim.reversed_3d != 0 && trim.reversed_3d != 1 {
-                return Err(error(trim.source_range.start, "invalid trim reversal"));
             }
             if !(0..=7).contains(&trim.trim_type) || !(0..=6).contains(&trim.iso) {
                 return Err(error(trim.source_range.start, "invalid trim enum value"));
@@ -504,12 +495,6 @@ impl ValidatedRawBrep {
                 return Err(error(
                     face.source_range.start,
                     "face surface reference is invalid",
-                ));
-            }
-            if face.reversed_surface != 0 && face.reversed_surface != 1 {
-                return Err(error(
-                    face.source_range.start,
-                    "invalid face surface reversal",
                 ));
             }
             refs(&face.loops, raw.loops.len(), "face loop")?;
@@ -981,13 +966,13 @@ fn parse_legacy_major2(
                     proxy_domain: domain,
                     edge,
                     vertices: [-1, -1],
-                    reversed_3d: i32::from(reversed_3d != 0),
+                    reversed_3d: reversed_3d != 0,
                     trim_type: if edge < 0 { 4 } else { 0 },
                     iso: 0,
                     loop_index: actual_loop_index,
                     tolerances: [tolerance_2d, tolerance_2d],
                     domain,
-                    proxy_reversed: 0,
+                    proxy_reversed: false,
                     reserved: Vec::new(),
                     legacy_tolerances: [tolerance_2d, tolerance_3d],
                     source_range: trim_source_start..reader.position(),
@@ -1009,7 +994,7 @@ fn parse_legacy_major2(
             loops: face_loops,
             surface: i32::try_from(face_position)
                 .map_err(|_| error(reader.position(), "legacy Brep surface index overflow"))?,
-            reversed_surface: i32::from(reversed_surface != 0),
+            reversed_surface: reversed_surface != 0,
             material_channel: 0,
             uuid: None,
             color: None,
@@ -1135,7 +1120,7 @@ fn parse_legacy_major2(
         edges.push(RawBrepEdge {
             index: edge_index_i32,
             curve: edge_index_i32,
-            proxy_reversed: 0,
+            proxy_reversed: false,
             proxy_domain: curve.domain,
             vertices: endpoints,
             trims: trim_indexes,
@@ -1360,7 +1345,7 @@ fn legacy_trim_endpoint(trim_index: i32, endpoint: usize) -> usize {
 }
 
 fn legacy_trim_endpoint_for_edge(trim: &RawBrepTrim, edge_endpoint: usize) -> usize {
-    let trim_endpoint = if trim.reversed_3d == 0 {
+    let trim_endpoint = if !trim.reversed_3d {
         edge_endpoint
     } else {
         1 - edge_endpoint
@@ -1619,7 +1604,11 @@ fn read_edges(
         let start = child.position();
         let index = child.i32()?;
         let curve = child.i32()?;
-        let proxy_reversed = child.i32()?;
+        let proxy_reversed = match child.i32()? {
+            0 => false,
+            1 => true,
+            _ => return Err(error(child.position() - 4, "invalid edge proxy reversal")),
+        };
         let proxy_domain = interval(&mut child)?;
         let vertices = [child.i32()?, child.i32()?];
         let trims = indexes(&mut child)?;
@@ -1674,19 +1663,27 @@ fn read_trims(
         let proxy_domain = interval(&mut child)?;
         let edge = child.i32()?;
         let vertices = [child.i32()?, child.i32()?];
-        let reversed_3d = child.i32()?;
+        let reversed_3d = match child.i32()? {
+            0 => false,
+            1 => true,
+            _ => return Err(error(child.position() - 4, "invalid trim reversal")),
+        };
         let trim_type = child.i32()?;
         let iso = child.i32()?;
         let loop_index = child.i32()?;
         let tolerances = [child.f64()?, child.f64()?];
         let (domain, proxy_reversed, reserved) = if current {
             let domain = interval(&mut child)?;
-            let proxy_reversed = child.u8()?;
+            let proxy_reversed = match child.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(error(child.position() - 1, "invalid trim reversal")),
+            };
             let reserved = child.take(31)?.to_vec();
             (domain, proxy_reversed, reserved)
         } else {
             child.skip(48)?;
-            (proxy_domain, 0, Vec::new())
+            (proxy_domain, false, Vec::new())
         };
         let legacy_tolerances = [child.f64()?, child.f64()?];
         result.push(RawBrepTrim {
@@ -1772,7 +1769,11 @@ fn read_faces(
         let index = child.i32()?;
         let loops = indexes(&mut child)?;
         let surface = child.i32()?;
-        let reversed_surface = child.i32()?;
+        let reversed_surface = match child.i32()? {
+            0 => false,
+            1 => true,
+            _ => return Err(error(child.position() - 4, "invalid face surface reversal")),
+        };
         let material_channel = child.i32()?;
         result.push(RawBrepFace {
             index,
@@ -2803,7 +2804,7 @@ mod tests {
             .map(|(index, vertices)| RawBrepEdge {
                 index: i32::try_from(index).expect("index"),
                 curve: 0,
-                proxy_reversed: 0,
+                proxy_reversed: false,
                 proxy_domain: interval,
                 vertices,
                 trims: vec![i32::try_from(index).expect("index")],
@@ -2821,13 +2822,13 @@ mod tests {
                 proxy_domain: interval,
                 edge: i32::try_from(index).expect("index"),
                 vertices,
-                reversed_3d: 0,
+                reversed_3d: false,
                 trim_type: 1,
                 iso: 0,
                 loop_index: 0,
                 tolerances: [0.0, 0.0],
                 domain: interval,
-                proxy_reversed: 0,
+                proxy_reversed: false,
                 reserved: Vec::new(),
                 legacy_tolerances: [0.0, 0.0],
                 source_range: 0..0,
@@ -2865,7 +2866,7 @@ mod tests {
                 index: 0,
                 loops: vec![0],
                 surface: 0,
-                reversed_surface: 0,
+                reversed_surface: false,
                 material_channel: 0,
                 uuid: None,
                 color: None,
@@ -2995,13 +2996,13 @@ mod tests {
                 proxy_domain: interval,
                 edge: -1,
                 vertices: [0, 0],
-                reversed_3d: 0,
+                reversed_3d: false,
                 trim_type,
                 iso: 0,
                 loop_index: 0,
                 tolerances: [0.0, 0.0],
                 domain: interval,
-                proxy_reversed: 0,
+                proxy_reversed: false,
                 reserved: Vec::new(),
                 legacy_tolerances: [0.0, 0.0],
                 source_range: 0..0,
@@ -3017,7 +3018,7 @@ mod tests {
                 index: 0,
                 loops: vec![0],
                 surface: 0,
-                reversed_surface: 0,
+                reversed_surface: false,
                 material_channel: 0,
                 uuid: None,
                 color: None,
