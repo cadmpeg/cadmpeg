@@ -623,11 +623,9 @@ pub(crate) fn resolved_surface_geometry(
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
 
-/// Exact neutral geometry and construction of a surface-of-revolution carrier.
+/// Exact construction of a surface-of-revolution carrier.
 #[derive(Clone, PartialEq)]
 pub(crate) struct ResolvedRevolutionSurface {
-    /// Exact NURBS cache of the revolution result.
-    pub(crate) geometry: SurfaceGeometry,
     /// Exact profile curve used as the revolution directrix.
     pub(crate) directrix: NurbsCurve,
     /// Point on the revolution axis.
@@ -642,8 +640,7 @@ pub(crate) struct ResolvedRevolutionSurface {
     pub(crate) parameter_interval: [f64; 2],
 }
 
-/// Resolve a surface-of-revolution carrier while retaining its exact
-/// procedural construction alongside the cache geometry.
+/// Resolve a surface-of-revolution construction with an exact NURBS result.
 pub(crate) fn resolved_revolution_surface(
     graph: &B5Graph,
     surface_id: u32,
@@ -658,11 +655,8 @@ pub(crate) fn resolved_revolution_surface(
     let SurfaceProcedure::Revolution(plan) = procedure? else {
         return None;
     };
-    if !matches!(&geometry, SurfaceGeometry::Nurbs(_)) {
-        return None;
-    }
+    matches!(geometry, SurfaceGeometry::Nurbs(_)).then_some(())?;
     Some(ResolvedRevolutionSurface {
-        geometry,
         directrix: plan.directrix,
         axis_origin: plan.axis_origin,
         axis_direction: plan.axis_direction,
