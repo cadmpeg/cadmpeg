@@ -22,6 +22,7 @@ use super::{is_class_token, CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use crate::classification::{
     classify_type_token, native_object_class, FeatureClass, NativeClassKind,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
@@ -2898,28 +2899,44 @@ pub(super) fn operand_accepts_marker(
     match kind {
         FeatureInputOperandKind::D6
         | FeatureInputOperandKind::Native(
-            0x80cc | 0x8152 | 0x81b2 | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69 | 0x81dd,
+            NativeOperandTag::TAG_80CC
+            | NativeOperandTag::TAG_8152
+            | NativeOperandTag::TAG_81B2
+            | NativeOperandTag::TAG_8AB6
+            | NativeOperandTag::TAG_8DCB
+            | NativeOperandTag::TAG_929D
+            | NativeOperandTag::TAG_BC7C
+            | NativeOperandTag::TAG_BD69
+            | NativeOperandTag::TAG_81DD,
         ) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         }
-        FeatureInputOperandKind::Native(0x837b) => matches!(
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B) => matches!(
             marker,
             SketchInputKind::Point
                 | SketchInputKind::ConstrainedPoint
                 | SketchInputKind::LineOrCircle
                 | SketchInputKind::Arc
         ),
-        FeatureInputOperandKind::Native(0x80ac | 0x80d5 | 0x8138) => matches!(
+        FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_80AC | NativeOperandTag::TAG_80D5 | NativeOperandTag::TAG_8138,
+        ) => matches!(
             marker,
             SketchInputKind::Point
                 | SketchInputKind::ConstrainedPoint
                 | SketchInputKind::Relation(_)
         ),
         FeatureInputOperandKind::E1
-        | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87 | 0x81e7) => {
+        | FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_8386
+            | NativeOperandTag::TAG_83FE
+            | NativeOperandTag::TAG_8DDA
+            | NativeOperandTag::TAG_BC87
+            | NativeOperandTag::TAG_81E7,
+        ) => {
             // 81e7 also selects curve markers in coordinate-marker link cells;
             // scalar relation operands use the solver-line path separately.
             matches!(marker, SketchInputKind::LineOrCircle | SketchInputKind::Arc)
@@ -2934,7 +2951,13 @@ pub(super) fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> 
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
             | FeatureInputOperandKind::Native(
-                0x80cc | 0x81b2 | 0x81dd | 0x83fe | 0x8ab6 | 0x929d | 0xbd69,
+                NativeOperandTag::TAG_80CC
+                    | NativeOperandTag::TAG_81B2
+                    | NativeOperandTag::TAG_81DD
+                    | NativeOperandTag::TAG_83FE
+                    | NativeOperandTag::TAG_8AB6
+                    | NativeOperandTag::TAG_929D
+                    | NativeOperandTag::TAG_BD69
             )
     )
 }
@@ -2942,7 +2965,14 @@ pub(super) fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> 
 pub(super) fn operand_allows_compatible_ordinal_fallback(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
-        FeatureInputOperandKind::Native(0x837b | 0x8386 | 0x8dcb | 0x8dda | 0xbc7c | 0xbc87)
+        FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_837B
+                | NativeOperandTag::TAG_8386
+                | NativeOperandTag::TAG_8DCB
+                | NativeOperandTag::TAG_8DDA
+                | NativeOperandTag::TAG_BC7C
+                | NativeOperandTag::TAG_BC87
+        )
     )
 }
 

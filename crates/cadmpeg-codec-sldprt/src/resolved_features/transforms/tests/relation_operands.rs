@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::marker;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
@@ -783,7 +784,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         operands: vec![FeatureInputOperand {
             offset: 5,
             reference_ref: "shared-reference".into(),
-            kind: FeatureInputOperandKind::Native(0x8ab6),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
             entity_index: 0,
             entity_ref: Some("shared".into()),
         }],
@@ -1450,7 +1451,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
             .map(|entity_index| FeatureInputOperand {
                 offset: u64::from(entity_index),
                 reference_ref: format!("reference-{entity_index}"),
-                kind: FeatureInputOperandKind::Native(0x8386),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index,
                 entity_ref: Some(marker.id.clone()),
             })
@@ -1544,14 +1545,14 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
             FeatureInputOperand {
                 offset: 0,
                 reference_ref: "missing-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x8386),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index: 13,
                 entity_ref: None,
             },
             FeatureInputOperand {
                 offset: 1,
                 reference_ref: "known-reference".into(),
-                kind: FeatureInputOperandKind::Native(0x8386),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                 entity_index: 6,
                 entity_ref: Some(known_marker.id.clone()),
             },

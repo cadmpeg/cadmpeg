@@ -4,6 +4,7 @@ use super::selections::{
     operand_accepts_marker, operand_allows_compatible_ordinal_fallback,
     operand_uses_compatible_ordinal, unique_marker_candidate,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
 };
@@ -82,7 +83,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     excluded: &HashSet<String>,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
-    if kind == FeatureInputOperandKind::Native(0x81dd) {
+    if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD) {
         let mut points = entities
             .iter()
             .copied()
@@ -101,12 +102,12 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| !excluded.contains(&entity.id));
     }
-    if kind == FeatureInputOperandKind::Native(0x81e7) {
+    if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7) {
         // In scalar relations, 81e7 addresses the solver-line roster formed
         // from coordinate points; it does not directly resolve a line marker.
         return None;
     }
-    if kind == FeatureInputOperandKind::Native(0x810f) {
+    if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F) {
         // An 810f cell belongs to the declared line-distance family. Its
         // address is an object index when that index is present, or a local
         // identifier otherwise. A coordinate-bearing point can share either
@@ -148,7 +149,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             _ => None,
         };
     }
-    if kind == FeatureInputOperandKind::Native(0xbc7c) {
+    if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C) {
         let indexed = entities
             .iter()
             .copied()
@@ -169,7 +170,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             return Some(*entity);
         }
     }
-    if kind == FeatureInputOperandKind::Native(0xbc87) {
+    if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC87) {
         let indexed = entities
             .iter()
             .copied()
@@ -187,7 +188,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             return Some(*entity);
         }
     }
-    if kind == FeatureInputOperandKind::Native(0x814c) {
+    if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) {
         let indexed = entities
             .iter()
             .copied()
@@ -208,7 +209,14 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     }
     if matches!(
         kind,
-        FeatureInputOperandKind::Native(0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbd69,)
+        FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_80CC
+                | NativeOperandTag::TAG_8152
+                | NativeOperandTag::TAG_8AB6
+                | NativeOperandTag::TAG_8DCB
+                | NativeOperandTag::TAG_929D
+                | NativeOperandTag::TAG_BD69
+        )
     ) {
         let indexed = entities
             .iter()
@@ -224,7 +232,9 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     }
     if matches!(
         kind,
-        FeatureInputOperandKind::Native(0x80ac | 0x80d5 | 0x8138)
+        FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_80AC | NativeOperandTag::TAG_80D5 | NativeOperandTag::TAG_8138
+        )
     ) {
         // These class-scoped relation cells use the same address precedence
         // as point references, but may also name a relation handle whose
@@ -259,7 +269,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     }
     if matches!(
         kind,
-        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x8386)
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386)
     ) {
         let indexed = entities
             .iter()
@@ -271,7 +281,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         if let [entity] = indexed.as_slice() {
             return Some(*entity);
         }
-        if kind == FeatureInputOperandKind::Native(0x8386) {
+        if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
             let entities_by_id = entities
                 .iter()
                 .map(|entity| (entity.id.as_str(), *entity))
@@ -322,7 +332,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     match exact.as_slice() {
         [entity] => Some(*entity),
         [] => {
-            if kind == FeatureInputOperandKind::Native(0x8386) {
+            if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
                 let entities_by_id = entities
                     .iter()
                     .map(|entity| (entity.id.as_str(), *entity))
@@ -381,7 +391,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                 }
                 [] if operand_allows_compatible_ordinal_fallback(kind) => {
                     compatible.get(usize::from(address)).copied().or_else(|| {
-                        (kind == FeatureInputOperandKind::Native(0xbc7c))
+                        (kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C))
                             .then(|| {
                                 entities
                                     .iter()
@@ -459,7 +469,12 @@ fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
         FeatureInputOperandKind::E1
-            | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87)
+            | FeatureInputOperandKind::Native(
+                NativeOperandTag::TAG_8386
+                    | NativeOperandTag::TAG_83FE
+                    | NativeOperandTag::TAG_8DDA
+                    | NativeOperandTag::TAG_BC87
+            )
     )
 }
 
