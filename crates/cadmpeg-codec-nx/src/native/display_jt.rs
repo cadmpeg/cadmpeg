@@ -56,12 +56,8 @@ fn inflate_display_jt(
     };
     let member = child_for_subslice(source, compressed)?;
     let view = inflate_zlib_exact(ctx, member).ok()?;
-    ctx.copy_retained(
-        view.window(),
-        "retain inflated DisplayJT payload",
-        Some(source.location()),
-    )
-    .ok()
+    ctx.copy_retained(view.window(), "retain inflated DisplayJT payload")
+        .ok()
 }
 
 /// Outer index of the embedded JT display-model stream.

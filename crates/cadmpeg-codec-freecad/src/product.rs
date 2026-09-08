@@ -496,7 +496,7 @@ fn linked_prototype_transform(
     placements: &HashMap<&str, [[f64; 4]; 4]>,
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
-    let _depth = ctx.enter_nested("resolve FCStd nested link transform", None)?;
+    let _depth = ctx.enter_nested("resolve FCStd nested link transform")?;
     if record.link_transform() != Some(true) || record.external_document().is_some() {
         return Ok(identity());
     }
