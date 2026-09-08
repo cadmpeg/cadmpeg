@@ -748,24 +748,22 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
                     .collect::<Vec<_>>();
-                Ok::<_, CodecError>((index, triangulation, vertices, triangles))
+                let scale = similarity(face_transform)?.scale;
+                Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
-            .transpose()?;
-        let triangulation_scale = located_triangulation
-            .as_ref()
-            .map(|_| similarity(face_transform).map(|similarity| similarity.scale))
             .transpose()?;
         let surface_id = if let Some(surface) = surface {
             surface.resolve(self.tables.surfaces)?;
             self.located_surface(ir, surface.index(), surface_transform)?
-        } else if let Some((index, triangulation, vertices, triangles)) = &located_triangulation {
+        } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
+            &located_triangulation
+        {
             let id = SurfaceId::mint(crate::native::model_id(
                 "surface",
                 &self.payload.id,
                 format!("triangulation:{index}@{face_key}"),
             ))
             .expect("identity grammar");
-            let deflection_scale = triangulation_scale.expect("triangulation scale");
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
@@ -784,9 +782,10 @@ impl<'a> Builder<'a> {
         } else {
             return Ok(None);
         };
-        if let Some((index, triangulation, vertices, triangles)) = located_triangulation {
+        if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
+            located_triangulation
+        {
             self.emitted_triangulations.insert(index);
-            let deflection_scale = triangulation_scale.expect("triangulation scale");
             let normals = triangulation
                 .normals
                 .as_ref()
