@@ -10,8 +10,6 @@
 # NX snapshots pin flate2 zlib bytes; regenerate only via the workspace command
 # (see [notes].nx). An isolated -p cadmpeg-codec-nx build can pick a different
 # flate2 backend and diverge compressor output.
-measured_at = "41039916814ce8104db0ec521b71fd03ee21cc3f"
-filter = "regular files under crates/cadmpeg-codec-*/tests/golden; exclude dotfiles"
 
 [floors]
 catia = 57

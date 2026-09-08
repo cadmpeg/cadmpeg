@@ -245,7 +245,7 @@ pub enum FidelityError {
 }
 
 /// Decode-time source annotations and retained native records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
@@ -254,17 +254,6 @@ pub struct SourceFidelity {
     /// Native records retained for recovery or replay.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub retained_records: Vec<RetainedSourceRecord>,
-}
-
-// Keep the explicit impl visible in the rustdoc-derived public API baseline.
-#[allow(clippy::derivable_impls)]
-impl Default for SourceFidelity {
-    fn default() -> Self {
-        Self {
-            annotations: Annotations::default(),
-            retained_records: Vec::new(),
-        }
-    }
 }
 
 impl SourceFidelity {

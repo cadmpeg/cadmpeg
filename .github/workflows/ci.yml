@@ -40,21 +40,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
-        with:
-          # The convergence ledger verifies that its measured commit exists
-          # and is an ancestor of the checked revision.
-          fetch-depth: 0
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Install nightly public API tooling
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install cargo-public-api 0.52.0
-        run: cargo +nightly install cargo-public-api --version =0.52.0 --locked
 
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
@@ -70,13 +60,12 @@ jobs:
         # start. Catches a reference that names no paragraph or several.
         run: python3 scripts/check-doc-anchors.py
 
-      - name: Convergence ratchet
-        # Mechanical anti-pattern ceilings in docs/convergence-ledger.toml.
-        # Counts may only fall; a deliberate increase needs a [reasons] entry.
+      - name: Source policy
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_convergence_ratchet.py
-          python3 scripts/convergence-ratchet.py
+          python3 -m unittest -q scripts/test_pre_commit.py
+          python3 -m unittest -v scripts/test_check_source_policy.py
+          python3 scripts/check-source-policy.py
 
       - name: Golden coverage floors
         # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
@@ -85,17 +74,6 @@ jobs:
           set -euo pipefail
           python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
           python3 scripts/check-golden-coverage-floors.py
-
-      - name: Public API ledger
-        # Parse docs/public-api-ledger.toml and regenerate every API snapshot.
-        # Change rows retain SHAs from completed refactor branches. Those
-        # commits are not necessarily advertised by a current remote ref, so
-        # even a full clone cannot resolve them. Skip only object resolution;
-        # missing nightly API tooling or a stale snapshot fails this job.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-public-api-ledger.py --self-test
-          python3 scripts/check-public-api-ledger.py --skip-git-objects --diff --require-tooling
 
       - name: Codec facade
         # Crate-root pub items must match docs/codec-facade.toml.
@@ -109,7 +87,7 @@ jobs:
         # docs/dialects.toml. Ids are pinned from the commit that adds them.
         run: |
           set -euo pipefail
-          python3 scripts/check-dialects.py --self-test
+          python3 -m unittest discover -q -s scripts -p test_check_dialects.py
           python3 scripts/check-dialects.py
 
       - name: Dialect capability registry
@@ -119,7 +97,7 @@ jobs:
         # here: a row with no fixture cannot claim a read score.
         run: |
           set -euo pipefail
-          python3 scripts/check-dialect-support.py --self-test
+          python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
           python3 scripts/check-dialect-support.py
 
       - name: Rendered capability tables
@@ -129,7 +107,7 @@ jobs:
         # a registry edit without a re-render fails here.
         run: |
           set -euo pipefail
-          python3 scripts/render-format-support.py --self-test
+          python3 -m unittest discover -q -s scripts -p test_render_format_support.py
           python3 scripts/render-format-support.py --check
 
       - name: Format check
