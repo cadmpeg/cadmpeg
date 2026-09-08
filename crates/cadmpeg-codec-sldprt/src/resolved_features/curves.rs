@@ -1417,6 +1417,27 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         Object,
     }
 
+    enum RectangleLineRecord {
+        Indexed {
+            endpoints: [u32; 2],
+            space: EndpointSpace,
+        },
+        CurrentWide {
+            endpoints: [u32; 2],
+            code: Option<u32>,
+            alternate_locus: bool,
+        },
+    }
+
+    impl RectangleLineRecord {
+        fn endpoint_space(&self) -> EndpointSpace {
+            match self {
+                Self::Indexed { space, .. } => *space,
+                Self::CurrentWide { .. } => EndpointSpace::Roster,
+            }
+        }
+    }
+
     let mut roster = markers.to_vec();
     roster.sort_unstable_by_key(|marker| marker.offset);
     let records = markers
@@ -1424,37 +1445,40 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         .filter_map(|marker| {
             let offset = usize::try_from(marker.offset).ok()?;
             if let Some(endpoints) = legacy_extended_rectangle_line_endpoints(payload, offset) {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some((
-                    endpoints,
-                    None,
-                    false,
-                    EndpointSpace::Roster,
-                ));
+                return (marker.kind == SketchInputKind::LineOrCircle).then_some(
+                    RectangleLineRecord::Indexed {
+                        endpoints,
+                        space: EndpointSpace::Roster,
+                    },
+                );
             }
             if let Some(endpoints) = current_compact_rectangle_line_endpoints(payload, offset) {
                 return matches!(
                     marker.kind,
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
-                .then_some((endpoints, None, false, EndpointSpace::Object));
+                .then_some(RectangleLineRecord::Indexed {
+                    endpoints,
+                    space: EndpointSpace::Object,
+                });
             }
             if let Some(endpoints) = compact_legacy_rectangle_line_endpoints(payload, offset) {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some((
-                    endpoints,
-                    None,
-                    false,
-                    EndpointSpace::Object,
-                ));
+                return (marker.kind == SketchInputKind::LineOrCircle).then_some(
+                    RectangleLineRecord::Indexed {
+                        endpoints,
+                        space: EndpointSpace::Object,
+                    },
+                );
             }
             if let Some(endpoints) = compact_legacy_curve_endpoint_indices(payload, offset)
                 .or_else(|| compact_legacy_code_one_line_endpoint_indices(payload, offset))
             {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some((
-                    endpoints,
-                    None,
-                    false,
-                    EndpointSpace::Object,
-                ));
+                return (marker.kind == SketchInputKind::LineOrCircle).then_some(
+                    RectangleLineRecord::Indexed {
+                        endpoints,
+                        space: EndpointSpace::Object,
+                    },
+                );
             }
             let endpoints = current_wide_rectangle_line_endpoints(payload, offset)?;
             if endpoints.iter().any(|endpoint| {
@@ -1475,17 +1499,17 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 marker.kind,
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
-            .then_some((
+            .then_some(RectangleLineRecord::CurrentWide {
                 endpoints,
-                marker_native_code(payload, offset),
-                payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00]),
-                EndpointSpace::Roster,
-            ))
+                code: marker_native_code(payload, offset),
+                alternate_locus: payload.get(offset + 23..offset + 27)
+                    == Some(&[0x05, 0x00, 0x01, 0x00]),
+            })
         })
         .collect::<Vec<_>>();
     let mut endpoint_spaces = records
         .iter()
-        .map(|(_, _, _, space)| *space)
+        .map(RectangleLineRecord::endpoint_space)
         .collect::<Vec<_>>();
     endpoint_spaces.sort_unstable_by_key(|space| match space {
         EndpointSpace::Roster => 0,
@@ -1497,7 +1521,10 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     };
     let current_codes = records
         .iter()
-        .filter_map(|(_, current_code, _, _)| *current_code)
+        .filter_map(|record| match record {
+            RectangleLineRecord::CurrentWide { code, .. } => *code,
+            RectangleLineRecord::Indexed { .. } => None,
+        })
         .collect::<Vec<_>>();
     if !(current_codes.is_empty()
         || current_codes.len() == 4
@@ -1511,7 +1538,14 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     }
     let edges = records
         .into_iter()
-        .map(|(endpoints, _, alternate_locus, _)| (endpoints, alternate_locus))
+        .map(|record| match record {
+            RectangleLineRecord::Indexed { endpoints, .. } => (endpoints, false),
+            RectangleLineRecord::CurrentWide {
+                endpoints,
+                alternate_locus,
+                ..
+            } => (endpoints, alternate_locus),
+        })
         .collect::<Vec<_>>();
     if !matches!(edges.len(), 3 | 4) || edges.len() == 3 && current_codes.len() != 3 {
         return None;
