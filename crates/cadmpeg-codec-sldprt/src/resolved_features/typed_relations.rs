@@ -22,7 +22,9 @@ use super::relation_loci::{
 };
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
-use super::transforms::{locus_entity, locus_key, marker_entities, sketch_entity_loci};
+use super::transforms::{
+    locus_entity, locus_key, marker_entities, sketch_entity_loci, ProfileAxis,
+};
 use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
@@ -390,7 +392,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             sketch_entities,
                             markers_by_id,
                             loci_by_marker,
-                            kind == Horizontal,
+                            if kind == Horizontal {
+                                ProfileAxis::U
+                            } else {
+                                ProfileAxis::V
+                            },
                         )
                     });
                 let Some(loci) = loci else {
@@ -1171,7 +1177,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    horizontal: bool,
+    axis: ProfileAxis,
 ) -> Option<Vec<SketchLocus>> {
     let links = marker
         .links()
@@ -1200,7 +1206,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     let mut candidates = canonical_profile_loci(sketch, sketch_entities)
         .into_iter()
         .filter_map(|(candidate_point, candidate)| {
-            let aligned = if horizontal {
+            let aligned = if axis == ProfileAxis::U {
                 same_dimension_length(candidate_point.v, known_point.v)
             } else {
                 same_dimension_length(candidate_point.u, known_point.u)
