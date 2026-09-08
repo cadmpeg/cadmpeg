@@ -685,7 +685,8 @@ mod tests {
                         })
                         .collect(),
                     metadata: B5LoopMetadata {
-                        framing_controls: [0, 0],
+                        framing_controls:
+                            [crate::families::b5::graph::controls::B5FramingControl::Control03; 2],
                         extension: None,
                     },
                     surface: 10,
@@ -711,7 +712,9 @@ mod tests {
                 object_id: 1,
                 surface: 10,
                 loops: vec![3, 2],
-                terminal_control: Some(3),
+                terminal_control: Some(
+                    crate::families::b5::graph::controls::B5FramingControl::Control03,
+                ),
             }],
             face_records: BTreeMap::new(),
             loops,

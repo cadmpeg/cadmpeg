@@ -9,6 +9,11 @@ use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition};
 use cadmpeg_ir::math::Point2;
 
+/// Admitted topology control bytes.
+pub(crate) mod controls;
+
+use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
+
 use super::vecmath::{add, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::wire;
@@ -600,7 +605,7 @@ pub struct B5Edge {
     /// Ordered start/end class-`06` parameter-incidence identities.
     pub parameter_incidences: [u32; 2],
     /// Exact admitted terminal control.
-    pub terminal_control: u8,
+    pub terminal_control: B5EdgeTerminalControl,
 }
 
 /// One complete class-`5d` vertex-to-incidence reference production.
@@ -611,7 +616,7 @@ pub struct B5VertexIncidenceLink {
     /// Referenced counted class-`05` incidence roster.
     pub incidence: u32,
     /// Exact admitted terminal control.
-    pub terminal_control: u8,
+    pub terminal_control: B5VertexIncidenceControl,
 }
 
 /// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
@@ -734,7 +739,7 @@ pub struct B5Face {
     pub loops: Vec<u32>,
     /// Exact terminal control of the counted face production. Uncounted face
     /// framing has no terminal control.
-    pub terminal_control: Option<u8>,
+    pub terminal_control: Option<B5FramingControl>,
 }
 
 /// Count the face incidences for each object-stream loop.
@@ -757,7 +762,7 @@ pub struct B5FaceRecord {
     pub references: Vec<u32>,
     /// Exact counted-production terminal control. Uncounted framing has no
     /// terminal control.
-    pub terminal_control: Option<u8>,
+    pub terminal_control: Option<B5FramingControl>,
 }
 
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
@@ -790,7 +795,7 @@ pub struct B5LoopMember {
 #[derive(Debug, Clone, PartialEq)]
 pub struct B5LoopMetadata {
     /// Primary and secondary loop framing controls.
-    pub framing_controls: [u8; 2],
+    pub framing_controls: [B5FramingControl; 2],
     /// Optional fixed-width numeric extension.
     pub extension: Option<B5LoopMetadataExtension>,
 }
@@ -1967,11 +1972,8 @@ fn parse_edge(record: &B5Record) -> Option<B5Edge> {
     let &[terminal_control] = record.payload.get(position..)? else {
         return None;
     };
-    matches!(
-        terminal_control,
-        0x01 | 0x02 | 0x21 | 0x22 | 0x25 | 0x26 | 0x29 | 0x2a
-    )
-    .then_some(B5Edge {
+    let terminal_control = B5EdgeTerminalControl::from_byte(terminal_control)?;
+    Some(B5Edge {
         object_id: record.object_id,
         support: references[0],
         vertices: [references[1], references[2]],
@@ -2065,7 +2067,8 @@ fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLin
     let &[terminal_control] = record.payload.get(position..)? else {
         return None;
     };
-    matches!(terminal_control, 0x00 | 0x04).then_some(B5VertexIncidenceLink {
+    let terminal_control = B5VertexIncidenceControl::from_byte(terminal_control)?;
+    Some(B5VertexIncidenceLink {
         object_id: record.object_id,
         incidence,
         terminal_control,
@@ -5451,7 +5454,8 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
         let &[terminal_control] = record.payload.get(position..)? else {
             return None;
         };
-        matches!(terminal_control, 0x03 | 0x05).then_some(B5FaceRecord {
+        let terminal_control = B5FramingControl::from_byte(terminal_control)?;
+        Some(B5FaceRecord {
             object_id: record.object_id,
             references,
             terminal_control: Some(terminal_control),
@@ -5731,10 +5735,11 @@ fn loop_references_and_metadata(
 fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
     let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
     let controls_end = 3usize.checked_add(controls_len)?;
-    if !matches!(bytes.first(), Some(0x03 | 0x05))
-        || !matches!(bytes.get(1..3), Some([0x03 | 0x05, 0x03]))
-        || controls_end > bytes.len()
-    {
+    let framing_controls = [
+        B5FramingControl::from_byte(*bytes.first()?)?,
+        B5FramingControl::from_byte(*bytes.get(1)?)?,
+    ];
+    if bytes.get(2) != Some(&0x03) || controls_end > bytes.len() {
         return None;
     }
     let edge_controls = bytes[3..controls_end]
@@ -5789,7 +5794,7 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec
     };
     Some((
         B5LoopMetadata {
-            framing_controls: [bytes[0], bytes[1]],
+            framing_controls,
             extension,
         },
         edge_controls,

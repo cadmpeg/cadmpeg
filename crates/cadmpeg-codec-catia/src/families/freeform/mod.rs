@@ -25,6 +25,9 @@ use crate::assemble::{
 };
 use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};
+use crate::families::b5::graph::controls::{
+    B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl,
+};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
 
@@ -215,10 +218,9 @@ fn typed_face_counts(
 ) -> [usize; 4] {
     let controls = records.values().fold([0usize; 3], |mut counts, face| {
         match face.terminal_control {
-            Some(0x03) => counts[0] += 1,
-            Some(0x05) => counts[1] += 1,
+            Some(B5FramingControl::Control03) => counts[0] += 1,
+            Some(B5FramingControl::Control05) => counts[1] += 1,
             None => counts[2] += 1,
-            Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
         }
         counts
     });
@@ -263,11 +265,10 @@ fn loop_metadata_counts<'a>(
 ) -> [usize; 5] {
     records.fold([0usize; 5], |mut counts, loop_| {
         let index = match loop_.metadata.framing_controls {
-            [0x03, 0x03] => 0,
-            [0x03, 0x05] => 1,
-            [0x05, 0x03] => 2,
-            [0x05, 0x05] => 3,
-            _ => unreachable!("the loop parser admits only controls 03 and 05"),
+            [B5FramingControl::Control03, B5FramingControl::Control03] => 0,
+            [B5FramingControl::Control03, B5FramingControl::Control05] => 1,
+            [B5FramingControl::Control05, B5FramingControl::Control03] => 2,
+            [B5FramingControl::Control05, B5FramingControl::Control05] => 3,
         };
         counts[index] += 1;
         counts[4] += usize::from(loop_.metadata.extension.is_some());
@@ -338,10 +339,9 @@ pub(crate) fn try_decode_freeform_surfaces(
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
             match face.terminal_control {
-                Some(0x03) => counts[0] += 1,
-                Some(0x05) => counts[1] += 1,
+                Some(B5FramingControl::Control03) => counts[0] += 1,
+                Some(B5FramingControl::Control05) => counts[1] += 1,
                 None => counts[2] += 1,
-                Some(_) => unreachable!("the face parser admits only controls 03 and 05"),
             }
             counts
         })
@@ -364,15 +364,14 @@ pub(crate) fn try_decode_freeform_surfaces(
             .values()
             .fold([0usize; 8], |mut counts, edge| {
                 let index = match edge.terminal_control {
-                    0x01 => 0,
-                    0x02 => 1,
-                    0x21 => 2,
-                    0x22 => 3,
-                    0x25 => 4,
-                    0x26 => 5,
-                    0x29 => 6,
-                    0x2a => 7,
-                    _ => unreachable!("the edge parser admits only declared controls"),
+                    B5EdgeTerminalControl::Control01 => 0,
+                    B5EdgeTerminalControl::Control02 => 1,
+                    B5EdgeTerminalControl::Control21 => 2,
+                    B5EdgeTerminalControl::Control22 => 3,
+                    B5EdgeTerminalControl::Control25 => 4,
+                    B5EdgeTerminalControl::Control26 => 5,
+                    B5EdgeTerminalControl::Control29 => 6,
+                    B5EdgeTerminalControl::Control2A => 7,
                 };
                 counts[index] += 1;
                 counts
@@ -388,11 +387,8 @@ pub(crate) fn try_decode_freeform_surfaces(
                 .values()
                 .fold([0usize; 2], |mut counts, link| {
                     match link.terminal_control {
-                        0x00 => counts[0] += 1,
-                        0x04 => counts[1] += 1,
-                        _ => unreachable!(
-                            "the vertex-incidence parser admits only controls 00 and 04"
-                        ),
+                        B5VertexIncidenceControl::Control00 => counts[0] += 1,
+                        B5VertexIncidenceControl::Control04 => counts[1] += 1,
                     }
                     counts
                 })
