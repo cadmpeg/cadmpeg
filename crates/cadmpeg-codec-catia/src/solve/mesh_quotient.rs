@@ -7658,7 +7658,9 @@ pub fn parse_standard_mesh_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<(StandardTopology, Vec<usize>)> {
-    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let face_run = largest_fbb_run(bytes)?;
+    let face_count = face_run.face_count;
+    let after_faces = face_run.after_faces();
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != edge_candidates.len() {
@@ -8492,7 +8494,9 @@ where
 {
     let endpoint_budget = budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
     let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) = (|| {
-        let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+        let face_run = largest_fbb_run(bytes)?;
+        let face_count = face_run.face_count;
+        let after_faces = face_run.after_faces();
         let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
         let vertex_points = parse_vertex_table(bytes, vertex_header)?;
         let boundary_context =
