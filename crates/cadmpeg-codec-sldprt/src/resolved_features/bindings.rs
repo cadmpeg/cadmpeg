@@ -114,7 +114,7 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len())
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
             {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
@@ -659,7 +659,7 @@ pub(crate) fn bind_mirror_surface_planes(
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| {
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
         })
         .map(|feature| feature.id.as_str())
@@ -933,7 +933,7 @@ pub(crate) fn bind_scalar_operands(
             ) else {
                 continue;
             };
-            if native_object_class(parent.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(parent.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::Extrusion
                 && !matches!(parent.xml_tag.as_str(), "Extrusion" | "Cut")
             {
@@ -1157,7 +1157,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         .flat_map(|history| &history.features)
         .filter(|feature| feature.xml_tag == "Sketch")
         .filter(|feature| {
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::OriginProfileFeature
         })
         .filter(|feature| !represented.contains(&feature.id))

@@ -58,7 +58,7 @@ pub(super) fn compact_body_selections(
     let state_token = compact_body_state_token(lane);
     let mut result = Vec::new();
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
-        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
@@ -67,7 +67,7 @@ pub(super) fn compact_body_selections(
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let next_token = next.and_then(|(next, next_feature)| {
-            (native_object_class(next_feature.input_class.as_deref().unwrap_or_default()).kind
+            (native_object_class(next_feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::DeleteBody)
                 .then(|| {
                     usize::try_from(next.offset)
@@ -283,7 +283,7 @@ pub(super) fn compact_edge_selections(
     let compact_edge_token =
         class_name_end.and_then(|offset| View::u16_le_at(&lane.native_payload, offset));
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
-        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         if !matches!(kind, NativeClassKind::Fillet | NativeClassKind::Chamfer) {
             continue;
         }
@@ -489,8 +489,7 @@ pub(super) fn compact_surface_selections(
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     for (index, &(name, feature)) in objects.iter().enumerate() {
-        let classified =
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+        let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
             NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
                 NativeClassKind::Extrusion

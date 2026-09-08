@@ -1764,7 +1764,7 @@ pub(super) fn bind_detached_relation_drivers(
 }
 
 fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
-    match native_object_class(name).kind {
+    match native_object_class(name) {
         NativeClassKind::SketchRelation(family) => Some(family),
         _ => None,
     }
