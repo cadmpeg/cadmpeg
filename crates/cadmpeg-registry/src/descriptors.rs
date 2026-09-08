@@ -18,6 +18,10 @@ pub struct NativeDescriptor {
 }
 
 impl NativeDescriptor {
+    pub(crate) const fn id(&self) -> FormatId {
+        self.id
+    }
+
     pub(crate) const fn input_extensions(&self) -> &'static [&'static str] {
         self.input_extensions
     }
