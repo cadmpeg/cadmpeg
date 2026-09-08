@@ -1094,3 +1094,49 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             && reference_direction == Vector3::new(0.0, 0.0, 1.0)
     )));
 }
+
+#[test]
+fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::MemberCompact {
+                paired_byte_offset: 34,
+            },
+        )
+        .unwrap(),
+        id: "f3d:design:design-sketch-placement#1".into(),
+        scope_record_index: None,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).unwrap(),
+        visibility: None,
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+    };
+    let surface = SketchSurface {
+        id: "f3d:design:surface#2".into(),
+        record_index: 2,
+        owner_reference: Some(201),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        byte_offset: 0,
+        entity_genesis: None,
+        persistent_id: 2,
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        ],
+    };
+    let placements = [placement];
+    let (planar, planar_entities) =
+        project_sketch_design(&placements, &[], &[], &[], &[], EPS_POINT_PROJECTION);
+    let (spatial, spatial_entities) =
+        project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION);
+    assert_eq!(planar.len(), 1);
+    assert!(planar_entities.is_empty());
+    assert_eq!(spatial.len(), 1);
+    assert_eq!(spatial_entities.len(), 1);
+}
