@@ -653,24 +653,13 @@ impl FbbFaceRun {
     }
 }
 
-/// One independently source-closed standard FBB population.
-///
-/// A marker run becomes a population only when its fixed-width edge tables,
-/// counted vertex table, trim chain, and reconstructed topology all select one
-/// result. Marker count alone is not a body or a topology binding.
-#[derive(Debug, Clone)]
-pub(crate) struct StandardFbbGroup {
-    pub(crate) face_run: FbbFaceRun,
-    pub(crate) topology: StandardTopology,
-}
-
 /// Find every independently source-closed standard FBB population.
 ///
 /// The result is intentionally not reduced to the largest run. A caller that
 /// has a single result may select it; a caller that has multiple results must
 /// bind their carrier and incidence rosters before creating neutral bodies.
 #[must_use]
-pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<StandardFbbGroup> {
+pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<FbbFaceRun> {
     crate::container::fbb_run_ranges(bytes)
         .into_iter()
         .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / fbb_row::LEN))
@@ -767,11 +756,7 @@ pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
         .collect()
 }
 
-fn parse_standard_group(
-    bytes: &[u8],
-    face_start: usize,
-    face_count: usize,
-) -> Option<StandardFbbGroup> {
+fn parse_standard_group(bytes: &[u8], face_start: usize, face_count: usize) -> Option<FbbFaceRun> {
     let face_run = FbbFaceRun {
         face_start,
         face_count,
@@ -781,8 +766,8 @@ fn parse_standard_group(
         parse_standard_edge_tables_with_width(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    let topology = reconstruct(edge_rows, vertex_points, &trims)?;
-    Some(StandardFbbGroup { face_run, topology })
+    reconstruct(edge_rows, vertex_points, &trims)?;
+    Some(face_run)
 }
 
 pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<FbbFaceRun> {
@@ -796,7 +781,7 @@ pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<FbbFaceRun> {
     }
     let groups = standard_fbb_groups(bytes);
     match groups.as_slice() {
-        [group] if group.topology.face_count() == group.face_run.face_count => Some(group.face_run),
+        [group] => Some(*group),
         [] => largest_fbb_run(bytes),
         _ => None,
     }
