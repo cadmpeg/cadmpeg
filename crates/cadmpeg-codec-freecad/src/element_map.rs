@@ -91,15 +91,18 @@ pub(crate) fn parse(
             parse_count(data_node, "StringHasher")?
         };
         let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
-        tables.push(StringTableRecord {
-            id: crate::native::native_id("string-table", index.to_string()),
-            index,
-            owner_property,
-            save_all,
-            threshold,
-            source_entry: source_entry.map(str::to_owned),
-            entries,
-        });
+        tables.push(
+            StringTableRecord::try_new(
+                crate::native::native_id("string-table", index.to_string()),
+                index,
+                owner_property,
+                save_all,
+                threshold,
+                source_entry.map(str::to_owned),
+                entries,
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
 
     let mut maps = Vec::new();
@@ -1250,7 +1253,7 @@ mod tests {
         )
         .expect("legacy string table carrier");
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries[0].payload, "legacy");
+        assert_eq!(tables[0].entries()[0].payload, "legacy");
         assert!(maps.is_empty());
     }
 
@@ -1588,7 +1591,7 @@ Co 1001000 +2 0 *
             .arena_as::<crate::native::StringTableRecord>("string_tables")
             .expect("required invariant");
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries[0].string_id, 10);
+        assert_eq!(tables[0].entries()[0].string_id, 10);
         let maps = namespace
             .arena_as::<crate::native::ElementMapRecord>("element_maps")
             .expect("required invariant");
