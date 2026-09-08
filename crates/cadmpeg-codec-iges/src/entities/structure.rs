@@ -1540,16 +1540,18 @@ fn bounded_plane_curve_is_simple(
         CurveGeometry::Transformed {
             basis,
             transform: map,
-        } => bounded_plane_curve_is_simple(
-            basis,
-            PlaneBoundarySimplicity {
-                transform: context.transform.compose(*map),
-                ..context
-            },
-            source_is_certified_simple,
-            parameter_range,
-            active,
-        ),
+        } => context.transform.compose(*map).is_ok_and(|transform| {
+            bounded_plane_curve_is_simple(
+                basis,
+                PlaneBoundarySimplicity {
+                    transform,
+                    ..context
+                },
+                source_is_certified_simple,
+                parameter_range,
+                active,
+            )
+        }),
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
             parameter_range.is_some_and(|range| analytic_curve_is_simple_closed(geometry, range))
         }
