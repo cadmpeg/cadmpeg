@@ -76,7 +76,7 @@ mod tests {
             r#""kind":"record_ordinal16","value":65535,"target_record":"record#65535""#,
         ] {
             let json = format!(
-                r#"{{"id":"r","record":"owner","object_id":null,"ordinal":0,{fields},"source_entry":"om","source_offset":10}}"#
+                r#"{{"id":"r","record":"owner","object_id":1,"ordinal":0,{fields},"source_entry":"om","source_offset":10}}"#
             );
             let record: ObjectReference = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&record).unwrap(), json);
@@ -88,7 +88,7 @@ mod tests {
             r#""kind":"record_ordinal16","value":1,"target_record":null"#,
         ] {
             let json = format!(
-                r#"{{"id":"r","record":"owner","object_id":null,"ordinal":0,{fields},"source_entry":"om","source_offset":10}}"#
+                r#"{{"id":"r","record":"owner","object_id":1,"ordinal":0,{fields},"source_entry":"om","source_offset":10}}"#
             );
             assert!(
                 serde_json::from_str::<ObjectReference>(&json).is_err(),
