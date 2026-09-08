@@ -64,11 +64,11 @@ fn binary_relations_require_matching_evaluated_geometry() {
             .unwrap(),
         )
     };
-    let first_circle = circle("first-circle", 0.0, 2.0, 2.0);
-    let equal_circle = circle("equal-circle", 4.0, 2.0, 2.0);
-    let concentric_circle = circle("concentric-circle", 0.0, 2.0, 1.0);
-    let coradial_circle = circle("coradial-circle", 0.0, 2.0, 2.0);
-    let unrelated_circle = circle("unrelated-circle", 8.0, 8.0, 3.0);
+    let first_circle = circle("synthetic:test:id#first-circle", 0.0, 2.0, 2.0);
+    let equal_circle = circle("synthetic:test:id#equal-circle", 4.0, 2.0, 2.0);
+    let concentric_circle = circle("synthetic:test:id#concentric-circle", 0.0, 2.0, 1.0);
+    let coradial_circle = circle("synthetic:test:id#coradial-circle", 0.0, 2.0, 2.0);
+    let unrelated_circle = circle("synthetic:test:id#unrelated-circle", 8.0, 8.0, 3.0);
 
     for (kind, first, second) in [
         (Parallel, &horizontal, &parallel),
