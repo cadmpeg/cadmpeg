@@ -237,9 +237,11 @@ fn endpoint_degree_closure_retains_symmetric_face_swaps() {
 fn candidate_contexts_share_edge_row_storage() {
     let bytes = crate::test_support::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
-    let base = StandardMeshBoundaryContext::parse(&bytes, &faces).unwrap();
+    let base = StandardMeshBoundaryContext::parse(&bytes, &faces).expect("quad boundary context");
     for _ in 0..1024 {
-        let candidate = base.with_edge_faces(&faces).unwrap();
+        let candidate = base
+            .with_edge_faces(&faces)
+            .expect("quad candidate context");
         assert_eq!(
             candidate.analysis.edge_rows.as_ptr(),
             base.analysis.edge_rows.as_ptr()
