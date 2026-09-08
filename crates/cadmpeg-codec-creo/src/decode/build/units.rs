@@ -1080,10 +1080,18 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
                 })?;
         }
         SurfaceGeometry::Polygonal(surface) => {
-            for point in surface.vertices_mut() {
-                scale_point3(point, scale);
-            }
-            surface.set_chordal_deflection(surface.chordal_deflection() * scale);
+            let mut scaled = surface.clone();
+            scaled
+                .edit_vertices(|points| {
+                    for point in points {
+                        scale_point3(point, scale);
+                    }
+                })
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            scaled
+                .set_chordal_deflection(scaled.chordal_deflection() * scale)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            *surface = scaled;
         }
         SurfaceGeometry::Transformed {
             basis, transform, ..
@@ -1172,10 +1180,18 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
                 })?;
         }
         CurveGeometry::Polyline(polyline) => {
-            for point in polyline.points_mut() {
-                scale_point3(point, scale);
-            }
-            polyline.set_chordal_deflection(polyline.chordal_deflection() * scale);
+            let mut scaled = polyline.clone();
+            scaled
+                .edit_points(|points| {
+                    for point in points {
+                        scale_point3(point, scale);
+                    }
+                })
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            scaled
+                .set_chordal_deflection(scaled.chordal_deflection() * scale)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            *polyline = scaled;
         }
         CurveGeometry::Transformed {
             basis, transform, ..

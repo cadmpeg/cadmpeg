@@ -258,9 +258,12 @@ fn transform_surface(
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
         SurfaceGeometry::Polygonal(surface) => surface
-            .vertices_mut()
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
+            .edit_vertices(|points| {
+                points
+                    .iter_mut()
+                    .for_each(|point| *point = transform.apply_point(*point))
+            })
+            .map_err(|error| CodecError::malformed(error.to_string()))?,
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform a non-explicit surface".into(),
@@ -314,9 +317,12 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
         CurveGeometry::Polyline(polyline) => polyline
-            .points_mut()
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
+            .edit_points(|points| {
+                points
+                    .iter_mut()
+                    .for_each(|point| *point = transform.apply_point(*point))
+            })
+            .map_err(|error| CodecError::malformed(error.to_string()))?,
         CurveGeometry::Parabola(parabola_curve) => {
             let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
             *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(

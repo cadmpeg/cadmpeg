@@ -184,42 +184,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
     }
-    for s in &ir.model.surfaces {
-        match s.geometry.wire_geometry() {
-            SurfaceGeometry::Plane(_) => {}
-            SurfaceGeometry::Cylinder(_) => {}
-            SurfaceGeometry::Cone(_) => {}
-            SurfaceGeometry::Sphere(_) => {}
-            SurfaceGeometry::Torus(_) => {}
-            SurfaceGeometry::Nurbs(_) => {}
-            SurfaceGeometry::Procedural { .. } => {}
-            SurfaceGeometry::Polygonal(surface) => {
-                if !valid_polygonal_surface(surface) {
-                    bounds_err(
-                        findings,
-                        s.id.as_str(),
-                        "polygonal surface payload is invalid",
-                    );
-                }
-            }
-            SurfaceGeometry::Transformed {
-                basis,
-                transform: _,
-            } => {
-                if !valid_surface_basis(basis) {
-                    bounds_err(
-                        findings,
-                        s.id.as_str(),
-                        "transformed surface basis is invalid",
-                    );
-                }
-            }
-            // An unknown surface carries no numeric geometry to bounds-check; its
-            // record link is checked in `check_references`. A face resting on it
-            // is legal (topology known, shape opaque).
-            SurfaceGeometry::Unknown { .. } => {}
-        }
-    }
     for procedural in &ir.model.procedural_surfaces {
         if let ProceduralSurfaceDefinition::Extrusion {
             parameter_interval,
@@ -1442,23 +1406,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             CurveGeometry::Nurbs(_) => {}
             CurveGeometry::Procedural { .. } => {}
-            CurveGeometry::Polyline(polyline) => {
-                if !valid_polyline(polyline) {
-                    bounds_err(findings, c.id.as_str(), "polyline payload is invalid");
-                }
-            }
-            CurveGeometry::Transformed {
-                basis,
-                transform: _,
-            } => {
-                if !valid_curve_basis(basis) {
-                    bounds_err(
-                        findings,
-                        c.id.as_str(),
-                        "transformed curve basis is invalid",
-                    );
-                }
-            }
+            CurveGeometry::Polyline(_) => {}
+            CurveGeometry::Transformed { .. } => {}
             CurveGeometry::Unknown { .. } => {}
         }
     }
@@ -1916,74 +1865,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
-}
-
-fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
-    match geometry {
-        SurfaceGeometry::Plane(_) => true,
-        SurfaceGeometry::Cylinder(_) => true,
-        SurfaceGeometry::Cone(_) => true,
-        SurfaceGeometry::Sphere(_) => true,
-        SurfaceGeometry::Torus(_) => true,
-        SurfaceGeometry::Nurbs(_) => true,
-        SurfaceGeometry::Polygonal(surface) => valid_polygonal_surface(surface),
-        SurfaceGeometry::Transformed {
-            basis,
-            transform: _,
-        } => valid_surface_basis(basis),
-        SurfaceGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => valid_surface_basis(geometry),
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => true,
-    }
-}
-
-fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
-    match geometry {
-        CurveGeometry::Line(_) => true,
-        CurveGeometry::Circle(_) => true,
-        CurveGeometry::Ellipse(_) => true,
-        CurveGeometry::Parabola(_) => true,
-        CurveGeometry::Hyperbola(_) => true,
-        CurveGeometry::Degenerate(_) => true,
-        CurveGeometry::Nurbs(_) => true,
-        CurveGeometry::Polyline(polyline) => valid_polyline(polyline),
-        CurveGeometry::Transformed {
-            basis,
-            transform: _,
-        } => valid_curve_basis(basis),
-        CurveGeometry::Procedural {
-            cache: Some(geometry),
-            ..
-        } => valid_curve_basis(geometry),
-        CurveGeometry::Procedural { .. }
-        | CurveGeometry::Composite { .. }
-        | CurveGeometry::Unknown { .. } => true,
-    }
-}
-
-fn valid_polyline(polyline: &crate::geometry::PolylineCurve) -> bool {
-    polyline.chordal_deflection().is_finite()
-        && polyline.chordal_deflection() >= 0.0
-        && polyline
-            .points()
-            .iter()
-            .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
-        && polyline.parameters().is_none_or(|parameters| {
-            parameters.iter().all(|value| value.is_finite())
-                && (parameters.windows(2).all(|window| window[0] < window[1])
-                    || parameters.windows(2).all(|window| window[0] > window[1]))
-        })
-}
-
-fn valid_polygonal_surface(surface: &crate::geometry::PolygonalSurface) -> bool {
-    surface.chordal_deflection().is_finite()
-        && surface.chordal_deflection() >= 0.0
-        && surface
-            .vertices()
-            .iter()
-            .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
 }
 
 fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) -> bool {
