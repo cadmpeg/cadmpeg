@@ -440,12 +440,16 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
-            cadmpeg_ir::math::Point3::new(-5.0, 4.0, 2.0),
-            cadmpeg_ir::math::Vector3::new(2.0, 1.0, -0.5)
-                .unit()
-                .unwrap(),
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![-2.0, -2.0, 5.0, 5.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(-9.0, 2.0, 3.0),
+                cadmpeg_ir::math::Point3::new(5.0, 9.0, -0.5),
+            ],
+            None,
+            false,
         )
         .unwrap(),
     );
@@ -568,12 +572,16 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
-            cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0),
-            cadmpeg_ir::math::Vector3::new(1.0, -2.0, 0.5)
-                .unit()
-                .unwrap(),
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![-1.5, -1.5, 3.5, 3.5],
+            vec![
+                cadmpeg_ir::math::Point3::new(8.5, 23.0, 29.25),
+                cadmpeg_ir::math::Point3::new(13.5, 13.0, 31.75),
+            ],
+            None,
+            false,
         )
         .unwrap(),
     );

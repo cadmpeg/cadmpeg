@@ -452,12 +452,16 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
-                cadmpeg_ir::math::Vector3::new(5.0, -2.0, 1.0)
-                    .unit()
-                    .unwrap(),
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
+                    cadmpeg_ir::math::Point3::new(7.0, 1.0, 5.0),
+                ],
+                None,
+                false,
             )
             .unwrap(),
         );
@@ -699,12 +703,16 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-                cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0)
-                    .unit()
-                    .unwrap(),
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(5.0, 1.0, 5.0),
+                ],
+                None,
+                false,
             )
             .unwrap(),
         );
@@ -809,12 +817,16 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter_mut()
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(4.0, -1.0, 2.0),
-                cadmpeg_ir::math::Vector3::new(2.0, 3.0, -1.0)
-                    .unit()
-                    .unwrap(),
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![-1.0, -1.0, 2.0, 2.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(2.0, -4.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(8.0, 5.0, 0.0),
+                ],
+                None,
+                false,
             )
             .unwrap(),
         );
