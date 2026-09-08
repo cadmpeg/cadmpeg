@@ -407,7 +407,8 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .assert()
         .code(2)
         .stderr(
-            predicate::str::contains("No such file or directory")
+            predicate::str::contains("error: opening")
+                .and(predicate::str::contains("missing.cadir.json"))
                 .and(predicate::str::contains("iges cannot write 9.9").not()),
         );
 
