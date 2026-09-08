@@ -753,18 +753,74 @@ pub struct SemanticAnnotationRecord {
     pub side_entries: Vec<String>,
 }
 
-/// Page-only vs other `TechDraw` drawing payload.
+/// Persisted page runtime type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TechDrawPageKind {
+    /// Native page.
+    Page,
+    /// Python page.
+    Python,
+}
+
+/// Persisted non-page runtime type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DrawingRole {
-    /// `TechDraw::DrawPage` or `TechDraw::DrawPagePython`.
+pub struct TechDrawNonPageKind(String);
+
+/// Drawing runtime type and its page payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TechDrawKind {
+    /// Page with ordered views and optional template.
     Page {
+        /// Persisted page class.
+        runtime: TechDrawPageKind,
         /// Ordered page views.
         views: Vec<String>,
-        /// Page template object, when linked.
+        /// Page template object.
         template: Option<String>,
     },
-    /// Template, view, dimension, annotation, or other drawing object.
-    Other,
+    /// Non-page drawing object.
+    Other(TechDrawNonPageKind),
+}
+
+impl TechDrawKind {
+    /// Admits a runtime type and its page payload.
+    pub fn try_new(
+        kind: String,
+        views: Vec<String>,
+        template: Option<String>,
+    ) -> Result<Self, String> {
+        let runtime = match kind.as_str() {
+            "TechDraw::DrawPage" => Some(TechDrawPageKind::Page),
+            "TechDraw::DrawPagePython" => Some(TechDrawPageKind::Python),
+            _ => None,
+        };
+        if let Some(runtime) = runtime {
+            Ok(Self::Page {
+                runtime,
+                views,
+                template,
+            })
+        } else if views.is_empty() && template.is_none() {
+            Ok(Self::Other(TechDrawNonPageKind(kind)))
+        } else {
+            Err("non-page drawing record cannot carry views or a template".to_owned())
+        }
+    }
+
+    /// Persisted runtime type name.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Page {
+                runtime: TechDrawPageKind::Page,
+                ..
+            } => "TechDraw::DrawPage",
+            Self::Page {
+                runtime: TechDrawPageKind::Python,
+                ..
+            } => "TechDraw::DrawPagePython",
+            Self::Other(kind) => &kind.0,
+        }
+    }
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
@@ -776,9 +832,7 @@ pub struct DrawingRecord {
     /// Owning application object.
     pub object: String,
     /// Persisted `TechDraw` runtime type.
-    pub kind: String,
-    /// Page views and template, or a non-page payload.
-    pub role: DrawingRole,
+    pub kind: TechDrawKind,
     /// Ordered source object and subelement references for a view or dimension.
     pub sources: Vec<LinkTarget>,
     /// All drawing relationships grouped by their persisted property name.
@@ -787,10 +841,6 @@ pub struct DrawingRecord {
     pub parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
     pub side_entries: Vec<String>,
-}
-
-fn is_page_kind(kind: &str) -> bool {
-    matches!(kind, "TechDraw::DrawPage" | "TechDraw::DrawPagePython")
 }
 
 #[derive(Serialize, Deserialize)]
@@ -808,14 +858,17 @@ struct DrawingRecordWire {
 
 impl From<DrawingRecord> for DrawingRecordWire {
     fn from(value: DrawingRecord) -> Self {
-        let (views, template) = match value.role {
-            DrawingRole::Page { views, template } => (views, template),
-            DrawingRole::Other => (Vec::new(), None),
+        let kind = value.kind.as_str().to_owned();
+        let (views, template) = match value.kind {
+            TechDrawKind::Page {
+                views, template, ..
+            } => (views, template),
+            TechDrawKind::Other(_) => (Vec::new(), None),
         };
         Self {
             id: value.id,
             object: value.object,
-            kind: value.kind,
+            kind,
             views,
             template,
             sources: value.sources,
@@ -830,21 +883,11 @@ impl TryFrom<DrawingRecordWire> for DrawingRecord {
     type Error = String;
 
     fn try_from(wire: DrawingRecordWire) -> Result<Self, Self::Error> {
-        let role = if is_page_kind(&wire.kind) {
-            DrawingRole::Page {
-                views: wire.views,
-                template: wire.template,
-            }
-        } else if wire.views.is_empty() && wire.template.is_none() {
-            DrawingRole::Other
-        } else {
-            return Err("non-page drawing record cannot carry views or a template".to_owned());
-        };
+        let kind = TechDrawKind::try_new(wire.kind, wire.views, wire.template)?;
         Ok(Self {
             id: wire.id,
             object: wire.object,
-            kind: wire.kind,
-            role,
+            kind,
             sources: wire.sources,
             relationships: wire.relationships,
             parameters: wire.parameters,
