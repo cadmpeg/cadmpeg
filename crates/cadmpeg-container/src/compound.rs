@@ -114,6 +114,17 @@ struct SectorChain {
     rest: Vec<u32>,
 }
 
+impl SectorChain {
+    fn len(&self) -> usize {
+        1 + self.rest.len()
+    }
+
+    fn into_vec(mut self) -> Vec<u32> {
+        self.rest.insert(0, self.first);
+        self.rest
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StreamData {
     Empty(EmptyStreamStart),
@@ -869,7 +880,8 @@ impl CompoundState {
             directory_start,
             directory_expected,
             "directory",
-        )?;
+        )?
+        .into_vec();
         let directory_byte_count = directory_chain
             .len()
             .checked_mul(sector_size)
@@ -896,6 +908,7 @@ impl CompoundState {
                 NonZeroUsize::new(mini_fat_count),
                 "mini FAT",
             )?
+            .into_vec()
         };
         let mini_fat_byte_count = mini_fat_chain
             .len()
@@ -931,6 +944,7 @@ impl CompoundState {
                 NonZeroUsize::new(root_sectors),
                 "root mini stream",
             )?
+            .into_vec()
         };
         Ok(Self {
             version,
@@ -1063,7 +1077,7 @@ impl CompoundState {
                                 CodecError::Malformed("CFB stream size does not fit memory".into())
                             })?
                             .div_ceil(sector_size);
-                        let mut sectors = match allocation {
+                        let sectors = match allocation {
                             CompoundAllocation::Regular => chain(
                                 Some(ctx),
                                 &self.fat,
@@ -1081,13 +1095,9 @@ impl CompoundState {
                                 "mini stream",
                             )?,
                         };
-                        let first = sectors.remove(0);
                         StreamData::Allocated {
                             logical_size,
-                            chain: SectorChain {
-                                first,
-                                rest: sectors,
-                            },
+                            chain: sectors,
                         }
                     } else {
                         let start = match entry.start_sector {
@@ -1686,7 +1696,7 @@ fn chain(
     start: u32,
     expected: Option<NonZeroUsize>,
     role: &str,
-) -> Result<Vec<u32>, CodecError> {
+) -> Result<SectorChain, CodecError> {
     let limit = expected.map_or(sector_count, NonZeroUsize::get);
     if let (Some(ctx), Some(count)) = (ctx, expected) {
         ctx.charge_collection_items(count.get() as u64, "retain CFB sector chain")?;
@@ -1702,11 +1712,23 @@ fn chain(
     let mut traversal_scratch = ctx
         .map(|ctx| ctx.reserve_scoped(0, "walk CFB sector chain"))
         .transpose()?;
-    let mut output = Vec::with_capacity(expected.map_or(0, NonZeroUsize::get));
+    if start == END_OF_CHAIN {
+        return if expected.is_some() {
+            malformed(format!(
+                "CFB {role} chain length does not match its declaration"
+            ))
+        } else {
+            malformed(format!("empty CFB {role}"))
+        };
+    }
+    let mut output = SectorChain {
+        first: start,
+        rest: Vec::with_capacity(expected.map_or(0, NonZeroUsize::get)),
+    };
     let mut seen = BTreeSet::new();
     let mut current = start;
     while current != END_OF_CHAIN {
-        if current >= sector_count as u32 || !seen.insert(current) || output.len() >= limit {
+        if current >= sector_count as u32 || !seen.insert(current) || seen.len() > limit {
             return malformed(format!(
                 "CFB {role} chain is cyclic, overlong, or out of range"
             ));
@@ -1720,7 +1742,9 @@ fn chain(
         if let Some(scratch) = &mut traversal_scratch {
             scratch.grow(std::mem::size_of::<u32>() as u64)?;
         }
-        output.push(current);
+        if current != start {
+            output.rest.push(current);
+        }
         current = *fat
             .get(current as usize)
             .ok_or_else(|| CodecError::malformed(format_args!("CFB {role} FAT link is absent")))?;
