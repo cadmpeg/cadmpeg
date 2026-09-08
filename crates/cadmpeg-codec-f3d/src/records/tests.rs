@@ -1897,3 +1897,37 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
     assert!(point.try_set_companion(duplicate).is_err());
     assert_eq!(point, original);
 }
+
+#[test]
+fn body_bounds_admit_only_ordered_finite_cache_frames() {
+    let wire = serde_json::json!({"id": "bounds", "entity_suffix": 10, "entity_byte_offset": 0,
+        "record_indices": [11, 12, 13], "record_byte_offsets": [20, 40, 60],
+        "value_byte_offsets": [21, 41, 61], "maximum": {"x": 1.0, "y": 0.0, "z": 0.0},
+        "minimum": {"x": 0.0, "y": 0.0, "z": 0.0}});
+    let record: super::DesignBodyBounds = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+    for (field, value) in [
+        ("entity_suffix", serde_json::json!(u64::MAX)),
+        ("entity_suffix", serde_json::json!(u32::MAX)),
+        ("record_indices", serde_json::json!([11, 12, 14])),
+        ("record_byte_offsets", serde_json::json!([20, 20, 60])),
+        ("value_byte_offsets", serde_json::json!([20, 41, 61])),
+        (
+            "maximum",
+            serde_json::json!({"x": -1.0, "y": 0.0, "z": 0.0}),
+        ),
+        ("maximum", serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0})),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<super::DesignBodyBounds>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut invalid = super::DesignBodyBoundsWire::from(record.clone());
+        invalid.maximum.x = value;
+        assert!(super::DesignBodyBounds::try_from(invalid).is_err());
+    }
+}

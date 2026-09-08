@@ -7797,7 +7797,25 @@ pub struct DesignBodyMember {
 
 /// Triplicated axis-aligned body bounds cached in the Design stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignBodyBoundsWire", into = "DesignBodyBoundsWire")]
 pub struct DesignBodyBounds {
+    /// Globally unique deterministic identifier for this native record set.
+    pub id: String,
+    /// Numeric suffix of the owning Design body entity.
+    entity_suffix: u32,
+    /// Byte offset of the owning Design entity header.
+    pub entity_byte_offset: u64,
+    /// Indexed-header byte offsets parallel to `record_indices`.
+    record_byte_offsets: [u64; 3],
+    /// First f64 byte of each repeated sextuple.
+    value_byte_offsets: [u64; 3],
+    /// Design BREP body-map pairs carrying this entity suffix, in stream order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_binding_ids: Vec<String>,
+    corners: DesignMeshSceneBounds,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DesignBodyBoundsWire {
     /// Globally unique deterministic identifier for this native record set.
     pub id: String,
     /// Numeric suffix of the owning Design body entity.
@@ -7817,6 +7835,79 @@ pub struct DesignBodyBounds {
     pub maximum: Point3,
     /// Minimum model-space corner in millimetres.
     pub minimum: Point3,
+}
+impl TryFrom<DesignBodyBoundsWire> for DesignBodyBounds {
+    type Error = String;
+    fn try_from(wire: DesignBodyBoundsWire) -> Result<Self, Self::Error> {
+        let entity_suffix = u32::try_from(wire.entity_suffix)
+            .map_err(|_| "entity_suffix exceeds indexed record range")?;
+        let last = entity_suffix
+            .checked_add(3)
+            .ok_or("entity_suffix leaves no room for three cache records")?;
+        if wire.record_indices != [last - 2, last - 1, last] {
+            return Err("record_indices must follow entity_suffix consecutively".into());
+        }
+        if !wire
+            .record_byte_offsets
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        {
+            return Err("record_byte_offsets must be strictly increasing".into());
+        }
+        if !wire
+            .value_byte_offsets
+            .iter()
+            .zip(wire.record_byte_offsets)
+            .all(|(value, record)| *value > record)
+        {
+            return Err("value_byte_offsets must follow record_byte_offsets".into());
+        }
+        let maximum = [wire.maximum.x, wire.maximum.y, wire.maximum.z];
+        let minimum = [wire.minimum.x, wire.minimum.y, wire.minimum.z];
+        let corners = DesignMeshSceneBounds::new(maximum, minimum)?;
+        if maximum == minimum {
+            return Err("maximum and minimum must not define a degenerate box".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            entity_suffix,
+            entity_byte_offset: wire.entity_byte_offset,
+            record_byte_offsets: wire.record_byte_offsets,
+            value_byte_offsets: wire.value_byte_offsets,
+            body_binding_ids: wire.body_binding_ids,
+            corners,
+        })
+    }
+}
+impl DesignBodyBounds {
+    pub(crate) fn entity_suffix(&self) -> u64 {
+        u64::from(self.entity_suffix)
+    }
+    fn record_indices(&self) -> [u32; 3] {
+        [
+            self.entity_suffix + 1,
+            self.entity_suffix + 2,
+            self.entity_suffix + 3,
+        ]
+    }
+}
+impl From<DesignBodyBounds> for DesignBodyBoundsWire {
+    fn from(value: DesignBodyBounds) -> Self {
+        let [x, y, z] = value.corners.maximum();
+        let maximum = Point3::new(x, y, z);
+        let [x, y, z] = value.corners.minimum();
+        Self {
+            entity_suffix: value.entity_suffix(),
+            record_indices: value.record_indices(),
+            id: value.id,
+            entity_byte_offset: value.entity_byte_offset,
+            record_byte_offsets: value.record_byte_offsets,
+            value_byte_offsets: value.value_byte_offsets,
+            body_binding_ids: value.body_binding_ids,
+            maximum,
+            minimum: Point3::new(x, y, z),
+        }
+    }
 }
 
 /// One ordered pair in a Design `BulkStream` BREP body-map record.
