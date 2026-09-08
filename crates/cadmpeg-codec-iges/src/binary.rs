@@ -85,6 +85,8 @@ struct BinaryParameter {
 
 #[derive(Debug)]
 struct NormalizedParameter {
+    offset: u32,
+    directory_sequence: u32,
     lines: Vec<Vec<u8>>,
     first_sequence: u32,
 }
@@ -898,15 +900,10 @@ fn read_parameters(
 fn normalize_directory_and_parameters(
     output: &mut Vec<u8>,
     directory: &[BinaryDirectory],
-    parameters: &[BinaryParameter],
+    parameters: Vec<BinaryParameter>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(usize, usize), CodecError> {
     let directory_by_offset = directory
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.offset, index))
-        .collect::<BTreeMap<_, _>>();
-    let parameter_by_offset = parameters
         .iter()
         .enumerate()
         .map(|(index, record)| (record.offset, index))
@@ -925,6 +922,14 @@ fn normalize_directory_and_parameters(
                 "Binary Directory and Parameter entity types disagree",
             ));
         }
+        let directory_sequence = 1_u32
+            .checked_add(
+                u32::try_from(directory_index)
+                    .map_err(|_| malformed("normalized Directory index exceeds u32"))?
+                    .checked_mul(2)
+                    .ok_or_else(|| malformed("normalized Directory sequence overflows"))?,
+            )
+            .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
         let text = parameter_text(parameter.entity_type, &parameter.values)?;
         let lines = render_parameter_lines(&text, parameter.entity_type == 306)?;
         let first_sequence = parameter_sequence;
@@ -935,10 +940,17 @@ fn normalize_directory_and_parameters(
             )
             .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
         normalized.push(NormalizedParameter {
+            offset: parameter.offset,
+            directory_sequence,
             lines,
             first_sequence,
         });
     }
+    let parameter_by_offset = normalized
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.offset, index))
+        .collect::<BTreeMap<_, _>>();
     let mut parameter_starts =
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
     let mut parameter_counts =
@@ -965,7 +977,7 @@ fn normalize_directory_and_parameters(
         parameter_starts[directory_index] = normalized[parameter_index].first_sequence;
         parameter_counts[directory_index] = normalized[parameter_index].lines.len();
     }
-    if referenced_parameters.len() != parameters.len() {
+    if referenced_parameters.len() != normalized.len() {
         return Err(malformed(
             "Binary Parameter Data section contains an unreferenced entry",
         ));
@@ -1024,22 +1036,14 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for (parameter, normalized) in parameters.iter().zip(&normalized) {
-        let directory_pointer =
-            positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
-        let directory_index = *directory_by_offset
-            .get(&directory_pointer)
-            .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
-        let directory_sequence = 1_u32
-            .checked_add(
-                u32::try_from(directory_index)
-                    .map_err(|_| malformed("normalized Directory index exceeds u32"))?
-                    .checked_mul(2)
-                    .ok_or_else(|| malformed("normalized Directory sequence overflows"))?,
-            )
-            .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
-        for line in &normalized.lines {
-            render_parameter_line(output, line, directory_sequence, parameter_sequence)?;
+    for parameter in &normalized {
+        for line in &parameter.lines {
+            render_parameter_line(
+                output,
+                line,
+                parameter.directory_sequence,
+                parameter_sequence,
+            )?;
             parameter_sequence = parameter_sequence
                 .checked_add(1)
                 .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
@@ -1143,7 +1147,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     }
     let global_count = global_sequence.saturating_sub(1) as usize;
     let (directory_count, parameter_count) =
-        normalize_directory_and_parameters(&mut output, &directory, &parameters, ctx)?;
+        normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
         &mut output,
         start_count,
