@@ -367,7 +367,7 @@ struct ProceduralCurveTail {
 /// owning surface or curve record is emitted.
 #[derive(Default)]
 pub(crate) struct Carriers {
-    surface_geo: HashMap<i64, (SurfaceGeometry, bool)>,
+    surface_geo: HashMap<i64, SurfaceGeometry>,
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveTail>,

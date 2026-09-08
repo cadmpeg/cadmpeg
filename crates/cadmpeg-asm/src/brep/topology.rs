@@ -25,12 +25,16 @@ use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShe
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
-    let mut surface_geo: HashMap<i64, (SurfaceGeometry, bool)> = HashMap::new();
+    let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
+    let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     for r in records {
         if is_analytic_surface(r.head()) {
-            if let Some(g) = decode_surface(r) {
-                surface_geo.insert(r.index as i64, g);
+            if let Some((geometry, inward)) = decode_surface(r) {
+                if inward {
+                    inward_normal_surfaces.insert(r.index as i64);
+                }
+                surface_geo.insert(r.index as i64, geometry);
             }
         } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(r) {
@@ -38,13 +42,6 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
             }
         }
     }
-    // Carriers whose native normal points opposite the IR carrier's normal;
-    // the reversal folds into the referencing faces' senses.
-    let inward_normal_surfaces: HashSet<i64> = surface_geo
-        .iter()
-        .filter(|(_, (_, inward))| *inward)
-        .map(|(&index, _)| index)
-        .collect();
     let carriers = Carriers {
         surface_geo,
         curve_geo,
@@ -115,7 +112,7 @@ pub(crate) fn keep_faces_and_carriers(
             }
             surface_geo
                 .entry(surf_ref)
-                .or_insert_with(|| (SurfaceGeometry::Unknown { record: None }, false));
+                .or_insert_with(|| SurfaceGeometry::Unknown { record: None });
             kept_surfaces.insert(surf_ref);
             continue;
         }
@@ -128,7 +125,7 @@ pub(crate) fn keep_faces_and_carriers(
             .get(&surf_ref)
             .and_then(|procedural| analytic_procedural_surface(procedural.definition()))
         {
-            surface_geo.insert(surf_ref, (geometry, false));
+            surface_geo.insert(surf_ref, geometry);
         }
         let exact_cacheless_construction =
             procedural_surface_defs
@@ -145,7 +142,7 @@ pub(crate) fn keep_faces_and_carriers(
                 if let Some(ns) =
                     nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
                 {
-                    e.insert((SurfaceGeometry::Nurbs(ns), false));
+                    e.insert(SurfaceGeometry::Nurbs(ns));
                     if surf_rec.head() == "spline"
                         && !procedural_surface_defs.contains_key(&surf_ref)
                     {
@@ -167,27 +164,24 @@ pub(crate) fn keep_faces_and_carriers(
                     });
             surface_geo.insert(
                 surf_ref,
-                (
-                    if let Some(geometry) = analytic_geometry {
-                        geometry
-                    } else if construction_is_exact_carrier {
-                        SurfaceGeometry::Procedural {
-                            construction: ProceduralSurfaceId::mint(format!(
-                                "{format}:brep:procedural_surface#{surf_ref}"
-                            ))
-                            .expect("identity grammar"),
-                            cache: None,
-                        }
-                    } else {
-                        SurfaceGeometry::Unknown {
-                            record: Some(
-                                UnknownId::mint(unknown_record_id(surf_rec, format))
-                                    .expect("identity grammar"),
-                            ),
-                        }
-                    },
-                    false,
-                ),
+                if let Some(geometry) = analytic_geometry {
+                    geometry
+                } else if construction_is_exact_carrier {
+                    SurfaceGeometry::Procedural {
+                        construction: ProceduralSurfaceId::mint(format!(
+                            "{format}:brep:procedural_surface#{surf_ref}"
+                        ))
+                        .expect("identity grammar"),
+                        cache: None,
+                    }
+                } else {
+                    SurfaceGeometry::Unknown {
+                        record: Some(
+                            UnknownId::mint(unknown_record_id(surf_rec, format))
+                                .expect("identity grammar"),
+                        ),
+                    }
+                },
             );
             if !construction_is_exact_carrier {
                 undecoded_carriers.insert(surf_ref);
