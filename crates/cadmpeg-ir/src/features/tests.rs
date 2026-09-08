@@ -158,11 +158,11 @@ fn configuration_body_membership_round_trips_and_validates() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -358,7 +358,7 @@ fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
             feature.id.clone(),
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Suppressed,
-                dependencies: (feature.dependencies.clone()).try_into().unwrap(),
+                dependencies: feature.dependencies.clone(),
                 definition: feature.definition.clone(),
             },
         )]),
@@ -652,11 +652,11 @@ fn generated_sweep_sections_round_trip_and_validate() {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -722,11 +722,11 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: Some("Fillet".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -2786,3 +2786,5 @@ mod selections;
 mod parameters;
 
 mod configuration_states;
+
+mod source_content;

@@ -757,11 +757,11 @@ mod idless_history_binding_tests {
                 ordinal: 0,
                 name: None,
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
+                source_content: Default::default(),
                 outputs: Vec::new(),
                 definition: FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -773,11 +773,11 @@ mod idless_history_binding_tests {
                 ordinal: 1,
                 name: None,
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
+                source_content: Default::default(),
                 outputs: Vec::new(),
                 definition: FeatureDefinition::Extrude {
                     profile: cadmpeg_ir::features::ProfileRef::Unresolved(
@@ -817,7 +817,7 @@ mod idless_history_binding_tests {
                 ..
             } if actual == &profile_id
         ));
-        assert_eq!(features[1].dependencies, [profile_id]);
+        assert_eq!(features[1].dependencies.as_slice(), [profile_id]);
     }
 
     #[test]

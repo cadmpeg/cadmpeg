@@ -454,12 +454,14 @@ pub(in super::super) fn reconcile_feature_links(
         .filter(|dependency| emitted.contains(dependency))
         .filter(|dependency| *dependency != feature.id);
         let generated_dependencies = feature_generated_dependencies(&feature.definition);
-        feature.dependencies = reconciled_dependencies(
+        feature.dependencies = (reconciled_dependencies(
             &feature.id,
             &feature.dependencies,
             native_dependencies.chain(generated_dependencies),
             &emitted,
-        );
+        ))
+        .into_iter()
+        .collect();
         let parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
             .map(|parent| {
                 IrFeatureId::mint(format!("creo:model:feature#{parent}")).expect("identity grammar")

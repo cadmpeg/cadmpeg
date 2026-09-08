@@ -578,5 +578,8 @@ fn parameter_expressions_project_feature_dependencies() {
         .iter()
         .find(|feature| feature.id == depth.owner.clone().expect("Depth owner"))
         .expect("target feature");
-    assert_eq!(target.dependencies, std::slice::from_ref(&source.id));
+    assert_eq!(
+        target.dependencies.as_slice(),
+        std::slice::from_ref(&source.id)
+    );
 }

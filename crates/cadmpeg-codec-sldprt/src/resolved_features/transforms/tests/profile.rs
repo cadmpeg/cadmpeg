@@ -122,11 +122,11 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -210,7 +210,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         "sldprt:feature-input:edge-selection-vectors:1,2;3,4;1,2"
     );
     assert_eq!(
-        features[1].dependencies,
+        features[1].dependencies.as_slice(),
         vec![FeatureId::mint("producer").expect("identity grammar")]
     );
 }
@@ -354,11 +354,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -671,11 +671,11 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         ordinal: 0,
         name: Some("generated-profile".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -843,11 +843,11 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1026,16 +1026,16 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             native_feature("multi-child-native", "Sketch<5>", Some("Sketch<5>")),
         ],
     };
-    let feature = |id: &str, native_ref: &str, dependencies, sketch| Feature {
+    let feature = |id: &str, native_ref: &str, dependencies: Vec<FeatureId>, sketch| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
@@ -1069,11 +1069,13 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: vec![FeatureId::mint("child").expect("identity grammar")],
+            dependencies: (vec![FeatureId::mint("child").expect("identity grammar")])
+                .try_into()
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Feature(FeatureId::mint("child").expect("identity grammar")),
@@ -1100,7 +1102,9 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     let mut multi_consumer = features[4].clone();
     multi_consumer.id = FeatureId::mint("multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
-    multi_consumer.dependencies = vec![FeatureId::mint("multi-child").expect("identity grammar")];
+    multi_consumer.dependencies = (vec![FeatureId::mint("multi-child").expect("identity grammar")])
+        .try_into()
+        .unwrap();
     let FeatureDefinition::Extrude { profile, .. } = &mut multi_consumer.definition else {
         unreachable!();
     };
@@ -1152,7 +1156,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         } if sketch == &single
     ));
     assert_eq!(
-        features[4].dependencies,
+        features[4].dependencies.as_slice(),
         [FeatureId::mint("owner").expect("identity grammar")]
     );
     assert!(matches!(
@@ -1163,7 +1167,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         } if feature == &FeatureId::mint("multi-child").expect("identity grammar")
     ));
     assert_eq!(
-        features[5].dependencies,
+        features[5].dependencies.as_slice(),
         [FeatureId::mint("multi-child").expect("identity grammar")]
     );
 }

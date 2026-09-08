@@ -2260,17 +2260,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 entity: Some(feature.id.as_str().to_owned()),
             });
         }
-        let mut dependencies = HashSet::new();
         for dependency in &feature.dependencies {
-            if !dependencies.insert(dependency) {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!("feature repeats dependency `{}`", dependency.as_str()),
-                    entity: Some(feature.id.as_str().to_owned()),
-                });
-                continue;
-            }
             match features.get(dependency.as_str()) {
                 None => ref_error(
                     findings,
@@ -2290,23 +2280,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 Some(_) => {}
             }
         }
-        let mut content_parameters = HashSet::new();
-        let mut content_features = HashSet::new();
         for item in &feature.source_content {
             match item {
                 FeatureSourceContent::Text(_) => {}
                 FeatureSourceContent::Parameter(parameter) => {
-                    if !content_parameters.insert(parameter) {
-                        findings.push(Finding {
-                            check: Check::Counts,
-                            severity: Severity::Error,
-                            message: format!(
-                                "feature repeats content parameter `{}`",
-                                parameter.as_str()
-                            ),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        });
-                    }
                     match parameters_by_id.get(parameter) {
                         None => {
                             ref_error(
@@ -2328,34 +2305,24 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         Some(_) => {}
                     }
                 }
-                FeatureSourceContent::Feature(child) => {
-                    if !content_features.insert(child) {
-                        findings.push(Finding {
-                            check: Check::Counts,
-                            severity: Severity::Error,
-                            message: format!("feature repeats content child `{}`", child.as_str()),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        });
-                    }
-                    match features.get(child.as_str()) {
-                        None => ref_error(
-                            findings,
-                            feature.id.as_str(),
-                            "content child",
-                            child.as_str(),
+                FeatureSourceContent::Feature(child) => match features.get(child.as_str()) {
+                    None => ref_error(
+                        findings,
+                        feature.id.as_str(),
+                        "content child",
+                        child.as_str(),
+                    ),
+                    Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "content child `{}` does not follow its parent",
+                            child.as_str()
                         ),
-                        Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "content child `{}` does not follow its parent",
-                                child.as_str()
-                            ),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        }),
-                        Some(_) => {}
-                    }
-                }
+                        entity: Some(feature.id.as_str().to_owned()),
+                    }),
+                    Some(_) => {}
+                },
             }
         }
         for body in &feature.outputs {

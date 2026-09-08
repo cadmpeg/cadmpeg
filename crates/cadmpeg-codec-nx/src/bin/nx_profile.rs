@@ -972,11 +972,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![body],
             definition: FeatureDefinition::Block {
                 dimensions: Some([
@@ -1006,11 +1006,11 @@ mod tests {
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![
                 BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
             ],
@@ -1088,11 +1088,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,

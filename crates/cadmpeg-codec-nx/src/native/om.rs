@@ -4328,7 +4328,8 @@ mod tests {
             &[],
             &[],
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert_eq!(ir.model.parameters[2].value, None);
         assert_eq!(
@@ -4364,7 +4365,8 @@ mod tests {
             &[],
             &[],
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert!(ir.model.parameters[2].dependencies.is_empty());
     }
@@ -4412,7 +4414,8 @@ mod tests {
             &[],
             &[],
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             ir.model.parameters[2].dependencies.as_slice(),
@@ -4481,7 +4484,8 @@ mod tests {
             &[],
             &[],
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert_eq!(ir.model.features.len(), 2);
         assert_eq!(
@@ -4585,7 +4589,8 @@ mod tests {
             &[],
             &[],
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
         assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
@@ -4637,7 +4642,8 @@ mod tests {
             &[],
             &[],
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             ir.model
@@ -4725,7 +4731,8 @@ mod tests {
             &[],
             &uses,
             &mut annotations,
-        );
+        )
+        .unwrap();
         assert_eq!(
             ir.model.parameters[0].properties["consumer.0"],
             "nx:feature-history:feature#1-2"
@@ -4773,7 +4780,8 @@ mod tests {
             &[],
             &uses,
             &mut annotations,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             ir.model.parameters[0].properties["parameter_use.0"],
@@ -4816,7 +4824,8 @@ mod tests {
             &[],
             std::slice::from_ref(&parameter_use),
             &mut annotations,
-        );
+        )
+        .unwrap();
         let parameter_owners = ir
             .model
             .parameters

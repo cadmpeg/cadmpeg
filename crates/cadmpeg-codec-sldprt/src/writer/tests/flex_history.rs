@@ -223,11 +223,11 @@ fn encoder_writes_source_less_curved_sketches() {
         ordinal: 0,
         name: Some("Curves".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -865,11 +865,11 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             ordinal: ordinal as u64,
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
@@ -936,11 +936,11 @@ fn encoder_writes_source_less_native_features() {
         ordinal: 0,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "BossExtrude".into(),
@@ -1062,11 +1062,11 @@ fn encoder_writes_source_less_native_features() {
             ordinal: index as u64 + 1,
             name: Some(format!("Direct {index}")),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1104,11 +1104,11 @@ fn encoder_writes_source_less_native_features() {
             ordinal: index as u64 + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
-            dependencies: vec![seed_id.clone()],
+            dependencies: (vec![seed_id.clone()]).try_into().unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
@@ -1512,10 +1512,12 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
                 FeatureSourceContent::Parameter(_),
             ] if prefix == "prefix" && suffix == "suffix"
         ));
-        let FeatureSourceContent::Text(prefix) = &mut neutral_macro.source_content[0] else {
+        let mut source_content = neutral_macro.source_content.to_vec();
+        let FeatureSourceContent::Text(prefix) = &mut source_content[0] else {
             unreachable!()
         };
         *prefix = "lead & more".into();
+        neutral_macro.source_content = source_content.try_into().unwrap();
         let neutral_definition = ir_edit
             .model
             .features

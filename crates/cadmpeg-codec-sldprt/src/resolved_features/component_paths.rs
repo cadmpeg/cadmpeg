@@ -352,7 +352,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let dependency = features[profile_index].id.clone();
             *neutral_profile = cadmpeg_ir::features::ProfileRef::Feature(dependency.clone());
             if !features[index].dependencies.contains(&dependency) {
-                features[index].dependencies.push(dependency);
+                features[index].dependencies.insert(dependency);
             }
         }
     }
@@ -575,7 +575,7 @@ pub(crate) fn project_dissected_sketches(
                 .dependencies
                 .retain(|dependency| dependency != &child);
             if !feature.dependencies.contains(&owner) {
-                feature.dependencies.push(owner);
+                feature.dependencies.insert(owner);
             }
         }
     }

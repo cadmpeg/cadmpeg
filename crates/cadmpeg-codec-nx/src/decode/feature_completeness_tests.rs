@@ -563,11 +563,11 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![output],
         definition: definition(
             vec![
@@ -766,11 +766,11 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![output],
         definition: complete.clone(),
         native_ref: None,
@@ -969,11 +969,11 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![output],
         definition: FeatureDefinition::Revolve {
             construction: complete,
@@ -1079,11 +1079,11 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1240,11 +1240,11 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![output.clone()],
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![output]),
@@ -1263,7 +1263,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
                 outputs: (feature.outputs.clone()).try_into().unwrap(),
             },
-            dependencies: (feature.dependencies.clone()).try_into().unwrap(),
+            dependencies: feature.dependencies.clone(),
             definition: feature.definition.clone(),
         },
     );
@@ -1304,11 +1304,11 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         ordinal: 1,
         name: None,
         suppressed: Some(true),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
@@ -1352,11 +1352,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Block {
             dimensions: Some([
@@ -1499,11 +1499,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPrincipalPlane {
             plane: cadmpeg_ir::features::PrincipalPlane::Top,
@@ -1515,7 +1515,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
-    ir.model.features[0].dependencies.push(datum);
+    ir.model.features[0].dependencies.insert(datum);
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
@@ -1637,11 +1637,11 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
         ordinal: 0,
         name: Some("Retained history input".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::Resolved {
@@ -1670,14 +1670,14 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
         ordinal: 0,
         name: Some("MASTER SNAPSHOT BODY".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::from([(
             String::from("operation_record"),
             String::from("record"),
         )]),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::Unresolved,
@@ -1707,11 +1707,11 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![first.clone()],
         definition: FeatureDefinition::SewBodies {
             bodies: BodySelection::Bodies(vec![first, second]),

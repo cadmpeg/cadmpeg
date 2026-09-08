@@ -22,11 +22,11 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -89,17 +89,17 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let source = FeatureId::mint("base").expect("identity grammar");
-    let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
+    let mut push = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs, definition| {
         ir.model.features.push(Feature {
             id: FeatureId::mint(id).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies,
+            dependencies: (dependencies).try_into().unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs,
             definition,
             native_ref: None,
@@ -280,11 +280,11 @@ fn design_completeness_audits_typed_construction_families() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -304,16 +304,16 @@ fn design_completeness_audits_typed_construction_families() {
 fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut ir = CadIr::empty();
     let source = FeatureId::mint("source").expect("identity grammar");
-    let feature = |id: &str, ordinal, dependencies, definition| Feature {
+    let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, definition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -425,11 +425,11 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -511,11 +511,11 @@ fn design_completeness_recurses_through_pattern_operands() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: vec![seed.clone()],
@@ -596,11 +596,11 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -714,11 +714,11 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -742,11 +742,11 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -892,11 +892,11 @@ fn hole_completeness_checks_optional_operands_when_present() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -921,11 +921,11 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ordinal: 0,
         name: Some("Boss-Extrude1".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
@@ -1095,16 +1095,16 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     let first = FeatureId::mint("first").expect("identity grammar");
     let second = FeatureId::mint("second").expect("identity grammar");
     let missing = FeatureId::mint("missing").expect("identity grammar");
-    let feature = |id, ordinal, dependencies| Feature {
+    let feature = |id, ordinal, dependencies: Vec<FeatureId>| Feature {
         id,
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
@@ -1122,16 +1122,21 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         1,
         vec![missing],
     ));
-    ir.model.features[0].source_content = vec![
-        FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
-        FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
-    ];
-    ir.model.features[1].source_content = vec![FeatureSourceContent::Feature(
+    ir.model.features[0].source_content = (vec![FeatureSourceContent::Feature(
+        FeatureId::mint("second").expect("identity grammar"),
+    )])
+    .try_into()
+    .unwrap();
+    ir.model.features[1].source_content = (vec![FeatureSourceContent::Feature(
         FeatureId::mint("third").expect("identity grammar"),
-    )];
-    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(
+    )])
+    .try_into()
+    .unwrap();
+    ir.model.features[2].source_content = (vec![FeatureSourceContent::Parameter(
         ParameterId::mint("missing-parameter").expect("identity grammar"),
-    )];
+    )])
+    .try_into()
+    .unwrap();
     let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
@@ -1157,11 +1162,11 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs,
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,

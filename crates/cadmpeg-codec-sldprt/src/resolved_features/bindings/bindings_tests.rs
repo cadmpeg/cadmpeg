@@ -200,11 +200,11 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),
@@ -461,11 +461,11 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 0,
             name: Some("CirPattern1".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
@@ -478,11 +478,11 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 1,
             name: Some("HoleWizard1".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
@@ -500,7 +500,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     .unwrap();
 
     assert_eq!(
-        features[0].dependencies,
+        features[0].dependencies.as_slice(),
         vec![FeatureId::mint("seed").expect("identity grammar")]
     );
     assert!(matches!(
@@ -598,11 +598,13 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: vec![FeatureId::mint("seed").expect("identity grammar")],
+        dependencies: (vec![FeatureId::mint("seed").expect("identity grammar")])
+            .try_into()
+            .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(

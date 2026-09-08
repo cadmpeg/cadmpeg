@@ -11,11 +11,11 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "test".into(),

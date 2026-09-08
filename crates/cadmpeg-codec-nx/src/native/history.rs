@@ -285,11 +285,11 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            dependencies,
+            dependencies: (dependencies).try_into().unwrap(),
             source_properties,
             source_tag: native.then(|| "NX_OPERATION".to_string()),
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs,
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -329,7 +329,9 @@ mod tests {
         );
 
         let mut missing = writer();
-        missing.dependencies = vec![FeatureId::mint("missing").expect("identity grammar")];
+        missing.dependencies = (vec![FeatureId::mint("missing").expect("identity grammar")])
+            .try_into()
+            .unwrap();
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
             active_feature_closure(&ir, &[body]),
@@ -341,7 +343,10 @@ mod tests {
 
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
-        out_of_order.dependencies = vec![FeatureId::mint("dependency").expect("identity grammar")];
+        out_of_order.dependencies =
+            (vec![FeatureId::mint("dependency").expect("identity grammar")])
+                .try_into()
+                .unwrap();
         let dependency = history_feature(
             "dependency",
             2,
@@ -518,11 +523,11 @@ mod tests {
                 ordinal: 0,
                 name: Some("base".into()),
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: Default::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
+                source_content: Default::default(),
                 outputs: vec![body.clone()],
                 definition: FeatureDefinition::BaseFeature {
                     bodies: BodySelection::Resolved {
@@ -596,14 +601,14 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::from([(
                 "segment_body_binding.0".into(),
                 "nx:segment-body-bindings:binding#0".into(),
             )]),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: vec![body.clone()],
             definition: FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Resolved {

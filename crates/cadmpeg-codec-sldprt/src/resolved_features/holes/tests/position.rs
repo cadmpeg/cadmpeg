@@ -495,11 +495,11 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
@@ -644,7 +644,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
                z: 1.0
            })));
     assert_eq!(
-        features[0].dependencies,
+        features[0].dependencies.as_slice(),
         [FeatureId::mint("position-sketch").expect("identity grammar")]
     );
 
@@ -730,11 +730,11 @@ fn unique_unindexed_point_locus_is_projected() {
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
@@ -847,11 +847,11 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::SpatialSketch {
             sketch: Some(sketch_id.clone()),
@@ -994,11 +994,11 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::SpatialSketch {
             sketch: Some(sketch_id.clone()),
@@ -1099,11 +1099,11 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         ordinal: 1,
         name: Some("Position".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::SpatialSketch {
             sketch: Some(sketch_id.clone()),

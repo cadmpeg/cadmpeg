@@ -49,11 +49,11 @@ fn feature(id: &str, native_ref: &str) -> Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::StoredGeometry,
         native_ref: Some(native_ref.to_string()),
@@ -374,7 +374,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         .find(|feature| feature.id == FeatureId::mint("source-feature").expect("identity grammar"))
         .unwrap();
     assert_eq!(
-        source.dependencies,
+        source.dependencies.as_slice(),
         [
             FeatureId::mint("first-feature").expect("identity grammar"),
             FeatureId::mint("second-feature").expect("identity grammar")
@@ -1233,11 +1233,11 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Prism_ThickThin1".to_string()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Prism_ThickThin1".into(),
@@ -1286,11 +1286,11 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("CircPattern_RadialNumber".to_string()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: Vec::new(),

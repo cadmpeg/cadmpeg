@@ -596,11 +596,15 @@ fn semantic_writer_round_trips_typed_sweep() {
         ir_edit.model.features[3]
             .dependencies
             .retain(|dependency| dependency != &profile_a);
-        ir_edit.model.features[3].dependencies.insert(0, profile_b);
+        let mut dependencies = ir_edit.model.features[3].dependencies.to_vec();
+        dependencies.insert(0, profile_b);
+        ir_edit.model.features[3].dependencies = dependencies.try_into().unwrap();
     }
 
     let mut inconsistent = decoded.ir().clone();
-    inconsistent.model.features[3].dependencies.remove(0);
+    let mut dependencies = inconsistent.model.features[3].dependencies.to_vec();
+    dependencies.remove(0);
+    inconsistent.model.features[3].dependencies = dependencies.try_into().unwrap();
     let error = crate::test_support::plan_inherited_write(
         &inconsistent,
         decoded.source_fidelity(),
@@ -818,12 +822,14 @@ fn semantic_writer_round_trips_typed_loft() {
         )]);
         *op = BooleanOp::Join;
         *closed = true;
-        ir_edit.model.features[5].dependencies = vec![
+        ir_edit.model.features[5].dependencies = (vec![
             feature_refs[2].clone(),
             feature_refs[1].clone(),
             feature_refs[0].clone(),
             feature_refs[4].clone(),
-        ];
+        ])
+        .try_into()
+        .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -948,7 +954,9 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         };
         sections.reverse();
         *closed = true;
-        ir_edit.model.features[2].dependencies.reverse();
+        let mut dependencies = ir_edit.model.features[2].dependencies.to_vec();
+        dependencies.reverse();
+        ir_edit.model.features[2].dependencies = dependencies.try_into().unwrap();
     }
 
     let mut encoded = Vec::new();

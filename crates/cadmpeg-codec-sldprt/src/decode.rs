@@ -46,7 +46,7 @@ struct DecodedBrep {
 
 struct EvaluatedFeatureState<'a> {
     feature: &'a cadmpeg_ir::features::Feature,
-    dependencies: &'a [cadmpeg_ir::features::FeatureId],
+    dependencies: &'a cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
     outputs: &'a [cadmpeg_ir::ids::BodyId],
     definition: &'a cadmpeg_ir::features::FeatureDefinition,
 }
@@ -772,13 +772,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     .get(parent)
                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
             });
-            let mut dependencies = std::collections::HashSet::new();
             parent_incoherent
                 || state.dependencies.iter().any(|dependency| {
-                    !dependencies.insert(dependency)
-                        || feature_positions
-                            .get(dependency)
-                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                    feature_positions
+                        .get(dependency)
+                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                 })
         })
         .count();
@@ -815,22 +813,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .features
         .iter()
         .filter(|feature| {
-            let mut parameters = std::collections::HashSet::new();
-            let mut children = std::collections::HashSet::new();
             feature.source_content.iter().any(|content| match content {
                 FeatureSourceContent::Text(_) => false,
-                FeatureSourceContent::Parameter(parameter) => {
-                    !parameters.insert(parameter)
-                        || parameter_owners
-                            .get(parameter)
-                            .is_none_or(|owner| owner.as_ref() != Some(&feature.id))
-                }
+                FeatureSourceContent::Parameter(parameter) => parameter_owners
+                    .get(parameter)
+                    .is_none_or(|owner| owner.as_ref() != Some(&feature.id)),
                 FeatureSourceContent::Feature(child) => {
-                    !children.insert(child)
-                        || features_by_id.get(child).is_none_or(|child| {
-                            child.ordinal <= feature.ordinal
-                                || ir.model.feature_parent(&child.id) != Some(&feature.id)
-                        })
+                    features_by_id.get(child).is_none_or(|child| {
+                        child.ordinal <= feature.ordinal
+                            || ir.model.feature_parent(&child.id) != Some(&feature.id)
+                    })
                 }
             })
         })
@@ -3573,7 +3565,7 @@ fn project_design_history(
         crate::history::HistoryEnrichment::Read,
     );
     ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    crate::history::project_feature_model(&semantic_projection).install(&mut ir.model);
+    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
@@ -3789,7 +3781,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
                             outputs: feature.outputs.iter().cloned().collect(),
                         }
                     },
-                    dependencies: feature.dependencies.iter().cloned().collect(),
+                    dependencies: feature.dependencies.clone(),
                     definition: feature.definition.clone(),
                 },
             )

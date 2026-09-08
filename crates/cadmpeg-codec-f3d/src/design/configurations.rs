@@ -539,7 +539,7 @@ pub fn bind_configuration_suppressed_features(
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-                    dependencies: feature.dependencies.iter().cloned().collect(),
+                    dependencies: feature.dependencies.clone(),
                     definition: feature.definition.clone(),
                 },
             );
@@ -890,7 +890,7 @@ mod tests {
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
                 kind: "Fillet".into(),

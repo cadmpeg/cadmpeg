@@ -114,7 +114,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         .properties
         .contains_key("external_dependencies"));
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        result.ir().model.features[0].source_content.as_slice(),
         result
             .ir()
             .model
@@ -182,7 +182,7 @@ fn decode_binds_unique_forward_curve_expression_dependencies() {
     assert!(!r.properties.contains_key("external_dependencies"));
     assert_eq!(theta.properties["independent_variables"], "T");
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        result.ir().model.features[0].source_content.as_slice(),
         result
             .ir()
             .model
@@ -743,7 +743,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     assert_eq!(second["target"]["row"], "2");
     assert!(second["target"]["column"].is_null());
     assert_eq!(
-        result.ir().model.features[0].source_content,
+        result.ir().model.features[0].source_content.as_slice(),
         [cadmpeg_ir::features::FeatureSourceContent::Parameter(
             parameter.id.clone()
         )]

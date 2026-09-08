@@ -1590,7 +1590,7 @@ pub(crate) fn project_hole_position_sketches(
         if resolved.len() == authored_markers.len() {
             *placements = Some(resolved);
             if !feature.dependencies.contains(position_dependency) {
-                feature.dependencies.push(position_dependency.clone());
+                feature.dependencies.insert(position_dependency.clone());
             }
         }
     }

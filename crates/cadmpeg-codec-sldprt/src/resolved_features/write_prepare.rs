@@ -282,7 +282,7 @@ fn patch_spatial_sketches(
         }
     }
 
-    let mut features = crate::history::project_features(&native.feature_histories);
+    let mut features = crate::history::project_features(&native.feature_histories)?;
     let (projected_sketches, mut projected_entities) = spatial_sketches(
         &mut features,
         &native.feature_histories,
@@ -1489,11 +1489,11 @@ mod source_less_lane_tests {
             ordinal: 0,
             name: Some("Sketch".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone())),

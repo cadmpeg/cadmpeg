@@ -395,11 +395,11 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: Some(native_ref.into()),
@@ -450,7 +450,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ..
         } if matches!(admitted_pattern.definition(), PatternTransform::CurveDriven { path: None, .. } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
     features[1].definition = FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
     };
@@ -471,7 +474,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             } if path == &sketch)
     ));
     assert_eq!(
-        features[0].dependencies,
+        features[0].dependencies.as_slice(),
         [features[2].id.clone(), features[1].id.clone()]
     );
     let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
@@ -521,7 +524,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         panic!("expected pattern");
     };
     assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
     assert!(matches!(&(features[0].definition),
         FeatureDefinition::Pattern {
             pattern: admitted_pattern,
@@ -701,7 +707,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         std::slice::from_ref(&mirror_lane),
     )
     .unwrap();
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
     assert!(matches!(&(features[0].definition),
         FeatureDefinition::Pattern {
             ref seeds,
@@ -735,7 +744,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: admitted_pattern,
         } if matches!(admitted_pattern.definition(), PatternTransform::Mirror { .. } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
 
     mirror_lane.native_payload[frame..frame + 97].fill(0);
     features[0].dependencies.clear();
@@ -755,7 +767,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: admitted_pattern,
         } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedMirror if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
-    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[2].id.clone()]
+    );
 
     let mut sweep_history = history;
     sweep_history.features[0].input_class = Some("moProfileFeature_c".into());
@@ -796,7 +811,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         } if profile == &sketch && path == &path_sketch
     ));
     assert_eq!(
-        features[0].dependencies,
+        features[0].dependencies.as_slice(),
         [features[1].id.clone(), features[2].id.clone()]
     );
 }
@@ -907,11 +922,11 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1091,11 +1106,11 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1264,11 +1279,11 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1428,11 +1443,11 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),

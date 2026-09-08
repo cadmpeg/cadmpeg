@@ -453,11 +453,11 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             ordinal: 0,
             name: None,
             suppressed,
-            dependencies,
+            dependencies: (dependencies).try_into().unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs,
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -531,16 +531,16 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
 #[test]
 fn current_body_writers_close_false_suppression_without_a_configuration() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let feature = |id: &str, ordinal, dependencies, outputs| Feature {
+    let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: None,
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs,
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
@@ -600,11 +600,13 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: vec![FeatureId::mint(dependency).expect("identity grammar")],
+        dependencies: (vec![FeatureId::mint(dependency).expect("identity grammar")])
+            .try_into()
+            .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
@@ -1266,7 +1268,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations).unwrap();
     let parameter_owners = ir
         .model
         .parameters
@@ -1283,7 +1285,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         [ir.model.features[0].id.clone()]
     );
     assert_eq!(
-        ir.model.features[0].source_content,
+        ir.model.features[0].source_content.as_slice(),
         ir.model
             .parameters
             .iter()
@@ -1327,7 +1329,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations).unwrap();
 
     assert_eq!(
         ir.model.parameters[0].value,
@@ -1368,7 +1370,8 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations);
+    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
+        .unwrap();
 
     assert_eq!(ir.model.parameters[0].value, None);
     assert_eq!(
@@ -1777,11 +1780,11 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: vec![body],
         definition,
         native_ref: None,

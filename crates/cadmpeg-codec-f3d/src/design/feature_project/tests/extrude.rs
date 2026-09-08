@@ -403,11 +403,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Extrude".into()),
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: blind,
         native_ref: Some(scope.id.clone()),
@@ -549,7 +549,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .iter()
         .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
         .expect("neutral Extrude feature");
-    assert_eq!(extrude_feature.dependencies, [sketch_feature.id.clone()]);
+    assert_eq!(
+        extrude_feature.dependencies.as_slice(),
+        [sketch_feature.id.clone()]
+    );
 
     let (mut spatial_features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),
@@ -599,7 +602,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if sketch == &spatial_sketch.id && profiles == &[0]
     ));
-    assert_eq!(spatial_extrude.dependencies, [spatial_feature.id.clone()]);
+    assert_eq!(
+        spatial_extrude.dependencies.as_slice(),
+        [spatial_feature.id.clone()]
+    );
 
     let (mut open_spatial_features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),
@@ -1495,11 +1501,11 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -1560,6 +1566,9 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
 
     crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[]);
 
-    assert_eq!(features[2].dependencies, [features[0].id.clone()]);
-    assert_eq!(features[3].dependencies, expected_dependencies);
+    assert_eq!(
+        features[2].dependencies.as_slice(),
+        [features[0].id.clone()]
+    );
+    assert_eq!(features[3].dependencies.as_slice(), expected_dependencies);
 }

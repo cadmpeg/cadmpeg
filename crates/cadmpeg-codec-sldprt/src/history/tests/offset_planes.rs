@@ -31,7 +31,7 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[1].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -39,7 +39,10 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
             distance: actual_distance,
         } if (bound == &projected[0].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    assert_eq!(
+        projected[1].dependencies.as_slice(),
+        [projected[0].id.clone()]
+    );
 }
 
 #[test]
@@ -80,7 +83,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[1].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -88,7 +91,10 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
             distance: actual_distance,
         } if (bound == &projected[0].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    assert_eq!(
+        projected[1].dependencies.as_slice(),
+        [projected[0].id.clone()]
+    );
 }
 
 #[test]
@@ -146,7 +152,10 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
             distance: actual_distance,
         } if (reference == &features[1].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[1].id.clone()]
+    );
 }
 
 #[test]
@@ -229,7 +238,10 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
             distance: actual_distance,
         } if (reference == &features[0].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(features[2].dependencies, [features[0].id.clone()]);
+    assert_eq!(
+        features[2].dependencies.as_slice(),
+        [features[0].id.clone()]
+    );
 }
 
 #[test]
@@ -281,7 +293,10 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
             distance: actual_distance,
         } if (reference == &features[1].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [features[1].id.clone()]
+    );
 }
 
 #[test]
@@ -325,7 +340,7 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
         features: vec![reference, duplicate, offset],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[2].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -362,7 +377,7 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
         features: vec![reference, offset],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[1].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -560,7 +575,7 @@ fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         features: vec![offset, principal],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[0].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -590,7 +605,8 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![offset],
-    }]);
+    }])
+    .unwrap();
 
     assert!(matches!(
         projected[0].definition,
@@ -625,7 +641,7 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
         features: vec![offset, principal],
     };
 
-    let mut projected = project_features(&[history]);
+    let mut projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[0].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -633,7 +649,10 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
             distance: actual_distance,
         } if (reference == &projected[1].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(projected[0].dependencies, [projected[1].id.clone()]);
+    assert_eq!(
+        projected[0].dependencies.as_slice(),
+        [projected[1].id.clone()]
+    );
     assert!(order_features_for_regeneration(&mut projected));
     assert_eq!(projected[1].ordinal, 0);
     assert_eq!(projected[0].ordinal, 1);
@@ -662,7 +681,7 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
         features: vec![offset, principal],
     };
 
-    let mut projected = project_features(&[history]);
+    let mut projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[0].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -707,7 +726,7 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
         features: vec![offset, principal],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
 
     assert!(matches!(
         &projected[0].definition,
@@ -746,7 +765,7 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
         features: vec![offset, reference],
     };
 
-    let mut projected = project_features(&[history]);
+    let mut projected = project_features(&[history]).unwrap();
 
     assert!(matches!(
         &projected[0].definition,

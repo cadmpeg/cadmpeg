@@ -51,11 +51,11 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Hole {
             profile: None,

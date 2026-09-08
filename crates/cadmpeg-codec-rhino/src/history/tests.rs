@@ -92,7 +92,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(
-        ir.model.features[1].dependencies,
+        ir.model.features[1].dependencies.as_slice(),
         vec![ir.model.features[0].id.clone()]
     );
     let cadmpeg_ir::features::FeatureDefinition::Native { kind, parameters } =
@@ -230,7 +230,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(
-        ir.model.features[1].dependencies,
+        ir.model.features[1].dependencies.as_slice(),
         vec![ir.model.features[0].id.clone()]
     );
     let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =

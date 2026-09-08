@@ -269,7 +269,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
             ..
         } if feature == &profile.id
     ));
-    assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
+    assert_eq!(extrusion.dependencies.as_slice(), vec![profile.id.clone()]);
 }
 
 #[test]
@@ -399,7 +399,7 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
             ..
         } if feature == &profile.id
     ));
-    assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
+    assert_eq!(extrusion.dependencies.as_slice(), vec![profile.id.clone()]);
 }
 
 #[test]
@@ -551,7 +551,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
-    assert_eq!(extrusion.dependencies, vec![sketch.id.clone()]);
+    assert_eq!(extrusion.dependencies.as_slice(), vec![sketch.id.clone()]);
     assert!(sketch.ordinal < extrusion.ordinal);
     assert!(matches!(
         &extrusion.definition,

@@ -337,7 +337,7 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
         features: vec![first, second, dependent, malformed],
     };
 
-    let projected = project_features(std::slice::from_ref(&history));
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
 
     assert!(projected[2].dependencies.is_empty());
     assert_eq!(incomplete_history_reference_features(&[history]), 4);

@@ -1521,7 +1521,7 @@ pub struct Feature {
     /// Whether evaluation of this feature is disabled.
     pub suppressed: Option<bool>,
     /// Earlier features consumed during regeneration, in source operand order.
-    pub dependencies: Vec<FeatureId>,
+    pub dependencies: DistinctMembers<FeatureId>,
     /// Source operation attributes not consumed by the neutral definition.
     pub source_properties: BTreeMap<String, String>,
     /// Source XML element name for the operation record.
@@ -1529,7 +1529,7 @@ pub struct Feature {
     /// Text payload of a source leaf operation.
     pub source_text: Option<String>,
     /// Ordered source text, parameter, and child-feature content.
-    pub source_content: Vec<FeatureSourceContent>,
+    pub source_content: FeatureContent,
     /// Bodies produced or modified by the feature.
     pub outputs: Vec<BodyId>,
     /// Neutral construction semantics.
@@ -1546,11 +1546,11 @@ impl Feature {
             ordinal,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1567,16 +1567,16 @@ pub(crate) struct FeatureWriteWire<'a> {
     suppressed: &'a Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent: Option<&'a FeatureId>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    dependencies: &'a Vec<FeatureId>,
+    #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
+    dependencies: &'a DistinctMembers<FeatureId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     source_properties: &'a BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_tag: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_text: &'a Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    source_content: &'a Vec<FeatureSourceContent>,
+    #[serde(skip_serializing_if = "FeatureContent::is_empty")]
+    source_content: &'a FeatureContent,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     outputs: &'a Vec<BodyId>,
     definition: &'a FeatureDefinition,
@@ -1619,8 +1619,8 @@ pub(crate) struct FeatureReadWire {
     suppressed: Option<bool>,
     #[serde(default)]
     parent: Option<FeatureId>,
-    #[serde(default)]
-    dependencies: Vec<FeatureId>,
+    #[serde(default, deserialize_with = "deserialize_dependencies")]
+    dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
     source_properties: BTreeMap<String, String>,
     #[serde(default)]
@@ -1628,7 +1628,7 @@ pub(crate) struct FeatureReadWire {
     #[serde(default)]
     source_text: Option<String>,
     #[serde(default)]
-    source_content: Vec<FeatureSourceContent>,
+    source_content: FeatureContent,
     #[serde(default)]
     outputs: Vec<BodyId>,
     definition: FeatureDefinition,
@@ -1835,8 +1835,77 @@ impl<'de> Deserialize<'de> for FeatureResultTopology {
     }
 }
 
+/// Ordered source content with distinct parameter and child-feature references.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct FeatureContent(Vec<FeatureSourceContent>);
+
+impl TryFrom<Vec<FeatureSourceContent>> for FeatureContent {
+    type Error = &'static str;
+    fn try_from(value: Vec<FeatureSourceContent>) -> Result<Self, Self::Error> {
+        let mut seen = HashSet::new();
+        if value
+            .iter()
+            .filter(|item| !matches!(item, FeatureSourceContent::Text(_)))
+            .any(|item| !seen.insert(item))
+        {
+            return Err("source_content repeats a parameter or child-feature reference");
+        }
+        Ok(Self(value))
+    }
+}
+
+impl FeatureContent {
+    /// Constructs text-only content in source order, retaining repeated text.
+    pub fn text(values: impl IntoIterator<Item = String>) -> Self {
+        Self(values.into_iter().map(FeatureSourceContent::Text).collect())
+    }
+
+    /// Appends content without repeating a parameter or child-feature reference.
+    pub fn push(&mut self, value: FeatureSourceContent) -> Result<(), &'static str> {
+        if !matches!(value, FeatureSourceContent::Text(_)) && self.0.contains(&value) {
+            return Err("source_content repeats a parameter or child-feature reference");
+        }
+        self.0.push(value);
+        Ok(())
+    }
+
+    /// Whether the sequence has no content.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The source content in order.
+    pub fn as_slice(&self) -> &[FeatureSourceContent] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for FeatureContent {
+    type Target = [FeatureSourceContent];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a FeatureContent {
+    type Item = &'a FeatureSourceContent;
+    type IntoIter = std::slice::Iter<'a, FeatureSourceContent>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for FeatureContent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<FeatureSourceContent>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// One item in a source feature's mixed-content sequence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum FeatureSourceContent {
@@ -5697,12 +5766,18 @@ impl<T> DistinctMembers<T> {
     }
 }
 
+impl<T: PartialEq> Extend<T> for DistinctMembers<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for member in iter {
+            self.insert(member);
+        }
+    }
+}
+
 impl<T: PartialEq> FromIterator<T> for DistinctMembers<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut members = Self::default();
-        for member in iter {
-            members.insert(member);
-        }
+        members.extend(iter);
         members
     }
 }

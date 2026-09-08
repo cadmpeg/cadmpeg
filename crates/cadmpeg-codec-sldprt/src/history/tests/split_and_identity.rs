@@ -34,7 +34,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         features: vec![split.clone(), sketch.clone()],
     };
 
-    let projected = project_features(std::slice::from_ref(&history));
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let split_feature = projected
         .iter()
         .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
@@ -47,7 +47,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         }
     );
     assert_eq!(
-        split_feature.dependencies,
+        split_feature.dependencies.as_slice(),
         vec![neutral_feature_id(&sketch.id)]
     );
 }
@@ -94,7 +94,7 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
     };
 
     let annotations = project_semantic_notes(std::slice::from_ref(&history));
-    assert!(project_features(&[history]).is_empty());
+    assert!(project_features(&[history]).unwrap().is_empty());
     assert!(matches!(
         annotations.as_slice(),
         [cadmpeg_ir::semantic_annotations::SemanticAnnotation {
@@ -126,7 +126,7 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         features: vec![principal, offset],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         &projected[1].definition,
         FeatureDefinition::DatumOffsetPlane {
@@ -134,7 +134,10 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
             distance: actual_distance,
         } if (reference == &projected[0].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    assert_eq!(
+        projected[1].dependencies.as_slice(),
+        [projected[0].id.clone()]
+    );
 }
 
 #[test]
@@ -149,7 +152,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         configurations: Vec::new(),
         features: vec![first, second],
     }];
-    let mut projected = project_features(&histories);
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
     derive_feature_outputs(
@@ -189,7 +192,7 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             features: vec![feature("b", None, 0), feature("b-next", None, 1)],
         },
     ];
-    let mut projected = project_features(&histories);
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
     derive_feature_outputs(
@@ -274,7 +277,8 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             extend_surface,
             draft,
         ],
-    }]);
+    }])
+    .unwrap();
 
     assert!(matches!(
         projected[0].definition,

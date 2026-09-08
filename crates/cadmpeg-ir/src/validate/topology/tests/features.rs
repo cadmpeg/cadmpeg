@@ -79,11 +79,11 @@ fn historical_vertex_selection_requires_input_state_membership() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0))
@@ -184,11 +184,11 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumThreePointPlane {
             frame: crate::features::FeatureDatumPlaneFrame::new(
@@ -302,11 +302,11 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: definitions[1].clone(),
         native_ref: None,
@@ -339,16 +339,18 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: vec![feature_id.clone(), feature_id.clone()],
+        dependencies: (vec![feature_id.clone()]).try_into().unwrap(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: vec![
+        source_content: (vec![
             FeatureSourceContent::Parameter(
                 ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
             ),
             FeatureSourceContent::Feature(feature_id.clone()),
-        ],
+        ])
+        .try_into()
+        .unwrap(),
         outputs: vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(vec![
@@ -382,11 +384,11 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Marker".into(),
@@ -402,7 +404,6 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         "missing profile face",
         "missing termination face",
         "repeats feature ordinal",
-        "repeats dependency",
         "missing content parameter",
         "content child",
     ] {
@@ -428,11 +429,11 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -481,11 +482,11 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -540,11 +541,11 @@ fn document_parameters_can_feed_feature_parameters() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -595,11 +596,11 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -661,11 +662,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -678,11 +679,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Native("test:profile".into()),
@@ -739,7 +740,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         )]),
         native_ref: None,
     });
-    ir.model.features[1].dependencies.push(source.clone());
+    ir.model.features[1].dependencies.insert(source.clone());
     assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -775,11 +776,11 @@ fn body_combine_requires_exactly_one_resolved_target() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Combine {
             target: BodySelection::Bodies(vec![
@@ -852,11 +853,11 @@ fn feature_operand_roles_must_be_disjoint() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
+            source_content: Default::default(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -887,11 +888,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -904,11 +905,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
@@ -929,7 +930,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         .iter()
         .any(|finding| finding.message == message));
 
-    ir.model.features[1].dependencies.push(seed);
+    ir.model.features[1].dependencies.insert(seed);
     assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -960,11 +961,11 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition,
         native_ref: None,
@@ -1052,9 +1053,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             },
         ),
     ];
-    ir.model.features[2].dependencies.push(source.clone());
-    ir.model.features[3].dependencies.push(source.clone());
-    ir.model.features[6].dependencies.push(source.clone());
+    ir.model.features[2].dependencies.insert(source.clone());
+    ir.model.features[3].dependencies.insert(source.clone());
+    ir.model.features[6].dependencies.insert(source.clone());
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:configuration#offset-plane")
             .expect("identity grammar"),
@@ -1117,8 +1118,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         block.as_str()
     )));
 
-    ir.model.features[1].dependencies.push(source.clone());
-    ir.model.features[5].dependencies.push(block.clone());
+    ir.model.features[1].dependencies.insert(source.clone());
+    ir.model.features[5].dependencies.insert(block.clone());
     for feature in [&offset, &derived, &pattern, &profile] {
         ir.model.configurations[0]
             .feature_states
@@ -1152,11 +1153,11 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "producer".into(),
@@ -1182,11 +1183,11 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: vec![producer.clone()],
+        dependencies: (vec![producer.clone()]).try_into().unwrap(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::generated(
@@ -1243,11 +1244,11 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::ReferenceImage {
             asset: asset_id,
@@ -1307,11 +1308,11 @@ fn decals_require_valid_assets_faces_and_opacity() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
+        source_content: Default::default(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Decal {
             asset: asset_id,
