@@ -30,34 +30,6 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                 entity: Some(history.id.clone()),
             });
         }
-        let mut feature_ordinals = std::collections::HashSet::new();
-        for feature in &history.features {
-            if !feature_ordinals.insert(feature.ordinal) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks history repeats feature ordinal {}",
-                        feature.ordinal
-                    ),
-                    entity: Some(feature.id.clone()),
-                });
-            }
-        }
-        let mut configuration_ordinals = std::collections::HashSet::new();
-        for configuration in &history.configurations {
-            if !configuration_ordinals.insert(configuration.ordinal) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!(
-                        "SolidWorks history repeats configuration ordinal {}",
-                        configuration.ordinal
-                    ),
-                    entity: Some(configuration.id.clone()),
-                });
-            }
-        }
         if !history.content.is_empty() {
             let configurations = history
                 .configurations
