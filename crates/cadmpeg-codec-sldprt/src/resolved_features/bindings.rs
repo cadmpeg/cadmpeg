@@ -58,7 +58,7 @@ pub(crate) fn bind_pattern_inputs(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
@@ -522,9 +522,9 @@ pub(crate) fn bind_pattern_inputs(
                     let secondary = native.and_then(|feature| {
                         Some(cadmpeg_ir::features::LinearPatternDirection {
                             direction: *second_direction,
-                            spacing: Length(feature.parameters.get("D4").and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
-                            })?),
+                            spacing: Length::new(feature.parameters.get("D4").and_then(
+                                |value| crate::history::parse_positive_dimension_length_mm(value),
+                            )?)?,
                             count: feature.parameters.get("D2")?.parse::<u32>().ok()?,
                         })
                     });
@@ -624,11 +624,17 @@ pub(crate) fn bind_pattern_inputs(
             *slot = PatternKind::Circular {
                 axis_origin: *axis_origin,
                 axis_dir: *axis_dir,
-                angle: Angle(angle),
+                angle: Angle::new(angle).ok_or_else(|| {
+                    cadmpeg_core::CodecError::Malformed(
+                        "SolidWorks projected angle must be finite".into(),
+                    )
+                })?,
                 count,
             };
         }
     }
+
+    Ok(())
 }
 
 fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {

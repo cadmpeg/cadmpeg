@@ -55,7 +55,7 @@ fn decode_extracts_parametric_history() {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(12.5),
+                        length: actual_length,
                     },
                     draft: None,
                     ..
@@ -63,7 +63,7 @@ fn decode_extracts_parametric_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        } if profile == &history.features[0].id
+        } if (profile == &history.features[0].id) && actual_length.get() == 12.5
     ));
     assert_eq!(
         result

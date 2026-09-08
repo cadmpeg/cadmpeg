@@ -83,17 +83,17 @@ fn spatial_oriented_endpoints(
             let at = |angle: f64| {
                 crate::math::Point3::new(
                     center.x
-                        + radius.0
+                        + radius.get()
                             * (reference_direction.x * angle.cos() + transverse.x * angle.sin()),
                     center.y
-                        + radius.0
+                        + radius.get()
                             * (reference_direction.y * angle.cos() + transverse.y * angle.sin()),
                     center.z
-                        + radius.0
+                        + radius.get()
                             * (reference_direction.z * angle.cos() + transverse.z * angle.sin()),
                 )
             };
-            (at(start_angle.0), at(end_angle.0))
+            (at(start_angle.get()), at(end_angle.get()))
         }
         SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
@@ -151,17 +151,17 @@ fn sketch_curve_offset_matches(
                 .max(source_center.v.abs())
                 .max(result_center.u.abs())
                 .max(result_center.v.abs())
-                .max(source_radius.0.abs())
-                .max(result_radius.0.abs())
+                .max(source_radius.get().abs())
+                .max(result_radius.get().abs())
                 .max(expected.abs());
         return expected.is_finite()
-            && source_radius.0.is_finite()
-            && result_radius.0.is_finite()
-            && source_radius.0 > 0.0
-            && result_radius.0 > 0.0
+            && source_radius.get().is_finite()
+            && result_radius.get().is_finite()
+            && source_radius.get() > 0.0
+            && result_radius.get() > 0.0
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
-            && (source_radius.0 - result_radius.0 - expected).abs()
+            && (source_radius.get() - result_radius.get() - expected).abs()
                 <= EPS_FULL_CIRCLE_OFFSET * scale;
     }
 
@@ -185,19 +185,19 @@ fn sketch_curve_offset_matches(
                 .max(source_center.v.abs())
                 .max(result_center.u.abs())
                 .max(result_center.v.abs())
-                .max(source_radius.0.abs())
-                .max(result_radius.0.abs())
+                .max(source_radius.get().abs())
+                .max(result_radius.get().abs())
                 .max(expected.abs());
-        let result_sweep = result_end.0 - result_start.0;
+        let result_sweep = result_end.get() - result_start.get();
         return expected.is_finite()
-            && source_radius.0.is_finite()
-            && result_radius.0.is_finite()
-            && source_radius.0 > 0.0
-            && result_radius.0 > 0.0
+            && source_radius.get().is_finite()
+            && result_radius.get().is_finite()
+            && source_radius.get() > 0.0
+            && result_radius.get() > 0.0
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
-            && (source_radius.0 - result_radius.0 - expected).abs()
+            && (source_radius.get() - result_radius.get() - expected).abs()
                 <= EPS_FULL_CIRCLE_OFFSET * scale;
     }
 
@@ -221,19 +221,20 @@ fn sketch_curve_offset_matches(
                 .max(source_center.v.abs())
                 .max(result_center.u.abs())
                 .max(result_center.v.abs())
-                .max(source_radius.0.abs())
-                .max(result_radius.0.abs())
+                .max(source_radius.get().abs())
+                .max(result_radius.get().abs())
                 .max(expected.abs());
-        let source_sweep = source_end.0 - source_start.0;
+        let source_sweep = source_end.get() - source_start.get();
         return expected.is_finite()
-            && source_radius.0.is_finite()
-            && result_radius.0.is_finite()
-            && source_radius.0 > 0.0
-            && result_radius.0 > 0.0
+            && source_radius.get().is_finite()
+            && result_radius.get().is_finite()
+            && source_radius.get() > 0.0
+            && result_radius.get() > 0.0
             && source_sweep.abs() > EPS_OFFSET_SWEEP
             && (source_center.u - result_center.u).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
             && (source_center.v - result_center.v).abs() <= EPS_FULL_CIRCLE_OFFSET * scale
-            && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
+            && (source_sweep.signum() * (source_radius.get() - result_radius.get()) - expected)
+                .abs()
                 <= EPS_FULL_CIRCLE_OFFSET * scale;
     }
 
@@ -259,11 +260,11 @@ fn sketch_curve_offset_matches(
                 .max(source_center.v.abs())
                 .max(result_center.u.abs())
                 .max(result_center.v.abs())
-                .max(source_radius.0)
-                .max(result_radius.0)
+                .max(source_radius.get())
+                .max(result_radius.get())
                 .max(expected.abs());
-        let source_sweep = source_end.0 - source_start.0;
-        let result_sweep = result_end.0 - result_start.0;
+        let source_sweep = source_end.get() - source_start.get();
+        let result_sweep = result_end.get() - result_start.get();
         let angle_in_sweep = |angle: f64, start: f64, end: f64| {
             let sweep = end - start;
             if sweep.abs() >= std::f64::consts::TAU - EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 {
@@ -277,21 +278,22 @@ fn sketch_curve_offset_matches(
                     <= -sweep + EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9
             }
         };
-        let angular_overlap = [source_start.0, source_end.0]
+        let angular_overlap = [source_start.get(), source_end.get()]
             .into_iter()
-            .any(|angle| angle_in_sweep(angle, result_start.0, result_end.0))
-            || [result_start.0, result_end.0]
+            .any(|angle| angle_in_sweep(angle, result_start.get(), result_end.get()))
+            || [result_start.get(), result_end.get()]
                 .into_iter()
-                .any(|angle| angle_in_sweep(angle, source_start.0, source_end.0));
-        return source_radius.0 > 0.0
-            && result_radius.0 > 0.0
+                .any(|angle| angle_in_sweep(angle, source_start.get(), source_end.get()));
+        return source_radius.get() > 0.0
+            && result_radius.get() > 0.0
             && source_sweep.abs() > EPS_OFFSET_SWEEP
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
             && (source_center.u - result_center.u).abs() <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
             && (source_center.v - result_center.v).abs() <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
-            && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
+            && (source_sweep.signum() * (source_radius.get() - result_radius.get()) - expected)
+                .abs()
                 <= EPS_SKETCH_VALIDATION_GEOMETRY * scale;
     }
 
@@ -483,7 +485,7 @@ fn spatial_length_parameter_matches(
     >,
 ) -> bool {
     let expected = match parameter_values.get(parameter) {
-        Some(Some(crate::features::ParameterValue::Length(length))) => length.0.abs(),
+        Some(Some(crate::features::ParameterValue::Length(length))) => length.get().abs(),
         _ => return false,
     };
     measured.is_some_and(|measured| {
@@ -586,7 +588,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SketchGeometry::Circle { center, radius }
             | SketchGeometry::Arc { center, radius, .. } => {
-                if !finite2(*center) || nonpositive(radius.0) {
+                if !finite2(*center) || nonpositive(radius.get()) {
                     finding(
                         findings,
                         Check::Bounds,
@@ -600,7 +602,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     ..
                 } = &entity.geometry
                 {
-                    if !start_angle.0.is_finite() || !end_angle.0.is_finite() {
+                    if !start_angle.get().is_finite() || !end_angle.get().is_finite() {
                         finding(
                             findings,
                             Check::ParameterDomain,
@@ -618,14 +620,18 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds,
             } => {
                 if !finite2(*center)
-                    || !major_angle.0.is_finite()
-                    || nonpositive(major_radius.0)
-                    || nonpositive(minor_radius.0)
-                    || major_radius.0 < minor_radius.0
+                    || !major_angle.get().is_finite()
+                    || nonpositive(major_radius.get())
+                    || nonpositive(minor_radius.get())
+                    || major_radius.get() < minor_radius.get()
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch ellipse");
                 }
-                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
+                if bounds
+                    .iter()
+                    .flatten()
+                    .any(|angle| !angle.get().is_finite())
+                {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -642,9 +648,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds,
             } => {
                 if !finite2(*center)
-                    || !major_angle.0.is_finite()
-                    || nonpositive(major_radius.0)
-                    || nonpositive(minor_radius.0)
+                    || !major_angle.get().is_finite()
+                    || nonpositive(major_radius.get())
+                    || nonpositive(minor_radius.get())
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch hyperbola");
                 }
@@ -663,7 +669,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 focal_length,
                 bounds,
             } => {
-                if !finite2(*vertex) || !axis_angle.0.is_finite() || nonpositive(focal_length.0) {
+                if !finite2(*vertex)
+                    || !axis_angle.get().is_finite()
+                    || nonpositive(focal_length.get())
+                {
                     finding(findings, Check::Bounds, id, "invalid sketch parabola");
                 }
                 if bounds.iter().flatten().any(|value| !value.is_finite()) {
@@ -688,10 +697,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if text.is_empty()
                     || font_family.is_empty()
                     || !matches!(font_weight, 400 | 500 | 750)
-                    || nonpositive(height.0)
+                    || nonpositive(height.get())
                     || width_factor.is_some_and(nonpositive)
                     || placement.is_some_and(|placement| {
-                        !finite2(placement.anchor) || !placement.rotation.0.is_finite()
+                        !finite2(placement.anchor) || !placement.rotation.get().is_finite()
                     })
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
@@ -858,7 +867,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ..
             } => {
                 if !finite3(*center)
-                    || nonpositive(radius.0)
+                    || nonpositive(radius.get())
                     || !valid_spatial_circle_frame(*normal, *reference_direction)
                 {
                     finding(
@@ -874,8 +883,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     ..
                 } = &entity.geometry
                 {
-                    if !start_angle.0.is_finite()
-                        || !end_angle.0.is_finite()
+                    if !start_angle.get().is_finite()
+                        || !end_angle.get().is_finite()
                         || start_angle == end_angle
                     {
                         finding(
@@ -1022,8 +1031,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 !sources.is_empty()
                     && !results.is_empty()
                     && (normal.norm() - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
-                    && distance.0.is_finite()
-                    && distance.0 > 0.0
+                    && distance.get().is_finite()
+                    && distance.get() > 0.0
             }
             _ => entities.len() >= 2,
         };
@@ -1159,7 +1168,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 });
                 let expected = match parameter_values.get(parameter) {
                     Some(Some(crate::features::ParameterValue::Length(length))) => {
-                        Some(length.0.abs())
+                        Some(length.get().abs())
                     }
                     _ => None,
                 };
@@ -1213,7 +1222,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 };
                 let expected = match parameter_values.get(parameter) {
                     Some(Some(crate::features::ParameterValue::Length(length))) => {
-                        Some(length.0.abs())
+                        Some(length.get().abs())
                     }
                     _ => None,
                 };
@@ -1374,9 +1383,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     None => true,
                     Some(parameter) => match parameter_values.get(&parameter.id) {
                         Some(Some(crate::features::ParameterValue::Length(value))) => {
-                            let expected = if parameter.negated { -value.0 } else { value.0 };
-                            let scale = 1.0 + expected.abs().max(distance.0);
-                            (expected - distance.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
+                            let expected = if parameter.negated {
+                                -value.get()
+                            } else {
+                                value.get()
+                            };
+                            let scale = 1.0 + expected.abs().max(distance.get());
+                            (expected - distance.get()).abs()
+                                <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                         }
                         _ => false,
                     },
@@ -1467,7 +1481,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && directions.iter().all(|direction| {
                         let length = direction.direction[0].hypot(direction.direction[1]);
-                        direction.spacing.0.is_finite()
+                        direction.spacing.get().is_finite()
                             && direction.direction.iter().all(|value| value.is_finite())
                             && (length - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     })
@@ -1481,16 +1495,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::CircularPattern { pattern } => {
                 let instances = pattern.instances();
                 let mut entities = HashSet::new();
-                pattern.angle().0.is_finite()
+                pattern.angle().get().is_finite()
                     && instances
                         .first()
-                        .is_some_and(|instance| instance.angle.0 == 0.0)
+                        .is_some_and(|instance| instance.angle.get() == 0.0)
                     && !instances
                         .iter()
                         .flat_map(|instance| &instance.entities)
                         .any(|entity| entity == pattern.center())
                     && instances.iter().all(|instance| {
-                        instance.angle.0.is_finite()
+                        instance.angle.get().is_finite()
                             && instance
                                 .entities
                                 .iter()
@@ -1550,11 +1564,11 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
                 let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
                     let measured = distance2(*first, *second);
-                    (measured - distance.0).abs()
+                    (measured - distance.get()).abs()
                         <= ir
                             .tolerances
                             .linear
-                            .max(EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.0)))
+                            .max(EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.get())))
                 });
                 let parameter_matches = parameter.as_ref().is_none_or(|parameter| {
                     let Some(Some(crate::features::ParameterValue::Length(value))) =
@@ -1562,14 +1576,17 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     else {
                         return false;
                     };
-                    let expected = value.0.abs();
-                    (expected - distance.0).abs()
+                    let expected = value.get().abs();
+                    (expected - distance.get()).abs()
                         <= ir
                             .tolerances
                             .linear
-                            .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.0)))
+                            .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.get())))
                 });
-                distance.0.is_finite() && distance.0 >= 0.0 && distance_matches && parameter_matches
+                distance.get().is_finite()
+                    && distance.get() >= 0.0
+                    && distance_matches
+                    && parameter_matches
             }
             Constraint::PointCoordinateValues { point, values } => {
                 let coordinate_matches = sketch_locus_point(point, &geometry).is_none_or(|point| {
@@ -1577,15 +1594,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         .into_iter()
                         .zip(values)
                         .all(|(measured, expected)| {
-                            expected.0.is_finite()
-                                && (measured - expected.0).abs()
+                            expected.get().is_finite()
+                                && (measured - expected.get()).abs()
                                     <= ir.tolerances.linear.max(
                                         EPS_COORDINATE_VALUE
-                                            * (1.0 + measured.abs().max(expected.0.abs())),
+                                            * (1.0 + measured.abs().max(expected.get().abs())),
                                     )
                         })
                 });
-                values.iter().all(|value| value.0.is_finite()) && coordinate_matches
+                values.iter().all(|value| value.get().is_finite()) && coordinate_matches
             }
             Constraint::MidpointCoordinate {
                 first,
@@ -1604,12 +1621,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 f64::midpoint(first.v, second.v)
                             }
                         };
-                        (measured - value.0).abs()
+                        (measured - value.get()).abs()
                             <= ir.tolerances.linear.max(
-                                EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.0.abs())),
+                                EPS_COORDINATE_VALUE
+                                    * (1.0 + measured.abs().max(value.get().abs())),
                             )
                     });
-                value.0.is_finite() && coordinate_matches
+                value.get().is_finite() && coordinate_matches
             }
             Constraint::PolarDistance {
                 first,
@@ -1622,20 +1640,20 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
                 let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
                     let measured = distance2(*first, *second);
-                    (measured - distance.0).abs()
+                    (measured - distance.get()).abs()
                         <= ir
                             .tolerances
                             .linear
-                            .max(EPS_POLAR_ANGLE * (1.0 + measured.abs().max(distance.0)))
+                            .max(EPS_POLAR_ANGLE * (1.0 + measured.abs().max(distance.get())))
                 });
-                let angle_matches = match (distance.0 <= EPS_POLAR_ZERO, angle.as_ref()) {
+                let angle_matches = match (distance.get() <= EPS_POLAR_ZERO, angle.as_ref()) {
                     (true, None) => true,
                     (false, Some(angle)) => {
-                        angle.0.is_finite()
+                        angle.get().is_finite()
                             && measured_points.as_ref().is_none_or(|(first, second)| {
                                 let measured = (second.v - first.v).atan2(second.u - first.u);
                                 let difference =
-                                    (angle.0 - measured).rem_euclid(std::f64::consts::TAU);
+                                    (angle.get() - measured).rem_euclid(std::f64::consts::TAU);
                                 difference.min(std::f64::consts::TAU - difference)
                                     <= EPS_POLAR_ANGLE
                             })
@@ -1648,21 +1666,21 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     else {
                         return false;
                     };
-                    let expected = value.0.abs();
-                    (expected - distance.0).abs()
+                    let expected = value.get().abs();
+                    (expected - distance.get()).abs()
                         <= ir
                             .tolerances
                             .linear
-                            .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.0)))
+                            .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.get())))
                 });
-                distance.0.is_finite()
-                    && distance.0 >= 0.0
+                distance.get().is_finite()
+                    && distance.get() >= 0.0
                     && distance_matches
                     && angle_matches
                     && parameter_matches
             }
             Constraint::AngleDifference { value, .. } => {
-                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
+                value.get().is_finite() && (0.0..=std::f64::consts::PI).contains(&value.get())
             }
             Constraint::ScalarEquality { first, second } => first != second,
             Constraint::RepeatedDistance { measurements, .. } => {
@@ -1738,7 +1756,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 });
                 let expected = match parameter_values.get(parameter) {
                     Some(Some(crate::features::ParameterValue::Length(length))) => {
-                        Some(length.0.abs())
+                        Some(length.get().abs())
                     }
                     _ => None,
                 };
@@ -1769,7 +1787,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Some(
                             SketchGeometry::Circle { radius, .. }
                             | SketchGeometry::Arc { radius, .. },
-                        ) => Some(radius.0),
+                        ) => Some(radius.get()),
                         _ => None,
                     })
                     .collect::<Vec<_>>();
@@ -1797,8 +1815,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             && sources.insert(&pair.source)
                             && results.insert(&pair.result)
                     })
-                    && distance.0.is_finite()
-                    && distance.0 > 0.0
+                    && distance.get().is_finite()
+                    && distance.get() > 0.0
             }
             Constraint::ProjectedCopy { source, result } => source != result,
             Constraint::Group { elements } | Constraint::Text { elements, .. } => {
@@ -1881,9 +1899,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .zip(entity_geometry.get(&pair.result))
                     .is_none_or(|(source, result)| {
                         let expected = if pair.source_reversed {
-                            -distance.0
+                            -distance.get()
                         } else {
-                            distance.0
+                            distance.get()
                         };
                         sketch_curve_offset_matches(source, result, expected, ir.tolerances.linear)
                     });
@@ -1999,8 +2017,8 @@ fn oriented_endpoints(
             start_angle,
             end_angle,
         } => (
-            circular_point(*center, radius.0, start_angle.0),
-            circular_point(*center, radius.0, end_angle.0),
+            circular_point(*center, radius.get(), start_angle.get()),
+            circular_point(*center, radius.get(), end_angle.get()),
         ),
         SketchGeometry::Ellipse {
             center,
@@ -2011,17 +2029,17 @@ fn oriented_endpoints(
         } => (
             ellipse_point(
                 *center,
-                major_angle.0,
-                major_radius.0,
-                minor_radius.0,
-                start.0,
+                major_angle.get(),
+                major_radius.get(),
+                minor_radius.get(),
+                start.get(),
             ),
             ellipse_point(
                 *center,
-                major_angle.0,
-                major_radius.0,
-                minor_radius.0,
-                end.0,
+                major_angle.get(),
+                major_radius.get(),
+                minor_radius.get(),
+                end.get(),
             ),
         ),
         SketchGeometry::Nurbs { curve } if !curve.periodic() => {

@@ -61,7 +61,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         SketchId("f3d:model:sketch#radial".into()),
         SketchGeometry::Circle {
             center: Point2::new(2.0, 3.0),
-            radius: Length(5.0),
+            radius: Length::new(5.0).unwrap(),
         },
     );
     let radius_parameter =
@@ -139,7 +139,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     let SketchGeometry::Circle { radius, .. } = &mut duplicate.geometry else {
         unreachable!("test entity is circular")
     };
-    radius.0 += 5.0e-7;
+    *radius = cadmpeg_ir::features::Length::new(radius.get() + 5.0e-7).unwrap();
     assert!(matches!(
         owner_scoped_radial_dimension_definition(
             &[entity.clone(), duplicate.clone()],
@@ -181,9 +181,9 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
 
     entity.geometry = SketchGeometry::Arc {
         center: Point2::new(2.0, 3.0),
-        radius: Length(5.0),
-        start_angle: cadmpeg_ir::features::Angle(0.0),
-        end_angle: cadmpeg_ir::features::Angle(1.0),
+        radius: Length::new(5.0).unwrap(),
+        start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::features::Angle::new(1.0).unwrap(),
     };
     assert!(
         radial_dimension_definition(&entity, "Diameter Dimension", 1.0, diameter_parameter,)
@@ -191,9 +191,9 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     );
     entity.geometry = SketchGeometry::Ellipse {
         center: Point2::new(2.0, 3.0),
-        major_angle: cadmpeg_ir::features::Angle(0.0),
-        major_radius: Length(5.0),
-        minor_radius: Length(3.0),
+        major_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        major_radius: Length::new(5.0).unwrap(),
+        minor_radius: Length::new(3.0).unwrap(),
         bounds: None,
     };
     assert!(
@@ -482,7 +482,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             sketch.clone(),
             SketchGeometry::Circle {
                 center: Point2::new(u, v),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             },
         )
     };

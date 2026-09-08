@@ -134,7 +134,7 @@ fn spatial_relation_point_line_entities(
     entities: &mut Vec<SpatialSketchEntity>,
 ) -> Option<(SpatialSketchEntityId, SpatialSketchEntityId)> {
     let expected = match parameter.value.as_ref()? {
-        cadmpeg_ir::features::ParameterValue::Length(length) => length.0.abs(),
+        cadmpeg_ir::features::ParameterValue::Length(length) => length.get().abs(),
         _ => return None,
     };
     let mut point_markers = lane
@@ -859,11 +859,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                     FeatureInputRelationFamily::LineLineDistance
                     | FeatureInputRelationFamily::PointLineDistance,
                     cadmpeg_ir::features::ParameterValue::Length(expected),
-                ) => expected.0,
+                ) => expected.get(),
                 (
                     FeatureInputRelationFamily::Angle,
                     cadmpeg_ir::features::ParameterValue::Angle(expected),
-                ) => expected.0,
+                ) => expected.get(),
                 _ => continue,
             };
             if !expected.is_finite() || expected < 0.0 {
@@ -1491,7 +1491,8 @@ pub(crate) fn project_relation_solved_point_geometry(
                         }
                         _ => unreachable!("relation family was filtered above"),
                     };
-                    same_dimension_length(measured, distance.0).then_some(quantize(point, QUANTUM))
+                    same_dimension_length(measured, distance.get())
+                        .then_some(quantize(point, QUANTUM))
                 })
                 .collect::<Vec<_>>();
             candidates.sort_unstable();
@@ -2659,7 +2660,7 @@ fn relation_parameter_matches_display_scalar(
     match family {
         FeatureInputRelationFamily::Angle => match parameter.value.as_ref() {
             Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => {
-                same_dimension_angle(value.0, scalar.value)
+                same_dimension_angle(value.get(), scalar.value)
             }
             Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
                 same_dimension_angle(*value, scalar.value)
@@ -2674,7 +2675,7 @@ fn relation_parameter_matches_display_scalar(
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
             match parameter.value.as_ref() {
                 Some(cadmpeg_ir::features::ParameterValue::Length(value)) => {
-                    same_dimension_length(value.0, scalar.value * 1000.0)
+                    same_dimension_length(value.get(), scalar.value * 1000.0)
                 }
                 Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
                     crate::history::exact_integer_f64(*value)
@@ -2877,7 +2878,7 @@ mod relation_geometry_tests {
             name: "distance".into(),
             expression: "7mm".into(),
             display: None,
-            value: Some(ParameterValue::Length(Length(7.0))),
+            value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
@@ -3092,7 +3093,7 @@ mod relation_geometry_tests {
             name: "distance".into(),
             expression: "5mm".into(),
             display: None,
-            value: Some(ParameterValue::Length(Length(5.0))),
+            value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
@@ -3424,7 +3425,7 @@ mod relation_geometry_tests {
             name: "distance".into(),
             expression: "6.5mm".into(),
             display: None,
-            value: Some(ParameterValue::Length(Length(6.5))),
+            value: Some(ParameterValue::Length(Length::new(6.5).unwrap())),
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,

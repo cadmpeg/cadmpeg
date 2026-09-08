@@ -77,12 +77,12 @@ pub(crate) fn project_pattern(
                     Some(value) => Some(parse_valid_direction(value)?),
                     None => None,
                 },
-                spacing: Length(parse_positive_dimension_length_mm(
+                spacing: Length::new(parse_positive_dimension_length_mm(
                     feature
                         .parameters
                         .get("Spacing")
                         .or_else(|| feature.parameters.get("D3"))?,
-                )?),
+                )?)?,
                 count: parse_count(
                     feature
                         .parameters
@@ -97,7 +97,7 @@ pub(crate) fn project_pattern(
                     (Some(direction), Some(spacing), Some(count)) => {
                         Some(cadmpeg_ir::features::LinearPatternDirection {
                             direction: parse_valid_direction(direction)?,
-                            spacing: Length(parse_positive_dimension_length_mm(spacing)?),
+                            spacing: Length::new(parse_positive_dimension_length_mm(spacing)?)?,
                             count: parse_count(count)?,
                         })
                     }
@@ -107,12 +107,12 @@ pub(crate) fn project_pattern(
             NativePatternClass::Circular => PatternKind::Circular {
                 axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
                 axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-                angle: Angle(
+                angle: Angle::new(
                     feature
                         .parameters
                         .get("Angle")
                         .and_then(|value| parse_positive_angle_rad(value))?,
-                ),
+                )?,
                 count: parse_count(feature.parameters.get("Count")?)?,
             },
             NativePatternClass::CurveDriven => PatternKind::CurveDriven {
@@ -123,12 +123,12 @@ pub(crate) fn project_pattern(
                             .map_or_else(|| source.clone(), |id| (*id).to_string()),
                     )
                 }),
-                spacing: Length(parse_positive_dimension_length_mm(
+                spacing: Length::new(parse_positive_dimension_length_mm(
                     feature
                         .parameters
                         .get("Spacing")
                         .or_else(|| feature.parameters.get("D3"))?,
-                )?),
+                )?)?,
                 count: parse_count(
                     feature
                         .parameters

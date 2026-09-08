@@ -236,12 +236,16 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         marker_pattern_bore_axes(&lane, "position", 3.0, &surfaces, None),
         Some(vec![
             HolePlacement::Axis {
-                origin: Point3::new(-70.0, 11.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-70.0, 11.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
             HolePlacement::Axis {
-                origin: Point3::new(70.0, 11.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(70.0, 11.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
         ])
     );
@@ -625,20 +629,20 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let placements = placements.as_deref().expect("resolved placements");
     assert_eq!(placements.len(), 1);
     assert!(matches!(
-        placements[0],
-        cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3 {
-                x: 12.0,
-                y: 23.0,
-                z: 30.0
-            },
-            axis: Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-        }
-    ));
+       placements[0],
+       cadmpeg_ir::features::HolePlacement::Axis {
+           origin: geometry_1,
+           axis: geometry_2,
+       }
+    if matches!(geometry_1.get(), Point3 {
+               x: 12.0,
+               y: 23.0,
+               z: 30.0
+           }) && matches!(geometry_2.get(), Vector3 {
+               x: 0.0,
+               y: 0.0,
+               z: 1.0
+           })));
     assert_eq!(
         features[0].dependencies,
         [FeatureId::mint("position-sketch").expect("identity grammar")]
@@ -664,35 +668,35 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         .expect("resolved paired placements");
     assert_eq!(paired_placements.len(), 2);
     assert!(matches!(
-        paired_placements[0],
-        cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3 {
-                x: 12.0,
-                y: 23.0,
-                z: 30.0
-            },
-            axis: Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-        }
-    ));
+       paired_placements[0],
+       cadmpeg_ir::features::HolePlacement::Axis {
+           origin: geometry_1,
+           axis: geometry_2,
+       }
+    if matches!(geometry_1.get(), Point3 {
+               x: 12.0,
+               y: 23.0,
+               z: 30.0
+           }) && matches!(geometry_2.get(), Vector3 {
+               x: 0.0,
+               y: 0.0,
+               z: 1.0
+           })));
     assert!(matches!(
-        paired_placements[1],
-        cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3 {
-                x: 14.0,
-                y: 25.0,
-                z: 30.0
-            },
-            axis: Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-        }
-    ));
+       paired_placements[1],
+       cadmpeg_ir::features::HolePlacement::Axis {
+           origin: geometry_1,
+           axis: geometry_2,
+       }
+    if matches!(geometry_1.get(), Point3 {
+               x: 14.0,
+               y: 25.0,
+               z: 30.0
+           }) && matches!(geometry_2.get(), Vector3 {
+               x: 0.0,
+               y: 0.0,
+               z: 1.0
+           })));
 
     let mut incomplete_lane = paired_lane;
     incomplete_lane.sketch_entities.push(SketchInputEntity {
@@ -803,20 +807,20 @@ fn unique_unindexed_point_locus_is_projected() {
         panic!("expected hole");
     };
     assert!(matches!(
-        placements.as_deref(),
-        Some([HolePlacement::Axis {
-            origin: Point3 {
-                x: 14.0,
-                y: 25.0,
-                z: 30.0
-            },
-            axis: Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 1.0
-            },
-        }])
-    ));
+       placements.as_deref(),
+       Some([HolePlacement::Axis {
+           origin: geometry_1,
+           axis: geometry_2,
+       }])
+    if matches!(geometry_1.get(), Point3 {
+               x: 14.0,
+               y: 25.0,
+               z: 30.0
+           }) && matches!(geometry_2.get(), Vector3 {
+               x: 0.0,
+               y: 0.0,
+               z: 1.0
+           })));
 
     lane.sketch_entities
         .push(marker("ambiguous-locus", 3, [0.006, 0.007]));
@@ -972,8 +976,10 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         placements.as_deref(),
         Some(
             &[cadmpeg_ir::features::HolePlacement::Axis {
-                origin: Point3::new(12.0, 23.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(12.0, 23.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             }][..]
         )
     );
@@ -1062,16 +1068,22 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         Some(
             &[
                 HolePlacement::Axis {
-                    origin: Point3::new(12.0, 23.0, 30.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(12.0, 23.0, 30.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
                 HolePlacement::Axis {
-                    origin: Point3::new(12.0, 33.0, 30.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(12.0, 33.0, 30.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
                 HolePlacement::Axis {
-                    origin: Point3::new(22.0, 23.0, 30.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(22.0, 23.0, 30.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
             ][..]
         )
@@ -1173,8 +1185,10 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         placements.as_deref(),
         Some(
             &[HolePlacement::Axis {
-                origin: Point3::new(12.0, 23.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(12.0, 23.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             }][..]
         )
     );
@@ -1192,20 +1206,28 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
         coplanar_spatial_position_placements(&points),
         Some(vec![
             HolePlacement::Axis {
-                origin: Point3::new(23.5, 10.0, -23.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(23.5, 10.0, -23.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
             HolePlacement::Axis {
-                origin: Point3::new(23.5, 10.0, -75.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(23.5, 10.0, -75.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
             HolePlacement::Axis {
-                origin: Point3::new(151.5, 10.0, -23.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(151.5, 10.0, -23.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
             HolePlacement::Axis {
-                origin: Point3::new(151.5, 10.0, -75.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(151.5, 10.0, -75.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         ])
     );

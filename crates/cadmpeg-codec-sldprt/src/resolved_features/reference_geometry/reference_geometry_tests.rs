@@ -215,16 +215,16 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
             Some(&"125mm,-250mm,0mm".to_string())
         );
         assert!(matches!(
-            crate::history::project_features(&histories)[0].definition,
-            FeatureDefinition::DatumPoint {
-                position: Point3 {
-                    x: 125.0,
-                    y: -250.0,
-                    z: 0.0
-                },
-                ..
-            }
-        ));
+           crate::history::project_features(&histories)[0].definition,
+           FeatureDefinition::DatumPoint {
+               position: geometry_1,
+               ..
+           }
+        if matches!(geometry_1.get(), Point3 {
+                   x: 125.0,
+                   y: -250.0,
+                   z: 0.0
+               })));
     }
 
     let mut lanes = [
@@ -302,28 +302,23 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
     );
     assert!(matches!(
         crate::history::project_features(&histories)[0].definition,
-        FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3 {
+        FeatureDefinition::DatumCoordinateSystem { frame } if matches!(frame.origin(), Point3 {
                 x: 125.0,
                 y: -250.0,
                 z: 500.0
-            },
-            x_axis: Vector3 {
+            }) && matches!(frame.x_axis(), Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0
-            },
-            y_axis: Vector3 {
+            }) && matches!(frame.y_axis(), Vector3 {
                 x: 0.0,
                 y: -1.0,
                 z: 0.0
-            },
-            z_axis: Vector3 {
+            }) && matches!(frame.z_axis(), Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0
-            }
-        }
+            })
     ));
 }
 

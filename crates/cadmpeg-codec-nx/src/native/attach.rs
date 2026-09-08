@@ -3332,8 +3332,8 @@ fn attach_feature_operations(
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Sphere {
-                center: *center,
-                radius: *radius,
+                center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+                radius: cadmpeg_ir::features::PositiveLength::new(radius.get())?,
                 op: sphere_op,
             })
         });
@@ -5238,8 +5238,9 @@ fn blend_feature_definition(
                     RadiusSpec::Unresolved
                 }
             },
-            |radii| RadiusSpec::Constant {
-                radius: Length(radii[0]),
+            |radii| match Length::new(radii[0]) {
+                Some(radius) => RadiusSpec::Constant { radius },
+                None => RadiusSpec::UnresolvedConstant,
             },
         );
     let face_blend = matches!(family, NxBlendFamily::Face)
@@ -5374,7 +5375,7 @@ fn offset_surface_feature_definition(
     Some((
         FeatureDefinition::OffsetSurface {
             faces,
-            distance: distance.map(Length),
+            distance: distance.and_then(Length::new),
         },
         supports,
     ))
@@ -5447,7 +5448,7 @@ fn thicken_feature_definition(
     Some((
         FeatureDefinition::Thicken {
             faces,
-            thickness: Some(Length(thickness)),
+            thickness: Some(cadmpeg_ir::features::PositiveLength::new(thickness)?),
             side,
         },
         supports,
@@ -5871,7 +5872,7 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
         && [center.x, center.y, center.z]
             .into_iter()
             .all(f64::is_finite))
-    .then_some((body, *center, Length(*radius)))
+    .then_some((body, *center, Length::new(*radius)?))
 }
 
 struct NewBodyEvidence<'a> {
@@ -6036,8 +6037,8 @@ struct HoleProjection {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CounterboreDimensions {
-    diameter: Length,
-    depth: Length,
+    diameter: cadmpeg_ir::features::PositiveLength,
+    depth: cadmpeg_ir::features::PositiveLength,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -6055,10 +6056,14 @@ fn non_boolean_feature_definition_with_parameters(
             parameters: native_parameters,
         };
     }
-    if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
+    if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
+        kind,
+        block_dimensions
+            .map(|dimensions| dimensions.map(cadmpeg_ir::features::PositiveLength::new)),
+    ) {
         return FeatureDefinition::Block {
-            dimensions: Some(dimensions.map(Length)),
-            placement: block_placement,
+            dimensions: Some([length, width, height]),
+            placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
             op: BooleanOp::Unresolved,
         };
     }
@@ -6265,7 +6270,9 @@ fn non_boolean_feature_definition_with_parameters(
                     ) => Some(chamfer),
                     _ => template_exit_kind,
                 },
-                diameter: hole.diameter,
+                diameter: hole
+                    .diameter
+                    .and_then(|diameter| cadmpeg_ir::features::PositiveLength::new(diameter.get())),
                 extent: hole.extent.or(template_extent),
                 bottom: None,
                 taper_angle: None,
@@ -6290,7 +6297,9 @@ fn non_boolean_feature_definition_with_parameters(
                 .grouped_simple_through
                 .then_some(hole.chamfer)
                 .flatten(),
-            diameter: hole.diameter,
+            diameter: hole
+                .diameter
+                .and_then(|diameter| cadmpeg_ir::features::PositiveLength::new(diameter.get())),
             extent: hole
                 .grouped_simple_through
                 .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll),
@@ -6801,7 +6810,7 @@ fn hole_package_projection(
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
-    blind_depths: BTreeMap<String, Length>,
+    blind_depths: BTreeMap<String, cadmpeg_ir::features::NonZeroLength>,
     counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
@@ -6835,7 +6844,7 @@ fn hole_body_projection(
         }
         for operation in operations {
             projected_outputs.insert(operation.clone(), vec![body.clone()]);
-            diameters.insert(operation, Length(radius * 2.0));
+            diameters.insert(operation, Length::new(radius * 2.0)?);
         }
     }
     Some(HoleBodyProjection {
@@ -6872,12 +6881,14 @@ fn counterbore_body_projection(
             return None;
         };
         projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
+        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
         counterbores.insert(
             operation.clone(),
             CounterboreDimensions {
-                diameter: Length(witness.counterbore_radius * 2.0),
-                depth: Length(witness.depth),
+                diameter: cadmpeg_ir::features::PositiveLength::new(
+                    witness.counterbore_radius * 2.0,
+                )?,
+                depth: cadmpeg_ir::features::PositiveLength::new(witness.depth)?,
             },
         );
     }
@@ -6912,8 +6923,11 @@ fn blind_hole_body_projection(
             return None;
         };
         projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
-        blind_depths.insert(operation.clone(), Length(witness.depth));
+        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
+        blind_depths.insert(
+            operation.clone(),
+            cadmpeg_ir::features::NonZeroLength::new(witness.depth)?,
+        );
     }
     Some(HoleBodyProjection {
         outputs: projected_outputs,
@@ -6980,11 +6994,17 @@ fn counterbore_axis_placements_for_operations(
         let [witness] = witnesses.as_slice() else {
             return BTreeMap::new();
         };
+        let (Some(point), Some(direction)) = (
+            cadmpeg_ir::features::FinitePoint3::new(witness.line_origin),
+            cadmpeg_ir::features::FeatureDirection3::new(witness.axis),
+        ) else {
+            return BTreeMap::new();
+        };
         placements.insert(
             operation.clone(),
             HolePlacement::Axis {
-                origin: witness.line_origin,
-                axis: witness.axis,
+                origin: point,
+                axis: direction,
             },
         );
     }
@@ -7017,11 +7037,17 @@ fn blind_hole_axis_placements_for_operations(
         let [witness] = witnesses.as_slice() else {
             return BTreeMap::new();
         };
+        let (Some(point), Some(direction)) = (
+            cadmpeg_ir::features::FinitePoint3::new(witness.position),
+            cadmpeg_ir::features::FeatureDirection3::new(witness.direction),
+        ) else {
+            return BTreeMap::new();
+        };
         placements.insert(
             operation.clone(),
             HolePlacement::Directed {
-                position: witness.position,
-                direction: witness.direction,
+                position: point,
+                direction: direction,
             },
         );
     }
@@ -7056,9 +7082,12 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
             origin.y - axial_offset * axis.y,
             origin.z - axial_offset * axis.z,
         );
-        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+        let (Some(origin), Some(axis)) = (
+            cadmpeg_ir::features::FinitePoint3::new(origin),
+            cadmpeg_ir::features::FeatureDirection3::new(axis),
+        ) else {
             return Vec::new();
-        }
+        };
         placements.push(HolePlacement::Axis { origin, axis });
     }
     placements.sort_by_key(hole_placement_key);
@@ -7859,10 +7888,17 @@ fn simple_hole_chamfers(
         {
             return BTreeMap::new();
         }
-        let treatment = HoleKind::Chamfer {
-            diameter: Length(2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64),
-            angle: Angle(included_angles.iter().sum::<f64>() / included_angles.len() as f64),
+        let (Some(diameter), Some(angle)) = (
+            cadmpeg_ir::features::PositiveLength::new(
+                2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64,
+            ),
+            cadmpeg_ir::features::InteriorAngle::new(
+                included_angles.iter().sum::<f64>() / included_angles.len() as f64,
+            ),
+        ) else {
+            return BTreeMap::new();
         };
+        let treatment = HoleKind::Chamfer { diameter, angle };
         treatments.extend(
             operations
                 .into_iter()
@@ -8881,10 +8917,11 @@ pub(crate) fn attach_expression_parameters(
                 crate::native::om::ExpressionUnit::Millimeter
                 | crate::native::om::ExpressionUnit::Inch => {
                     crate::native::expression_length_in_millimeters(&expression.unit, value)
-                        .map(|value| ParameterValue::Length(Length(value)))
+                        .and_then(Length::new)
+                        .map(ParameterValue::Length)
                 }
                 crate::native::om::ExpressionUnit::Degree => {
-                    Some(ParameterValue::Angle(Angle(value.to_radians())))
+                    Some(ParameterValue::Angle(Angle::new(value.to_radians())?))
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });

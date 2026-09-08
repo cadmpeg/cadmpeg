@@ -130,14 +130,14 @@ fn curve_expression_helix_feature_definition(
         return None;
     };
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
-    let pitch = cadmpeg_ir::features::HelixPitch::new(Length(axial_pitch))?;
+    let pitch = cadmpeg_ir::features::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Helix {
-        axis_origin: *center,
-        axis_direction: *axis,
-        radius: Length(helix.radius),
+        axis_origin: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
+        radius: cadmpeg_ir::features::PositiveLength::new(helix.radius)?,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions: helix.revolutions,
-        start_angle: Angle(helix.start_angle),
+        revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
+        start_angle: Angle::new(helix.start_angle)?,
         clockwise: helix.clockwise,
         segment_turns: None,
         construction_style: None,
@@ -469,12 +469,14 @@ pub(crate) fn transfer_curve_expression_features(
                     crate::curve::CurveExpressionValue::Number(value) => {
                         Some(ParameterValue::Real(*value))
                     }
-                    crate::curve::CurveExpressionValue::Length(value) => {
-                        Some(ParameterValue::Length(cadmpeg_ir::features::Length(*value)))
-                    }
-                    crate::curve::CurveExpressionValue::Angle(value) => Some(
-                        ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians())),
+                    crate::curve::CurveExpressionValue::Length(value) => Some(
+                        ParameterValue::Length(cadmpeg_ir::features::Length::new(*value)?),
                     ),
+                    crate::curve::CurveExpressionValue::Angle(value) => {
+                        Some(ParameterValue::Angle(cadmpeg_ir::features::Angle::new(
+                            value.to_radians(),
+                        )?))
+                    }
                     crate::curve::CurveExpressionValue::Quantity(_) => None,
                     crate::curve::CurveExpressionValue::String(value) => {
                         Some(ParameterValue::String(value.clone()))
@@ -542,16 +544,19 @@ pub(crate) fn transfer_curve_expression_features(
                 ProceduralCurve::new(procedural_id, procedural_definition),
             );
         }
-        let definition = match helix {
-            Some(helix) => neutral_helix.unwrap_or_else(|| IrFeatureDefinition::HelixNativeAxis {
-                axis_native_ref: curve_expression_record_id(record),
-                axial_rise: Length(helix.height),
-                pitch: Length(helix.height / helix.revolutions),
-                revolutions: helix.revolutions,
-                start_angle: Angle(helix.start_angle),
-                clockwise: helix.clockwise,
-            }),
-            None => IrFeatureDefinition::Native {
+        let definition = neutral_helix
+            .or_else(|| {
+                let helix = helix?;
+                Some(IrFeatureDefinition::HelixNativeAxis {
+                    axis_native_ref: curve_expression_record_id(record),
+                    axial_rise: Length::new(helix.height)?,
+                    pitch: Length::new(helix.height / helix.revolutions)?,
+                    revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
+                    start_angle: Angle::new(helix.start_angle)?,
+                    clockwise: helix.clockwise,
+                })
+            })
+            .unwrap_or_else(|| IrFeatureDefinition::Native {
                 kind: "CurveFromEquation".into(),
                 parameters: BTreeMap::from([
                     ("entity_id".to_string(), record.entity_id.to_string()),
@@ -560,8 +565,7 @@ pub(crate) fn transfer_curve_expression_features(
                         record.assignments.len().to_string(),
                     ),
                 ]),
-            },
-        };
+            });
         ir.model.features.push(Feature {
             id: feature_id,
             ordinal,

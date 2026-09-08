@@ -430,10 +430,10 @@ fn transfers_datum_frames_from_persisted_placements() {
     };
     assert!(matches!(
         definition("Plane"),
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { origin, normal, u_axis }
-            if *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                && *u_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame }
+            if frame.origin() == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && frame.normal() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && frame.u_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     ));
     assert!(matches!(
         definition("Axis"),
@@ -448,11 +448,11 @@ fn transfers_datum_frames_from_persisted_placements() {
     ));
     assert!(matches!(
         definition("Frame"),
-        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem { origin, x_axis, y_axis, z_axis }
-            if *origin == cadmpeg_ir::math::Point3::new(10.0, 11.0, 12.0)
-                && *x_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                && *y_axis == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-                && *z_axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem { frame }
+            if frame.origin() == cadmpeg_ir::math::Point3::new(10.0, 11.0, 12.0)
+                && frame.x_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                && frame.y_axis() == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                && frame.z_axis() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
     assert!(result.report().losses.is_empty());
 }

@@ -678,7 +678,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         sketch_id,
         SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
+            radius: Length::new(3.0).unwrap(),
         },
     )
     .with_native_ref(Some("circle-marker".into()));
@@ -840,7 +840,7 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -889,7 +889,7 @@ fn line_operand_rejects_a_circular_geometry_alias() {
             SketchId("sketch".into()),
             SketchGeometry::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(1.0),
+                radius: Length::new(1.0).unwrap(),
             },
         )
         .with_native_ref(Some("circle-marker".into())),
@@ -1364,7 +1364,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         name: "D1".into(),
         expression: "4mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(4.0))),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -1463,7 +1463,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -1564,7 +1564,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,

@@ -279,22 +279,40 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     assert_eq!(
         simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert_eq!(
         simple_hole_diameters(&ir, &templates, &[], &outputs),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert_eq!(
         hole_diameters_for_operations(&ir, &operations, &outputs),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert!(
@@ -323,8 +341,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
-                origin: Point3::new(1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         )])
     );
@@ -342,8 +362,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
-                origin: Point3::new(1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         )])
     );
@@ -373,8 +395,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
-                origin: Point3::new(1.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap(),
             },
         )])
     );
@@ -418,8 +442,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             &std::collections::BTreeMap::new(),
         ),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
         ])
     );
     assert!(hole_diameters_for_operations(
@@ -547,15 +577,27 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             &distinct_outputs,
         ),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(6.0).unwrap()
+            ),
         ])
     );
     assert_eq!(
         hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
         std::collections::BTreeMap::from([
-            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
-            ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::Length::new(5.1).unwrap()
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::Length::new(6.0).unwrap()
+            ),
         ])
     );
     assert!(hole_diameters_for_operations(
@@ -659,15 +701,17 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             (
                 "hole-a".into(),
                 cadmpeg_ir::features::HoleKind::Chamfer {
-                    diameter: cadmpeg_ir::features::Length(7.1),
-                    angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                    diameter: cadmpeg_ir::features::PositiveLength::new(7.1).unwrap(),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                        .unwrap(),
                 },
             ),
             (
                 "hole-b".into(),
                 cadmpeg_ir::features::HoleKind::Chamfer {
-                    diameter: cadmpeg_ir::features::Length(7.1),
-                    angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                    diameter: cadmpeg_ir::features::PositiveLength::new(7.1).unwrap(),
+                    angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
+                        .unwrap(),
                 },
             ),
         ])

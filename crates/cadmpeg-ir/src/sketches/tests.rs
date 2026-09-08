@@ -192,7 +192,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 result: entity.clone(),
                 source_reversed: false,
             }],
-            distance: Length(2.0),
+            distance: Length::new(2.0).unwrap(),
             parameter: Some(OffsetParameter {
                 id: parameter.clone(),
                 negated: true,
@@ -391,7 +391,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             SketchConstraintId("synthetic:test:constraint#point-coordinates".into()),
             SketchConstraintDefinition::PointCoordinateValues {
                 point: SketchLocus::Entity(midpoint.clone()),
-                values: [Length(2.0), Length(1.0)],
+                values: [Length::new(2.0).unwrap(), Length::new(1.0).unwrap()],
             },
         ),
         (
@@ -400,7 +400,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
                 first: SketchLocus::Entity(first.clone()),
                 second: SketchLocus::Entity(second.clone()),
                 axis: SketchCoordinateAxis::U,
-                value: Length(2.0),
+                value: Length::new(2.0).unwrap(),
             },
         ),
         (
@@ -409,7 +409,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
                 first: SketchLocus::Entity(first.clone()),
                 second: SketchLocus::Entity(second.clone()),
                 axis: SketchCoordinateAxis::V,
-                value: Length(1.0),
+                value: Length::new(1.0).unwrap(),
             },
         ),
     ];
@@ -570,7 +570,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 center: Point3::new(1.0, 2.0, 3.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
                 reference_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: Length(4.0),
+                radius: Length::new(4.0).unwrap(),
             },
         ));
     let parallel_line =
@@ -621,7 +621,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         name: "spatial_distance".into(),
         expression: "2 mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(2.0))),
+        value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
         dependencies: Vec::new(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
@@ -636,7 +636,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         name: "spatial_line_length".into(),
         expression: "sqrt(3) mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(3.0f64.sqrt()))),
+        value: Some(ParameterValue::Length(Length::new(3.0f64.sqrt()).unwrap())),
         dependencies: Vec::new(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
@@ -762,7 +762,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                     1.0 / 6.0f64.sqrt(),
                     1.0 / 6.0f64.sqrt(),
                 ),
-                distance: Length(2.0),
+                distance: Length::new(2.0).unwrap(),
                 parameter: Some(OffsetParameter {
                     id: distance.clone(),
                     negated: false,
@@ -958,7 +958,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .iter_mut()
         .find(|parameter| parameter.id == distance)
         .expect("spatial distance parameter")
-        .value = Some(ParameterValue::Length(Length(3.0)));
+        .value = Some(ParameterValue::Length(Length::new(3.0).unwrap()));
     let invalid_distance_findings = validate_neutral(&invalid_distance, Vec::new()).findings;
     assert!(invalid_distance_findings.iter().any(|finding| finding
         .message
@@ -1004,7 +1004,7 @@ fn spatial_sketch_paths_round_trip_through_json() {
 fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection {
     crate::sketches::SketchPatternDirection {
         direction: axis,
-        spacing: crate::features::Length(2.0),
+        spacing: crate::features::Length::new(2.0).unwrap(),
         distance: None,
         count_parameter: None,
     }
@@ -1071,16 +1071,16 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
 
     let pattern = SketchCircularPattern::new(
         SketchEntityId("test:sketch-entity#center".into()),
-        Angle(1.0),
+        Angle::new(1.0).unwrap(),
         None,
         None,
         vec![
             SketchCircularPatternInstance {
-                angle: Angle(0.0),
+                angle: Angle::ZERO,
                 entities: vec![SketchEntityId("test:sketch-entity#0".into())],
             },
             SketchCircularPatternInstance {
-                angle: Angle(1.0),
+                angle: Angle::new(1.0).unwrap(),
                 entities: vec![SketchEntityId("test:sketch-entity#1".into())],
             },
         ],
@@ -1117,7 +1117,7 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
             result: SketchEntityId("test:sketch-entity#result".into()),
             source_reversed: false,
         }],
-        distance: Length(2.0),
+        distance: Length::new(2.0).unwrap(),
         parameter: Some(OffsetParameter {
             id: ParameterId::mint("test:parameter#offset").expect("identity grammar"),
             negated: true,
@@ -1148,22 +1148,22 @@ fn conic_bounds_keep_the_paired_wire_fields() {
     let cases = [
         SketchGeometry::Ellipse {
             center: Point2::new(1.0, 2.0),
-            major_angle: Angle(0.25),
-            major_radius: Length(4.0),
-            minor_radius: Length(2.0),
-            bounds: Some([Angle(-0.5), Angle(1.5)]),
+            major_angle: Angle::new(0.25).unwrap(),
+            major_radius: Length::new(4.0).unwrap(),
+            minor_radius: Length::new(2.0).unwrap(),
+            bounds: Some([Angle::new(-0.5).unwrap(), Angle::new(1.5).unwrap()]),
         },
         SketchGeometry::Hyperbola {
             center: Point2::new(1.0, 2.0),
-            major_angle: Angle(0.25),
-            major_radius: Length(4.0),
-            minor_radius: Length(2.0),
+            major_angle: Angle::new(0.25).unwrap(),
+            major_radius: Length::new(4.0).unwrap(),
+            minor_radius: Length::new(2.0).unwrap(),
             bounds: Some([-0.5, 1.5]),
         },
         SketchGeometry::Parabola {
             vertex: Point2::new(1.0, 2.0),
-            axis_angle: Angle(0.25),
-            focal_length: Length(2.0),
+            axis_angle: Angle::new(0.25).unwrap(),
+            focal_length: Length::new(2.0).unwrap(),
             bounds: Some([-0.5, 1.5]),
         },
     ];
@@ -1203,11 +1203,11 @@ fn text_placement_keeps_the_paired_wire_fields() {
         text: "cadmpeg".into(),
         font_family: "sans".into(),
         font_weight: 400,
-        height: Length(4.0),
+        height: Length::new(4.0).unwrap(),
         width_factor: None,
         placement: Some(TextPlacement {
             anchor: Point2::new(1.0, 2.0),
-            rotation: Angle(0.5),
+            rotation: Angle::new(0.5).unwrap(),
         }),
         horizontal_alignment: None,
         vertical_alignment: None,
@@ -1303,7 +1303,7 @@ fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
         first: 17,
         second: 18,
         difference: 19,
-        value: crate::features::Angle(0.5),
+        value: crate::features::Angle::new(0.5).unwrap(),
     };
     let wire = serde_json::to_value(&angle).unwrap();
     assert_eq!(
@@ -1350,7 +1350,7 @@ fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
             first: 17,
             second: 18,
             difference: 19,
-            value: crate::features::Angle(0.5),
+            value: crate::features::Angle::new(0.5).unwrap(),
         },
         SketchConstraintDefinition::ScalarEquality {
             first: 17,

@@ -161,11 +161,14 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane {
-                origin: Point3::new(0.0, 0.0, 5.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
+                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
             }),
-            distance: Length(4.0),
+            distance: Length::new(4.0).unwrap(),
         },
         native_ref: None,
     }];
@@ -228,7 +231,7 @@ fn generic_native_offset_plane_support_stays_native() {
             reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
                 native.into(),
             ))),
-            distance: Length(4.0),
+            distance: Length::new(4.0).unwrap(),
         },
         native_ref: None,
     }];
@@ -409,7 +412,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         panic!("expected cosmetic thread");
     };
     *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-    *diameter = Some(Length(8.0));
+    *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
     project_unbound_cosmetic_thread_faces(
         &mut features,
         std::slice::from_ref(&history),
@@ -1392,9 +1395,9 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
-                VariableRadius { parameter: 0.0, radius: Length(2.0) },
-                VariableRadius { parameter: 1.0, radius: Length(3.0) },
-            ]) && selections.len() == 1
+                VariableRadius { parameter: 0.0, radius: actual_radius },
+                VariableRadius { parameter: 1.0, radius: actual_radius_2 },
+            ] if actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1531,9 +1534,9 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
-                VariableRadius { parameter: 0.0, radius: Length(2.0) },
-                VariableRadius { parameter: 1.0, radius: Length(3.0) },
-            ]) && selections.len() == 1
+                VariableRadius { parameter: 0.0, radius: actual_radius },
+                VariableRadius { parameter: 1.0, radius: actual_radius_2 },
+            ] if actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1598,9 +1601,9 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
-                VariableRadius { parameter: 0.0, radius: Length(50.0) },
-                VariableRadius { parameter: 1.0, radius: Length(4.0) },
-            ]) && selections.len() == 1
+                VariableRadius { parameter: 0.0, radius: actual_radius },
+                VariableRadius { parameter: 1.0, radius: actual_radius_2 },
+            ] if actual_radius.get() == 50.0 && actual_radius_2.get() == 4.0) && selections.len() == 1
     ));
 
     let mut collision = selection;

@@ -57,18 +57,14 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::DatumCoordinateSystem { origin, .. }
-            if *origin == Point3::new(10.0, 20.0, 30.0)
+        FeatureDefinition::DatumCoordinateSystem { frame }
+            if frame.origin() == Point3::new(10.0, 20.0, 30.0)
     ));
     assert!(matches!(
         &features[1].definition,
-        FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        } if *origin == Point3::new(10.0, 20.0, 30.0)
-            && *normal == Vector3::new(0.0, 0.0, 1.0)
-            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+        FeatureDefinition::DatumPlane { frame } if frame.origin() == Point3::new(10.0, 20.0, 30.0)
+            && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
+            && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
     ));
     assert!(matches!(
         &features[2].definition,
@@ -121,7 +117,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     assert!(matches!(
         factors,
         cadmpeg_ir::features::ScaleFactors::Uniform(uniform)
-            if (*uniform - 2.5).abs() < f64::EPSILON
+            if (uniform.get() - 2.5).abs() < f64::EPSILON
     ));
 }
 
@@ -138,13 +134,9 @@ fn dispatcher_projects_referenced_work_plane_frame() {
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        } if *origin == Point3::new(0.0, 0.0, 0.0)
-            && *normal == Vector3::new(0.0, 0.0, 1.0)
-            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+        FeatureDefinition::DatumPlane { frame } if frame.origin() == Point3::new(0.0, 0.0, 0.0)
+            && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
+            && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
     ));
 }
 
@@ -739,7 +731,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("BaseFlange"),
         FeatureDefinition::SheetMetalBaseFlange {
             profile: ProfileRef::Sketch(neutral_sketch_id(&placement)),
-            thickness: Length(2.0),
+            thickness: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         }
     );
@@ -756,7 +748,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             faces: FaceSelection::Native(scopes[2].id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(Length(0.1)),
+            gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(0.1).unwrap()),
         }
     );
     assert_eq!(
@@ -783,7 +775,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("Thread"),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(Length(3.5)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(3.5).unwrap()),
             extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through),
         }
     );

@@ -472,8 +472,8 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FeatureDefinition, Length, LinearTermination, ProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent,
+        FeatureDefinition, LinearTermination, ProfileRef, RevolutionAxis, RevolveConstruction,
+        RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
@@ -485,7 +485,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(1.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
                 },
                 draft: None,
             },
@@ -501,8 +501,12 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         construction: RevolveConstruction::new(
             Some(ProfileRef::Sketch(SketchId("sketch".into()))),
             Some(RevolutionAxis {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
                 reference: None,
             }),
             Some(RevolveExtent::OneSided {

@@ -21,7 +21,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
             ]))],
             pattern: PatternKind::Linear {
                 direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-                spacing: Length(2.0),
+                spacing: Length::new(2.0).unwrap(),
                 count: 3,
                 second: None,
             },

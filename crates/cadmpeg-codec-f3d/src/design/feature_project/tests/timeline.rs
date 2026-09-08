@@ -751,7 +751,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
     ];
     let rotation = crate::design::feature_project::matrix_axis_angle(&transform)
         .expect("nonidentity rotation");
-    assert!((rotation.angle.0 - angle).abs() <= 1.0e-12);
+    assert!((rotation.angle.get() - angle).abs() <= 1.0e-12);
     assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
     assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
     assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);

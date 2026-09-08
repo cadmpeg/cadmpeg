@@ -1162,7 +1162,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             7,
             SketchGeometry::Circle {
                 center: Point2::new(2.0, -3.0),
-                radius: Length(4.5),
+                radius: Length::new(4.5).unwrap(),
             },
             19,
         ))
@@ -1307,9 +1307,9 @@ fn generated_saved_geometry_forms_closed_profiles() {
             30,
             SketchGeometry::Arc {
                 center: Point2::new(8.0, 8.0),
-                radius: Length(2.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::TAU),
+                radius: Length::new(2.0).unwrap(),
+                start_angle: Angle::ZERO,
+                end_angle: Angle::FULL_TURN,
             },
         ),
     ];
@@ -1400,9 +1400,9 @@ fn saved_arc_joins_through_order_table() {
         saved_section_arc_geometry(&definition, &segment),
         Some(SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(std::f64::consts::PI),
-            end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
     assert_eq!(
@@ -1693,9 +1693,9 @@ fn saved_arc_joins_through_order_table() {
         ),
         Some(SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::ZERO,
+            end_angle: Angle::FULL_TURN,
         })
     );
 }

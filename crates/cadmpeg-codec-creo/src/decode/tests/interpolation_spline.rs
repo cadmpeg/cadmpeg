@@ -282,9 +282,9 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         (
             SketchGeometry::Arc {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(0.5),
-                start_angle: Angle(start_angle),
-                end_angle: Angle(end_angle),
+                radius: Length::new(0.5).unwrap(),
+                start_angle: Angle::new(start_angle).unwrap(),
+                end_angle: Angle::new(end_angle).unwrap(),
             },
             true,
             start,
@@ -343,7 +343,7 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
             ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(8.0)
+                        length: cadmpeg_ir::features::NonZeroLength::new(8.0).unwrap()
                     },
                     draft: None,
                 }
@@ -605,7 +605,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0),
+                        length: actual_length,
                     },
                     ..
                 }
@@ -613,7 +613,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        } if direction == Vector3::new(0.0, 0.0, 1.0)
+        } if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.get() == 6.0
     ));
 }
 
@@ -987,8 +987,8 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             ref construction,
             ..
         }) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }) if (*value - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
+                    termination: AngularTermination::Angle { angle: value },
+                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
     let sketch = SketchId("creo:model:sketch#822".to_string());
@@ -1088,7 +1088,10 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         panic!("named sweep did not resolve the cap extent");
     };
     assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(length, Length(6.0));
+    assert_eq!(
+        length,
+        cadmpeg_ir::features::NonZeroLength::new(6.0).unwrap()
+    );
 }
 
 #[test]
@@ -1272,17 +1275,23 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
         IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap(),
         }
     );
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
         IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap(),
         }
     );
 
@@ -1336,9 +1345,12 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
             "Datum Plane",
         ),
         IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap(),
         }
     );
 }
@@ -1392,9 +1404,12 @@ fn datum_feature_uses_its_unique_complete_local_system() {
             "Datum Plane"
         ),
         IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(3.0, 4.0, 5.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(3.0, 4.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap(),
         }
     );
 }
@@ -1448,10 +1463,13 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
             "PRT_CSYS_DEF"
         ),
         IrFeatureDefinition::DatumCoordinateSystem {
-            origin: Point3::new(5.0, 6.0, 7.0),
-            x_axis: Vector3::new(0.0, 1.0, 0.0),
-            y_axis: Vector3::new(-1.0, 0.0, 0.0),
-            z_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                Point3::new(5.0, 6.0, 7.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap()
         }
     );
 }
@@ -1540,7 +1558,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(1.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
                     },
                     draft: None,
                 },
@@ -1616,7 +1634,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(6.5),
+                    length: cadmpeg_ir::features::NonZeroLength::new(6.5).unwrap(),
                 },
                 draft: None,
             },
@@ -1639,13 +1657,14 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: Vector3::new(0.0, 0.0, -1.0),
+                vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
+                    .unwrap(),
                 source: None,
             },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.5),
+                        length: cadmpeg_ir::features::NonZeroLength::new(6.5).unwrap(),
                     },
                     draft: None,
                 },
@@ -1731,7 +1750,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
         entity,
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         },
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &resolved));
@@ -1848,7 +1867,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         Some((
             [1.0, 0.0, 0.0],
             LinearTermination::Blind {
-                length: Length(3.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap(),
             },
         ))
     );
@@ -1860,7 +1879,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         Some((
             [-0.0, -1.0, -0.0],
             LinearTermination::Blind {
-                length: Length(1.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
             },
         ))
     );
@@ -1881,7 +1900,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: Length(6.5),
+                length: cadmpeg_ir::features::NonZeroLength::new(6.5).unwrap(),
             },
         ))
     );

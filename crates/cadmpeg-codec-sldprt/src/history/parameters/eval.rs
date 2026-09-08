@@ -259,8 +259,8 @@ impl<'a> ParameterExpressionParser<'a> {
 
 pub(crate) fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
     Some(match value {
-        ParameterValue::Length(Length(value)) => ParameterValue::Length(Length(-*value)),
-        ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(-*value)),
+        ParameterValue::Length(value) => ParameterValue::Length(Length::new(-value.get())?),
+        ParameterValue::Angle(value) => ParameterValue::Angle(Angle::new(-value.get())?),
         ParameterValue::Real(value) => ParameterValue::Real(-*value),
         ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_neg()?),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
@@ -274,11 +274,11 @@ pub(crate) fn add_parameter_values(
 ) -> Option<ParameterValue> {
     let sign = if subtract { -1.0 } else { 1.0 };
     Some(match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right))) => {
-            ParameterValue::Length(Length(left + sign * right))
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => {
+            ParameterValue::Length(Length::new(left.get() + sign * right.get())?)
         }
-        (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right))) => {
-            ParameterValue::Angle(Angle(left + sign * right))
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => {
+            ParameterValue::Angle(Angle::new(left.get() + sign * right.get())?)
         }
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => {
             let right = if subtract {
@@ -307,9 +307,9 @@ pub(crate) fn compare_parameter_values(
         return None;
     }
     let ordering = match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right)))
-        | (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right)))
-        | (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left.cmp(right),
         (ParameterValue::Real(left), ParameterValue::Integer(right)) => {
             compare_integer_real(*right, *left)?.reverse()
@@ -388,32 +388,32 @@ pub(crate) fn multiply_parameter_values(
         return None;
     }
     match (left, right) {
-        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right))) if divide => {
-            Some(ParameterValue::Real(left / right))
+        (ParameterValue::Length(left), ParameterValue::Length(right)) if divide => {
+            Some(ParameterValue::Real(left.get() / right.get()))
         }
-        (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right))) if divide => {
-            Some(ParameterValue::Real(left / right))
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) if divide => {
+            Some(ParameterValue::Real(left.get() / right.get()))
         }
-        (ParameterValue::Length(Length(left)), right) => {
-            Some(ParameterValue::Length(Length(if divide {
-                left / real_parameter_value(&right)?
+        (ParameterValue::Length(left), right) => {
+            Some(ParameterValue::Length(Length::new(if divide {
+                left.get() / real_parameter_value(&right)?
             } else {
-                left * real_parameter_value(&right)?
-            })))
+                left.get() * real_parameter_value(&right)?
+            })?))
         }
-        (ParameterValue::Angle(Angle(left)), right) => {
-            Some(ParameterValue::Angle(Angle(if divide {
-                left / real_parameter_value(&right)?
+        (ParameterValue::Angle(left), right) => {
+            Some(ParameterValue::Angle(Angle::new(if divide {
+                left.get() / real_parameter_value(&right)?
             } else {
-                left * real_parameter_value(&right)?
-            })))
+                left.get() * real_parameter_value(&right)?
+            })?))
         }
-        (left, ParameterValue::Length(Length(right))) if !divide => Some(ParameterValue::Length(
-            Length(real_parameter_value(&left)? * right),
+        (left, ParameterValue::Length(right)) if !divide => Some(ParameterValue::Length(
+            Length::new(real_parameter_value(&left)? * right.get())?,
         )),
-        (left, ParameterValue::Angle(Angle(right))) if !divide => Some(ParameterValue::Angle(
-            Angle(real_parameter_value(&left)? * right),
-        )),
+        (left, ParameterValue::Angle(right)) if !divide => Some(ParameterValue::Angle(Angle::new(
+            real_parameter_value(&left)? * right.get(),
+        )?)),
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) if !divide => {
             Some(ParameterValue::Integer(left.checked_mul(right)?))
         }
@@ -493,16 +493,19 @@ pub(crate) fn apply_parameter_function(
     let name = name.to_ascii_lowercase();
     Some(match name.as_str() {
         "abs" => match argument {
-            ParameterValue::Length(Length(value)) => ParameterValue::Length(Length(value.abs())),
-            ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(value.abs())),
+            ParameterValue::Length(value) => {
+                ParameterValue::Length(Length::new(value.get().abs())?)
+            }
+            ParameterValue::Angle(value) => ParameterValue::Angle(Angle::new(value.get().abs())?),
             ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
             ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
             ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
         },
         "sin" | "cos" | "tan" | "sec" | "cosec" | "cotan" => {
-            let ParameterValue::Angle(Angle(angle)) = argument else {
+            let ParameterValue::Angle(angle) = argument else {
                 return None;
             };
+            let angle = angle.get();
             ParameterValue::Real(match name.as_str() {
                 "sin" => angle.sin(),
                 "cos" => angle.cos(),
@@ -515,7 +518,7 @@ pub(crate) fn apply_parameter_function(
         }
         "arcsin" | "arccos" | "atn" | "arcsec" | "arccosec" | "arccotan" => {
             let value = real_parameter_value(argument)?;
-            ParameterValue::Angle(Angle(match name.as_str() {
+            ParameterValue::Angle(Angle::new(match name.as_str() {
                 "arcsin" => value.asin(),
                 "arccos" => value.acos(),
                 "atn" => value.atan(),
@@ -523,7 +526,7 @@ pub(crate) fn apply_parameter_function(
                 "arccosec" => value.recip().asin(),
                 "arccotan" => value.recip().atan(),
                 _ => unreachable!(),
-            }))
+            })?)
         }
         "exp" => ParameterValue::Real(real_parameter_value(argument)?.exp()),
         "log" => ParameterValue::Real(real_parameter_value(argument)?.ln()),
@@ -569,9 +572,9 @@ pub(crate) fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
 
 pub(crate) fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
     match value {
-        ParameterValue::Length(Length(value))
-        | ParameterValue::Angle(Angle(value))
-        | ParameterValue::Real(value) => Some(*value),
+        ParameterValue::Length(value) => Some(value.get()),
+        ParameterValue::Angle(value) => Some(value.get()),
+        ParameterValue::Real(value) => Some(*value),
         ParameterValue::Integer(value) => Some(*value as f64),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => None,
     }

@@ -2327,7 +2327,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
     let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match &group.law {
         crate::records::feature::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0)
             .then_some(RadiusSpec::Constant {
-                radius: Length(radius.value * 10.0),
+                radius: Length::new(radius.value * 10.0)?,
             }),
         crate::records::feature::DesignFixedFilletLaw::Variable {
             start,
@@ -2337,15 +2337,17 @@ pub(crate) fn project_fixed_fillet_with_corners(
             let mut points = Vec::with_capacity(intermediate.len() + 2);
             points.push(VariableRadius {
                 parameter: 0.0,
-                radius: Length(start.value * 10.0),
+                radius: Length::new(start.value * 10.0)?,
             });
-            points.extend(intermediate.iter().map(|row| VariableRadius {
-                parameter: row.parameter.value,
-                radius: Length(row.radius.value * 10.0),
-            }));
+            for row in intermediate {
+                points.push(VariableRadius {
+                    parameter: row.parameter.value,
+                    radius: Length::new(row.radius.value * 10.0)?,
+                });
+            }
             points.push(VariableRadius {
                 parameter: 1.0,
-                radius: Length(end.value * 10.0),
+                radius: Length::new(end.value * 10.0)?,
             });
             Some(RadiusSpec::Variable { points })
         }
@@ -2412,7 +2414,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                     operand.layout.is_compact().then_some(*operand)
                 })
                 .collect::<Option<Vec<_>>>()?;
-            radius_edge_identity_group_candidates(&identities, radius.0)?;
+            radius_edge_identity_group_candidates(&identities, radius.get())?;
             *group
         };
         vec![group]
@@ -2426,7 +2428,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
         .map(|(fixed_group, edge_group)| {
             let radius = radius_spec(fixed_group)?;
             let edge_radius = match radius {
-                RadiusSpec::Constant { radius } => Some(radius.0),
+                RadiusSpec::Constant { radius } => Some(radius.get()),
                 RadiusSpec::Chordal { .. }
                 | RadiusSpec::Asymmetric { .. }
                 | RadiusSpec::Variable { .. }
@@ -2453,7 +2455,9 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 tangency_weight: fixed_group
                     .tangency_weight
                     .as_ref()
-                    .map(|tangency| tangency.value),
+                    .map(|tangency| cadmpeg_ir::features::FiniteReal::try_from(tangency.value))
+                    .transpose()
+                    .ok()?,
             })
         })
         .collect::<Option<Vec<_>>>()?;

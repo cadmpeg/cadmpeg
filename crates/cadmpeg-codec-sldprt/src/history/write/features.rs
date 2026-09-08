@@ -451,7 +451,7 @@ pub fn sync_neutral_features(
         &mut native.feature_input_lanes,
         &changed_parameters,
     )?;
-    let projected_features = project_features_with_native_inputs(native);
+    let projected_features = project_features_with_native_inputs(native)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))

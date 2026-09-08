@@ -150,10 +150,10 @@ fn decode_degrades_nonpositive_feature_dimensions() {
             },
             diameter: None,
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
-                length: cadmpeg_ir::features::Length(5.0),
+                length: actual_length,
             }),
             ..
-        }
+        } if actual_length.get() == 5.0
     ));
     assert!(matches!(
         &decoded.ir().model.features[5].definition,
@@ -211,12 +211,12 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some(_),
                 direction: None,
-                thickness: Some(cadmpeg_ir::features::Length(2.0)),
+                thickness: Some(actual_thickness),
                 side: Some(cadmpeg_ir::features::RibSide::OneSided),
                 draft: cadmpeg_ir::features::RibDraft::None,
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }
+        } if actual_thickness.get() == 2.0
     ));
     assert!(matches!(
         &decoded.ir().model.features[3].definition,

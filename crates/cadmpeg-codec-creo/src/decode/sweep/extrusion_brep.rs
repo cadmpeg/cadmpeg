@@ -291,7 +291,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                     transform.u_axis[1],
                                     transform.u_axis[2],
                                 ),
-                                radius: radius.0,
+                                radius: radius.get(),
                             }
                         }
                         SketchGeometry::Nurbs { .. } => {
@@ -330,7 +330,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             end_angle,
                             ..
                         } => Some(
-                            oriented_arc_parameterization(*reversed, start_angle.0, end_angle.0).1,
+                            oriented_arc_parameterization(
+                                *reversed,
+                                start_angle.get(),
+                                end_angle.get(),
+                            )
+                            .1,
                         ),
                         SketchGeometry::Circle { .. } => Some(
                             oriented_arc_parameterization(*reversed, 0.0, std::f64::consts::TAU).1,

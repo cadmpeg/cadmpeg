@@ -233,7 +233,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         section_generated_profile_surface_kinds(&SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
+            radius: Length::new(3.0).unwrap(),
         }),
         Some(&[crate::surface::SurfaceKind::Cylinder][..])
     );
@@ -792,17 +792,17 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         IrFeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: Angle(angle),
+                    drill_point_angle: angle,
                 },
                 ..
             },
-            diameter: Some(Length(8.4)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::Blind {
-                length: Length(25.0),
+                length: actual_length,
             }),
             bottom: None,
             ..
-        } if approximately_equal(angle, drill_point_angle)
+        } if (approximately_equal(angle.get(), drill_point_angle)) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0
     ));
 
     let compact_entry =
@@ -1129,8 +1129,9 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
         Some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         })
     );
     let mut conflicting_patch = existing.clone();
@@ -1188,8 +1189,9 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     assert_eq!(
         counterbore_support_axis_placement(9, &table, &rows, std::slice::from_ref(&frame)),
         Some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(2.0, 3.0, 4.0),
-            axis: Vector3::new(0.0, -1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, -1.0, 0.0))
+                .unwrap(),
         })
     );
     assert!(
@@ -1225,8 +1227,9 @@ fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
     assert_eq!(
         simple_drilled_axis_placement_from_frames(&[first, shifted], 0.5),
         Some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(2.0, -3.0, 4.0),
-            axis: Vector3::new(1.0, 0.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, -3.0, 4.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         })
     );
     assert!(simple_drilled_axis_placement_from_frames(&[], 0.5).is_none());
@@ -1258,7 +1261,7 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
             Point3::new(0.0, 2.625, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
             LinearTermination::Blind {
-                length: Length(1.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
             },
         ))
     );
@@ -1291,7 +1294,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
         LinearTermination::Blind {
-            length: Length(57.0),
+            length: cadmpeg_ir::features::NonZeroLength::new(57.0).unwrap(),
         },
     ));
     assert_eq!(
@@ -1322,7 +1325,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
             Point3::new(265.0, 200.0, -185.0),
             Vector3::new(-1.0, 0.0, 0.0),
             LinearTermination::Blind {
-                length: Length(40.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(40.0).unwrap(),
             },
         ))
     );
@@ -1787,9 +1790,9 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
 fn extrusion_profile_area_includes_oriented_arc_sector() {
     let arc = SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(1.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(1.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(std::f64::consts::PI).unwrap(),
     };
     let line = SketchGeometry::Line {
         start: Point2::new(-1.0, 0.0),
@@ -1822,9 +1825,9 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
     let profile = vec![(
         SketchGeometry::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::ZERO,
+            end_angle: Angle::FULL_TURN,
         },
         false,
         [2.0, 0.0],
@@ -1850,7 +1853,7 @@ fn circle_remains_a_closed_extrusion_profile() {
     let entity_id = SketchEntityId("creo:model:sketch_entity#circle".to_string());
     let circle = SketchGeometry::Circle {
         center: Point2::new(1.0, -2.0),
-        radius: Length(3.0),
+        radius: Length::new(3.0).unwrap(),
     };
     let seam = [4.0, -2.0];
     let mut ir = CadIr::empty();

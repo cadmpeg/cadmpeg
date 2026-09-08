@@ -113,7 +113,7 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
         sketch_id.clone(),
         SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     )
     .with_native_ref(Some(marker_ref.into()))

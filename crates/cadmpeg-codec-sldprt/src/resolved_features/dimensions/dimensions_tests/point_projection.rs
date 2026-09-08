@@ -104,7 +104,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -125,14 +125,15 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
         entities.get(1).map(|entity| &entity.geometry),
         Some(SketchGeometry::Circle {
             center,
-            radius: Length(2.0)
-        }) if *center == Point2::new(1.0, 2.0)
+            radius: actual_radius
+        }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
     ));
 
     let mut classless_lane = lane.clone();
@@ -143,13 +144,14 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&classless_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         classless_entities.get(1).map(|entity| &entity.geometry),
         Some(SketchGeometry::Circle {
             center,
-            radius: Length(2.0)
-        }) if *center == Point2::new(1.0, 2.0)
+            radius: actual_radius
+        }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
     ));
 
     let mut object_index_lane = lane.clone();
@@ -165,12 +167,13 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&object_index_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         object_index_entities.get(1).map(|entity| &entity.geometry),
         Some(SketchGeometry::Circle {
             center,
-            radius: Length(2.0)
-        }) if *center == Point2::new(1.0, 2.0)
+            radius: actual_radius
+        }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
     ));
 }

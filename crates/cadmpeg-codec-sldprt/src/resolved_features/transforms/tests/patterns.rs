@@ -413,7 +413,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 seeds: Vec::new(),
                 pattern: PatternKind::CurveDriven {
                     path: None,
-                    spacing: Length(5.0),
+                    spacing: Length::new(5.0).unwrap(),
                     count: 3,
                 },
             },
@@ -439,7 +439,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
         features[0].definition,
@@ -457,7 +458,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
         features[0].definition,
@@ -493,7 +495,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&history),
         &[ambiguous_lane],
-    );
+    )
+    .unwrap();
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Pattern {
@@ -509,7 +512,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         seeds: Vec::new(),
         pattern: PatternKind::Linear {
             direction: None,
-            spacing: Length(5.0),
+            spacing: Length::new(5.0).unwrap(),
             count: 3,
             second: None,
         },
@@ -518,7 +521,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
         panic!("expected pattern");
     };
@@ -547,7 +551,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Pattern {
@@ -584,7 +589,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         seeds: Vec::new(),
         pattern: PatternKind::Linear {
             direction: None,
-            spacing: Length(5.0),
+            spacing: Length::new(5.0).unwrap(),
             count: 3,
             second: None,
         },
@@ -593,7 +598,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Pattern {
@@ -635,19 +641,20 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: PatternKind::Linear {
                 direction: Some(Vector3 { x, y, z }),
-                spacing: Length(19.0),
+                spacing: actual_spacing,
                 count: 3,
                 ..
             },
-        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && x == -1.0 && y == 0.0 && z == 0.0
+        } if (seeds == &[PatternSeed::Feature(features[2].id.clone())]
+            && x == -1.0 && y == 0.0 && z == 0.0) && actual_spacing.get() == 19.0
     ));
 
     let mut mirror_history = history.clone();
@@ -700,7 +707,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
-    );
+    )
+    .unwrap();
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
     assert!(matches!(
         features[0].definition,
@@ -727,7 +735,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Pattern {
@@ -747,7 +756,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Pattern {
@@ -1007,7 +1017,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         name: id.into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -1191,7 +1201,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         name: "D1".into(),
         expression: "30mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(30.0))),
+        value: Some(ParameterValue::Length(Length::new(30.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -1370,7 +1380,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         name: "D1".into(),
         expression: "15mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(15.0))),
+        value: Some(ParameterValue::Length(Length::new(15.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -1529,7 +1539,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         name: id.into(),
         expression: format!("{distance}mm"),
         display: None,
-        value: Some(ParameterValue::Length(Length(distance))),
+        value: Some(ParameterValue::Length(Length::new(distance).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,

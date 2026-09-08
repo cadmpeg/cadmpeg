@@ -1020,7 +1020,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(group_id.into()),
             center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors::Uniform(1.5),
+            factors: ScaleFactors::Uniform(cadmpeg_ir::features::NonZeroReal::new(1.5).unwrap()),
         },
     );
     feature.native_ref = Some(scale_scope.id.clone());
@@ -1061,7 +1061,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
-            translation: cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+                1.0, 2.0, 3.0,
+            ))
+            .unwrap(),
             rotation: None,
             copies: 0,
         },
@@ -1791,7 +1794,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     use crate::records::topology::DesignEntitySelectionFaceCandidate;
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
-        Length, LinearTermination,
+        LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1864,14 +1867,18 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             face: Some(FaceSelection::Native(scope_id.into())),
             direction: None,
             placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
-                position: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
             }]),
             construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,
-            diameter: Some(Length(5.0)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
             extent: Some(LinearTermination::Blind {
-                length: Length(10.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
             }),
             bottom: None,
             taper_angle: None,

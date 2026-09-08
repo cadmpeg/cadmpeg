@@ -9,7 +9,7 @@ use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled
 use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -304,7 +304,7 @@ pub(in super::super) fn ordered_parallel_cap_extent(
     (signed_length.abs() > EPS_SIGNED_LENGTH * scale).then_some(())?;
     Some((
         ExtrudeExtent::OneSided {
-            side: blind_extrude_side(signed_length.abs()),
+            side: blind_extrude_side(signed_length.abs())?,
         },
         start
             .normal
@@ -413,7 +413,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(length),
+                    length: cadmpeg_ir::features::NonZeroLength::new(length)?,
                 },
                 draft: None,
             },

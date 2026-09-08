@@ -53,7 +53,7 @@ fn binary_relations_require_matching_evaluated_geometry() {
             id,
             SketchGeometry::Circle {
                 center: Point2::new(u, v),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             },
         )
     };
@@ -124,9 +124,9 @@ fn locus_relations_require_matching_evaluated_geometry() {
         "arc",
         SketchGeometry::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: cadmpeg_ir::features::Angle(0.0),
-            end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         },
     );
     let symmetric_first = entity(
@@ -407,9 +407,9 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     arc.geometry = SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length(1.0),
-        start_angle: cadmpeg_ir::features::Angle(0.0),
-        end_angle: cadmpeg_ir::features::Angle(std::f64::consts::PI),
+        radius: Length::new(1.0).unwrap(),
+        start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::PI).unwrap(),
     };
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -455,7 +455,7 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -515,7 +515,7 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -569,7 +569,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -675,7 +675,9 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "90deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        )),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,
@@ -794,7 +796,7 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         name: "D1".into(),
         expression: "5mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
         dependencies: Vec::new(),
         properties: BTreeMap::new(),
         pmi: None,

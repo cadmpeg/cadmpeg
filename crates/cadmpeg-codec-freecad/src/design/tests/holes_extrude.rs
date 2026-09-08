@@ -4,7 +4,7 @@
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
+    BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
     InnerWireTaper, Length, LinearTermination, PathRef,
 };
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -90,20 +90,16 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert_eq!(
         *profile_filter,
-        Some(cadmpeg_ir::features::HoleProfileFilter {
-            points: true,
-            circles: true,
-            arcs: true,
-        })
+        Some(cadmpeg_ir::features::HoleProfileFilter::All)
     );
     assert!(matches!(
         kind,
         cadmpeg_ir::features::HoleKind::Counterdrill {
-            diameter: cadmpeg_ir::features::Length(12.0),
+            diameter: actual_diameter,
             entry_diameter: None,
-            depth: cadmpeg_ir::features::Length(2.0),
-            angle: cadmpeg_ir::features::Angle(angle),
-        } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+            depth: actual_depth,
+            angle,
+        } if ((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_diameter.get() == 12.0 && actual_depth.get() == 2.0
     ));
     assert!(matches!(
         extent,
@@ -139,8 +135,8 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     assert!(matches!(
         depth,
         cadmpeg_ir::features::HoleThreadDepth::Blind {
-            depth: cadmpeg_ir::features::Length(12.0)
-        }
+            depth: actual_depth
+        } if actual_depth.get() == 12.0
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -202,21 +198,17 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
     assert!(matches!(
         definition(&absent, "Hole"),
         FeatureDefinition::Hole {
-            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter {
-                points: false,
-                circles: true,
-                arcs: true,
-            }),
+            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::CirclesAndArcs),
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Simple,
                 specification: None,
             },
             extent: Some(LinearTermination::Blind {
-                length: Length(25.0),
+                length: actual_length,
             }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
             ..
-        }
+        } if actual_length.get() == 25.0
     ));
     assert!(absent.report().losses.is_empty());
 
@@ -559,11 +551,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
-                Some(cadmpeg_ir::features::HoleProfileFilter {
-                    points: false,
-                    circles: true,
-                    arcs: true,
-                })
+                Some(cadmpeg_ir::features::HoleProfileFilter::CirclesAndArcs)
             ),
             _ => unreachable!(),
         }
@@ -655,15 +643,11 @@ fn distinguishes_absent_and_malformed_hole_flags() {
                 })
             )),
             "Tapered" => assert!(taper_angle.is_some()),
-            "UseCustomThreadClearance" => assert_eq!(clearance, Some(Length(0.2))),
+            "UseCustomThreadClearance" => assert_eq!(clearance, Some(Length::new(0.2).unwrap())),
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
-                Some(cadmpeg_ir::features::HoleProfileFilter {
-                    points: true,
-                    circles: false,
-                    arcs: false,
-                })
+                Some(cadmpeg_ir::features::HoleProfileFilter::Points)
             ),
             _ => unreachable!(),
         }
@@ -741,11 +725,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     assert!(matches!(
         definition(&high_bits),
         FeatureDefinition::Hole {
-            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter {
-                points: true,
-                circles: true,
-                arcs: false,
-            }),
+            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::PointsAndCircles),
             ..
         }
     ));
@@ -786,13 +766,13 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
         FeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Counterbore {
-                    diameter: cadmpeg_ir::features::Length(6.0),
-                    depth: cadmpeg_ir::features::Length(5.0),
+                    diameter: actual_diameter,
+                    depth: actual_depth,
                 },
                 ..
             },
             ..
-        }
+        } if actual_diameter.get() == 6.0 && actual_depth.get() == 5.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -912,14 +892,14 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
-                        offset: Some(Length(2.5)),
+                        offset: Some(actual_offset),
                         ..
                     },
                     ..
                 }
             },
             ..
-        }
+        } if actual_offset.get() == 2.5
     ));
     assert!(matches!(
         definition("ToShape"),
@@ -956,12 +936,12 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length },
-                    draft: Some(Angle(draft)),
+                    draft: Some(draft),
                     ..
                 }
             },
             ..
-        } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1.0e-12
+        } if direction.z == -1.0 && length.get() == 12.0 && (draft.get() - 5_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("PartExtrusion"),
@@ -976,12 +956,12 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind { length: first },
-                    draft: Some(Angle(draft)),
+                    draft: Some(draft),
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind { length: second },
-                    draft: Some(Angle(reverse_draft)),
+                    draft: Some(reverse_draft),
                     ..
                 },
             },
@@ -990,9 +970,9 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
             ..
-        } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
-            && (*draft - 2_f64.to_radians()).abs() < 1.0e-12
-            && (*reverse_draft - 4_f64.to_radians()).abs() < 1.0e-12
+        } if direction.y == 1.0 && first.get() == 7.0 && second.get() == 3.0
+            && (draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (reverse_draft.get() - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
             && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
     ));
@@ -1010,7 +990,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        } if direction.z == -1.0 && length.0 == 5.0
+        } if direction.z == -1.0 && length.get() == 5.0
     ));
 }
 
@@ -1111,13 +1091,13 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind { length },
-                    draft: Some(cadmpeg_ir::features::Angle(draft)),
+                    draft: Some(draft),
                     ..
                 }
             },
             solid: Some(false),
             ..
-        } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1.0e-12
+        } if length.get() == 12.0 && (draft.get() - 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1165,13 +1145,13 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(5.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             ..
-        } if direction.z == 1.0
+        } if (direction.z == 1.0) && actual_length.get() == 5.0
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1347,12 +1327,12 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(-5.0) },
-                    draft: Some(Angle(first_draft)),
+                    termination: LinearTermination::Blind { length: actual_length },
+                    draft: Some(first_draft),
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::ToShape { .. },
-                    draft: Some(Angle(second_draft)),
+                    draft: Some(second_draft),
                 },
             },
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
@@ -1364,10 +1344,10 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             length_along_profile_normal: Some(false),
             allow_multi_profile_faces: Some(true),
             ..
-        } if direction.y == 1.0
+        } if (direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
-            && (*first_draft - 2_f64.to_radians()).abs() < 1.0e-12
-            && (*second_draft + 3_f64.to_radians()).abs() < 1.0e-12
+            && (first_draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (second_draft.get() + 3_f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == -5.0
     ));
     assert!(matches!(
         definition("Symmetric"),
@@ -1387,19 +1367,19 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0)
+                        length: actual_length
                     },
                     ..
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0)
+                        length: actual_length_2
                     },
                     ..
                 },
             },
             ..
-        }
+        } if actual_length.get() == 6.0 && actual_length_2.get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1463,13 +1443,13 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: Length(6.0)
+                                length: actual_length
                             },
                             ..
                         }
                     },
                     ..
-                }
+                } if actual_length.get() == 6.0
             ));
         } else {
             assert!(matches!(
@@ -1921,14 +1901,14 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(10.0)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }
+        } if actual_length.get() == 10.0
     ));
     assert!(matches!(
         pocket.definition,
@@ -1936,14 +1916,14 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::features::Length(2.5)
+                        length: actual_length
                     },
                     ..
                 }
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }
+        } if actual_length.get() == 2.5
     ));
     let native_findings = crate::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");

@@ -13,7 +13,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, LinearTermination};
+use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, LinearTermination};
 use cadmpeg_ir::WritePath;
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
@@ -317,8 +317,12 @@ fn fixtures_survive_the_semantic_write_path() {
 const MUTATION_MM: f64 = 3.0;
 
 /// Every statement of a one-sided blind extrusion depth in `ir`.
-fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
-    fn depth(definition: &mut FeatureDefinition) -> Option<&mut Length> {
+fn blind_extrude_lengths(
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Vec<&mut cadmpeg_ir::features::NonZeroLength> {
+    fn depth(
+        definition: &mut FeatureDefinition,
+    ) -> Option<&mut cadmpeg_ir::features::NonZeroLength> {
         let FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided { side },
             ..
@@ -361,7 +365,8 @@ fn an_edited_depth_survives_the_semantic_write_path() {
                     return false;
                 }
                 for depth in depths {
-                    depth.0 += MUTATION_MM;
+                    *depth = cadmpeg_ir::features::NonZeroLength::new(depth.get() + MUTATION_MM)
+                        .unwrap();
                 }
                 true
             },
@@ -418,7 +423,7 @@ fn an_edited_depth_survives_the_semantic_write_path() {
 fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
     blind_extrude_lengths(ir)
         .into_iter()
-        .map(|length| length.0)
+        .map(|length| length.get())
         .collect()
 }
 

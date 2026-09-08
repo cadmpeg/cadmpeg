@@ -180,7 +180,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         sketch.clone(),
         SketchGeometry::Circle {
             center: Point2::new(20.0, 20.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     );
     let mut radial_entities = entities.to_vec();
@@ -561,7 +561,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         sketch.clone(),
         SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         },
     );
     let retained = project_dimension_constraints(
@@ -1025,7 +1025,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             sketch.clone(),
             SketchGeometry::Circle {
                 center,
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             },
         )
     };

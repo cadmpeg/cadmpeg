@@ -20,49 +20,49 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
     assert!(matches!(
         entities[0].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Arc {
-            start_angle: cadmpeg_ir::features::Angle(start),
-            end_angle: cadmpeg_ir::features::Angle(end),
+            start_angle: start,
+            end_angle: end,
             ..
-        } if (start - 0.65).abs() < 1.0e-12 && (end - 1.83).abs() < 1.0e-12
+        } if (start.get() - 0.65).abs() < 1.0e-12 && (end.get() - 1.83).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[3].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: Some([
-                cadmpeg_ir::features::Angle(start),
-                cadmpeg_ir::features::Angle(end),
+                start,
+                end,
             ]),
             ..
-        } if (angle - 0.53).abs() < 1.0e-12
-            && (start - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
-            && (end - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
+        } if (angle.get() - 0.53).abs() < 1.0e-12
+            && (start.get() - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
+            && (end.get() - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[4].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: None,
             ..
-        } if (angle - 0.71).abs() < 1.0e-12
+        } if (angle.get() - 0.71).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[5].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: Some([start, end]),
             ..
-        } if (angle - 0.47).abs() < 1.0e-12
+        } if (angle.get() - 0.47).abs() < 1.0e-12
             && (start + 0.63).abs() < 1.0e-12
             && (end - 0.88).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[6].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Parabola {
-            axis_angle: cadmpeg_ir::features::Angle(angle),
+            axis_angle: angle,
             bounds: Some([start, end]),
             ..
-        } if (angle - 0.67).abs() < 1.0e-12
+        } if (angle.get() - 0.67).abs() < 1.0e-12
             && (start + 2.1).abs() < 1.0e-12
             && (end - 2.4).abs() < 1.0e-12
     ));
@@ -560,20 +560,20 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
     assert!(matches!(
         entities[1].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: None,
             ..
-        } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        } if (angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[2].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
             bounds: Some([
-                cadmpeg_ir::features::Angle(0.5),
-                cadmpeg_ir::features::Angle(1.5),
+                actual_bounds,
+                actual_bounds_2,
             ]),
             ..
-        }
+        } if actual_bounds.get() == 0.5 && actual_bounds_2.get() == 1.5
     ));
     assert!(matches!(
         entities[3].geometry,
@@ -627,26 +627,26 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
     assert!(matches!(
         entities[2].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Parabola {
-            focal_length: cadmpeg_ir::features::Length(2.0),
+            focal_length: actual_focal_length,
             bounds: None,
             ..
-        }
+        } if actual_focal_length.get() == 2.0
     ));
     assert!(matches!(
         entities[3].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Parabola {
-            focal_length: cadmpeg_ir::features::Length(2.5),
+            focal_length: actual_focal_length,
             bounds: Some([-2.0, 3.0]),
             ..
-        }
+        } if actual_focal_length.get() == 2.5
     ));
     assert!(matches!(
         entities[4].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Arc {
-            start_angle: cadmpeg_ir::features::Angle(start),
-            end_angle: cadmpeg_ir::features::Angle(end),
+            start_angle: start,
+            end_angle: end,
             ..
-        } if (start - 0.8).abs() < 1.0e-12 && (end - 1.8).abs() < 1.0e-12
+        } if (start.get() - 0.8).abs() < 1.0e-12 && (end.get() - 1.8).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[5].geometry,

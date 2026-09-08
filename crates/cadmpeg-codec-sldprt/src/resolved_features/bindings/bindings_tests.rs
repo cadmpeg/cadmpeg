@@ -497,7 +497,8 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         features[0].dependencies,
@@ -613,7 +614,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_ref: Some("pattern-native".into()),
     }];
 
-    bind_pattern_inputs(&mut features, std::slice::from_ref(&history), &[lane]);
+    bind_pattern_inputs(&mut features, std::slice::from_ref(&history), &[lane]).unwrap();
 
     assert!(matches!(
         &features[0].definition,
@@ -627,7 +628,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
             ..
         } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
-            && angle.0 == std::f64::consts::FRAC_PI_2
+            && angle.get() == std::f64::consts::FRAC_PI_2
             && *count == 4
     ));
 }

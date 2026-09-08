@@ -18,7 +18,7 @@ fn zero_count_composite_stage_is_compositionally_invalid() {
         crate::features::PatternStage {
             pattern: Box::new(PatternKind::Linear {
                 direction: None,
-                spacing: Length(1.0),
+                spacing: Length::new(1.0).unwrap(),
                 count: 1,
                 second: None,
             }),
@@ -46,7 +46,7 @@ fn unresolved_composite_count_can_feed_a_cartesian_stage() {
         crate::features::PatternStage {
             pattern: Box::new(PatternKind::Linear {
                 direction: None,
-                spacing: Length(1.0),
+                spacing: Length::new(1.0).unwrap(),
                 count: 2,
                 second: None,
             }),
@@ -130,7 +130,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
-            position: crate::math::Point3::new(1.0, 2.0, 3.0),
+            position: crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0))
+                .unwrap(),
             construction: Some(Box::new(DatumPointConstruction::Vertex {
                 vertex: VertexSelection::Historical {
                     state: state_id.clone(),
@@ -237,9 +238,13 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumThreePointPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            frame: crate::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+
             points: Box::new([
                 historical(&first_state, &vertices[0], "native:1"),
                 historical(&first_state, &vertices[1], "native:2"),
@@ -288,7 +293,7 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
 #[test]
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         LinearTermination, PathRef, ProfileRef,
     };
     use crate::sketches::SketchId;
@@ -302,7 +307,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(10.0),
+                        length: crate::features::NonZeroLength::new(10.0).unwrap(),
                     },
                     draft: None,
                 },
@@ -651,16 +656,19 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         0,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(principal.clone())),
-            distance: Length(5.0),
+            distance: Length::new(5.0).unwrap(),
         },
     ));
     ir.model.features.push(feature(
         principal.as_str(),
         1,
         FeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            frame: crate::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         },
     ));
     ir.finalize();
@@ -674,169 +682,13 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     let offset = ir.model.features[0].id.clone();
     ir.model.features[1].definition = FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Feature(offset)),
-        distance: Length(5.0),
+        distance: Length::new(5.0).unwrap(),
     };
     let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
-}
-
-#[test]
-fn feature_extent_magnitudes_are_validated() {
-    use crate::features::{
-        Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureId, Length, LinearTermination, ProfileRef, RevolveConstruction,
-        RevolveExtent,
-    };
-
-    let side = |termination: LinearTermination| ExtrudeSide {
-        termination,
-        draft: None,
-    };
-    for extent in [
-        ExtrudeExtent::OneSided {
-            side: side(LinearTermination::Blind {
-                length: Length(0.0),
-            }),
-        },
-        ExtrudeExtent::TwoSided {
-            first: side(LinearTermination::Blind {
-                length: Length(1.0),
-            }),
-            second: side(LinearTermination::Blind {
-                length: Length(f64::NAN),
-            }),
-        },
-    ] {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#invalid-extent").expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Extrude {
-                profile: ProfileRef::Native("profile".into()),
-                direction: ExtrudeDirection::ProfileNormal,
-                start: crate::features::ExtrudeStart::ProfilePlane,
-                extent,
-                op: BooleanOp::NewBody,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
-            },
-            native_ref: None,
-        });
-        assert!(validate_neutral(&ir, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message == "feature extent magnitude is invalid"));
-    }
-
-    let mut ir = unit_cube();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#invalid-angle").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Revolve {
-            construction: RevolveConstruction::new(
-                None,
-                None,
-                Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(-1.0) },
-                }),
-                None,
-                None,
-                None,
-                None,
-            ),
-            op: BooleanOp::NewBody,
-        },
-        native_ref: None,
-    });
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "feature extent magnitude is invalid"));
-}
-
-#[test]
-fn block_placement_must_be_proper_rigid() {
-    use crate::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
-
-    let rotated = crate::transform::Transform::from_rows([
-        [0.0, -1.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ])
-    .expect("affine transform");
-    assert!(rotated.is_proper_rigid());
-
-    for placement in [
-        crate::transform::Transform::from_rows([
-            [2.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-        crate::transform::Transform::from_rows([
-            [1.0, 0.25, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-        crate::transform::Transform::from_rows([
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        .expect("affine transform"),
-    ] {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#invalid-block-placement")
-                .expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Block {
-                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-                placement: Some(placement),
-                op: BooleanOp::NewBody,
-            },
-            native_ref: None,
-        });
-        assert!(validate_neutral(&ir, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message == "block placement is invalid"));
-    }
 }
 
 #[test]
@@ -863,7 +715,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
+            position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,
         },
         native_ref: None,
@@ -980,23 +832,6 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .any(|finding| {
             finding.message == "configuration generated termination vertex is invalid"
         }));
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&extrude)
-        .expect("configured extrude");
-    let FeatureDefinition::Extrude { extent, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    let ExtrudeExtent::OneSided { side } = extent else {
-        unreachable!()
-    };
-    side.termination = LinearTermination::Blind {
-        length: crate::features::Length(f64::NAN),
-    };
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "configuration feature extent magnitude is invalid" }));
 }
 
 #[test]
@@ -1054,7 +889,7 @@ fn feature_operand_roles_must_be_disjoint() {
             first_faces: FaceSelection::Faces(vec![face.clone()]),
             second_faces: FaceSelection::Faces(vec![face]),
             radius: RadiusSpec::Constant {
-                radius: Length(1.0),
+                radius: Length::new(1.0).unwrap(),
             },
         },
         FeatureDefinition::TrimBodies {
@@ -1129,7 +964,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
+            position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,
         },
         native_ref: None,
@@ -1208,9 +1043,12 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             source.clone(),
             0,
             FeatureDefinition::DatumPlane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
+                frame: crate::features::FeatureDatumPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
             },
         ),
         feature(
@@ -1218,7 +1056,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             1,
             FeatureDefinition::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature(source.clone())),
-                distance: Length(5.0),
+                distance: Length::new(5.0).unwrap(),
             },
         ),
         feature(
@@ -1268,7 +1106,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length(5.0),
+                            length: crate::features::NonZeroLength::new(5.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1363,204 +1201,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         .expect("block-instance state")
         .dependencies
         .push(block);
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&offset)
-        .expect("offset-plane state");
-    let FeatureDefinition::DatumOffsetPlane { distance, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    *distance = Length(f64::NAN);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| { finding.message == "configuration datum-plane offset is invalid" }));
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&offset)
-        .expect("offset-plane state");
-    let FeatureDefinition::DatumOffsetPlane { distance, .. } = &mut state.definition else {
-        unreachable!()
-    };
-    *distance = Length(5.0);
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
-}
-
-#[test]
-fn resolved_datum_geometry_must_be_finite_and_coherent() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId};
-
-    let definitions = [
-        FeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 1.0),
-        },
-        FeatureDefinition::DatumAxis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 0.0),
-        },
-        FeatureDefinition::DatumPoint {
-            position: Point3::new(f64::NAN, 0.0, 0.0),
-            construction: None,
-        },
-        FeatureDefinition::DatumPoint {
-            position: Point3::new(0.0, 0.0, 0.0),
-            construction: Some(Box::new(
-                crate::features::DatumPointConstruction::DistanceOnEdge {
-                    edge: crate::features::EdgeSelection::Unresolved,
-                    fraction: 1.5,
-                },
-            )),
-        },
-    ];
-    let mut ir = unit_cube();
-    for (ordinal, definition) in definitions.into_iter().enumerate() {
-        ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#invalid-datum-{ordinal}"))
-                .expect("identity grammar"),
-            ordinal: ordinal as u64,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: None,
-        });
-    }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    for message in [
-        "datum-plane frame is invalid",
-        "datum-axis frame is invalid",
-        "datum-point position is invalid",
-        "datum-point path fraction is invalid",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
-}
-
-#[test]
-fn explicit_extrusion_direction_must_be_nonzero() {
-    use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        LinearTermination, ProfileRef,
-    };
-
-    let mut ir = unit_cube();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#invalid-extrude-direction")
-            .expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Native("profile".into()),
-            direction: ExtrudeDirection::Explicit {
-                vector: Vector3::new(0.0, 0.0, 0.0),
-                source: None,
-            },
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: Length(1.0),
-                    },
-                    draft: None,
-                },
-            },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
-        native_ref: None,
-    });
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "extrusion direction is invalid"));
-}
-
-#[test]
-fn extrusion_side_drafts_are_validated() {
-    use crate::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, LinearTermination, ProfileRef,
-    };
-
-    let side = |length: f64, draft: Option<Angle>| ExtrudeSide {
-        termination: LinearTermination::Blind {
-            length: Length(length),
-        },
-        draft,
-    };
-    for (extent, expected_invalid) in [
-        (
-            ExtrudeExtent::TwoSided {
-                first: side(1.0, None),
-                second: side(2.0, Some(Angle(0.25))),
-            },
-            false,
-        ),
-        (
-            ExtrudeExtent::TwoSided {
-                first: side(1.0, None),
-                second: side(2.0, Some(Angle(f64::NAN))),
-            },
-            true,
-        ),
-        (
-            ExtrudeExtent::Symmetric {
-                side: side(1.0, Some(Angle(std::f64::consts::FRAC_PI_2))),
-            },
-            true,
-        ),
-    ] {
-        let mut ir = unit_cube();
-        ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#side-draft").expect("identity grammar"),
-            ordinal: 0,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Extrude {
-                profile: ProfileRef::Native("profile".into()),
-                direction: ExtrudeDirection::ProfileNormal,
-                start: crate::features::ExtrudeStart::ProfilePlane,
-                extent,
-                op: BooleanOp::NewBody,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
-            },
-            native_ref: None,
-        });
-        let has_draft_finding = validate_neutral(&ir, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message == "extrusion draft is invalid");
-        assert_eq!(has_draft_finding, expected_invalid);
-    }
 }
 
 #[test]
@@ -1680,11 +1322,18 @@ fn reference_images_require_valid_assets_and_plane_placements() {
             visible: true,
             mirror_u: false,
             mirror_v: false,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            v_axis: Vector3::new(0.0, 1.0, 0.0),
-            bounds: [Point2::new(-10.0, -5.0), Point2::new(10.0, 5.0)],
-            opacity: Some(0.75),
+            frame: crate::features::FeatureUnitPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+            bounds: crate::features::FeatureImageBounds::new([
+                Point2::new(-10.0, -5.0),
+                Point2::new(10.0, 5.0),
+            ])
+            .unwrap(),
+            opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
         },
         native_ref: None,
     });
@@ -1700,17 +1349,6 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message.contains("reference-image asset")
-    }));
-
-    let FeatureDefinition::ReferenceImage { ref mut v_axis, .. } = ir.model.features[0].definition
-    else {
-        unreachable!();
-    };
-    *v_axis = Vector3::new(1.0, 0.0, 0.0);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.as_str())
-            && finding.message == "reference-image placement is invalid"
     }));
 }
 
@@ -1747,23 +1385,10 @@ fn decals_require_valid_assets_faces_and_opacity() {
             asset: asset_id,
             faces: FaceSelection::Faces(vec![face_id]),
             mapping: DecalMapping::FitToFaces,
-            opacity: Some(0.75),
+            opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
         },
         native_ref: None,
     });
     ir.finalize();
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
-
-    let FeatureDefinition::Decal {
-        ref mut opacity, ..
-    } = ir.model.features.last_mut().unwrap().definition
-    else {
-        unreachable!();
-    };
-    *opacity = Some(2.0);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.as_str())
-            && finding.message == "decal opacity is invalid"
-    }));
 }

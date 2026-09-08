@@ -338,7 +338,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             displacement.y - reference.1.y * signed_distance / reference_normal_length,
             displacement.z - reference.1.z * signed_distance / reference_normal_length,
         );
-        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.0.abs())
+        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.get().abs())
     };
     let ordinals = features
         .iter()
@@ -351,11 +351,9 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                         FeatureDefinition::DatumPrincipalPlane { plane } => {
                             Some(principal_frame(plane))
                         }
-                        FeatureDefinition::DatumPlane {
-                            origin,
-                            normal,
-                            u_axis,
-                        } => Some((origin, normal, u_axis)),
+                        FeatureDefinition::DatumPlane { frame } => {
+                            Some((frame.origin(), frame.normal(), frame.u_axis()))
+                        }
                         FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
                         _ => None,
                     },
@@ -385,7 +383,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             else {
                 return None;
             };
-            same_scalar(distance.0, 0.0).then_some((feature.id.clone(), reference.clone()))
+            same_scalar(distance.get(), 0.0).then_some((feature.id.clone(), reference.clone()))
         })
         .collect::<HashMap<_, _>>();
     let canonical_plane_id = |id: &str| {
@@ -467,11 +465,9 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         .filter_map(|feature| {
             let frame = match feature.definition {
                 FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(plane),
-                FeatureDefinition::DatumPlane {
-                    origin,
-                    normal,
-                    u_axis,
-                } => (origin, normal, u_axis),
+                FeatureDefinition::DatumPlane { frame } => {
+                    (frame.origin(), frame.normal(), frame.u_axis())
+                }
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
@@ -499,9 +495,9 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 feature.id.clone(),
                 (
                     Point3::new(
-                        origin.x + normal.x * distance.0 / normal_length,
-                        origin.y + normal.y * distance.0 / normal_length,
-                        origin.z + normal.z * distance.0 / normal_length,
+                        origin.x + normal.x * distance.get() / normal_length,
+                        origin.y + normal.y * distance.get() / normal_length,
+                        origin.z + normal.z * distance.get() / normal_length,
                     ),
                     normal,
                     u_axis,
@@ -529,7 +525,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                     return None;
                 }
                 let (origin, normal, _) = stored_frame(feature)?;
-                if same_scalar(distance.0, 0.0) {
+                if same_scalar(distance.get(), 0.0) {
                     return None;
                 }
                 let history = history_key(feature)?;
@@ -582,10 +578,10 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                                 - candidate_normal.z * signed_distance / candidate_normal_length,
                         );
                         (same_scalar(tangent.norm(), 0.0)
-                            && same_scalar(signed_distance.abs(), distance.0.abs()))
+                            && same_scalar(signed_distance.abs(), distance.get().abs()))
                         .then_some((
                             canonical_plane_id(candidate.id.as_str()),
-                            distance.0.abs().copysign(signed_distance),
+                            distance.get().abs().copysign(signed_distance),
                         ))
                     });
                 let mut candidates_by_root = HashMap::new();
@@ -605,8 +601,11 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             else {
                 continue;
             };
+            let Some(distance) = Length::new(distance) else {
+                continue;
+            };
             *slot = Some(DatumPlaneReference::Feature(reference.clone()));
-            *stored_distance = Length(distance);
+            *stored_distance = distance;
             if !features[index].dependencies.contains(&reference) {
                 features[index].dependencies.push(reference);
             }
@@ -626,9 +625,11 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         };
         *reference = (|| {
             Some(DatumPlaneReference::ResolvedPlane {
-                origin: parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
-                normal: parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
-                u_axis: parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
+                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                    parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
+                    parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
+                    parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
+                )?,
             })
         })();
     }

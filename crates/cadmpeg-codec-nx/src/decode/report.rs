@@ -8,20 +8,18 @@ use super::feature_completeness::operands::{
 use super::feature_completeness::{
     active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
     combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    datum_plane_is_incomplete, delete_body_definition_is_incomplete,
-    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
-    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
-    fillet_definition_is_incomplete, finite_feature_point, hole_definition_is_incomplete,
-    incomplete_expression_parameters, loft_definition_is_incomplete,
+    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
+    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
+    face_blend_definition_is_incomplete, fillet_definition_is_incomplete,
+    hole_definition_is_incomplete, incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
-    output_free_trim_surface_construction, positive_feature_length,
-    projected_curve_direction_is_incomplete, replace_face_definition_is_incomplete,
-    revolve_definition_is_incomplete, rib_definition_is_incomplete,
-    sew_bodies_definition_is_incomplete, shell_definition_is_incomplete,
-    sphere_definition_is_incomplete, sweep_definition_is_incomplete,
-    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
-    trim_surface_definition_is_incomplete, valid_feature_direction,
+    output_free_trim_surface_construction, projected_curve_direction_is_incomplete,
+    replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
+    rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
+    shell_definition_is_incomplete, sphere_definition_is_incomplete,
+    sweep_definition_is_incomplete, thicken_definition_is_incomplete,
+    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
 };
 use super::geometry_work::{
     MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -518,11 +516,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 dimensions,
                 placement,
                 op,
-            } if dimensions.is_none_or(|dimensions| {
-                dimensions
-                    .into_iter()
-                    .any(|dimension| !positive_feature_length(dimension))
-            }) || placement.is_none_or(|placement| !placement.is_proper_rigid())
+            } if dimensions.is_none()
+                || placement.is_none()
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
@@ -533,7 +528,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
-            } if !distance.0.is_finite()
+            } if !distance.get().is_finite()
                 || reference.as_ref().is_none_or(|reference| match reference {
                     DatumPlaneReference::Feature(reference) => {
                         ir.model
@@ -549,25 +544,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "datum plane"
             }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } if datum_plane_is_incomplete(*origin, *normal, *u_axis) => "datum plane",
-            FeatureDefinition::DatumAxis { origin, direction }
-                if !finite_feature_point(*origin) || !valid_feature_direction(*direction) =>
+            FeatureDefinition::DatumCoordinateSystem { frame }
+                if datum_coordinate_system_is_incomplete(
+                    frame.origin(),
+                    frame.x_axis(),
+                    frame.y_axis(),
+                    frame.z_axis(),
+                ) =>
             {
-                "datum axis"
-            }
-            FeatureDefinition::DatumPoint { position, .. } if !finite_feature_point(*position) => {
-                "datum point"
-            }
-            FeatureDefinition::DatumCoordinateSystem {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            } if datum_coordinate_system_is_incomplete(*origin, *x_axis, *y_axis, *z_axis) => {
                 "datum coordinate system"
             }
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {

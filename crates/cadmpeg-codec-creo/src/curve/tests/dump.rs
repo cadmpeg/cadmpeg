@@ -71,10 +71,10 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(axis_direction.x.abs() <= EPS_HELIX_FEATURE);
     assert!(axis_direction.y.abs() <= EPS_HELIX_FEATURE);
     assert!((axis_direction.z + 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((radius.0 - 5.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((pitch.get().0 - 71.0).abs() <= EPS_HELIX_FEATURE);
-    assert!((*revolutions - 1.0).abs() <= EPS_HELIX_FEATURE);
-    assert!(start_angle.0.abs() <= EPS_HELIX_FEATURE);
+    assert!((radius.get() - 5.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((pitch.get() - 71.0).abs() <= EPS_HELIX_FEATURE);
+    assert!((revolutions.get() - 1.0).abs() <= EPS_HELIX_FEATURE);
+    assert!(start_angle.get().abs() <= EPS_HELIX_FEATURE);
     assert!(!clockwise);
     assert_eq!(
         result
@@ -435,13 +435,13 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(
         values["x"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(6.0)
+            cadmpeg_ir::features::Length::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(4.0)
+            cadmpeg_ir::features::Length::new(4.0).unwrap()
         ))
     );
 
@@ -785,7 +785,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle(1.0 + 1.0f64.to_radians())
+            cadmpeg_ir::features::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -905,13 +905,13 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     assert_eq!(
         parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(50.8)
+            cadmpeg_ir::features::Length::new(50.8).unwrap()
         ))
     );
     let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
         panic!("dimensioned copy");
     };
-    assert!((copy.0 - 76.2).abs() < 1.0e-12);
+    assert!((copy.get() - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
     assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
@@ -936,7 +936,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
         panic!("angle parameter");
     };
-    assert!((angle.0 - 2.0f64.atan()).abs() < 1.0e-12);
+    assert!((angle.get() - 2.0f64.atan()).abs() < 1.0e-12);
     assert_eq!(parameters[4].properties["declared_unit"], "C");
     assert_eq!(
         parameters[4].properties["evaluated_dimension"],

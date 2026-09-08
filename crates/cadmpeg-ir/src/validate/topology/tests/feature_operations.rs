@@ -2,15 +2,14 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::math::{Point3, Vector3};
+use crate::math::Vector3;
 use crate::validate::validate_neutral;
 
 #[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
-        BooleanOp, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FilletGroup, HoleKind, Length, LinearTermination, PatternKind, ProfileRef, RadiusSpec,
-        RibConstruction, RibDraft, RibSide, ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
+        EdgeSelection, Feature, FeatureDefinition, FeatureId, FilletGroup, HoleKind, Length,
+        LinearTermination, PatternKind, RadiusSpec, VariableRadius,
     };
 
     let definitions = vec![
@@ -27,55 +26,16 @@ fn feature_operation_geometry_is_validated() {
                     points: vec![
                         VariableRadius {
                             parameter: 0.5,
-                            radius: Length(2.0),
+                            radius: Length::new(2.0).unwrap(),
                         },
                         VariableRadius {
                             parameter: 0.25,
-                            radius: Length(-1.0),
+                            radius: Length::new(-1.0).unwrap(),
                         },
                     ],
                 },
                 tangency_weight: None,
             }],
-        },
-        FeatureDefinition::Rib {
-            construction: RibConstruction {
-                profile: Some(ProfileRef::Native("profile".into())),
-                direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-                thickness: Some(Length(1.0)),
-                side: Some(RibSide::OneSided),
-                draft: RibDraft::Angle(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
-            },
-            op: BooleanOp::Join,
-        },
-        FeatureDefinition::Draft {
-            faces: FaceSelection::Unresolved,
-            anchor: crate::features::DraftAnchor::NeutralPlane {
-                plane: FaceSelection::Unresolved,
-                pull: Some(crate::features::DraftPull {
-                    direction: Vector3::new(0.0, 0.0, 1.0),
-                    plane: None,
-                }),
-            },
-            angle: Some(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
-            outward: Some(false),
-        },
-        FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: Some(FaceSelection::Unresolved),
-            direction: None,
-            construction: crate::features::HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                specification: None,
-            },
-            exit_kind: None,
-            diameter: Some(Length(0.0)),
-            extent: Some(LinearTermination::ThroughAll),
-            bottom: None,
-            taper_angle: None,
-            placements: None,
-            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Hole {
             profile: None,
@@ -87,128 +47,27 @@ fn feature_operation_geometry_is_validated() {
                 specification: None,
             },
             exit_kind: Some(HoleKind::Countersink {
-                diameter: Length(5.0),
-                angle: crate::features::Angle(0.5),
+                diameter: crate::features::PositiveLength::new(5.0).unwrap(),
+                angle: crate::features::InteriorAngle::new(0.5).unwrap(),
             }),
-            diameter: Some(Length(5.0)),
+            diameter: Some(crate::features::PositiveLength::new(5.0).unwrap()),
             extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
             placements: None,
             allow_multi_profile_faces: None,
         },
-        FeatureDefinition::Thicken {
-            faces: FaceSelection::Unresolved,
-            thickness: Some(Length(0.0)),
-            side: Some(ThickenSide::Forward),
-        },
-        FeatureDefinition::OffsetSurface {
-            faces: FaceSelection::Unresolved,
-            distance: Some(Length(f64::NAN)),
-        },
-        FeatureDefinition::KnitSurface {
-            faces: FaceSelection::Unresolved,
-            merge_entities: Some(true),
-            create_solid: Some(false),
-            gap_tolerance: Some(Length(-1.0)),
-        },
-        FeatureDefinition::ExtendSurface {
-            faces: FaceSelection::Unresolved,
-            distance: Some(Length(0.0)),
-            method: crate::features::SurfaceExtension::Natural,
-        },
-        FeatureDefinition::RuledSurface {
-            edges: EdgeSelection::Unresolved,
-            support_faces: FaceSelection::Unresolved,
-            mode: crate::features::RuledSurfaceMode::Direction {
-                direction: Vector3::new(0.0, 0.0, 0.0),
-                distance: Length(0.0),
-            },
-            angle: None,
-            alternate_face: None,
-            corner: None,
-        },
-        FeatureDefinition::Scale {
-            bodies: crate::features::BodySelection::Unresolved,
-            center: Some(ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0))),
-            factors: ScaleFactors::PerAxis(Vector3::new(1.0, 0.0, 1.0)),
-        },
-        FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            x_axis: Vector3::new(1.0, 0.0, 0.0),
-            y_axis: Vector3::new(1.0, 0.0, 0.0),
-            z_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
-        FeatureDefinition::EquationCurve {
-            parameter: String::new(),
-            x_expression: "t".into(),
-            y_expression: "0".into(),
-            z_expression: "0".into(),
-            start: 1.0,
-            end: 0.0,
-        },
-        FeatureDefinition::ProjectedCurve {
-            source: crate::features::PathRef::Native("source".into()),
-            target_faces: FaceSelection::Unresolved,
-            direction: crate::features::CurveProjectionDirection::Vector(Vector3::new(
-                0.0, 0.0, 0.0,
-            )),
-            bidirectional: Some(false),
-        },
         FeatureDefinition::CompositeCurve {
             segments: Vec::new(),
             closed: false,
         },
-        FeatureDefinition::Helix {
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 0.0),
-            radius: Length(-1.0),
-            shape: crate::features::HelixShape::Cylindrical {
-                pitch: crate::features::HelixPitch::new(Length(1.0)).unwrap(),
-            },
-            revolutions: 0.0,
-            start_angle: crate::features::Angle(0.0),
-            clockwise: false,
-            segment_turns: None,
-            construction_style: None,
-        },
         FeatureDefinition::HelixNativeAxis {
             axis_native_ref: String::new(),
-            axial_rise: Length(f64::NAN),
-            pitch: Length(f64::NAN),
-            revolutions: 0.0,
-            start_angle: crate::features::Angle(f64::NAN),
+            axial_rise: Length::ZERO,
+            pitch: Length::ZERO,
+            revolutions: crate::features::PositiveReal::new(1.0).unwrap(),
+            start_angle: crate::features::Angle::ZERO,
             clockwise: false,
-        },
-        FeatureDefinition::Sphere {
-            center: Point3::new(0.0, f64::NAN, 0.0),
-            radius: Length(0.0),
-            op: BooleanOp::NewBody,
-        },
-        FeatureDefinition::Torus {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 0.0),
-            major_radius: Length(10.0),
-            minor_radius: Length(-1.0),
-            op: BooleanOp::NewBody,
-        },
-        FeatureDefinition::HelicalSweep {
-            construction: crate::features::HelicalSweepConstruction {
-                profile: ProfileRef::Native("profile".into()),
-                axis_origin: Point3::new(0.0, 0.0, 0.0),
-                axis_direction: Vector3::new(0.0, 0.0, 0.0),
-                law: crate::features::HelicalSweepLaw::HeightTurnsGrowth,
-                pitch: Length(0.0),
-                height: Length(0.0),
-                turns: 0.0,
-                radial_growth: Length(0.0),
-                cone_angle: crate::features::Angle(0.0),
-                left_handed: false,
-                reversed: false,
-                tolerance: Some(0.0),
-                allow_multi_profile_faces: None,
-            },
-            op: crate::features::BooleanOp::Join,
         },
         FeatureDefinition::Binder {
             sources: vec![crate::features::BinderSource {
@@ -227,7 +86,7 @@ fn feature_operation_geometry_is_validated() {
                 partial_load: false,
                 refine: true,
                 offset: Some(crate::features::BinderOffset {
-                    distance: Length(0.0),
+                    distance: crate::features::NonZeroLength::new(1.0).unwrap(),
                     join: crate::features::BinderOffsetJoin::Arcs,
                     fill: false,
                     open_result: false,
@@ -236,21 +95,11 @@ fn feature_operation_geometry_is_validated() {
                 context: None,
             },
         },
-        FeatureDefinition::MoveBody {
-            bodies: crate::features::BodySelection::Unresolved,
-            translation: Vector3::new(f64::NAN, 0.0, 0.0),
-            rotation: Some(crate::features::AxisAngle {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 0.0),
-                angle: crate::features::Angle(0.5),
-            }),
-            copies: 0,
-        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
                 direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-                spacing: Length(-1.0),
+                spacing: Length::new(-1.0).unwrap(),
                 count: 0,
                 second: None,
             },
@@ -259,7 +108,7 @@ fn feature_operation_geometry_is_validated() {
             seeds: Vec::new(),
             pattern: PatternKind::CurveDriven {
                 path: None,
-                spacing: Length(0.0),
+                spacing: Length::ZERO,
                 count: 0,
             },
         },
@@ -270,7 +119,7 @@ fn feature_operation_geometry_is_validated() {
                     crate::features::PatternStage {
                         pattern: Box::new(PatternKind::Linear {
                             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-                            spacing: Length(1.0),
+                            spacing: Length::new(1.0).unwrap(),
                             count: 3,
                             second: None,
                         }),
@@ -287,61 +136,16 @@ fn feature_operation_geometry_is_validated() {
                 ],
             },
         },
-        FeatureDefinition::Sweep {
-            section: crate::features::SweepSection::Unresolved(None),
-            sections: Vec::new(),
-            path: None,
-            mode: crate::features::SweepMode::Unresolved,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            path_extent: None,
-            guide_rail: Some(crate::features::SweepGuideRail {
-                path: crate::features::PathRef::Native("native:guide-rail#0".into()),
-                extent: crate::features::SweepPathExtent {
-                    along_fraction: -1.0,
-                    against_fraction: 1.0,
-                },
-            }),
-            taper: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
-        FeatureDefinition::DatumOffsetPlane {
-            reference: None,
-            distance: Length(f64::NAN),
-        },
     ];
     let expected = [
         "references missing Form control cage `synthetic:test:subd#missing`",
         "fillet radius is invalid",
-        "rib geometry is invalid",
-        "draft geometry is invalid",
         "hole geometry is invalid",
-        "thicken thickness is invalid",
-        "surface offset is invalid",
-        "knit tolerance is invalid",
-        "surface extension is invalid",
-        "ruled surface is invalid",
-        "scale transform is invalid",
-        "coordinate-system frame is invalid",
-        "equation curve is invalid",
-        "projection direction is invalid",
         "composite curve is empty",
-        "helix geometry is invalid",
-        "sphere primitive is invalid",
-        "torus primitive is invalid",
-        "helical sweep is invalid",
         "binder construction is invalid",
-        "body motion is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
-        "sweep magnitude is invalid",
-        "datum-plane offset is invalid",
     ];
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {

@@ -257,14 +257,14 @@ pub fn project_sketch_design(
                 {
                     SketchGeometry::Circle {
                         center: Point2::new(center.x, center.y),
-                        radius: Length(*radius),
+                        radius: Length::new(*radius)?,
                     }
                 } else {
                     SketchGeometry::Arc {
                         center: Point2::new(center.x, center.y),
-                        radius: Length(*radius),
-                        start_angle: Angle(start_angle),
-                        end_angle: Angle(end_angle),
+                        radius: Length::new(*radius)?,
+                        start_angle: Angle::new(start_angle)?,
+                        end_angle: Angle::new(end_angle)?,
                     }
                 }
             }
@@ -323,7 +323,7 @@ pub fn project_sketch_design(
                     text: text.text.clone(),
                     font_family: text.font_family.clone(),
                     font_weight: text.font_weight,
-                    height: Length(text.height),
+                    height: Length::new(text.height)?,
                     // The record's `0` does not scale glyph advance to zero, so it
                     // is not a neutral horizontal scale of zero; only a positive
                     // factor carries one.
@@ -528,16 +528,16 @@ pub fn project_spatial_sketch_design(
                                 center,
                                 normal,
                                 reference_direction,
-                                radius: Length(*radius),
+                                radius: Length::new(*radius)?,
                             }
                         } else {
                             SpatialSketchGeometry::Arc {
                                 center,
                                 normal,
                                 reference_direction,
-                                radius: Length(*radius),
-                                start_angle: Angle(*start_angle),
-                                end_angle: Angle(*end_angle),
+                                radius: Length::new(*radius)?,
+                                start_angle: Angle::new(*start_angle)?,
+                                end_angle: Angle::new(*end_angle)?,
                             }
                         }
                     }

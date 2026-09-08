@@ -176,10 +176,17 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
         |(extent, direction)| {
             (
-                ExtrudeDirection::Explicit {
-                    vector: Vector3::new(direction[0], direction[1], direction[2]),
-                    source: None,
-                },
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    direction[0],
+                    direction[1],
+                    direction[2],
+                ))
+                .map_or(ExtrudeDirection::Unresolved, |vector| {
+                    ExtrudeDirection::Explicit {
+                        vector,
+                        source: None,
+                    }
+                }),
                 extent,
             )
         },

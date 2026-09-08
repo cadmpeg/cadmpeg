@@ -151,7 +151,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
-    );
+    )?;
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
     project_configuration_sketch_states(
@@ -159,7 +159,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut current_annotations,
-    );
+    )?;
     let current_parameter_hash =
         configuration_parameter_value_hash(&current_projection.model.configurations);
     let current_feature_hash =
@@ -223,7 +223,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
-    );
+    )?;
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
     project_configuration_sketch_states(
@@ -231,7 +231,7 @@ pub(crate) fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut projected_annotations,
-    );
+    )?;
     if configuration_parameter_value_hash(&projected.model.configurations)
         != configuration_parameter_value_hash(&ir.model.configurations)
         || configuration_feature_state_hash(&projected.model.configurations)
@@ -338,8 +338,8 @@ pub(crate) fn patch_configuration_parameter_scalars(
                 continue;
             };
             let encoded = match value {
-                ParameterValue::Length(value) => value.0 / 1000.0,
-                ParameterValue::Angle(value) => value.0,
+                ParameterValue::Length(value) => value.get() / 1000.0,
+                ParameterValue::Angle(value) => value.get(),
                 ParameterValue::Real(value) => *value,
                 ParameterValue::Integer(value) => exact_integer_f64(*value).ok_or_else(|| {
                     CodecError::NotImplemented(format!(

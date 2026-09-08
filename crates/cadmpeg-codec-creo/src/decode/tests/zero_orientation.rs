@@ -39,7 +39,7 @@ use crate::decode::sweep::{
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
+    AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
     RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
@@ -74,9 +74,9 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         panic!("complete arc");
     };
     assert_eq!(center, cadmpeg_ir::math::Point2::new(0.0, 0.0));
-    assert_eq!(radius, Length(2.0));
-    assert!((start_angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!((end_angle.0 - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert_eq!(radius, Length::new(2.0).unwrap());
+    assert!((start_angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((end_angle.get() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
 #[test]
@@ -449,15 +449,16 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ]);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: Angle(std::f64::consts::TAU),
+            angle: cadmpeg_ir::features::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
         },
     };
 
     assert_eq!(
         full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)),
         Some(RevolutionAxis {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .unwrap(),
             reference: None,
         })
     );
@@ -499,13 +500,16 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             Some(&full_turn),
         ),
         Some(RevolutionAxis {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .unwrap(),
             reference: None,
         })
     );
     let partial = RevolveExtent::OneSided {
-        termination: AngularTermination::Angle { angle: Angle(1.0) },
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::features::PositiveAngle::new(1.0).unwrap(),
+        },
     };
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
     if let SurfaceGeometry::Cone { origin, .. } = &mut ir.model.surfaces[1].geometry {
@@ -1020,8 +1024,9 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
     let surface = revolved_nurbs_surface(
         &directrix,
         &RevolutionAxis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
             reference: None,
         },
     )
@@ -1052,8 +1057,9 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         offset: 0,
     };
     let axis = RevolutionAxis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            .unwrap(),
         reference: None,
     };
     let spline = SketchGeometry::Nurbs {

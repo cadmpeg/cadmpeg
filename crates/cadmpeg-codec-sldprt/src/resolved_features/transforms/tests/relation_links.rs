@@ -258,7 +258,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
         typed_marker_relation_definition(&relation, &markers, &loci),
         Some(SketchConstraintDefinition::ArcAngle {
             entity: SketchEntityId("operand-entity".into()),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
+            angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
 }

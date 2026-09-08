@@ -4515,15 +4515,16 @@ mod tests {
         assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
         for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 5.0, 10.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(value),
+                cadmpeg_ir::features::Length::new(value).unwrap(),
             ));
         }
         assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
         let mut inconsistent = ir.clone();
-        inconsistent.model.parameters[1].value = Some(
-            cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::features::Length(1.0)),
-        );
+        inconsistent.model.parameters[1].value =
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(1.0).unwrap(),
+            ));
         assert_eq!(
             feature_completeness::incomplete_expression_parameters(&inconsistent),
             [inconsistent.model.parameters[1].id.clone()].into()
@@ -4654,7 +4655,7 @@ mod tests {
         assert!(ir.model.parameters[3].dependencies.is_empty());
         for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 1.0, 1.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(value),
+                cadmpeg_ir::features::Length::new(value).unwrap(),
             ));
         }
         assert_eq!(
@@ -5336,8 +5337,8 @@ mod tests {
         assert!(matches!(
             parameter.value,
             Some(cadmpeg_ir::features::ParameterValue::Angle(
-                cadmpeg_ir::features::Angle(value)
-            )) if value == 120_f64.to_radians()
+                value
+            )) if value.get() == 120_f64.to_radians()
         ));
         assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
         let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());

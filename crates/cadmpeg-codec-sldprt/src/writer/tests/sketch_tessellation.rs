@@ -286,7 +286,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
             panic!("circle sketch entity");
         };
         center.u = 250.0;
-        *radius = Length(750.0);
+        *radius = Length::new(750.0).unwrap();
     }
 
     let mut written = Vec::new();
@@ -303,8 +303,8 @@ fn semantic_writer_applies_circle_sketch_edits() {
         regenerated.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Circle {
             center: cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 },
-            radius: Length(750.0),
-        }
+            radius: actual_radius,
+        } if actual_radius.get() == 750.0
     ));
 }
 
@@ -333,9 +333,9 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
             panic!("ellipse sketch entity");
         };
         center.v = 125.0;
-        *major_angle = Angle(0.25);
-        *major_radius = Length(1500.0);
-        *minor_radius = Length(500.0);
+        *major_angle = Angle::new(0.25).unwrap();
+        *major_radius = Length::new(1500.0).unwrap();
+        *minor_radius = Length::new(500.0).unwrap();
     }
 
     let mut written = Vec::new();
@@ -352,11 +352,11 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
         regenerated.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Ellipse {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 },
-            major_angle: Angle(angle),
-            major_radius: Length(1500.0),
-            minor_radius: Length(500.0),
+            major_angle: angle,
+            major_radius: actual_major_radius,
+            minor_radius: actual_minor_radius,
             bounds: None,
-        } if (angle - 0.25).abs() < 1.0e-12
+        } if ((angle.get() - 0.25).abs() < 1.0e-12) && actual_major_radius.get() == 1500.0 && actual_minor_radius.get() == 500.0
     ));
 }
 
@@ -390,9 +390,9 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             unreachable!();
         };
         center.u = 100.0;
-        *radius = Length(800.0);
-        *start_angle = Angle(0.25);
-        *end_angle = Angle(1.25);
+        *radius = Length::new(800.0).unwrap();
+        *start_angle = Angle::new(0.25).unwrap();
+        *end_angle = Angle::new(1.25).unwrap();
         let endpoint_refs = arc.endpoint_refs.clone();
         let endpoints = [
             cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
@@ -432,10 +432,10 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             entity.geometry,
             SketchGeometry::Arc {
                 center: cadmpeg_ir::math::Point2 { u: 100.0, v: 0.0 },
-                radius: Length(800.0),
-                start_angle: Angle(start),
-                end_angle: Angle(end),
-            } if (start - 0.25).abs() < 1.0e-12 && (end - 1.25).abs() < 1.0e-12
+                radius: actual_radius,
+                start_angle: start,
+                end_angle: end,
+            } if ((start.get() - 0.25).abs() < 1.0e-12 && (end.get() - 1.25).abs() < 1.0e-12) && actual_radius.get() == 800.0
         )));
 }
 

@@ -101,7 +101,7 @@ fn placed_extrusion_arc_defines_cylinder() {
             &transform,
             &SketchGeometry::Circle {
                 center: Point2::new(3.0, -4.0),
-                radius: Length(2.0),
+                radius: Length::new(2.0).unwrap(),
             },
         ),
         Some(CurveGeometry::Circle {
@@ -557,7 +557,7 @@ fn dimension_identity_includes_its_feature_definition() {
         ),
         Some(SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(2.5),
+            radius: Length::new(2.5).unwrap(),
         })
     );
     let unresolved_dimension = crate::feature::FeatureDimension {

@@ -484,8 +484,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         SketchConstraintDefinition::PolarDistance {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
             second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into(),)),
-            distance: Length(2.0),
-            angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            distance: Length::new(2.0).unwrap(),
+            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).unwrap()),
             distance_parameter: None,
         }
     );
@@ -513,8 +513,8 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         SketchConstraintDefinition::PolarDistance {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
             second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into(),)),
-            distance: Length(2.0),
-            angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            distance: Length::new(2.0).unwrap(),
+            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).unwrap()),
             distance_parameter: None,
         }
     );
@@ -650,7 +650,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         SketchConstraintDefinition::DistanceLociValue {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
             second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into())),
-            distance: Length(5.0),
+            distance: Length::new(5.0).unwrap(),
             parameter: None,
         }
     );
@@ -808,7 +808,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
             second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:31".into())),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
-            value: Length(2.0),
+            value: Length::new(2.0).unwrap(),
         }
     );
 
@@ -835,7 +835,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
             second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:31".into())),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
-            value: Length(2.0),
+            value: Length::new(2.0).unwrap(),
         }
     );
     let mut conflicting_equality_midpoint = propagated_midpoint.clone();
@@ -919,7 +919,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         point_constraints[0].0.definition,
         SketchConstraintDefinition::PointCoordinateValues {
             point: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
-            values: [Length(2.0), Length(1.0)],
+            values: [Length::new(2.0).unwrap(), Length::new(1.0).unwrap()],
         }
     );
 
@@ -943,7 +943,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         propagated_constraints[0].0.definition,
         SketchConstraintDefinition::PointCoordinateValues {
             point: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
-            values: [Length(2.0), Length(1.0)],
+            values: [Length::new(2.0).unwrap(), Length::new(1.0).unwrap()],
         }
     );
     let mut conflicting_equality_point = propagated_point.clone();

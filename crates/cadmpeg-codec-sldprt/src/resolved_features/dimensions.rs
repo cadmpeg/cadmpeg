@@ -558,9 +558,9 @@ fn transformed_dimensioned_arc(
         .then_some((
             SketchGeometry::Arc {
                 center,
-                radius: Length(radius),
-                start_angle: Angle(start_angle),
-                end_angle: Angle(end_angle),
+                radius: Length::new(radius)?,
+                start_angle: Angle::new(start_angle)?,
+                end_angle: Angle::new(end_angle)?,
             },
             endpoints.map_or_else(Vec::new, Vec::from),
         ))
@@ -574,7 +574,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -630,8 +630,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         return None;
                     };
                     let radius = match parameter.display {
-                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                         None => return None,
                     };
                     if !(radius.is_finite() && radius > 0.0) {
@@ -699,8 +699,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             };
             let radius = match parameter.and_then(|parameter| parameter.display) {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                 None => continue,
             };
             if !(radius.is_finite() && radius > 0.0) {
@@ -749,7 +749,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                                 radius: existing_radius,
                             } => {
                                 quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
-                                    && same_dimension_length(existing_radius.0, radius)
+                                    && same_dimension_length(existing_radius.get(), radius)
                             }
                             _ => false,
                         }
@@ -770,7 +770,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     else {
                         unreachable!("dimensioned arc helper emits an arc");
                     };
-                    if !same_dimension_length(arc_radius.0, radius) {
+                    if !same_dimension_length(arc_radius.get(), radius) {
                         continue;
                     }
                     (geometry, endpoint_refs)
@@ -778,7 +778,11 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     (
                         SketchGeometry::Circle {
                             center,
-                            radius: cadmpeg_ir::features::Length(radius),
+                            radius: cadmpeg_ir::features::Length::new(radius).ok_or_else(|| {
+                                cadmpeg_core::CodecError::Malformed(
+                                    "SolidWorks projected length must be finite".into(),
+                                )
+                            })?,
                         },
                         Vec::new(),
                     )
@@ -799,6 +803,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             );
         }
     }
+
+    Ok(())
 }
 
 /// Materialize a circle dimension when its point operand already has one
@@ -814,7 +820,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let sketches_by_feature = features
         .iter()
         .filter_map(|feature| {
@@ -935,7 +941,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 entity.sketch == **sketch
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
                         if quantize(*existing, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
-                            && same_dimension_length(existing_radius.0, radius))
+                            && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;
             }
@@ -948,7 +954,11 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                     (*sketch).clone(),
                     SketchGeometry::Circle {
                         center,
-                        radius: Length(radius),
+                        radius: Length::new(radius).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
                     },
                 )
                 .with_construction(construction)
@@ -957,6 +967,8 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             );
         }
     }
+
+    Ok(())
 }
 
 pub(super) fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -1118,8 +1130,8 @@ pub(super) fn radial_dimension_radius(
         return None;
     };
     let radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     (radius.is_finite() && radius > 0.0).then_some(radius)
@@ -1242,7 +1254,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -1419,7 +1431,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 sketch_id.clone(),
                                 SketchGeometry::Circle {
                                     center,
-                                    radius: Length(radius),
+                                    radius: Length::new(radius).ok_or_else(|| {
+                                        cadmpeg_core::CodecError::Malformed(
+                                            "SolidWorks projected length must be finite".into(),
+                                        )
+                                    })?,
                                 },
                             )
                             .with_construction(
@@ -1580,7 +1596,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                             sketch_id.clone(),
                             SketchGeometry::Circle {
                                 center,
-                                radius: Length(*radius),
+                                radius: Length::new(*radius).ok_or_else(|| {
+                                    cadmpeg_core::CodecError::Malformed(
+                                        "SolidWorks projected length must be finite".into(),
+                                    )
+                                })?,
                             },
                         )
                         .with_native_ref((index == pairs.len() - 1).then(|| carrier_ref.clone()))
@@ -1731,7 +1751,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 sketch_id.clone(),
                                 SketchGeometry::Circle {
                                     center,
-                                    radius: Length(record.6),
+                                    radius: Length::new(record.6).ok_or_else(|| {
+                                        cadmpeg_core::CodecError::Malformed(
+                                            "SolidWorks projected length must be finite".into(),
+                                        )
+                                    })?,
                                 },
                             )
                             .with_construction(record.2)
@@ -1831,7 +1855,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 entity.sketch == *sketch_id
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
                         if quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
-                            && same_dimension_length(existing_radius.0, radius))
+                            && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;
             }
@@ -1850,7 +1874,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                     sketch_id.clone(),
                     SketchGeometry::Circle {
                         center,
-                        radius: Length(radius),
+                        radius: Length::new(radius).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
                     },
                 )
                 .with_construction(construction)
@@ -1862,6 +1890,8 @@ pub(crate) fn project_marker_dimensioned_circles(
             }]);
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

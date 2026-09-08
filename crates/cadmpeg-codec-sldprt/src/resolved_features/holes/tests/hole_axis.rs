@@ -4,8 +4,7 @@ use super::{cylinder, lane, model_hole, native_history, profile_reference_plane_
 use std::collections::HashMap;
 
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length,
-    LinearTermination,
+    FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, LinearTermination,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
@@ -130,8 +129,9 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             },
         ),
         Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(-5.0, 0.0, 10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 10.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         }])
     );
     assert_eq!(
@@ -148,8 +148,9 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             },
         ),
         Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(-5.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         }])
     );
     faces[1].sense = Sense::Reversed;
@@ -168,12 +169,16 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
         ),
         Some(vec![
             cadmpeg_ir::features::HolePlacement::Axis {
-                origin: Point3::new(-5.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
             cadmpeg_ir::features::HolePlacement::Axis {
-                origin: Point3::new(5.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 0.0, 0.0))
+                    .unwrap(),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
             },
         ])
     );
@@ -325,14 +330,15 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: Length(6.0),
-        depth: Length(1.0),
+        diameter: cadmpeg_ir::features::PositiveLength::new(6.0).unwrap(),
+        depth: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
     };
     placements
         .get_or_insert_default()
         .push(HolePlacement::Axis {
-            origin: Point3::new(-5.0, 0.0, 100.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 100.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
+                .unwrap(),
         });
     let mut unplaced = model_hole();
     unplaced.id = FeatureId::mint("unplaced").expect("identity grammar");
@@ -343,8 +349,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: Length(6.0),
-        depth: Length(1.0),
+        diameter: cadmpeg_ir::features::PositiveLength::new(6.0).unwrap(),
+        depth: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
     };
 
     let mut unique = [unplaced.clone()];
@@ -364,12 +370,16 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         Some(
             &[
                 HolePlacement::Axis {
-                    origin: Point3::new(5.0, 0.0, 0.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 0.0, 0.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
                 HolePlacement::Axis {
-                    origin: Point3::new(20.0, 0.0, 0.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(20.0, 0.0, 0.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
                 },
             ][..]
         )
@@ -408,8 +418,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         unreachable!();
     };
     placements.as_mut().expect("seeded placement")[0] = HolePlacement::Axis {
-        origin: Point3::new(-50.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-50.0, 0.0, 0.0)).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
     };
     let mut incomplete_topology = [placed, unplaced];
     project_hole_topology_axes(&mut incomplete_topology, &topology);
@@ -528,7 +538,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         unreachable!();
     };
     *extent = Some(LinearTermination::Blind {
-        length: Length(10.0),
+        length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Flat);
     let mut exact = [unplaced.clone()];
@@ -550,7 +560,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         unreachable!();
     };
     *extent = Some(LinearTermination::Blind {
-        length: Length(9.0),
+        length: cadmpeg_ir::features::NonZeroLength::new(9.0).unwrap(),
     });
     project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology);
     let FeatureDefinition::Hole { placements, .. } = &unplaced.definition else {
@@ -572,13 +582,13 @@ fn hole_topology_uses_exact_cylinder_spans() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: Angle(2.0),
+        drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
     };
     *extent = Some(LinearTermination::Blind {
-        length: Length(10.0),
+        length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: Angle(2.0),
+        included_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
         depth_to_tip: false,
     });
     project_hole_topology_axes(std::slice::from_mut(&mut drilled), &topology);
@@ -623,22 +633,26 @@ fn hole_topology_uses_exact_cylinder_spans() {
     placements
         .get_or_insert_default()
         .push(HolePlacement::Axis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         });
     *diameter = None;
-    project_topological_hole_constructions(std::slice::from_mut(&mut hole), &topology);
+    project_topological_hole_constructions(std::slice::from_mut(&mut hole), &topology).unwrap();
     let FeatureDefinition::Hole {
         diameter, extent, ..
     } = hole.definition
     else {
         unreachable!();
     };
-    assert_eq!(diameter, Some(Length(4.0)));
+    assert_eq!(
+        diameter,
+        Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap())
+    );
     assert_eq!(
         extent,
         Some(LinearTermination::Blind {
-            length: Length(10.0)
+            length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap()
         })
     );
 }
@@ -646,8 +660,8 @@ fn hole_topology_uses_exact_cylinder_spans() {
 #[test]
 fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let placement = |x, y, axis| HolePlacement::Axis {
-        origin: Point3::new(x, y, 0.0),
-        axis,
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, 0.0)).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
     };
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let y_axis = Vector3::new(0.0, 1.0, 0.0);
@@ -667,13 +681,13 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: Angle(2.0),
+        drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
     };
     *extent = Some(LinearTermination::Blind {
-        length: Length(10.0),
+        length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: Angle(2.0),
+        included_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
         depth_to_tip: false,
     });
     placements
@@ -785,7 +799,10 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         vertices: &[],
         points: &[],
     };
-    let placement = |origin, axis| HolePlacement::Axis { origin, axis };
+    let placement = |origin, axis| HolePlacement::Axis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
+    };
     let mut horizontal = model_hole();
     horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
     let FeatureDefinition::Hole { placements, .. } = &mut horizontal.definition else {

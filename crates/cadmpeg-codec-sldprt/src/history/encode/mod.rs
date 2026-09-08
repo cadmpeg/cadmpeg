@@ -72,11 +72,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::Unresolved {
                 family: UnresolvedFamily::BoundarySurface,
             } => self.encode_boundary_surface_unresolved(),
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => self.encode_datum_plane(origin, normal, u_axis),
+            FeatureDefinition::DatumPlane { frame } => self.encode_datum_plane(frame),
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -103,27 +99,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 self.encode_datum_axis(origin, direction)
             }
             FeatureDefinition::DatumPoint { position, .. } => self.encode_datum_point(position),
-            FeatureDefinition::DatumCoordinateSystem {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            } => self.encode_datum_coordinate_system(origin, x_axis, y_axis, z_axis),
-            FeatureDefinition::EquationCurve {
-                parameter,
-                x_expression,
-                y_expression,
-                z_expression,
-                start,
-                end,
-            } => self.encode_equation_curve(
-                parameter,
-                x_expression,
-                y_expression,
-                z_expression,
-                start,
-                end,
-            ),
+            FeatureDefinition::DatumCoordinateSystem { frame } => {
+                self.encode_datum_coordinate_system(frame)
+            }
+            FeatureDefinition::EquationCurve { curve } => self.encode_equation_curve(curve),
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,

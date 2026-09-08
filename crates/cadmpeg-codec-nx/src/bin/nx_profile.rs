@@ -884,7 +884,7 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::ids::BodyId;
 
     fn fixture() -> FixtureEvidence {
@@ -979,8 +979,12 @@ mod tests {
             source_content: Vec::new(),
             outputs: vec![body],
             definition: FeatureDefinition::Block {
-                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                dimensions: Some([
+                    cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                    cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                ]),
+                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: cadmpeg_ir::features::BooleanOp::NewBody,
             },
             native_ref: None,

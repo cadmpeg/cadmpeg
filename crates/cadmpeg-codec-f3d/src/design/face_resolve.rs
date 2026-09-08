@@ -1886,7 +1886,7 @@ pub(crate) fn bind_extrude_target_faces(
         let sweep_direction = match direction {
             ExtrudeDirection::ProfileNormal => profile_normal,
             ExtrudeDirection::ReversedProfileNormal => profile_normal.scale(-1.0),
-            ExtrudeDirection::Explicit { vector, .. } => *vector,
+            ExtrudeDirection::Explicit { vector, .. } => vector.get(),
             ExtrudeDirection::Unresolved => continue,
         };
         if !sweep_direction.x.is_finite()
@@ -2125,17 +2125,17 @@ pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::fe
         .map(|field| field.value.as_str())
         .is_some_and(design_angle_unit)
         && parameter.evaluated_value.is_finite())
-    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
+    .then_some(cadmpeg_ir::features::Angle::new(parameter.evaluated_value)?)
 }
 
 pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
     use cadmpeg_ir::features::ChamferSpec;
 
     match spec {
-        ChamferSpec::Distance { distance } => distance.0 > 0.0,
-        ChamferSpec::TwoDistances { first, second } => first.0 > 0.0 && second.0 > 0.0,
+        ChamferSpec::Distance { distance } => distance.get() > 0.0,
+        ChamferSpec::TwoDistances { first, second } => first.get() > 0.0 && second.get() > 0.0,
         ChamferSpec::DistanceAngle { distance, angle } => {
-            distance.0 > 0.0 && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
+            distance.get() > 0.0 && angle.get() > 0.0 && angle.get() < std::f64::consts::PI
         }
         ChamferSpec::Unresolved
         | ChamferSpec::UnresolvedDistance

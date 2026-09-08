@@ -1412,8 +1412,14 @@ enum TypedParameterEvaluation {
 
 fn parameter_expression(value: &ParameterValue) -> String {
     match value {
-        ParameterValue::Length(Length(value)) => format!("{value} mm"),
-        ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
+        ParameterValue::Length(value) => {
+            let value = value.get();
+            format!("{value} mm")
+        }
+        ParameterValue::Angle(value) => {
+            let value = value.get();
+            format!("{value} rad")
+        }
         ParameterValue::Real(value) => value.to_string(),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
@@ -1700,20 +1706,24 @@ impl EvaluatedFormulaString {
 impl EvaluatedFormulaValue {
     fn from_parameter_value(value: &ParameterValue) -> Self {
         match value {
-            ParameterValue::Length(Length(value)) => {
+            ParameterValue::Length(value) => {
+                let value = value.get();
+
                 Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                    *value,
+                    value,
                     FormulaDimension::LENGTH,
-                    finite_integrality(*value),
-                    Some(*value),
+                    finite_integrality(value),
+                    Some(value),
                 ))
             }
-            ParameterValue::Angle(Angle(value)) => {
+            ParameterValue::Angle(value) => {
+                let value = value.get();
+
                 Self::Scalar(EvaluatedFormulaScalar::from_parts(
-                    *value,
+                    value,
                     FormulaDimension::ANGLE,
-                    finite_integrality(*value),
-                    Some(*value),
+                    finite_integrality(value),
+                    Some(value),
                 ))
             }
             ParameterValue::Real(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
@@ -3257,8 +3267,8 @@ fn typed_parameter_evaluation(
         return None;
     }
     let value = match source_type {
-        "LENGTH" => ParameterValue::Length(Length(value)),
-        "ANGLE" => ParameterValue::Angle(Angle(value)),
+        "LENGTH" => ParameterValue::Length(Length::new(value)?),
+        "ANGLE" => ParameterValue::Angle(Angle::new(value)?),
         "Real" | "R" => ParameterValue::Real(value),
         "Integer" | "I"
             if value.fract() == 0.0 && value >= i64::MIN as f64 && value < -(i64::MIN as f64) =>
@@ -3559,8 +3569,8 @@ mod parser_tests {
                 }
             ),
             Some(TypedParameterEvaluation::Value(ParameterValue::Length(
-                Length(12.5)
-            )))
+                actual_length
+            ))) if actual_length.get() == 12.5
         ));
         assert!(matches!(
             typed_parameter_evaluation(

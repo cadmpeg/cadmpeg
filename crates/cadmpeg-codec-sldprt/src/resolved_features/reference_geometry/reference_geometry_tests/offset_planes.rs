@@ -211,7 +211,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
                     FeatureId::mint("plane").expect("identity grammar"),
                 )),
-                distance: Length(3.0),
+                distance: Length::new(3.0).unwrap(),
             },
         ),
     ];

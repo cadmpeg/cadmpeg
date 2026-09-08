@@ -570,7 +570,7 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )?;
                 let parameter =
-                    offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0).map(
+                    offset_parameter_factor(distance.get(), parameter.evaluated_value * 10.0).map(
                         |factor| cadmpeg_ir::sketches::OffsetParameter {
                             id: parameter_id,
                             negated: factor.is_sign_negative(),
@@ -1385,7 +1385,7 @@ fn tangent_radius_dimension_definition(
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
     let radius = match &entity.geometry {
-        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
+        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.get(),
         _ => return None,
     };
     linear_measurement_matches(radius, parameter.evaluated_value * 10.0, linear_tolerance).then(
@@ -1407,7 +1407,7 @@ fn tangent_entity_distance_definition(
 
     let circle_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            Some((*center, radius.0))
+            Some((*center, radius.get()))
         }
         _ => None,
     };
@@ -1417,7 +1417,7 @@ fn tangent_entity_distance_definition(
             SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. },
         ) => {
             let line = (*start, *end);
-            let circle = (*center, radius.0);
+            let circle = (*center, radius.get());
             let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
             let length = direction.u.hypot(direction.v);
             if length <= PRESENTATION_MIN_LINE_LENGTH {
@@ -1435,7 +1435,7 @@ fn tangent_entity_distance_definition(
             SketchGeometry::Line { start, end },
         ) => {
             let line = (*start, *end);
-            let circle = (*center, radius.0);
+            let circle = (*center, radius.get());
             let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
             let length = direction.u.hypot(direction.v);
             if length <= PRESENTATION_MIN_LINE_LENGTH {
@@ -2286,7 +2286,10 @@ pub(crate) fn bind_offset_dimension_parameters(
     let parameter_values = parameters
         .iter()
         .filter_map(|parameter| {
-            Some((neutral_parameter_id(parameter), design_length(parameter)?.0))
+            Some((
+                neutral_parameter_id(parameter),
+                design_length(parameter)?.get(),
+            ))
         })
         .collect::<HashMap<_, _>>();
     let mut bindings = Vec::new();
@@ -2330,7 +2333,7 @@ pub(crate) fn bind_offset_dimension_parameters(
                     return None;
                 };
                 (pairs.iter().any(|pair| &pair.source == entity)
-                    && scalar_close(distance.0, parameter_value.abs()))
+                    && scalar_close(distance.get(), parameter_value.abs()))
                 .then_some(offset_index)
             })
             .collect::<Vec<_>>();
@@ -2445,7 +2448,7 @@ pub fn project_spatial_dimension_constraints(
         .filter_map(|parameter| {
             Some((
                 neutral_parameter_id(parameter),
-                design_length(parameter)?.0.abs(),
+                design_length(parameter)?.get().abs(),
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -2490,7 +2493,7 @@ pub fn project_spatial_dimension_constraints(
                     let offset = parameter.as_ref().and_then(|parameter_id| {
                         let expected = *parameter_lengths.get(parameter_id)?;
                         let parameter = parameters_by_id.get(parameter_id)?;
-                        let signed = design_length(parameter)?.0;
+                        let signed = design_length(parameter)?.get();
                         spatial_counted_offset_dimension_definition(
                             &native_kind,
                             native_state,
@@ -3179,7 +3182,7 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         sources,
         results,
         normal,
-        distance: Length(distance),
+        distance: Length::new(distance)?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
             id: parameter.clone(),
             negated: parameter_factor.is_sign_negative(),
@@ -3437,7 +3440,7 @@ fn radial_dimension_definition_at_tolerance(
     };
 
     let radius = match &entity.geometry {
-        Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.0,
+        Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.get(),
         _ => return None,
     };
     let is_radius =
@@ -3613,7 +3616,7 @@ pub(crate) fn annotation_offset_dimension_definition(
             result: result.id().clone(),
             source_reversed: distance.is_sign_negative(),
         }],
-        distance: Length(distance.abs()),
+        distance: Length::new(distance.abs())?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
             id: parameter_id.clone(),
             negated: parameter_factor.is_sign_negative(),
@@ -4731,7 +4734,7 @@ pub(crate) fn concentric_circle_separation(
     if !linear_measurement_matches(center_separation, 0.0, linear_tolerance) {
         return false;
     }
-    let measured = (first_radius.0 - second_radius.0).abs();
+    let measured = (first_radius.get() - second_radius.get()).abs();
     measured > 0.0 && linear_measurement_matches(measured, evaluated_mm, linear_tolerance)
 }
 
@@ -4898,14 +4901,14 @@ fn exact_line_arc_tangency(
                 *line_start,
                 *line_end,
                 *center,
-                radius.0,
+                radius.get(),
                 Point2::new(
-                    center.u + radius.0 * start_angle.0.cos(),
-                    center.v + radius.0 * start_angle.0.sin(),
+                    center.u + radius.get() * start_angle.get().cos(),
+                    center.v + radius.get() * start_angle.get().sin(),
                 ),
                 Point2::new(
-                    center.u + radius.0 * end_angle.0.cos(),
-                    center.v + radius.0 * end_angle.0.sin(),
+                    center.u + radius.get() * end_angle.get().cos(),
+                    center.v + radius.get() * end_angle.get().sin(),
                 ),
             ),
             _ => return false,
@@ -4950,7 +4953,7 @@ fn exact_circular_tangency(
     }
     let circular = |geometry: &Geometry| match geometry {
         Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
-            (radius.0.is_finite() && radius.0 > 0.0).then_some((*center, radius.0))
+            (radius.get().is_finite() && radius.get() > 0.0).then_some((*center, radius.get()))
         }
         _ => None,
     };
@@ -5017,18 +5020,19 @@ fn circular_entity_contains_point(
             end_angle,
         } => {
             let relative = Point2::new(point.u - center.u, point.v - center.v);
-            let scale = 1.0 + radius.0.abs().max(point.u.abs().max(point.v.abs()));
+            let scale = 1.0 + radius.get().abs().max(point.u.abs().max(point.v.abs()));
             let point_tolerance = linear_tolerance.max(EPS_CIRCULAR_TANGENCY * scale.max(1.0));
-            let angular_tolerance = (point_tolerance / radius.0.abs()).max(EPS_CIRCULAR_TANGENCY);
+            let angular_tolerance =
+                (point_tolerance / radius.get().abs()).max(EPS_CIRCULAR_TANGENCY);
             let angle = relative.v.atan2(relative.u);
             let angle_close = |left: f64, right: f64| {
                 let distance = (left - right).abs().rem_euclid(std::f64::consts::TAU);
                 distance.min(std::f64::consts::TAU - distance) <= angular_tolerance
             };
-            (relative.u.hypot(relative.v) - radius.0).abs() <= point_tolerance
-                && (angle_close(angle, start_angle.0)
-                    || angle_close(angle, end_angle.0)
-                    || angle_in_sweep(angle, start_angle.0, end_angle.0, angular_tolerance))
+            (relative.u.hypot(relative.v) - radius.get()).abs() <= point_tolerance
+                && (angle_close(angle, start_angle.get())
+                    || angle_close(angle, end_angle.get())
+                    || angle_in_sweep(angle, start_angle.get(), end_angle.get(), angular_tolerance))
         }
         _ => false,
     }
@@ -5071,7 +5075,7 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
         (
             Geometry::Circle { radius: first, .. } | Geometry::Arc { radius: first, .. },
             Geometry::Circle { radius: second, .. } | Geometry::Arc { radius: second, .. },
-        ) => close(first.0, second.0),
+        ) => close(first.get(), second.get()),
         (
             Geometry::Ellipse {
                 major_radius: first_major,
@@ -5083,7 +5087,10 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
                 minor_radius: second_minor,
                 ..
             },
-        ) => close(first_major.0, second_major.0) && close(first_minor.0, second_minor.0),
+        ) => {
+            close(first_major.get(), second_major.get())
+                && close(first_minor.get(), second_minor.get())
+        }
         _ => false,
     }
 }
@@ -5104,8 +5111,11 @@ fn exact_centered_entity_relation(
     }
     let centered_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
         SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
-            (center.u.is_finite() && center.v.is_finite() && radius.0.is_finite() && radius.0 > 0.0)
-                .then_some((*center, Some(radius.0)))
+            (center.u.is_finite()
+                && center.v.is_finite()
+                && radius.get().is_finite()
+                && radius.get() > 0.0)
+                .then_some((*center, Some(radius.get())))
         }
         SketchGeometry::Ellipse {
             center,
@@ -5114,10 +5124,10 @@ fn exact_centered_entity_relation(
             ..
         } => (center.u.is_finite()
             && center.v.is_finite()
-            && major_radius.0.is_finite()
-            && minor_radius.0.is_finite()
-            && major_radius.0 > 0.0
-            && minor_radius.0 > 0.0)
+            && major_radius.get().is_finite()
+            && minor_radius.get().is_finite()
+            && major_radius.get() > 0.0
+            && minor_radius.get() > 0.0)
             .then_some((*center, None)),
         _ => None,
     };
@@ -5281,7 +5291,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                 <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + length)
         }
         SketchGeometry::Circle { center, radius } => {
-            close((point.u - center.u).hypot(point.v - center.v), radius.0)
+            close((point.u - center.u).hypot(point.v - center.v), radius.get())
         }
         SketchGeometry::Arc {
             center,
@@ -5290,11 +5300,11 @@ pub(crate) fn point_lies_on_sketch_geometry(
             end_angle,
         } => {
             let relative = Point2::new(point.u - center.u, point.v - center.v);
-            close(relative.u.hypot(relative.v), radius.0)
+            close(relative.u.hypot(relative.v), radius.get())
                 && angle_in_sweep(
                     relative.v.atan2(relative.u),
-                    start_angle.0,
-                    end_angle.0,
+                    start_angle.get(),
+                    end_angle.get(),
                     EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9,
                 )
         }
@@ -5305,19 +5315,19 @@ pub(crate) fn point_lies_on_sketch_geometry(
             minor_radius,
             bounds,
         } => {
-            if major_radius.0 <= 0.0 || minor_radius.0 <= 0.0 {
+            if major_radius.get() <= 0.0 || minor_radius.get() <= 0.0 {
                 return false;
             }
             let relative = Point2::new(point.u - center.u, point.v - center.v);
-            let (sin, cos) = major_angle.0.sin_cos();
-            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.0;
-            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
+            let (sin, cos) = major_angle.get().sin_cos();
+            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.get();
+            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.get();
             close(x.mul_add(x, y * y), 1.0)
                 && match bounds {
                     Some([start, end]) => angle_in_sweep(
                         y.atan2(x),
-                        start.0,
-                        end.0,
+                        start.get(),
+                        end.get(),
                         EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9,
                     ),
                     None => true,
@@ -5330,13 +5340,13 @@ pub(crate) fn point_lies_on_sketch_geometry(
             minor_radius,
             bounds,
         } => {
-            if major_radius.0 <= 0.0 || minor_radius.0 <= 0.0 {
+            if major_radius.get() <= 0.0 || minor_radius.get() <= 0.0 {
                 return false;
             }
             let relative = Point2::new(point.u - center.u, point.v - center.v);
-            let (sin, cos) = major_angle.0.sin_cos();
-            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.0;
-            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
+            let (sin, cos) = major_angle.get().sin_cos();
+            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.get();
+            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.get();
             let parameter = y.asinh();
             close(x, parameter.cosh())
                 && match bounds {
@@ -5353,15 +5363,15 @@ pub(crate) fn point_lies_on_sketch_geometry(
             focal_length,
             bounds,
         } => {
-            if focal_length.0 <= 0.0 {
+            if focal_length.get() <= 0.0 {
                 return false;
             }
             let relative = Point2::new(point.u - vertex.u, point.v - vertex.v);
-            let (sin, cos) = axis_angle.0.sin_cos();
+            let (sin, cos) = axis_angle.get().sin_cos();
             let x = relative.u.mul_add(cos, relative.v * sin);
             let y = (-relative.u).mul_add(sin, relative.v * cos);
-            let parameter = y / (2.0 * focal_length.0);
-            close(x, focal_length.0 * parameter * parameter)
+            let parameter = y / (2.0 * focal_length.get());
+            close(x, focal_length.get() * parameter * parameter)
                 && match bounds {
                     Some([start, end]) => {
                         parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
@@ -5467,7 +5477,7 @@ pub(crate) fn exact_counted_offset(
     }
     Some(CountedOffset {
         pairs,
-        distance: Length(canonical_distance?),
+        distance: Length::new(canonical_distance?)?,
     })
 }
 
@@ -5595,7 +5605,7 @@ pub(crate) fn exact_offset_constraint(
     }
     Some(Definition::Offset {
         pairs,
-        distance: Length(canonical_distance?),
+        distance: Length::new(canonical_distance?)?,
         parameter: None,
     })
 }
@@ -5637,13 +5647,13 @@ fn sketch_curve_offset(
                     .max(source_center.v.abs())
                     .max(result_center.u.abs())
                     .max(result_center.v.abs())
-                    .max(source_radius.0)
-                    .max(result_radius.0);
-            (source_radius.0 > 0.0
-                && result_radius.0 > 0.0
+                    .max(source_radius.get())
+                    .max(result_radius.get());
+            (source_radius.get() > 0.0
+                && result_radius.get() > 0.0
                 && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
                 && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
-                .then_some(source_radius.0 - result_radius.0)
+                .then_some(source_radius.get() - result_radius.get())
         }
         (
             SketchGeometry::Circle {
@@ -5664,15 +5674,15 @@ fn sketch_curve_offset(
                     .max(source_center.v.abs())
                     .max(result_center.u.abs())
                     .max(result_center.v.abs())
-                    .max(source_radius.0)
-                    .max(result_radius.0);
-            let result_sweep = result_end.0 - result_start.0;
-            (source_radius.0 > 0.0
-                && result_radius.0 > 0.0
+                    .max(source_radius.get())
+                    .max(result_radius.get());
+            let result_sweep = result_end.get() - result_start.get();
+            (source_radius.get() > 0.0
+                && result_radius.get() > 0.0
                 && result_sweep.abs() > EPS_OFFSET_SWEEP
                 && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
                 && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
-                .then_some(source_radius.0 - result_radius.0)
+                .then_some(source_radius.get() - result_radius.get())
         }
         (
             SketchGeometry::Arc {
@@ -5693,15 +5703,15 @@ fn sketch_curve_offset(
                     .max(source_center.v.abs())
                     .max(result_center.u.abs())
                     .max(result_center.v.abs())
-                    .max(source_radius.0)
-                    .max(result_radius.0);
-            let source_sweep = source_end.0 - source_start.0;
-            (source_radius.0 > 0.0
-                && result_radius.0 > 0.0
+                    .max(source_radius.get())
+                    .max(result_radius.get());
+            let source_sweep = source_end.get() - source_start.get();
+            (source_radius.get() > 0.0
+                && result_radius.get() > 0.0
                 && source_sweep.abs() > EPS_OFFSET_SWEEP
                 && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
                 && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
-                .then_some(source_sweep.signum() * (source_radius.0 - result_radius.0))
+                .then_some(source_sweep.signum() * (source_radius.get() - result_radius.get()))
         }
         (
             SketchGeometry::Arc {
@@ -5724,27 +5734,32 @@ fn sketch_curve_offset(
                     .max(source_center.v.abs())
                     .max(result_center.u.abs())
                     .max(result_center.v.abs())
-                    .max(source_radius.0)
-                    .max(result_radius.0);
-            let source_sweep = source_end.0 - source_start.0;
-            let result_sweep = result_end.0 - result_start.0;
-            let angular_overlap = [source_start.0, source_end.0].into_iter().any(|angle| {
-                angle_in_sweep(
-                    angle,
-                    result_start.0,
-                    result_end.0,
-                    EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
-                )
-            }) || [result_start.0, result_end.0].into_iter().any(|angle| {
-                angle_in_sweep(
-                    angle,
-                    source_start.0,
-                    source_end.0,
-                    EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
-                )
-            });
-            (source_radius.0 > 0.0
-                && result_radius.0 > 0.0
+                    .max(source_radius.get())
+                    .max(result_radius.get());
+            let source_sweep = source_end.get() - source_start.get();
+            let result_sweep = result_end.get() - result_start.get();
+            let angular_overlap = [source_start.get(), source_end.get()]
+                .into_iter()
+                .any(|angle| {
+                    angle_in_sweep(
+                        angle,
+                        result_start.get(),
+                        result_end.get(),
+                        EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
+                    )
+                })
+                || [result_start.get(), result_end.get()]
+                    .into_iter()
+                    .any(|angle| {
+                        angle_in_sweep(
+                            angle,
+                            source_start.get(),
+                            source_end.get(),
+                            EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
+                        )
+                    });
+            (source_radius.get() > 0.0
+                && result_radius.get() > 0.0
                 && source_sweep.abs() > EPS_OFFSET_SWEEP
                 && result_sweep.abs() > EPS_OFFSET_SWEEP
                 && source_sweep.signum() == result_sweep.signum()
@@ -5753,7 +5768,7 @@ fn sketch_curve_offset(
                     <= EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9 * scale
                 && (source_center.v - result_center.v).abs()
                     <= EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9 * scale)
-                .then_some(source_sweep.signum() * (source_radius.0 - result_radius.0))
+                .then_some(source_sweep.signum() * (source_radius.get() - result_radius.get()))
         }
         _ => parallel_line_offset(source, result),
     }
@@ -5903,8 +5918,8 @@ fn reflected_geometry_matches(
                 radius: second_radius,
             },
         ) => {
-            let radius_scale = 1.0 + first_radius.0.abs().max(second_radius.0.abs());
-            (first_radius.0 - second_radius.0).abs()
+            let radius_scale = 1.0 + first_radius.get().abs().max(second_radius.get().abs());
+            (first_radius.get() - second_radius.get()).abs()
                 <= EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
                 && reflect_point(*first_center, *axis_start, *axis_end)
                     .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
@@ -5923,13 +5938,13 @@ fn reflected_geometry_matches(
                 end_angle: second_end,
             },
         ) => {
-            let radius_scale = 1.0 + first_radius.0.abs().max(second_radius.0.abs());
-            let first_sweep = (first_end.0 - first_start.0).abs();
-            let second_sweep = (second_end.0 - second_start.0).abs();
+            let radius_scale = 1.0 + first_radius.get().abs().max(second_radius.get().abs());
+            let first_sweep = (first_end.get() - first_start.get()).abs();
+            let second_sweep = (second_end.get() - second_start.get()).abs();
             let sweep_scale = 1.0 + first_sweep.max(second_sweep);
-            if first_radius.0 <= 0.0
-                || second_radius.0 <= 0.0
-                || (first_radius.0 - second_radius.0).abs()
+            if first_radius.get() <= 0.0
+                || second_radius.get() <= 0.0
+                || (first_radius.get() - second_radius.get()).abs()
                     > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
                 || (first_sweep - second_sweep).abs()
                     > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * sweep_scale
@@ -5945,21 +5960,21 @@ fn reflected_geometry_matches(
                 )
             };
             let Some(reflected_start) = reflect_point(
-                arc_point(*first_center, first_radius.0, first_start.0),
+                arc_point(*first_center, first_radius.get(), first_start.get()),
                 *axis_start,
                 *axis_end,
             ) else {
                 return false;
             };
             let Some(reflected_end) = reflect_point(
-                arc_point(*first_center, first_radius.0, first_end.0),
+                arc_point(*first_center, first_radius.get(), first_end.get()),
                 *axis_start,
                 *axis_end,
             ) else {
                 return false;
             };
-            let second_start = arc_point(*second_center, second_radius.0, second_start.0);
-            let second_end = arc_point(*second_center, second_radius.0, second_end.0);
+            let second_start = arc_point(*second_center, second_radius.get(), second_start.get());
+            let second_end = arc_point(*second_center, second_radius.get(), second_end.get());
             sketch_points_close(reflected_start, second_start)
                 && sketch_points_close(reflected_end, second_end)
                 || sketch_points_close(reflected_start, second_end)

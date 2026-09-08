@@ -101,9 +101,12 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
     assert_eq!(
         unbounded_feature_plane_definition(&scan, &CadIr::empty(), 5),
         Some(IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap(),
         })
     );
 }
@@ -117,9 +120,12 @@ fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
     assert_eq!(
         unbounded_feature_plane_definition(&scan, &ir, 5),
         Some(IrFeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap(),
         })
     );
 }

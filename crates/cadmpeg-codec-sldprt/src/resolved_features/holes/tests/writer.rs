@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -32,12 +32,12 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
                 kind: HoleKind::Simple,
                 ..
             },
-            diameter: Some(Length(6.35)),
+            diameter: Some(actual_diameter),
             extent: Some(LinearTermination::Blind {
-                length: Length(12.0),
+                length: actual_length,
             }),
             ..
-        } if placements.is_none()
+        } if (placements.is_none()) && actual_diameter.get() == 6.35 && actual_length.get() == 12.0
     ));
 
     {
@@ -48,9 +48,9 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         else {
             panic!("typed hole feature");
         };
-        *diameter = Some(Length(8.0));
+        *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
         *extent = Some(LinearTermination::Blind {
-            length: Length(16.0),
+            length: cadmpeg_ir::features::NonZeroLength::new(16.0).unwrap(),
         });
     }
 
@@ -71,7 +71,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -105,15 +105,15 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         FeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::PartialCounterbore {
-                    diameter: Some(Length(10.0)),
+                    diameter: Some(actual_diameter),
                     depth: None,
                 },
                 ..
             },
-            diameter: Some(Length(6.0)),
+            diameter: Some(actual_diameter_2),
             extent: Some(LinearTermination::ThroughAll),
             ..
-        }
+        } if actual_diameter.get() == 10.0 && actual_diameter_2.get() == 6.0
     ));
     assert!(matches!(
         &decoded.ir().model.features[2].definition,
@@ -123,10 +123,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
                 kind: HoleKind::Unresolved(None),
                 ..
             },
-            diameter: Some(Length(5.0)),
+            diameter: Some(actual_diameter),
             extent: None,
             ..
-        } if placements.is_none()
+        } if (placements.is_none()) && actual_diameter.get() == 5.0
     ));
 
     for (index, message) in [
@@ -217,16 +217,21 @@ fn semantic_writer_round_trips_hole_placement() {
             placements.as_deref(),
             Some(
                 &[HolePlacement::Directed {
-                    position: Point3::new(1.0, 2.0, 3.0),
-                    direction: Vector3::new(0.0, 0.0, -1.0),
+                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, -1.0
+                    ))
+                    .unwrap(),
                 }][..]
             )
         );
 
         *face = Some(FaceSelection::Native("face:13".into()));
         *placements = Some(vec![HolePlacement::Directed {
-            position: Point3::new(4.0, 5.0, 6.0),
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .unwrap(),
         }]);
         *extent = Some(LinearTermination::ThroughAll);
     }
@@ -256,15 +261,15 @@ fn semantic_writer_round_trips_hole_placement() {
             ..
         } if face == "face:13"
             && placements.as_deref() == Some(&[HolePlacement::Directed {
-                position: Point3::new(4.0, 5.0, 6.0),
-                direction: Vector3::new(0.0, 1.0, 0.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
             }][..])
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, HoleKind, Length, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -284,30 +289,30 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         FeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
-                    diameter: Length(10.0),
-                    depth: Length(4.0),
+                    diameter: actual_diameter,
+                    depth: actual_depth,
                 },
                 ..
             },
             extent: Some(LinearTermination::Blind {
-                length: Length(20.0),
+                length: actual_length,
             }),
             ..
-        }
+        } if actual_diameter.get() == 10.0 && actual_depth.get() == 4.0 && actual_length.get() == 20.0
     ));
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Countersink {
-                    diameter: Length(9.0),
-                    angle: Angle(value),
+                    diameter: actual_diameter,
+                    angle: value,
                 },
                 ..
             },
             extent: Some(LinearTermination::ThroughAll),
             ..
-        } if (*value - 82f64.to_radians()).abs() < 1.0e-12
+        } if ((value.get() - 82f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 9.0
     ));
 
     {
@@ -324,8 +329,8 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Counterbore {
-            diameter: Length(12.0),
-            depth: Length(5.0),
+            diameter: cadmpeg_ir::features::PositiveLength::new(12.0).unwrap(),
+            depth: cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
         };
         *extent = Some(LinearTermination::ThroughAll);
         let FeatureDefinition::Hole {
@@ -340,11 +345,11 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Countersink {
-            diameter: Length(11.0),
-            angle: Angle(90f64.to_radians()),
+            diameter: cadmpeg_ir::features::PositiveLength::new(11.0).unwrap(),
+            angle: cadmpeg_ir::features::InteriorAngle::new(90f64.to_radians()).unwrap(),
         };
         *extent = Some(LinearTermination::Blind {
-            length: Length(25.0),
+            length: cadmpeg_ir::features::NonZeroLength::new(25.0).unwrap(),
         });
     }
 

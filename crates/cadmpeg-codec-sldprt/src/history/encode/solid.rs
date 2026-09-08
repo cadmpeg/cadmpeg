@@ -4,17 +4,16 @@
 use super::super::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
-    face_selection_value, profile_source, require_direction, resolved_boolean_op,
-    vertex_selection_value,
+    face_selection_value, profile_source, resolved_boolean_op, vertex_selection_value,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
-    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
-    Length, LinearTermination, ProfileRef,
+    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection, HoleBottom,
+    HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
+    LinearTermination, ProfileRef,
 };
 
 #[allow(
@@ -184,7 +183,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.insert(
                             key.into(),
                             format_length_like(
-                                length.0,
+                                length.get(),
                                 existing
                                     .and_then(|record| record.parameters.get(key))
                                     .map(String::as_str),
@@ -212,7 +211,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         properties.insert("EndCondition".into(), "ToFace".into());
                         properties.insert("Face".into(), selection);
                         if let Some(offset) = offset {
-                            parameters.insert("Depth".into(), format_length_mm(offset.0));
+                            parameters.insert("Depth".into(), format_length_mm(offset.get()));
                         }
                     }
                     LinearTermination::ToVertex { vertex }
@@ -228,7 +227,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         let selection = face_selection_value(face).expect("guarded above");
                         properties.insert("EndCondition".into(), "OffsetFromFace".into());
                         properties.insert("Face".into(), selection);
-                        parameters.insert("Depth".into(), format_length_mm(offset.0));
+                        parameters.insert("Depth".into(), format_length_mm(offset.get()));
                     }
                     LinearTermination::ToFace { .. }
                     | LinearTermination::ToVertex { .. }
@@ -242,7 +241,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ExtrudeExtent::Symmetric { side } => match &side.termination {
                     LinearTermination::Blind { length } => {
                         properties.insert("EndCondition".into(), "Symmetric".into());
-                        parameters.insert("Depth".into(), format_length_mm(length.0));
+                        parameters.insert("Depth".into(), format_length_mm(length.get()));
                     }
                     _ => return Err(unsupported_extent()),
                 },
@@ -253,8 +252,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             LinearTermination::Blind { length: second },
                         ) => {
                             properties.insert("EndCondition".into(), "TwoSided".into());
-                            parameters.insert("Depth".into(), format_length_mm(first.0));
-                            parameters.insert("Depth2".into(), format_length_mm(second.0));
+                            parameters.insert("Depth".into(), format_length_mm(first.get()));
+                            parameters.insert("Depth2".into(), format_length_mm(second.get()));
                         }
                         (LinearTermination::ThroughAll, LinearTermination::ThroughAll) => {
                             properties.insert("EndCondition".into(), "ThroughAllBoth".into());
@@ -280,18 +279,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
                 cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } => {
-                    require_direction(*vector, &feature.id, "extrusion direction")?;
-                    properties.insert("Direction".into(), format_vector3(*vector));
+                    properties.insert("Direction".into(), format_vector3(vector.get()));
                 }
             }
             if let Some(draft) = first_draft {
-                if !draft.0.is_finite() {
+                if !draft.get().is_finite() {
                     return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has a non-finite extrusion draft",
                         feature.id
                     )));
                 }
-                parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                parameters.insert("Draft".into(), format_angle_rad(draft.get()));
             }
             if *op != BooleanOp::Unresolved
                 && (properties.contains_key("Operation")
@@ -333,10 +331,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         placements: &Option<Vec<HolePlacement>>,
         construction: &HoleConstruction,
         exit_kind: &Option<HoleKind>,
-        diameter: &Option<Length>,
+        diameter: &Option<cadmpeg_ir::features::PositiveLength>,
         extent: &Option<LinearTermination>,
         bottom: &Option<HoleBottom>,
-        taper_angle: &Option<Angle>,
+        taper_angle: &Option<cadmpeg_ir::features::InteriorAngle>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -378,7 +376,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(diameter) = diameter {
-                parameters.insert("Diameter".into(), format_length_mm(diameter.0));
+                parameters.insert("Diameter".into(), format_length_mm(diameter.get()));
             }
             if let Some(kind) = kind {
                 match kind {
@@ -414,7 +412,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadPitch");
                         parameters.insert(
                             "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
+                            format_angle_rad(drill_point_angle.get()),
                         );
                     }
                     HoleKind::Counterbore { diameter, depth } => {
@@ -423,9 +421,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadMajorDiameter");
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
-                        parameters
-                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.insert(
+                            "CounterboreDiameter".into(),
+                            format_length_mm(diameter.get()),
+                        );
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.get()));
                         parameters.remove("DrillPointAngle");
                     }
                     HoleKind::CounterboreDrilled {
@@ -438,12 +438,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadMajorDiameter");
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
-                        parameters
-                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.insert(
+                            "CounterboreDiameter".into(),
+                            format_length_mm(diameter.get()),
+                        );
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.get()));
                         parameters.insert(
                             "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
+                            format_angle_rad(drill_point_angle.get()),
                         );
                     }
                     HoleKind::Countersink { diameter, angle } => {
@@ -453,9 +455,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadDepth");
                         parameters.remove("ThreadPitch");
                         parameters.remove("DrillPointAngle");
-                        parameters
-                            .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                        parameters.insert(
+                            "CountersinkDiameter".into(),
+                            format_length_mm(diameter.get()),
+                        );
+                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.get()));
                     }
                     HoleKind::Counterdrill { .. } => {
                         return Err(CodecError::NotImplemented(format!(
@@ -483,17 +487,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.remove("CountersinkAngle");
                 parameters.insert(
                     "ThreadMajorDiameter".into(),
-                    format_length_mm(major_diameter.0),
+                    format_length_mm(major_diameter.get()),
                 );
-                parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
+                parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.get()));
                 if let Some(pitch) = pitch {
-                    parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
+                    parameters.insert("ThreadPitch".into(), format_length_mm(pitch.get()));
                 } else {
                     parameters.remove("ThreadPitch");
                 }
                 parameters.insert(
                     "DrillPointAngle".into(),
-                    format_angle_rad(drill_point_angle.0),
+                    format_angle_rad(drill_point_angle.get()),
                 );
             }
             let mut properties = feature.source_properties.clone();
@@ -533,9 +537,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             feature.id
                         )));
                     }
-                    require_direction(*direction, &feature.id, "hole direction")?;
-                    properties.insert("Position".into(), format_point3_mm(*position));
-                    properties.insert("Direction".into(), format_vector3(*direction));
+                    properties.insert("Position".into(), format_point3_mm(position.get()));
+                    properties.insert("Direction".into(), format_vector3(direction.get()));
                 }
                 [] if existing.is_none() => {
                     properties.remove("Position");
@@ -555,10 +558,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match extent {
-                Some(LinearTermination::Blind {
-                    length: Length(depth),
-                }) => {
-                    parameters.insert("Depth".into(), format_length_mm(*depth));
+                Some(LinearTermination::Blind { length: depth }) => {
+                    let depth = depth.get();
+
+                    parameters.insert("Depth".into(), format_length_mm(depth));
                     properties.insert("EndCondition".into(), "Blind".into());
                 }
                 Some(LinearTermination::ThroughAll) => {

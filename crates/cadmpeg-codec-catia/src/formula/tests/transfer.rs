@@ -28,7 +28,10 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.ordinal, 0);
     assert_eq!(input.expression, "35 mm");
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert!(input.dependencies.is_empty());
     assert_eq!(
         decoded
@@ -121,14 +124,20 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
 
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.expression, "35 mm");
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert!(input.dependencies.is_empty());
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
     assert_eq!(output.expression, "#1_ /2-2mm");
-    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Length(Length::new(33.0).unwrap()))
+    );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -324,7 +333,7 @@ fn decode_transfers_a_closed_constant_formula() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(12.0)
+            cadmpeg_ir::features::Length::new(12.0).unwrap()
         ))
     );
     assert!(decoded
@@ -427,20 +436,20 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
     assert_eq!(
         start.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length(2.0)
+            cadmpeg_ir::features::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
         end.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length(10.0)
+            cadmpeg_ir::features::Length::new(10.0).unwrap()
         ))
     );
     assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length(4.0)
+            cadmpeg_ir::features::Length::new(4.0).unwrap()
         ))
     );
     assert_eq!(
@@ -473,7 +482,10 @@ fn decode_transfers_typed_integer_to_angle_formula() {
 
     assert_eq!(input.expression, "2");
     assert_eq!(input.value, Some(ParameterValue::Integer(2)));
-    assert_eq!(output.value, Some(ParameterValue::Angle(Angle(0.5))));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Angle(Angle::new(0.5).unwrap()))
+    );
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
@@ -795,9 +807,15 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
         panic!("closed bare-symbol formula parameters")
     };
 
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert_eq!(output.expression, "#1_-2mm");
-    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Length(Length::new(33.0).unwrap()))
+    );
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
 
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -840,7 +858,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
     assert_eq!(
         width.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(12.0)
+            cadmpeg_ir::features::Length::new(12.0).unwrap()
         ))
     );
     assert!(width.dependencies.is_empty());
@@ -932,7 +950,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert_eq!(
         intermediate.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(2.0)
+            cadmpeg_ir::features::Length::new(2.0).unwrap()
         ))
     );
     assert!(intermediate.dependencies.is_empty());

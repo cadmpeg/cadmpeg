@@ -64,7 +64,7 @@ pub(super) fn bind_circular_profile_by_dimension(
             else {
                 return None;
             };
-            Some((sketch.id.clone(), radius.0))
+            Some((sketch.id.clone(), radius.get()))
         })
         .collect::<Vec<_>>();
     let mut proposals = Vec::new();
@@ -89,8 +89,8 @@ pub(super) fn bind_circular_profile_by_dimension(
                         return false;
                     };
                     let expected = match parameter.display {
-                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
+                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
                         None => return false,
                     };
                     same_dimension_length(expected, radius)
@@ -139,7 +139,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let neutral_owners = features
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.native_ref.as_deref()?)))
@@ -272,23 +272,44 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         && !scalar_is_untyped_real
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Length(
-                            cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                            cadmpeg_ir::features::Length::new(scalar.value * 1000.0).ok_or_else(
+                                || {
+                                    cadmpeg_core::CodecError::Malformed(
+                                        "SolidWorks projected length must be finite".into(),
+                                    )
+                                },
+                            )?,
                         ))
                     } else if angle_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Angle(
-                            cadmpeg_ir::features::Angle(scalar.value),
+                            cadmpeg_ir::features::Angle::new(scalar.value).ok_or_else(|| {
+                                cadmpeg_core::CodecError::Malformed(
+                                    "SolidWorks projected angle must be finite".into(),
+                                )
+                            })?,
                         ))
                     } else {
                         match parameter.value.as_ref() {
                             Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
                                 Some(cadmpeg_ir::features::ParameterValue::Length(
-                                    cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                                    cadmpeg_ir::features::Length::new(scalar.value * 1000.0)
+                                        .ok_or_else(|| {
+                                            cadmpeg_core::CodecError::Malformed(
+                                                "SolidWorks projected length must be finite".into(),
+                                            )
+                                        })?,
                                 ))
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Angle(_)) => {
                                 Some(cadmpeg_ir::features::ParameterValue::Angle(
-                                    cadmpeg_ir::features::Angle(scalar.value),
+                                    cadmpeg_ir::features::Angle::new(scalar.value).ok_or_else(
+                                        || {
+                                            cadmpeg_core::CodecError::Malformed(
+                                                "SolidWorks projected angle must be finite".into(),
+                                            )
+                                        },
+                                    )?,
                                 ))
                             }
                             Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
@@ -304,6 +325,8 @@ pub(crate) fn bind_parameter_scalars<'a>(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Materialize evaluated relation dimensions that have no driving scalar.
@@ -381,8 +404,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             else {
                 continue;
             };
-            let (value, display, expression) =
-                relation_display_parameter_value(relation.family, scalar.value);
+            let Some((value, display, expression)) =
+                relation_display_parameter_value(relation.family, scalar.value)
+            else {
+                continue;
+            };
             let owner = feature.id.clone();
             let ordinal = next_ordinals.entry(owner.clone()).or_insert(0);
             let current_ordinal = *ordinal;
@@ -442,17 +468,17 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
 fn relation_display_parameter_value(
     family: FeatureInputRelationFamily,
     value: f64,
-) -> (ParameterValue, Option<DimensionDisplay>, String) {
-    match family {
+) -> Option<(ParameterValue, Option<DimensionDisplay>, String)> {
+    Some(match family {
         FeatureInputRelationFamily::Angle => (
-            ParameterValue::Angle(Angle(value)),
+            ParameterValue::Angle(Angle::new(value)?),
             None,
             crate::history::format_angle_rad(value),
         ),
         FeatureInputRelationFamily::CircleDiameter => {
             let millimetres = value * 1000.0;
             (
-                ParameterValue::Length(Length(millimetres)),
+                ParameterValue::Length(Length::new(millimetres)?),
                 Some(DimensionDisplay::Diameter),
                 format!(
                     "<MOD-DIAM>{}",
@@ -467,12 +493,12 @@ fn relation_display_parameter_value(
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
             let millimetres = value * 1000.0;
             (
-                ParameterValue::Length(Length(millimetres)),
+                ParameterValue::Length(Length::new(millimetres)?),
                 None,
                 crate::history::format_length_mm(millimetres),
             )
         }
-    }
+    })
 }
 
 /// Apply relation-defined units and display semantics to parameters named by display scalars.
@@ -480,7 +506,7 @@ pub(crate) fn type_display_relation_parameters(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let ownership = owned_relation_parameters(features, parameters, lanes);
     let mut families = HashMap::<cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
@@ -504,7 +530,11 @@ pub(crate) fn type_display_relation_parameters(
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
                     parameter.expression = crate::history::format_angle_rad(value);
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(
-                        cadmpeg_ir::features::Angle(value),
+                        cadmpeg_ir::features::Angle::new(value).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected angle must be finite".into(),
+                            )
+                        })?,
                     ));
                 }
             }
@@ -522,7 +552,11 @@ pub(crate) fn type_display_relation_parameters(
                         crate::history::format_length_mm(value)
                     };
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                        cadmpeg_ir::features::Length(value),
+                        cadmpeg_ir::features::Length::new(value).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
                     ));
                 }
                 if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
@@ -537,7 +571,11 @@ pub(crate) fn type_display_relation_parameters(
                         crate::history::format_length_mm(value)
                     };
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                        cadmpeg_ir::features::Length(value),
+                        cadmpeg_ir::features::Length::new(value).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?,
                     ));
                 }
                 if family == FeatureInputRelationFamily::CircleDiameter
@@ -552,6 +590,8 @@ pub(crate) fn type_display_relation_parameters(
             }
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn project_compact_body_selections(
@@ -784,11 +824,13 @@ fn variable_fillet_radius_groups<'a>(
             let points = ordered_parameters
                 .into_iter()
                 .enumerate()
-                .map(|(parameter, (_, radius))| VariableRadius {
-                    parameter: parameter as f64,
-                    radius: Length(radius),
+                .map(|(parameter, (_, radius))| {
+                    Some(VariableRadius {
+                        parameter: parameter as f64,
+                        radius: Length::new(radius)?,
+                    })
                 })
-                .collect();
+                .collect::<Option<Vec<_>>>()?;
             return Some(vec![(RadiusSpec::Variable { points }, selections)]);
         }
     }
@@ -904,11 +946,13 @@ fn variable_fillet_radius_groups<'a>(
         let points = ordered_parameters
             .into_iter()
             .enumerate()
-            .map(|(parameter, (_, radius))| VariableRadius {
-                parameter: parameter as f64,
-                radius: Length(radius),
+            .map(|(parameter, (_, radius))| {
+                Some(VariableRadius {
+                    parameter: parameter as f64,
+                    radius: Length::new(radius)?,
+                })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()?;
         return Some(vec![(RadiusSpec::Variable { points }, selections)]);
     }
     if control_names.len() != parameter_names.len()
@@ -969,28 +1013,29 @@ fn variable_fillet_radius_groups<'a>(
     } else if !unassigned.is_empty() {
         return None;
     }
-    (!groups.is_empty()).then(|| {
-        groups
-            .into_iter()
-            .map(|((first, second), selections)| {
-                (
-                    RadiusSpec::Variable {
-                        points: vec![
-                            VariableRadius {
-                                parameter: 0.0,
-                                radius: Length(f64::from_bits(first)),
-                            },
-                            VariableRadius {
-                                parameter: 1.0,
-                                radius: Length(f64::from_bits(second)),
-                            },
-                        ],
-                    },
-                    selections,
-                )
-            })
-            .collect()
-    })
+    if groups.is_empty() {
+        return None;
+    }
+    groups
+        .into_iter()
+        .map(|((first, second), selections)| {
+            Some((
+                RadiusSpec::Variable {
+                    points: vec![
+                        VariableRadius {
+                            parameter: 0.0,
+                            radius: Length::new(f64::from_bits(first))?,
+                        },
+                        VariableRadius {
+                            parameter: 1.0,
+                            radius: Length::new(f64::from_bits(second))?,
+                        },
+                    ],
+                },
+                selections,
+            ))
+        })
+        .collect()
 }
 
 pub(crate) fn project_compact_surface_selections(
@@ -1543,6 +1588,12 @@ pub(crate) fn project_draft_operands(
         else {
             continue;
         };
+        let Some(pull_direction) =
+            cadmpeg_ir::features::FeatureDirection3::new(first.pull_direction)
+        else {
+            continue;
+        };
+
         let FeatureDefinition::Draft { faces, anchor, .. } = &mut feature.definition else {
             continue;
         };
@@ -1581,7 +1632,7 @@ pub(crate) fn project_draft_operands(
                 *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
                     tool,
                     pull: cadmpeg_ir::features::DraftPull {
-                        direction: first.pull_direction,
+                        direction: pull_direction,
                         plane: None,
                     },
                 };
@@ -1600,7 +1651,7 @@ pub(crate) fn project_draft_operands(
         match anchor {
             cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
                 *pull = Some(cadmpeg_ir::features::DraftPull {
-                    direction: first.pull_direction,
+                    direction: pull_direction,
                     plane: None,
                 });
             }
@@ -1930,10 +1981,12 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             }
             continue;
         }
-        let Some(Length(diameter)) = diameter else {
+        let Some(diameter) = diameter else {
             continue;
         };
-        let selected = unique_cylindrical_face(*diameter * 0.5, faces, surfaces).or_else(|| {
+        let diameter = diameter.get();
+
+        let selected = unique_cylindrical_face(diameter * 0.5, faces, surfaces).or_else(|| {
             native
                 .as_ref()
                 .and_then(|_| unique_topological_cylindrical_face(faces, surfaces))
@@ -2008,11 +2061,9 @@ pub(crate) fn project_unbound_offset_plane_faces(
             continue;
         };
         let (origin, normal) = match reference.as_ref() {
-            Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane {
-                origin,
-                normal,
-                ..
-            }) => (*origin, *normal),
+            Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame }) => {
+                (frame.origin(), frame.normal())
+            }
             _ => continue,
         };
         let Some(selected) = unique_planar_face(origin, normal, faces, surfaces) else {

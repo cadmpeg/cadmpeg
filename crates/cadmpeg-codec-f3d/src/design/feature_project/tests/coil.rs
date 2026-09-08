@@ -136,9 +136,12 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     assert_eq!(
         construction.placement,
         CoilPlacement::Explicit {
-            origin: cadmpeg_ir::math::Point3::new(12.5, -25.0, 37.5),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            radial: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            frame: cadmpeg_ir::features::FeatureUnitPlaneFrame::new(
+                cadmpeg_ir::math::Point3::new(12.5, -25.0, 37.5),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
         }
     );
 }

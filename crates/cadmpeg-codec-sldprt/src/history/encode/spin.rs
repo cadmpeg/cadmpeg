@@ -70,21 +70,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         termination: AngularTermination::Angle { angle },
                     } => {
                         properties.insert("EndCondition".into(), "OneSided".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                        parameters.insert("Angle".into(), format_angle_rad(angle.get()));
                     }
                     RevolveExtent::Symmetric {
                         termination: AngularTermination::Angle { angle },
                     } => {
                         properties.insert("EndCondition".into(), "Symmetric".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                        parameters.insert("Angle".into(), format_angle_rad(angle.get()));
                     }
                     RevolveExtent::TwoSided {
                         first: AngularTermination::Angle { angle: first },
                         second: AngularTermination::Angle { angle: second },
                     } => {
                         properties.insert("EndCondition".into(), "TwoSided".into());
-                        parameters.insert("Angle".into(), format_angle_rad(first.0));
-                        parameters.insert("Angle2".into(), format_angle_rad(second.0));
+                        parameters.insert("Angle".into(), format_angle_rad(first.get()));
+                        parameters.insert("Angle2".into(), format_angle_rad(second.get()));
                     }
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -95,14 +95,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             if let Some(axis) = construction.axis() {
-                if !valid_direction(axis.direction) {
+                if !valid_direction(axis.direction.get()) {
                     return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has a degenerate revolution axis",
                         feature.id
                     )));
                 }
-                properties.insert("AxisOrigin".into(), format_point3_mm(axis.origin));
-                properties.insert("AxisDirection".into(), format_vector3(axis.direction));
+                properties.insert("AxisOrigin".into(), format_point3_mm(axis.origin.get()));
+                properties.insert("AxisDirection".into(), format_vector3(axis.direction.get()));
             }
             if *op != BooleanOp::Unresolved {
                 properties.insert(
@@ -144,7 +144,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         path_extent: &Option<SweepPathExtent>,
         guide_rail: &Option<SweepGuideRail>,
         taper: &Option<Angle>,
-        scale: &Option<f64>,
+        scale: &Option<cadmpeg_ir::features::PositiveReal>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -231,21 +231,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             match twist {
                 Some(twist) => {
-                    parameters.insert("Twist".into(), format_angle_rad(twist.0));
+                    parameters.insert("Twist".into(), format_angle_rad(twist.get()));
                 }
                 None => {
                     parameters.remove("Twist");
                 }
             }
             match scale {
-                Some(scale) if scale.is_finite() && *scale > 0.0 => {
-                    parameters.insert("Scale".into(), scale.to_string());
-                }
-                Some(_) => {
-                    return Err(CodecError::malformed(format_args!(
-                        "SLDPRT feature {} has an invalid sweep scale",
-                        feature.id
-                    )))
+                Some(scale) => {
+                    parameters.insert("Scale".into(), scale.get().to_string());
                 }
                 None => {
                     parameters.remove("Scale");
@@ -301,7 +295,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         solid: &bool,
         ruled: &bool,
         linearize: &bool,
-        max_degree: &Option<u32>,
+        max_degree: &Option<std::num::NonZeroU32>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

@@ -1297,7 +1297,10 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Vec::new(),
             outputs: vec![body],
             definition: FeatureDefinition::DatumPoint {
-                position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
+                .unwrap(),
                 construction: None,
             },
             native_ref: None,
@@ -1314,7 +1317,10 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
-                position: cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    1.0, 0.0, 0.0,
+                ))
+                .unwrap(),
                 construction: None,
             },
             native_ref: None,

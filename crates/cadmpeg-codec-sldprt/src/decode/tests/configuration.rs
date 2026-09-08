@@ -343,7 +343,10 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         material: None,
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Default::default()),
-        parameter_values: BTreeMap::from([(parameter, ParameterValue::Length(Length(12.0)))]),
+        parameter_values: BTreeMap::from([(
+            parameter,
+            ParameterValue::Length(Length::new(12.0).unwrap()),
+        )]),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: Some("native:configuration".into()),

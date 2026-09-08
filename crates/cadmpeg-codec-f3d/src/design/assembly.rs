@@ -907,10 +907,13 @@ mod tests {
             feature(
                 &origin_scope.id,
                 FeatureDefinition::DatumCoordinateSystem {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    x_axis: Vector3::new(1.0, 0.0, 0.0),
-                    y_axis: Vector3::new(0.0, 1.0, 0.0),
-                    z_axis: Vector3::new(0.0, 0.0, 1.0),
+                    frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .unwrap(),
                 },
             ),
         ];

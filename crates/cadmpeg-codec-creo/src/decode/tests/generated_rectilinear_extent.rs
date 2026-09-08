@@ -6,7 +6,7 @@ use crate::decode::sweep::{
     RectilinearPlaneFamily, RectilinearPlaneStation,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -18,7 +18,7 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(42.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(42.0).unwrap(),
                 },
                 draft: None,
             },
@@ -45,7 +45,7 @@ fn section() -> crate::feature::FeatureSection3d {
 fn blind(length: f64) -> ExtrudeSide {
     ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: Length(length),
+            length: cadmpeg_ir::features::NonZeroLength::new(length).unwrap(),
         },
         draft: None,
     }

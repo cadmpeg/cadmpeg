@@ -209,7 +209,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(8.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(8.0).unwrap(),
                     },
                     draft: None,
                 },
@@ -293,7 +293,7 @@ fn hole_outline_placement_preserves_stored_plane_order() {
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: Length(6.5),
+                length: cadmpeg_ir::features::NonZeroLength::new(6.5).unwrap(),
             },
         ))
     );
@@ -1731,8 +1731,9 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         offset: 0,
     };
     let axis = RevolutionAxis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            .unwrap(),
         reference: None,
     };
     let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
@@ -1782,9 +1783,9 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     ));
     let centered_arc = SketchGeometry::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(2.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(std::f64::consts::PI).unwrap(),
     };
     assert!(matches!(
         revolved_section_surface(&transform, &centered_arc, &axis),
@@ -1792,9 +1793,9 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     ));
     let offset_arc = SketchGeometry::Arc {
         center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        radius: Length::new(2.0).unwrap(),
+        start_angle: Angle::new(0.0).unwrap(),
+        end_angle: Angle::new(std::f64::consts::PI).unwrap(),
     };
     assert!(matches!(
         revolved_section_surface(&transform, &offset_arc, &axis),
@@ -1803,7 +1804,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     ));
     let offset_circle = SketchGeometry::Circle {
         center: Point2::new(5.0, 3.0),
-        radius: Length(2.0),
+        radius: Length::new(2.0).unwrap(),
     };
     assert!(matches!(
         revolved_section_surface(&transform, &offset_circle, &axis),

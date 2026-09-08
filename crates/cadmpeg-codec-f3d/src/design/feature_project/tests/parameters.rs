@@ -42,7 +42,7 @@ fn user_parameters_project_in_source_order_with_units_and_dependencies() {
     assert_eq!(projected[0].owner, None);
     assert_eq!(
         projected[0].value,
-        Some(ParameterValue::Length(Length(60.0)))
+        Some(ParameterValue::Length(Length::new(60.0).unwrap()))
     );
     assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
     assert_eq!(
@@ -94,7 +94,7 @@ fn parameters_project_all_design_database_unit_tokens() {
                 .iter()
                 .find(|parameter| parameter.name == format!("Value{ordinal}"))
                 .and_then(|parameter| parameter.value.clone()),
-            Some(ParameterValue::Length(Length(12.5)))
+            Some(ParameterValue::Length(Length::new(12.5).unwrap()))
         );
     }
     for ordinal in 5..7 {
@@ -103,7 +103,7 @@ fn parameters_project_all_design_database_unit_tokens() {
                 .iter()
                 .find(|parameter| parameter.name == format!("Value{ordinal}"))
                 .and_then(|parameter| parameter.value.clone()),
-            Some(ParameterValue::Angle(Angle(1.25)))
+            Some(ParameterValue::Angle(Angle::new(1.25).unwrap()))
         );
     }
     let unclassified = projected

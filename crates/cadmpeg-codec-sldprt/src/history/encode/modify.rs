@@ -6,8 +6,8 @@ use super::super::{
 };
 use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
 use super::support::{
-    body_selection_value, edge_selection_value, face_selection_value, require_direction,
-    require_same_family, resolved_boolean_op, write_native_selection,
+    body_selection_value, edge_selection_value, face_selection_value, require_same_family,
+    resolved_boolean_op, write_native_selection,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
@@ -15,8 +15,7 @@ use crate::history::classify::{feature_family, feature_input_class, is_chamfer, 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     AxisAngle, BodyRetentionMode, BodySelection, ChamferGroup, ChamferSpec, EdgeSelection,
-    FaceMotion, FaceSelection, FilletGroup, FlexMode, Length, RadiusSpec, ScaleCenter,
-    ScaleFactors,
+    FaceMotion, FaceSelection, FilletGroup, FlexMode, RadiusSpec, ScaleCenter, ScaleFactors,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -77,9 +76,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         )));
                     }
                 }
-                RadiusSpec::Constant {
-                    radius: Length(radius),
-                } => {
+                RadiusSpec::Constant { radius } => {
+                    let radius = radius.get();
+
                     parameters.retain(|name, _| {
                         name != "Radius"
                             && !indexed_name(name, "Radius")
@@ -87,7 +86,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     });
                     let key = if positional_radius { "D1" } else { "Radius" };
                     let value = format_length_like(
-                        *radius,
+                        radius,
                         existing
                             .and_then(|record| record.parameters.get(key))
                             .map(String::as_str),
@@ -133,8 +132,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     for (index, point) in points.iter().enumerate() {
                         parameters.insert(format!("Position{index}"), point.parameter.to_string());
-                        parameters
-                            .insert(format!("Radius{index}"), format_length_mm(point.radius.0));
+                        parameters.insert(
+                            format!("Radius{index}"),
+                            format_length_mm(point.radius.get()),
+                        );
                     }
                 }
             }
@@ -231,7 +232,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     let key = if positional { "D1" } else { "Distance" };
                     let value = format_length_like(
-                        distance.0,
+                        distance.get(),
                         existing
                             .and_then(|record| record.parameters.get(key))
                             .map(String::as_str),
@@ -261,7 +262,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         first_key.into(),
                         format_length_like(
-                            first.0,
+                            first.get(),
                             existing
                                 .and_then(|record| record.parameters.get(first_key))
                                 .map(String::as_str),
@@ -270,7 +271,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         second_key.into(),
                         format_length_like(
-                            second.0,
+                            second.get(),
                             existing
                                 .and_then(|record| record.parameters.get(second_key))
                                 .map(String::as_str),
@@ -301,7 +302,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         distance_key.into(),
                         format_length_like(
-                            distance.0,
+                            distance.get(),
                             existing
                                 .and_then(|record| record.parameters.get(distance_key))
                                 .map(String::as_str),
@@ -310,7 +311,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         angle_key.into(),
                         format_angle_like(
-                            angle.0,
+                            angle.get(),
                             existing
                                 .and_then(|record| record.parameters.get(angle_key))
                                 .map(String::as_str),
@@ -585,33 +586,31 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match motion {
                 FaceMotion::Offset { distance } => {
                     properties.insert("Mode".into(), "Offset".into());
-                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    parameters.insert("Distance".into(), format_length_mm(distance.get()));
                 }
                 FaceMotion::Translate {
                     direction,
                     distance,
                 } => {
-                    require_direction(*direction, &feature.id, "face translation")?;
                     properties.insert("Mode".into(), "Translate".into());
-                    properties.insert("Direction".into(), format_vector3(*direction));
-                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    properties.insert("Direction".into(), format_vector3(direction.get()));
+                    parameters.insert("Distance".into(), format_length_mm(distance.get()));
                 }
                 FaceMotion::Rotate {
                     axis_origin,
                     axis_dir,
                     angle,
                 } => {
-                    require_direction(*axis_dir, &feature.id, "face rotation axis")?;
-                    if !angle.0.is_finite() {
+                    if !angle.get().is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite face rotation angle",
                             feature.id
                         )));
                     }
                     properties.insert("Mode".into(), "Rotate".into());
-                    properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-                    properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    properties.insert("AxisOrigin".into(), format_point3_mm(axis_origin.get()));
+                    properties.insert("AxisDirection".into(), format_vector3(axis_dir.get()));
+                    parameters.insert("Angle".into(), format_angle_rad(angle.get()));
                 }
             }
             NeutralFeatureEncoding {
@@ -660,8 +659,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("Copies".into(), copies.to_string());
             match rotation {
                 Some(rotation) => {
-                    require_direction(rotation.direction, &feature.id, "body rotation axis")?;
-                    if !rotation.angle.0.is_finite()
+                    if !rotation.angle.get().is_finite()
                         || ![rotation.origin.x, rotation.origin.y, rotation.origin.z]
                             .into_iter()
                             .all(f64::is_finite)
@@ -671,9 +669,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             feature.id
                         )));
                     }
-                    properties.insert("RotationOrigin".into(), format_point3_mm(rotation.origin));
-                    properties.insert("RotationAxis".into(), format_vector3(rotation.direction));
-                    parameters.insert("Rotation".into(), format_angle_rad(rotation.angle.0));
+                    properties.insert(
+                        "RotationOrigin".into(),
+                        format_point3_mm(rotation.origin.get()),
+                    );
+                    properties.insert(
+                        "RotationAxis".into(),
+                        format_vector3(rotation.direction.get()),
+                    );
+                    parameters.insert("Rotation".into(), format_angle_rad(rotation.angle.get()));
                 }
                 None => {
                     properties.remove("RotationOrigin");
@@ -692,7 +696,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_dome(
         &self,
         faces: &FaceSelection,
-        height: &Option<Length>,
+        height: &Option<cadmpeg_ir::features::PositiveLength>,
         elliptical: &Option<bool>,
         reverse: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -717,7 +721,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if height.is_some_and(|height| !height.0.is_finite()) {
+            if height.is_some_and(|height| !height.get().is_finite()) {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite dome height",
                     feature.id
@@ -727,7 +731,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(height) = height {
-                parameters.insert("Height".into(), format_length_mm(height.0));
+                parameters.insert("Height".into(), format_length_mm(height.get()));
             }
             let mut properties = feature.source_properties.clone();
             if let Some(faces) = faces {
@@ -749,7 +753,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_flex(
         &self,
-        axis: &Option<Vector3>,
+        axis: &Option<cadmpeg_ir::features::FeatureDirection3>,
         mode: &FlexMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -767,21 +771,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if let Some(axis) = axis {
-                require_direction(*axis, &feature.id, "flex axis")?;
-            }
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             let mut properties = feature.source_properties.clone();
             if let Some(axis) = axis {
-                properties.insert("Axis".into(), format_vector3(*axis));
+                properties.insert("Axis".into(), format_vector3(axis.get()));
                 properties.remove("AxisDirection");
             }
             match mode {
                 FlexMode::Unresolved(_) => {}
                 FlexMode::Bending { angle } => {
-                    if !angle.0.is_finite() {
+                    if !angle.get().is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite flex angle",
                             feature.id
@@ -790,10 +791,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Factor");
                     parameters.remove("Distance");
                     properties.insert("Mode".into(), "Bending".into());
-                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    parameters.insert("Angle".into(), format_angle_rad(angle.get()));
                 }
                 FlexMode::Twisting { angle } => {
-                    if !angle.0.is_finite() {
+                    if !angle.get().is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite flex angle",
                             feature.id
@@ -802,22 +803,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Factor");
                     parameters.remove("Distance");
                     properties.insert("Mode".into(), "Twisting".into());
-                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    parameters.insert("Angle".into(), format_angle_rad(angle.get()));
                 }
                 FlexMode::Tapering { factor } => {
-                    if !factor.is_finite() || *factor <= 0.0 {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has an invalid flex taper factor",
-                            feature.id
-                        )));
-                    }
                     parameters.remove("Angle");
                     parameters.remove("Distance");
                     properties.insert("Mode".into(), "Tapering".into());
-                    parameters.insert("Factor".into(), factor.to_string());
+                    parameters.insert("Factor".into(), factor.get().to_string());
                 }
                 FlexMode::Stretching { distance } => {
-                    if !distance.0.is_finite() {
+                    if !distance.get().is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite flex distance",
                             feature.id
@@ -826,7 +821,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Angle");
                     parameters.remove("Factor");
                     properties.insert("Mode".into(), "Stretching".into());
-                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                    parameters.insert("Distance".into(), format_length_mm(distance.get()));
                 }
             }
             NeutralFeatureEncoding {
@@ -869,12 +864,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let factors_valid = resolved_factors.is_none_or(|factors| {
-                [factors.x, factors.y, factors.z]
-                    .into_iter()
-                    .all(|factor| factor.is_finite() && factor != 0.0)
-            });
-            if !factors_valid || !center_valid {
+            if !center_valid {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid scale transform",
                     feature.id
@@ -886,16 +876,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match factors {
                 ScaleFactors::Unresolved => {}
                 ScaleFactors::Uniform(factor) => {
-                    parameters.insert("Factor".into(), factor.to_string());
+                    parameters.insert("Factor".into(), factor.get().to_string());
                     parameters.remove("ScaleX");
                     parameters.remove("ScaleY");
                     parameters.remove("ScaleZ");
                 }
                 ScaleFactors::PerAxis(factors) => {
                     parameters.remove("Factor");
-                    parameters.insert("ScaleX".into(), factors.x.to_string());
-                    parameters.insert("ScaleY".into(), factors.y.to_string());
-                    parameters.insert("ScaleZ".into(), factors.z.to_string());
+                    parameters.insert("ScaleX".into(), factors[0].get().to_string());
+                    parameters.insert("ScaleY".into(), factors[1].get().to_string());
+                    parameters.insert("ScaleZ".into(), factors[2].get().to_string());
                 }
             }
             let mut properties = feature.source_properties.clone();
@@ -916,7 +906,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(ScaleCenter::Point(point)) => {
                     properties.remove("CenterRef");
                     properties.insert("CenterType".into(), "Point".into());
-                    properties.insert("Center".into(), format_point3_mm(*point));
+                    properties.insert("Center".into(), format_point3_mm(point.get()));
                 }
                 Some(ScaleCenter::Native(reference)) => {
                     properties.remove("Center");
