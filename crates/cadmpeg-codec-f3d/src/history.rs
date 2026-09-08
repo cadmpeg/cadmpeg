@@ -4325,13 +4325,9 @@ fn resolve_thread_face_by_transition(
     if source_candidates.next().is_some() {
         return None;
     }
-    let minimum_radius = construction.minor_diameter * 5.0;
-    let maximum_radius = construction.major_diameter * 5.0;
-    if !minimum_radius.is_finite()
-        || !maximum_radius.is_finite()
-        || minimum_radius <= 0.0
-        || maximum_radius < minimum_radius
-    {
+    let minimum_radius = construction.diameters.minor() * 5.0;
+    let maximum_radius = construction.diameters.major() * 5.0;
+    if !minimum_radius.is_finite() || !maximum_radius.is_finite() {
         return None;
     }
     let tolerance = EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9 * (1.0 + maximum_radius.abs());

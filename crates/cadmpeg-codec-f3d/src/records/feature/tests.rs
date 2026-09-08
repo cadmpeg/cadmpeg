@@ -1734,3 +1734,5 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
 mod scalars;
 
 mod fillet_law;
+
+mod thread;

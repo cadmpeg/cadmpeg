@@ -4225,21 +4225,51 @@ pub struct DesignThreadConstruction {
     /// Byte offset of the designation LP-UTF16 field.
     pub designation_offset: u64,
     /// Standard thread designation.
-    pub designation: String,
+    pub designation: cadmpeg_ir::NonEmptyString,
     /// Validated nominal-size spelling; its numeric value is derived on read.
     pub nominal_size: DesignThreadNominalSize,
     /// Thread profile name.
-    pub profile: String,
-    /// Physical major diameter in Design length units.
-    pub major_diameter: f64,
-    /// Physical minor diameter in Design length units.
-    pub minor_diameter: f64,
+    pub profile: cadmpeg_ir::NonEmptyString,
+    /// Ordered physical thread diameters in Design length units.
+    pub diameters: DesignThreadDiameters,
     /// Thread pitch in Design length units.
-    pub pitch: f64,
-    /// Pitch diameter in Design length units.
-    pub pitch_diameter: f64,
+    pub pitch: DesignPositiveScalar,
     /// Ordered counted face-selection groups referenced by the scope.
     pub face_group_record_indices: Vec<u32>,
+}
+
+/// Positive finite thread diameters ordered from minor through pitch to major.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignThreadDiameters {
+    major: DesignPositiveScalar,
+    minor: DesignPositiveScalar,
+    pitch: DesignPositiveScalar,
+}
+
+impl DesignThreadDiameters {
+    /// Admit strictly ordered positive finite thread diameters.
+    pub fn new(major: f64, minor: f64, pitch: f64) -> Option<Self> {
+        let major = DesignPositiveScalar::new(major)?;
+        let minor = DesignPositiveScalar::new(minor)?;
+        let pitch = DesignPositiveScalar::new(pitch)?;
+        (minor.get() < pitch.get() && pitch.get() < major.get()).then_some(Self {
+            major,
+            minor,
+            pitch,
+        })
+    }
+    /// Physical major diameter in Design length units.
+    pub fn major(self) -> f64 {
+        self.major.get()
+    }
+    /// Physical minor diameter in Design length units.
+    pub fn minor(self) -> f64 {
+        self.minor.get()
+    }
+    /// Physical pitch diameter in Design length units.
+    pub fn pitch(self) -> f64 {
+        self.pitch.get()
+    }
 }
 
 /// Original spelling of a finite positive nominal thread size.
@@ -4340,14 +4370,14 @@ impl TryFrom<DesignThreadConstruction> for DesignThreadConstructionWire {
         Ok(Self {
             form,
             designation_offset: value.designation_offset,
-            designation: value.designation,
+            designation: value.designation.as_str().to_owned(),
             nominal_size_text: value.nominal_size.0,
             nominal_size,
-            profile: value.profile,
-            major_diameter: value.major_diameter,
-            minor_diameter: value.minor_diameter,
-            pitch: value.pitch,
-            pitch_diameter: value.pitch_diameter,
+            profile: value.profile.as_str().to_owned(),
+            major_diameter: value.diameters.major(),
+            minor_diameter: value.diameters.minor(),
+            pitch: value.pitch.get(),
+            pitch_diameter: value.diameters.pitch(),
             trailing_reference_record_index: trailing_reference.map(|located| located.value.get()),
             trailing_reference_offset: trailing_reference.map(|located| located.offset),
             face_group_record_indices: value.face_group_record_indices,
@@ -4394,13 +4424,12 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         Ok(Self {
             form,
             designation_offset: value.designation_offset,
-            designation: value.designation,
+            designation: cadmpeg_ir::NonEmptyString::new(value.designation).ok_or("designation must not be empty")?,
             nominal_size,
-            profile: value.profile,
-            major_diameter: value.major_diameter,
-            minor_diameter: value.minor_diameter,
-            pitch: value.pitch,
-            pitch_diameter: value.pitch_diameter,
+            profile: cadmpeg_ir::NonEmptyString::new(value.profile).ok_or("profile must not be empty")?,
+            diameters: DesignThreadDiameters::new(value.major_diameter, value.minor_diameter, value.pitch_diameter)
+                .ok_or("major_diameter, minor_diameter, and pitch_diameter must be positive finite and strictly ordered")?,
+            pitch: DesignPositiveScalar::new(value.pitch).ok_or("pitch must be positive finite")?,
             face_group_record_indices: value.face_group_record_indices,
         })
     }
