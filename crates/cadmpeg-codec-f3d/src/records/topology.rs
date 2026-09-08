@@ -280,13 +280,42 @@ pub struct DesignExtrudeSelectionGroup {
     /// Primary indexed-record identity named by the scope table.
     pub record_index: u32,
     /// Byte offset of the primary indexed-record header.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
+    /// Ordered indexed selection-member records.
+    members: Vec<Located<u32>>,
+    /// Opaque nonzero u32 repeated around the f64 scalar.
+    pub opaque_index: NonZeroU32,
+    /// Opaque finite f64 between the repeated u32 copies.
+    opaque_scalar: f64,
+    /// Boolean byte between the two nested-record references.
+    pub variant: bool,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: DesignClassTag,
+}
+
+/// Counted selection group owned by an Extrude parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignExtrudeSelectionGroupWire {
+    /// Globally unique deterministic identifier for this native group.
+    pub id: String,
+    /// Owning Extrude parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
     /// Byte offset of the counted member-run length.
     pub member_count_offset: u64,
     /// Ordered indexed selection-member records.
-    pub members: Vec<Located<u32>>,
+    pub members: Vec<u32>,
+    /// Byte offsets parallel to `members`.
+    pub member_offsets: Vec<u64>,
     /// Opaque nonzero u32 repeated around the f64 scalar.
     pub opaque_index: u32,
     /// Byte offset of the first `opaque_index` copy.
@@ -298,46 +327,9 @@ pub struct DesignExtrudeSelectionGroup {
     /// Boolean byte between the two nested-record references.
     pub variant: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    pub paired_class_tag: String,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
-}
-
-/// Counted selection group owned by an Extrude parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct DesignExtrudeSelectionGroupWire {
-    /// Globally unique deterministic identifier for this native group.
-    id: String,
-    /// Owning Extrude parameter-scope record.
-    scope_record_index: u32,
-    /// Zero-based position in the scope's ordered reference table.
-    scope_reference_ordinal: u32,
-    /// Primary indexed-record identity named by the scope table.
-    record_index: u32,
-    /// Byte offset of the primary indexed-record header.
-    byte_offset: u64,
-    /// Source per-file dynamic three-digit ASCII primary class tag.
-    class_tag: String,
-    /// Byte offset of the counted member-run length.
-    member_count_offset: u64,
-    /// Ordered indexed selection-member records.
-    members: Vec<u32>,
-    /// Byte offsets parallel to `members`.
-    member_offsets: Vec<u64>,
-    /// Opaque nonzero u32 repeated around the f64 scalar.
-    opaque_index: u32,
-    /// Byte offset of the first `opaque_index` copy.
-    opaque_index_offset: u64,
-    /// Opaque finite f64 between the repeated u32 copies.
-    opaque_scalar: f64,
-    /// Byte offset of `opaque_scalar`.
-    opaque_scalar_offset: u64,
-    /// Boolean byte between the two nested-record references.
-    variant: bool,
-    /// Source per-file dynamic three-digit ASCII paired class tag.
-    paired_class_tag: String,
-    /// Byte offset of the same-index paired header.
-    paired_byte_offset: u64,
 }
 
 impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
@@ -345,6 +337,38 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
     fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());
+        }
+        let offsets = DesignExtrudeSelectionGroup::offsets(wire.byte_offset, wire.members.len())?;
+        if wire
+            .members
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != wire.members.len()
+        {
+            return Err("members must be distinct".into());
+        }
+        if wire.member_count_offset != offsets[0]
+            || wire.opaque_index_offset != offsets[1]
+            || wire.opaque_scalar_offset != offsets[2]
+            || wire.paired_byte_offset != offsets[3]
+        {
+            return Err("member_count_offset, opaque_index_offset, opaque_scalar_offset and paired_byte_offset must follow the member run".into());
+        }
+        if !wire
+            .member_offsets
+            .iter()
+            .enumerate()
+            .all(|(index, offset)| *offset == offsets[0] + 5 + index as u64 * 11)
+        {
+            return Err(
+                "member_offsets must start after member_count_offset and have stride 11".into(),
+            );
+        }
+        let opaque_index =
+            NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
+        if !wire.opaque_scalar.is_finite() {
+            return Err("opaque_scalar must be finite".into());
         }
         Ok(Self {
             members: wire
@@ -359,20 +383,21 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
-            member_count_offset: wire.member_count_offset,
-            opaque_index: wire.opaque_index,
-            opaque_index_offset: wire.opaque_index_offset,
+            opaque_index,
             opaque_scalar: wire.opaque_scalar,
-            opaque_scalar_offset: wire.opaque_scalar_offset,
             variant: wire.variant,
             paired_class_tag: wire.paired_class_tag.try_into()?,
-            paired_byte_offset: wire.paired_byte_offset,
         })
     }
 }
 
 impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
     fn from(group: DesignExtrudeSelectionGroup) -> Self {
+        let opaque_scalar = group.opaque_scalar();
+        let member_count_offset = group.member_count_offset();
+        let opaque_index_offset = group.opaque_index_offset();
+        let opaque_scalar_offset = group.opaque_scalar_offset();
+        let paired_byte_offset = group.paired_byte_offset();
         let (members, member_offsets) = group
             .members
             .into_iter()
@@ -387,15 +412,81 @@ impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
             record_index: group.record_index,
             byte_offset: group.byte_offset,
             class_tag: group.class_tag.into(),
-            member_count_offset: group.member_count_offset,
-            opaque_index: group.opaque_index,
-            opaque_index_offset: group.opaque_index_offset,
-            opaque_scalar: group.opaque_scalar,
-            opaque_scalar_offset: group.opaque_scalar_offset,
+            member_count_offset,
+            opaque_index: group.opaque_index.get(),
+            opaque_index_offset,
+            opaque_scalar,
+            opaque_scalar_offset,
             variant: group.variant,
             paired_class_tag: group.paired_class_tag.into(),
-            paired_byte_offset: group.paired_byte_offset,
+            paired_byte_offset,
         }
+    }
+}
+
+impl DesignExtrudeSelectionGroup {
+    fn offsets(byte_offset: u64, count: usize) -> Result<[u64; 4], String> {
+        if count == 0 {
+            return Err("members must not be empty".into());
+        }
+        let member_count_offset = byte_offset
+            .checked_add(32)
+            .ok_or("byte_offset overflows member_count_offset")?;
+        let run_size = u64::try_from(count)
+            .ok()
+            .and_then(|count| count.checked_mul(11))
+            .ok_or("members exceed offset range")?;
+        let opaque_index_offset = member_count_offset
+            .checked_add(4)
+            .and_then(|offset| offset.checked_add(run_size))
+            .ok_or("members overflow opaque_index_offset")?;
+        let paired_byte_offset = opaque_index_offset
+            .checked_add(53)
+            .ok_or("opaque_index_offset overflows paired_byte_offset")?;
+        Ok([
+            member_count_offset,
+            opaque_index_offset,
+            opaque_index_offset + 4,
+            paired_byte_offset,
+        ])
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn members(&self) -> &[Located<u32>] {
+        &self.members
+    }
+    pub(crate) fn member_count_offset(&self) -> u64 {
+        self.byte_offset + 32
+    }
+    pub(crate) fn opaque_index_offset(&self) -> u64 {
+        self.byte_offset + 36 + self.members.len() as u64 * 11
+    }
+    pub(crate) fn opaque_scalar_offset(&self) -> u64 {
+        self.opaque_index_offset() + 4
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.opaque_index_offset() + 53
+    }
+    pub(crate) fn opaque_scalar(&self) -> f64 {
+        self.opaque_scalar
+    }
+    #[cfg(test)]
+    pub(crate) fn try_set_members(&mut self, members: Vec<u32>) -> Result<(), String> {
+        let offsets = Self::offsets(self.byte_offset, members.len())?;
+        let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
+        wire.member_offsets = (0..members.len())
+            .map(|index| offsets[0] + 5 + index as u64 * 11)
+            .collect();
+        wire.members = members;
+        [
+            wire.member_count_offset,
+            wire.opaque_index_offset,
+            wire.opaque_scalar_offset,
+            wire.paired_byte_offset,
+        ] = offsets;
+        *self = Self::try_from(wire)?;
+        Ok(())
     }
 }
 

@@ -226,26 +226,27 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         ],
         native_ref: None,
     };
-    let group = DesignExtrudeSelectionGroup {
-        id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
-        scope_record_index: 7,
-        scope_reference_ordinal: 0,
-        record_index: 9,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        member_count_offset: 0,
-        members: vec![crate::records::Located {
-            value: 10,
-            offset: 0,
-        }],
-        opaque_index: 1,
-        opaque_index_offset: 0,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 0,
-        variant: false,
-        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    };
+    let group = DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::DesignExtrudeSelectionGroupWire {
+            id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: "277".to_owned(),
+            member_count_offset: 32,
+            members: vec![10],
+            member_offsets: vec![37],
+            opaque_index: 1,
+            opaque_index_offset: 47,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 51,
+            variant: false,
+            paired_class_tag: "277".to_owned(),
+            paired_byte_offset: 100,
+        },
+    )
+    .unwrap();
     let mut member = DesignExtrudeSelectionMember {
         id: "f3d:Design/BulkStream.dat:selection-member#10".into(),
         group_record_index: group.record_index,
@@ -305,10 +306,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     );
 
     let mut conflicting_group = group.clone();
-    conflicting_group.members.push(crate::records::Located {
-        value: 11,
-        offset: 0,
-    });
+    conflicting_group.try_set_members(vec![10, 11]).unwrap();
     let mut conflicting_member = member.clone();
     conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
     conflicting_member.group_member_ordinal = 1;
