@@ -1209,10 +1209,10 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
     ) else {
         return false;
     };
-    for uses in occurrences.values().filter(|uses| uses.len() == 2) {
-        let [(left, left_r), (right, right_r)] = uses.as_slice() else {
-            unreachable!("filtered to two occurrences");
-        };
+    for [(left, left_r), (right, right_r)] in occurrences
+        .values()
+        .filter_map(|uses| <&[_; 2]>::try_from(uses.as_slice()).ok())
+    {
         let relation = left_r.flipped().combine(*right_r);
         adjacency[*left].push((*right, relation));
         adjacency[*right].push((*left, relation));
@@ -1226,13 +1226,12 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
             continue;
         }
         solved[root] = Some(Sign::Positive);
-        let mut component = vec![root];
+        let mut component = vec![(root, Sign::Positive)];
         let mut cursor = 0;
         let mut consistent = true;
         while cursor < component.len() {
-            let node = component[cursor];
+            let (node, value) = component[cursor];
             cursor += 1;
-            let value = solved[node].expect("queued orientation");
             for &(neighbor, relation) in &adjacency[node] {
                 let expected = value.combine(relation);
                 match solved[neighbor] {
@@ -1240,27 +1239,27 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
                     Some(_) => {}
                     None => {
                         solved[neighbor] = Some(expected);
-                        component.push(neighbor);
+                        component.push((neighbor, expected));
                     }
                 }
             }
         }
         if !consistent {
-            for &node in &component {
+            for &(node, _) in &component {
                 solved[node] = None;
             }
             continue;
         }
         let mut exact_flip = None;
-        for &node in &component {
+        for &(node, value) in &component {
             let (face_index, loop_index) = locations[node];
             let Some(hint) = faces[face_index].loops[loop_index].orientation_hint else {
                 continue;
             };
-            let candidate = hint.combine(solved[node].expect("component value"));
+            let candidate = hint.combine(value);
             match exact_flip {
                 Some(existing) if existing != candidate => {
-                    for &component_node in &component {
+                    for &(component_node, _) in &component {
                         solved[component_node] = None;
                     }
                     consistent = false;
@@ -1274,21 +1273,21 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
             continue;
         }
         if let Some(flip) = exact_flip {
-            for &node in &component {
-                solved[node] = solved[node].map(|value| value.combine(flip));
+            for &(node, value) in &component {
+                solved[node] = Some(value.combine(flip));
             }
         } else {
             let plus_matches = component
                 .iter()
-                .filter(|&&node| {
+                .filter(|&&(node, value)| {
                     let (face, _) = locations[node];
-                    solved[node].expect("component value") == faces[face].trailer_sign
+                    value == faces[face].trailer_sign
                 })
                 .count();
             let minus_matches = component.len() - plus_matches;
             if minus_matches > plus_matches {
-                for &node in &component {
-                    solved[node] = solved[node].map(Sign::flipped);
+                for &(node, value) in &component {
+                    solved[node] = Some(value.flipped());
                 }
             }
         }
