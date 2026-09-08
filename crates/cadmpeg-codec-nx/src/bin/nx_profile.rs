@@ -1452,7 +1452,7 @@ mod boundary_wire_tests {
             "feature_ordinal": null, "reason": "incomplete_feature_definition"
         });
         assert!(serde_json::from_value::<RederivationBoundary>(wire)
-            .unwrap_err()
+            .expect_err("unsupported boundaries require a feature")
             .to_string()
             .contains("feature"));
     }
