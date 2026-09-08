@@ -16,6 +16,7 @@ pub mod edge_resolve;
 pub mod face_resolve;
 pub mod feature_project;
 pub mod geometry;
+pub(crate) mod literals;
 pub(crate) mod presentation;
 pub mod profile_select;
 pub mod sketch_project;
