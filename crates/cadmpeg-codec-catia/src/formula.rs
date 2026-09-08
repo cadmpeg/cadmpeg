@@ -1792,6 +1792,31 @@ impl EvaluatedFormulaValue {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ComparisonOperator {
+    Eq,
+    Ne,
+    Ge,
+    Le,
+    Gt,
+    Lt,
+}
+
+impl ComparisonOperator {
+    fn parse(input: &str) -> Option<(Self, usize)> {
+        [
+            ("==", Self::Eq),
+            ("<>", Self::Ne),
+            (">=", Self::Ge),
+            ("<=", Self::Le),
+            (">", Self::Gt),
+            ("<", Self::Lt),
+        ]
+        .into_iter()
+        .find_map(|(text, operator)| input.starts_with(text).then_some((operator, text.len())))
+    }
+}
+
 struct FormulaExpressionParser<'a, 'b> {
     source: &'a str,
     at: usize,
@@ -2020,32 +2045,41 @@ impl FormulaExpressionParser<'_, '_> {
     fn comparison(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         let left = self.sum(depth)?;
         self.skip_whitespace();
-        let operator = ["==", "<>", ">=", "<=", ">", "<"]
-            .into_iter()
-            .find(|operator| self.remaining().starts_with(operator));
-        let Some(operator) = operator else {
+        let Some((operator, width)) = ComparisonOperator::parse(self.remaining()) else {
             return Some(left);
         };
-        self.at += operator.len();
+        self.at += width;
         let right = self.sum(depth)?;
         let (value, known) = match (operator, left, right) {
-            ("==", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
-                (
-                    left.value() == right.value(),
-                    left.is_known() && right.is_known(),
-                )
-            }
-            ("<>", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
-                (
-                    left.value() != right.value(),
-                    left.is_known() && right.is_known(),
-                )
-            }
-            ("==", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => (
+            (
+                ComparisonOperator::Eq,
+                EvaluatedFormulaValue::Boolean(left),
+                EvaluatedFormulaValue::Boolean(right),
+            ) => (
                 left.value() == right.value(),
                 left.is_known() && right.is_known(),
             ),
-            ("<>", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => (
+            (
+                ComparisonOperator::Ne,
+                EvaluatedFormulaValue::Boolean(left),
+                EvaluatedFormulaValue::Boolean(right),
+            ) => (
+                left.value() != right.value(),
+                left.is_known() && right.is_known(),
+            ),
+            (
+                ComparisonOperator::Eq,
+                EvaluatedFormulaValue::String(left),
+                EvaluatedFormulaValue::String(right),
+            ) => (
+                left.value() == right.value(),
+                left.is_known() && right.is_known(),
+            ),
+            (
+                ComparisonOperator::Ne,
+                EvaluatedFormulaValue::String(left),
+                EvaluatedFormulaValue::String(right),
+            ) => (
                 left.value() != right.value(),
                 left.is_known() && right.is_known(),
             ),
@@ -2055,13 +2089,12 @@ impl FormulaExpressionParser<'_, '_> {
                 EvaluatedFormulaValue::Scalar(right),
             ) if left.dimension() == right.dimension() => (
                 match operator {
-                    "==" => left.value() == right.value(),
-                    "<>" => left.value() != right.value(),
-                    ">=" => left.value() >= right.value(),
-                    "<=" => left.value() <= right.value(),
-                    ">" => left.value() > right.value(),
-                    "<" => left.value() < right.value(),
-                    _ => unreachable!(),
+                    ComparisonOperator::Eq => left.value() == right.value(),
+                    ComparisonOperator::Ne => left.value() != right.value(),
+                    ComparisonOperator::Ge => left.value() >= right.value(),
+                    ComparisonOperator::Le => left.value() <= right.value(),
+                    ComparisonOperator::Gt => left.value() > right.value(),
+                    ComparisonOperator::Lt => left.value() < right.value(),
                 },
                 left.known_value().is_some() && right.known_value().is_some(),
             ),
