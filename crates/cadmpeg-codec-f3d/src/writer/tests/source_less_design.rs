@@ -718,7 +718,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,
-        owner_entity_id: String::new(),
+        owner_entity_id: None,
         owner_reference_offset: 0,
         auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
@@ -916,7 +916,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_relations[0].member_indices(), vec![100, 600]);
     assert!(native.sketch_relations[0].auxiliary_references.is_empty());
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
-    assert_eq!(native.sketch_relations[0].owner_entity_id, "0_277");
+    assert_eq!(
+        native.sketch_relations[0].owner_entity_id.as_deref(),
+        Some("0_277")
+    );
     assert_eq!(native.sketch_relations[0].definition.state(), 0x11);
     assert_eq!(
         native.sketch_relations[0].return_member_indices(),

@@ -1259,7 +1259,7 @@ pub fn decode_sketch_relations(
                 byte_offset: record.byte_offset,
                 state_offset: parsed.state_offset as u32,
                 owner_reference: parsed.owner_reference,
-                owner_entity_id: String::new(),
+                owner_entity_id: None,
                 owner_reference_offset: parsed.owner_reference_offset as u32,
                 auxiliary_references: crate::records::ReferenceRun::located(
                     parsed
@@ -2915,15 +2915,17 @@ pub(crate) fn bind_sketch_graph(
                 relation.record_index
             ))
         })?;
-        relation.owner_entity_id = sketch_owners
-            .get(&(scope, relation.owner_reference))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "Fusion sketch relation {} in {scope} has no owning Design entity {}",
-                    relation.record_index, relation.owner_reference,
-                ))
-            })?
-            .to_string();
+        relation.owner_entity_id = Some(
+            sketch_owners
+                .get(&(scope, relation.owner_reference))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "Fusion sketch relation {} in {scope} has no owning Design entity {}",
+                        relation.record_index, relation.owner_reference,
+                    ))
+                })?
+                .to_string(),
+        );
         scoped_relations.push((
             scope,
             relation.owner_reference,

@@ -862,7 +862,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         byte_offset,
         state_offset: 66,
         owner_reference: 172,
-        owner_entity_id: "0_172".into(),
+        owner_entity_id: Some("0_172".into()),
         auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: ([(175, 25), (217, 40)]

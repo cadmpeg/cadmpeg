@@ -990,7 +990,7 @@ mod tests {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: "0_1".into(),
+            owner_entity_id: Some("0_1".into()),
             auxiliary_references: crate::records::ReferenceRun::unlocated(auxiliary_references),
             rectangular_counted_reference_count: Some(rectangular_counted_reference_count),
             members: (members
@@ -1227,7 +1227,7 @@ mod tests {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: "0_1".into(),
+            owner_entity_id: Some("0_1".into()),
             auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
             members: (vec![
@@ -1338,7 +1338,7 @@ mod tests {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: "0_1".into(),
+            owner_entity_id: Some("0_1".into()),
             auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
             members: (vec![
@@ -1425,7 +1425,7 @@ mod tests {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: String::new(),
+            owner_entity_id: None,
             auxiliary_references: crate::records::ReferenceRun::unlocated(vec![2]),
             rectangular_counted_reference_count: None,
             members: (vec![

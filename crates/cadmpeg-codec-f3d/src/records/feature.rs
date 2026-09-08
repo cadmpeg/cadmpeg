@@ -6087,10 +6087,6 @@ pub struct DesignSurfaceExtendOperation {
 pub enum DesignSurfaceOffsetSupport {
     /// A boundary carrier followed by edge recipes.
     BoundaryCarrier {
-        /// Source boundary-mode enum.
-        boundary_mode: u32,
-        /// Byte offset of `boundary_mode`.
-        boundary_mode_offset: u64,
         /// Indexed boundary-carrier record.
         boundary_record_index: u32,
         /// Additional indexed reference carried by the boundary tail.

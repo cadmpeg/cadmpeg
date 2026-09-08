@@ -218,7 +218,13 @@ pub fn decode_parameter_scopes(
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records) {
-            let Some(mut scope) = parse_parameter_scope(bytes, &records, &header) else {
+            let Some(mut scope) = parse_parameter_scope(
+                bytes,
+                &records,
+                header.record_index,
+                &header.class_tag,
+                header.byte_offset,
+            ) else {
                 continue;
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
@@ -1522,8 +1528,6 @@ pub(crate) fn exact_surface_offset_operation(
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
         support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-            boundary_mode: operation.mode,
-            boundary_mode_offset: operation.mode_offset,
             boundary_record_index: operation.boundary_record_index,
             boundary_reference_record_index: operation.boundary_reference_record_index,
             boundary_reference_offset: operation.boundary_reference_offset,
@@ -8732,10 +8736,12 @@ fn parameter_scope_previous_history_offset_for_form(
 pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    header: &DesignRecordHeader,
+    record_index: u32,
+    class_tag: &crate::records::DesignClassTag,
+    byte_offset: u64,
 ) -> Option<DesignParameterScope> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let paired_at = records.first_at_or_after(start.checked_add(11)?, header.record_index)?;
+    let start = usize::try_from(byte_offset).ok()?;
+    let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
@@ -8829,7 +8835,7 @@ pub(crate) fn parse_parameter_scope(
     };
     let surface_stitch_operation =
         if kind == crate::records::feature::DesignFeatureKind::SurfaceStitch {
-            exact_surface_stitch_operation(bytes, records, header.record_index, reference_members)
+            exact_surface_stitch_operation(bytes, records, record_index, reference_members)
         } else {
             None
         };
@@ -8849,7 +8855,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            header.class_tag.as_str(),
+            class_tag.as_str(),
             &paired_class_tag,
             reference_members,
         )
@@ -8881,7 +8887,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            header.class_tag.as_str(),
+            class_tag.as_str(),
             &paired_class_tag,
             *reference_count_at,
             reference_members,
@@ -8936,9 +8942,9 @@ pub(crate) fn parse_parameter_scope(
     };
     let mut scope = DesignParameterScope {
         id: String::new(),
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        record_index: header.record_index,
+        byte_offset,
+        class_tag: class_tag.clone(),
+        record_index,
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
         feature_ordinal,

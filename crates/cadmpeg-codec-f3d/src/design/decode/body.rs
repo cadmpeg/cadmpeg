@@ -1155,10 +1155,10 @@ fn typed_browser_node_hidden_flags(
 ///
 /// The GUID is the stable join between browser presentation records; the
 /// adjacent entity suffix joins the node back to the Design body map.
-pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
+pub(crate) fn scanned_browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
     let mut entities = HashMap::new();
     let mut ambiguous = std::collections::HashSet::new();
-    for record in browser_node_records(bytes) {
+    for record in scan_browser_node_identities(bytes) {
         let key = record.guid.to_ascii_lowercase();
         if entities
             .insert(key.clone(), record.entity_suffix)
@@ -1172,12 +1172,12 @@ pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
 }
 
 #[derive(Debug, Clone)]
-struct BrowserNodeRecord {
+struct ScannedBrowserNodeIdentity {
     guid: String,
     entity_suffix: u64,
 }
 
-fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
+fn scan_browser_node_identities(bytes: &[u8]) -> Vec<ScannedBrowserNodeIdentity> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = Vec::new();
@@ -1192,7 +1192,7 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
-                out.push(BrowserNodeRecord {
+                out.push(ScannedBrowserNodeIdentity {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,
                 });

@@ -50,12 +50,9 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         parse_parameter_scope(
             bytes,
             &IndexedRecordOffsets::build(bytes),
-            &DesignRecordHeader {
-                id: "generated:scope-header#class-296-to-face".into(),
-                record_index: RECORD_INDEX,
-                class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
-                byte_offset: 0,
-            },
+            RECORD_INDEX,
+            &crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
+            0,
         )
     };
     let parse = |bytes: &[u8], class_tag: &str| {
@@ -162,8 +159,14 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-296 symmetric-distance scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-296 symmetric-distance scope envelope")
     };
     let scope = parse(&bytes);
     assert_eq!(scope.frame_length, 450);
@@ -287,8 +290,14 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-296 two-sided-to-faces scope envelope")
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-296 two-sided-to-faces scope envelope")
     };
     let scope = parse(&bytes);
     assert_eq!(scope.frame_length, 536);
@@ -443,8 +452,14 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         byte_offset: 0,
     };
     let prologue = |bytes: &[u8]| {
-        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .and_then(|scope| scope.extrude_prologue())
+        parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .and_then(|scope| scope.extrude_prologue())
     };
     let assert_valid = |bytes: &[u8],
                         frame_length: usize,
@@ -453,8 +468,14 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                         extent: DesignExtrudeExtent,
                         face_extend: u32,
                         direction_reversed: bool| {
-        let scope = parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
-            .expect("class-296 legacy one-sided scope");
+        let scope = parse_parameter_scope(
+            bytes,
+            &IndexedRecordOffsets::build(bytes),
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .expect("class-296 legacy one-sided scope");
         assert_eq!(scope.frame_length, frame_length as u64);
         assert_eq!(scope.reference_count_offset, reference_count_offset as u64);
         assert_eq!(

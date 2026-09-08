@@ -8305,7 +8305,7 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && sketch_owner_ids
                 .get(&(native_stream, relation.owner_reference))
                 .copied()
-                == Some(relation.owner_entity_id.as_str())
+                == relation.owner_entity_id.as_deref()
             && relation.raw_bytes.len() >= 24
             && relation.auxiliary_references.located_rows().is_some()
             && offsets_fit;

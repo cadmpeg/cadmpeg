@@ -6018,7 +6018,7 @@ pub struct SketchRelation {
     pub owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
     #[serde(default)]
-    pub owner_entity_id: String,
+    pub owner_entity_id: Option<String>,
     /// Nullable or role-specific references stored before the owner reference.
     pub auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
@@ -6272,7 +6272,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
-            owner_entity_id: wire.owner_entity_id,
+            owner_entity_id: (!wire.owner_entity_id.is_empty()).then_some(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::from_columns(
                 wire.auxiliary_references,
                 wire.auxiliary_reference_offsets,
@@ -6312,7 +6312,7 @@ impl From<SketchRelation> for SketchRelationSerde {
             byte_offset: relation.byte_offset,
             state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,
-            owner_entity_id: relation.owner_entity_id,
+            owner_entity_id: relation.owner_entity_id.unwrap_or_default(),
             auxiliary_references,
             auxiliary_reference_offsets,
             rectangular_counted_reference_count: relation.rectangular_counted_reference_count,

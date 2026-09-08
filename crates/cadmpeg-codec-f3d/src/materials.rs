@@ -1429,7 +1429,7 @@ fn is_lowercase_guid(value: &str) -> bool {
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    let nodes = crate::design::decode::body::browser_node_entities(bytes);
+    let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {

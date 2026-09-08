@@ -39,7 +39,7 @@ use crate::records::{
 };
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
-    DesignMeshTextureResource, DesignRecordHeader,
+    DesignMeshTextureResource,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -909,13 +909,13 @@ fn parse_mesh_scope_record(
             .then_some(())?;
         let (body_records, body_list_end) =
             counted_local_record_indices(record, feature_scope::BODY_COUNT)?;
-        let header = DesignRecordHeader {
-            id: String::new(),
-            record_index: identity.record_index(),
-            class_tag: identity.class_tag().clone(),
-            byte_offset: u64::try_from(frame.start).ok()?,
-        };
-        let scope = parse_parameter_scope(bytes, records, &header)?;
+        let scope = parse_parameter_scope(
+            bytes,
+            records,
+            identity.record_index(),
+            identity.class_tag(),
+            u64::try_from(frame.start).ok()?,
+        )?;
         (scope.kind() == crate::records::feature::DesignFeatureKind::BaseMeshFeature
             && scope.byte_offset == u64::try_from(frame.start).ok()?)
         .then_some(())?;
