@@ -589,7 +589,7 @@ fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
             Vec::new(),
             handles.to_vec(),
         ))
-        .unwrap(),
+        .expect("complete trim handle partition"),
         frame_vector: None,
         kind,
     }

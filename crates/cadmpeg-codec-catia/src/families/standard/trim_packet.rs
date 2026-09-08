@@ -99,7 +99,8 @@ mod tests {
 
     #[test]
     fn packet_preserves_independent_strip_and_fan_order() {
-        let packet = TrimPacket::try_from((1, vec![4, 1], vec![4], (0..12).collect())).unwrap();
+        let packet = TrimPacket::try_from((1, vec![4, 1], vec![4], (0..12).collect()))
+            .expect("complete trim handle partition");
         assert_eq!(
             packet.triangles(),
             [[0, 1, 2], [3, 4, 5], [5, 4, 6], [8, 9, 10], [8, 10, 11]]
