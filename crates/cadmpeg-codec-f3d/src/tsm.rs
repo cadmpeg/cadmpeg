@@ -1613,9 +1613,9 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             symmetry.plane.second_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert_eq!(symmetry.face_pairs, vec![[0, 0]]);
-        assert_eq!(symmetry.edge_pairs, vec![[0, 0], [1, 2]]);
-        assert_eq!(symmetry.vertex_pairs, vec![[0, 1]]);
+        assert_eq!(symmetry.face_pairs(), vec![[0, 0]]);
+        assert_eq!(symmetry.edge_pairs(), vec![[0, 0], [1, 2]]);
+        assert_eq!(symmetry.vertex_pairs(), vec![[0, 1]]);
     }
 
     #[test]
@@ -1805,9 +1805,9 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             symmetry.plane.second_axis(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert!(symmetry.face_pairs.is_empty());
-        assert!(symmetry.edge_pairs.is_empty());
-        assert!(symmetry.vertex_pairs.is_empty());
+        assert!(symmetry.face_pairs().is_empty());
+        assert!(symmetry.edge_pairs().is_empty());
+        assert!(symmetry.vertex_pairs().is_empty());
         assert_eq!(
             *radial_maps,
             vec![

@@ -165,7 +165,6 @@ impl SubdCage {
         }
         self.validate_vertices(&self.vertices)?;
         for symmetry in &self.symmetries {
-            symmetry.validate()?;
             for (field, pairs, count) in [
                 ("face_pairs", &symmetry.face_pairs, self.faces.len()),
                 ("edge_pairs", &symmetry.edge_pairs, self.edges.len()),
@@ -391,11 +390,11 @@ pub struct SubdSymmetry {
     /// Geometric symmetry-plane frame.
     pub plane: SubdPlaneFrame,
     /// Forward face correspondences for a topology-addressed symmetry block.
-    pub face_pairs: Vec<[u32; 2]>,
+    face_pairs: Vec<[u32; 2]>,
     /// Forward edge correspondences for a topology-addressed symmetry block.
-    pub edge_pairs: Vec<[u32; 2]>,
+    edge_pairs: Vec<[u32; 2]>,
     /// Forward vertex correspondences for a topology-addressed symmetry block.
-    pub vertex_pairs: Vec<[u32; 2]>,
+    vertex_pairs: Vec<[u32; 2]>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -430,29 +429,13 @@ impl SubdSymmetry {
         edge_pairs: Vec<[u32; 2]>,
         vertex_pairs: Vec<[u32; 2]>,
     ) -> Result<Self, SubdError> {
-        if let SubdSymmetryKind::Radial { sweep, .. } = &kind {
+        if let SubdSymmetryKind::Radial {
+            sweep, radial_maps, ..
+        } = &kind
+        {
             if !sweep.is_finite() {
                 return Err(SubdError("kind.radial.sweep must be finite".into()));
             }
-        }
-        let symmetry = Self {
-            kind,
-            plane,
-            face_pairs,
-            edge_pairs,
-            vertex_pairs,
-        };
-        symmetry.validate()?;
-        Ok(symmetry)
-    }
-
-    /// Symmetry mode and its radial controls.
-    pub fn kind(&self) -> &SubdSymmetryKind {
-        &self.kind
-    }
-
-    fn validate(&self) -> Result<(), SubdError> {
-        if let SubdSymmetryKind::Radial { radial_maps, .. } = &self.kind {
             let mut selectors = std::collections::BTreeSet::new();
             for map in radial_maps {
                 if !selectors.insert(map.selector) {
@@ -465,9 +448,9 @@ impl SubdSymmetry {
             }
         }
         for (field, pairs) in [
-            ("face_pairs", &self.face_pairs),
-            ("edge_pairs", &self.edge_pairs),
-            ("vertex_pairs", &self.vertex_pairs),
+            ("face_pairs", &face_pairs),
+            ("edge_pairs", &edge_pairs),
+            ("vertex_pairs", &vertex_pairs),
         ] {
             let mut sources = std::collections::BTreeSet::new();
             let mut targets = std::collections::BTreeSet::new();
@@ -478,7 +461,33 @@ impl SubdSymmetry {
                 return Err(SubdError(format!("{field} repeats a source or target")));
             }
         }
-        Ok(())
+        Ok(Self {
+            kind,
+            plane,
+            face_pairs,
+            edge_pairs,
+            vertex_pairs,
+        })
+    }
+
+    /// Symmetry mode and its radial controls.
+    pub fn kind(&self) -> &SubdSymmetryKind {
+        &self.kind
+    }
+
+    /// Forward face correspondences.
+    pub fn face_pairs(&self) -> &[[u32; 2]] {
+        &self.face_pairs
+    }
+
+    /// Forward edge correspondences.
+    pub fn edge_pairs(&self) -> &[[u32; 2]] {
+        &self.edge_pairs
+    }
+
+    /// Forward vertex correspondences.
+    pub fn vertex_pairs(&self) -> &[[u32; 2]] {
+        &self.vertex_pairs
     }
 }
 

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::math::{Point3, Vector3};
-use crate::subd::{SubdPlaneFrame, SubdSymmetry, SubdSymmetryKind, EPS_SUBD_SYMMETRY_FRAME};
+use crate::subd::{
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetryMap, SubdSymmetry, SubdSymmetryKind,
+    EPS_SUBD_SYMMETRY_FRAME,
+};
 
 fn plane() -> SubdPlaneFrame {
     SubdPlaneFrame::new(
@@ -117,4 +120,102 @@ fn radial_controls_require_nonzero_segments_and_finite_sweeps() {
             symmetry
         );
     }
+}
+
+#[test]
+fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
+    for invalid in [vec![[0, 0], [0, 1]], vec![[0, 1], [1, 1]]] {
+        for (index, field) in ["face_pairs", "edge_pairs", "vertex_pairs"]
+            .into_iter()
+            .enumerate()
+        {
+            let mut pairs = [Vec::new(), Vec::new(), Vec::new()];
+            pairs[index] = invalid.clone();
+            let [faces, edges, vertices] = pairs;
+            assert!(SubdSymmetry::new(
+                SubdSymmetryKind::Correspondence,
+                plane(),
+                faces,
+                edges,
+                vertices
+            )
+            .unwrap_err()
+            .to_string()
+            .contains(field));
+            let symmetry = SubdSymmetry::new(
+                SubdSymmetryKind::Correspondence,
+                plane(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .unwrap();
+            let mut wire = serde_json::to_value(symmetry).unwrap();
+            wire[field] = serde_json::json!(invalid);
+            assert!(serde_json::from_value::<SubdSymmetry>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+    }
+    let pairs = vec![[0, 0], [u32::MAX, u32::MAX]];
+    let symmetry = SubdSymmetry::new(
+        SubdSymmetryKind::Correspondence,
+        plane(),
+        pairs.clone(),
+        pairs.clone(),
+        pairs.clone(),
+    )
+    .unwrap();
+    assert_eq!(symmetry.face_pairs(), pairs);
+    assert_eq!(symmetry.edge_pairs(), pairs);
+    assert_eq!(symmetry.vertex_pairs(), pairs);
+    assert_eq!(
+        serde_json::from_value::<SubdSymmetry>(serde_json::to_value(&symmetry).unwrap()).unwrap(),
+        symmetry
+    );
+}
+
+#[test]
+fn radial_maps_require_distinct_selectors_and_sources() {
+    let map = |pairs| SubdRadialSymmetryMap {
+        selector: SubdRadialMapSelector::Ef,
+        pairs,
+    };
+    for maps in [
+        vec![map(vec![]), map(vec![])],
+        vec![map(vec![[0, 0], [0, 1]])],
+    ] {
+        assert!(SubdSymmetry::new(
+            SubdSymmetryKind::Radial {
+                segments: std::num::NonZeroU32::new(1).unwrap(),
+                sweep: 0.0,
+                radial_maps: maps.clone()
+            },
+            plane(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new()
+        )
+        .is_err());
+        let mut wire = serde_json::to_value(radial(0.0).unwrap()).unwrap();
+        wire["radial_maps"] = serde_json::to_value(maps).unwrap();
+        assert!(serde_json::from_value::<SubdSymmetry>(wire).is_err());
+    }
+    let symmetry = SubdSymmetry::new(
+        SubdSymmetryKind::Radial {
+            segments: std::num::NonZeroU32::new(1).unwrap(),
+            sweep: 0.0,
+            radial_maps: vec![map(vec![[0, 0], [u64::MAX, 0]])],
+        },
+        plane(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_value::<SubdSymmetry>(serde_json::to_value(&symmetry).unwrap()).unwrap(),
+        symmetry
+    );
 }
