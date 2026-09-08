@@ -428,8 +428,7 @@ pub fn counterbore_entity_table<'a>(
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
         .filter(|table| {
             table.entries.iter().any(|entry| {
-                entry.class_id == 200
-                    && entry.source_entity_id().is_some()
+                entry.source_entity_id().is_some()
                     && table.surface_ids().contains(&entry.entity_id)
                     && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
                         .is_some_and(|row| {

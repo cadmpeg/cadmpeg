@@ -86,9 +86,7 @@ fn generated_cylinder_section_transform(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| {
-            entry.class_id == 200 && table.surface_ids().contains(&entry.entity_id)
-        })
+        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
     {
         let Some(external_id) = entry.source_entity_id() else {
             continue;
@@ -426,9 +424,7 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
     if first.class_id != 204
         || second.class_id != 203
         || rest.is_empty()
-        || !rest
-            .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
+        || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
         return false;
     }

@@ -165,8 +165,7 @@ pub fn compact_simple_hole_cylinder_id(
                 .iter()
                 .enumerate()
                 .filter(|(_, candidate)| {
-                    candidate.class_id == 200
-                        && candidate.source_entity_id() == Some(0)
+                    candidate.source_entity_id() == Some(0)
                         && !table.surface_ids().contains(&candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
