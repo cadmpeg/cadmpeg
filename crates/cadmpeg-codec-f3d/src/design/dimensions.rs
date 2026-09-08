@@ -2022,18 +2022,13 @@ pub(crate) fn unique_point_class_dimension_definition(
     }
     let points = entities
         .iter()
-        .filter(|entity| {
-            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Point { .. })
+        .filter(|entity| &entity.sketch == sketch)
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity, position)),
+            _ => None,
         })
         .collect::<Vec<_>>();
-    let position = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
-        SketchGeometry::Point { position } => *position,
-        _ => unreachable!("point-class members are point entities"),
-    };
-    let coincident = |first: &cadmpeg_ir::sketches::SketchEntity,
-                      second: &cadmpeg_ir::sketches::SketchEntity| {
-        let first = position(first);
-        let second = position(second);
+    let coincident = |first: Point2, second: Point2| {
         let scale = 1.0
             + first
                 .u
@@ -2044,7 +2039,7 @@ pub(crate) fn unique_point_class_dimension_definition(
             <= linear_tolerance
                 .max(EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9 * scale)
     };
-    let mut classes = Vec::<Vec<&cadmpeg_ir::sketches::SketchEntity>>::new();
+    let mut classes = Vec::<Vec<(&cadmpeg_ir::sketches::SketchEntity, Point2)>>::new();
     for point in points {
         let matches = classes
             .iter()
@@ -2052,7 +2047,7 @@ pub(crate) fn unique_point_class_dimension_definition(
             .filter_map(|(index, class)| {
                 class
                     .iter()
-                    .any(|member| coincident(member, point))
+                    .any(|member| coincident(member.1, point.1))
                     .then_some(index)
             })
             .collect::<Vec<_>>();
@@ -2069,8 +2064,8 @@ pub(crate) fn unique_point_class_dimension_definition(
     let mut matched = None;
     for first in 0..classes.len() {
         for second in first + 1..classes.len() {
-            let first_position = position(classes[first][0]);
-            let second_position = position(classes[second][0]);
+            let first_position = classes[first][0].1;
+            let second_position = classes[second][0].1;
             let du = second_position.u - first_position.u;
             let dv = second_position.v - first_position.v;
             let measured = du.hypot(dv);
@@ -2084,7 +2079,7 @@ pub(crate) fn unique_point_class_dimension_definition(
             if matched.is_some() {
                 return None;
             }
-            matched = Some((classes[first][0], classes[second][0], du, dv, tolerance));
+            matched = Some((classes[first][0].0, classes[second][0].0, du, dv, tolerance));
         }
     }
     let (first, second, du, dv, tolerance) = matched?;
@@ -3228,27 +3223,28 @@ pub(crate) fn spatial_parallel_line_distance_matches(
             <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9 * scale
 }
 
+fn spatial_line_segment(
+    geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+) -> Option<[Point3; 2]> {
+    match geometry {
+        cadmpeg_ir::sketches::SpatialSketchGeometry::Line { start, end } => Some([*start, *end]),
+        _ => None,
+    }
+}
+
 fn spatial_parallel_line_distance(
     first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    spatial_parallel_segment_distance(spatial_line_segment(first)?, spatial_line_segment(second)?)
+}
 
-    let (
-        SpatialSketchGeometry::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SpatialSketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (first, second)
-    else {
-        return None;
-    };
-    let first_direction = first_end.vector_from(*first_start);
-    let second_direction = second_end.vector_from(*second_start);
+fn spatial_parallel_segment_distance(
+    [first_start, first_end]: [Point3; 2],
+    [second_start, second_end]: [Point3; 2],
+) -> Option<f64> {
+    let first_direction = first_end.vector_from(first_start);
+    let second_direction = second_end.vector_from(second_start);
     let first_length = first_direction.norm();
     let second_length = second_direction.norm();
     let cross = first_direction.cross(second_direction);
@@ -3259,7 +3255,7 @@ fn spatial_parallel_line_distance(
     {
         return None;
     }
-    let offset = second_start.vector_from(*first_start);
+    let offset = second_start.vector_from(first_start);
     let area = offset.cross(first_direction).norm();
     Some(area / first_length)
 }
@@ -3269,27 +3265,16 @@ fn spatial_parallel_line_span_distance(
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
-
-    let distance = spatial_parallel_line_distance(first, second)?;
-    let (
-        SpatialSketchGeometry::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SpatialSketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (first, second)
-    else {
-        unreachable!("parallel line distance requires line geometry")
-    };
-    let direction = first_end.vector_from(*first_start);
+    let first_segment = spatial_line_segment(first)?;
+    let second_segment = spatial_line_segment(second)?;
+    let distance = spatial_parallel_segment_distance(first_segment, second_segment)?;
+    let [first_start, first_end] = first_segment;
+    let [second_start, second_end] = second_segment;
+    let direction = first_end.vector_from(first_start);
     let length = direction.norm();
     let project = |point: Point3| Vector3::new(point.x, point.y, point.z).dot(direction) / length;
-    let first_interval = [project(*first_start), project(*first_end)];
-    let second_interval = [project(*second_start), project(*second_end)];
+    let first_interval = [project(first_start), project(first_end)];
+    let second_interval = [project(second_start), project(second_end)];
     let first_min = first_interval[0].min(first_interval[1]);
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);
@@ -4197,26 +4182,17 @@ fn midpoint_constraint(
         SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
     };
 
-    let (line, point) = match entities {
-        [line, point]
-            if matches!(line.geometry, Geometry::Line { .. })
-                && matches!(point.geometry, Geometry::Point { .. }) =>
-        {
-            (*line, *point)
+    let [first, second] = entities else {
+        return None;
+    };
+    let (line, point, start, end, position) = match (&first.geometry, &second.geometry) {
+        (Geometry::Line { start, end }, Geometry::Point { position }) => {
+            (*first, *second, start, end, position)
         }
-        [point, line]
-            if matches!(line.geometry, Geometry::Line { .. })
-                && matches!(point.geometry, Geometry::Point { .. }) =>
-        {
-            (*line, *point)
+        (Geometry::Point { position }, Geometry::Line { start, end }) => {
+            (*second, *first, start, end, position)
         }
         _ => return None,
-    };
-    let Geometry::Line { start, end } = &line.geometry else {
-        unreachable!("line operand matched above")
-    };
-    let Geometry::Point { position } = &point.geometry else {
-        unreachable!("point operand matched above")
     };
     let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
     ((position.u - midpoint.u).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
@@ -4238,23 +4214,13 @@ pub(crate) fn indirect_angular_lines(
 )> {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let (point_ordinal, point, explicit_line) = match operands {
-        [point, line]
-            if matches!(point.geometry, SketchGeometry::Point { .. })
-                && matches!(line.geometry, SketchGeometry::Line { .. }) =>
-        {
-            (0, *point, *line)
-        }
-        [line, point]
-            if matches!(line.geometry, SketchGeometry::Line { .. })
-                && matches!(point.geometry, SketchGeometry::Point { .. }) =>
-        {
-            (1, *point, *line)
-        }
-        _ => return None,
+    let [first, second] = operands else {
+        return None;
     };
-    let SketchGeometry::Point { position } = &point.geometry else {
-        unreachable!("point operand matched above")
+    let (point_ordinal, position, explicit_line) = match (&first.geometry, &second.geometry) {
+        (SketchGeometry::Point { position }, SketchGeometry::Line { .. }) => (0, position, *second),
+        (SketchGeometry::Line { .. }, SketchGeometry::Point { position }) => (1, position, *first),
+        _ => return None,
     };
     if !evaluated_value.is_finite() || !(0.0..=std::f64::consts::PI).contains(&evaluated_value) {
         return None;
@@ -4359,11 +4325,9 @@ pub(crate) fn recipe_linear_dimension_candidates(
     let points = sketch_entities
         .iter()
         .copied()
-        .filter(|entity| {
-            matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Point { .. }
-            )
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity, position)),
+            _ => None,
         })
         .collect::<Vec<_>>();
     let lines = sketch_entities
@@ -4397,29 +4361,24 @@ pub(crate) fn recipe_linear_dimension_candidates(
             && (left.v - right.v).abs()
                 <= EPS_DIMENSIONS_RECIPE_LINEAR_DIMENSION_CANDIDATES_E9 * scale
     };
-    let point_on_endpoint =
-        |point: &cadmpeg_ir::sketches::SketchEntity, line: &cadmpeg_ir::sketches::SketchEntity| {
-            let SketchGeometry::Point { position } = &point.geometry else {
-                unreachable!("point candidates contain only point entities")
-            };
-            sketch_entity_endpoints(line).is_some_and(|endpoints| {
-                endpoints.into_iter().any(|end| same_point(*position, end))
-            })
-        };
+    let point_on_endpoint = |position: Point2, line: &cadmpeg_ir::sketches::SketchEntity| {
+        sketch_entity_endpoints(line)
+            .is_some_and(|endpoints| endpoints.into_iter().any(|end| same_point(position, end)))
+    };
     let mut candidates = Vec::new();
     for first in 0..points.len() {
         for second in first + 1..points.len() {
             let subsumed_by_line_pair = line_pairs.iter().any(|(first_line, second_line)| {
-                (point_on_endpoint(points[first], first_line)
-                    && point_on_endpoint(points[second], second_line))
-                    || (point_on_endpoint(points[first], second_line)
-                        && point_on_endpoint(points[second], first_line))
+                (point_on_endpoint(points[first].1, first_line)
+                    && point_on_endpoint(points[second].1, second_line))
+                    || (point_on_endpoint(points[first].1, second_line)
+                        && point_on_endpoint(points[second].1, first_line))
             });
             if subsumed_by_line_pair {
                 continue;
             }
             if let Some(definition) = directional_point_dimension(
-                &[points[first], points[second]],
+                &[points[first].0, points[second].0],
                 evaluated_mm,
                 parameter.clone(),
                 0.0,
@@ -4486,18 +4445,20 @@ pub(crate) fn recipe_extension_point_dimension(
     let lines = sketch_entities
         .iter()
         .copied()
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .filter_map(|entity| Some((entity, line_segment(entity)?)))
         .collect::<Vec<_>>();
     let point = |id: &cadmpeg_ir::sketches::SketchEntityId| {
-        sketch_entities.iter().copied().find(|entity| {
-            entity.id() == id && matches!(entity.geometry, SketchGeometry::Point { .. })
-        })
+        sketch_entities
+            .iter()
+            .copied()
+            .find_map(|entity| match entity.geometry {
+                SketchGeometry::Point { position } if entity.id() == id => Some(position),
+                _ => None,
+            })
     };
     let is_any_line_endpoint = |position: Point2| {
-        lines.iter().any(|line| {
-            sketch_entity_endpoints(line).is_some_and(|[start, end]| {
-                sketch_points_close(position, start) || sketch_points_close(position, end)
-            })
+        lines.iter().any(|(_, [start, end])| {
+            sketch_points_close(position, *start) || sketch_points_close(position, *end)
         })
     };
     let mut matched = None;
@@ -4511,20 +4472,8 @@ pub(crate) fn recipe_extension_point_dimension(
             }
             _ => continue,
         };
-        let first = point(first_id)?;
-        let second = point(second_id)?;
-        let SketchGeometry::Point {
-            position: first_position,
-        } = first.geometry
-        else {
-            unreachable!("point lookup returns only point entities")
-        };
-        let SketchGeometry::Point {
-            position: second_position,
-        } = second.geometry
-        else {
-            unreachable!("point lookup returns only point entities")
-        };
+        let first_position = point(first_id)?;
+        let second_position = point(second_id)?;
         let qualifies = [
             (first_position, second_position),
             (second_position, first_position),
@@ -4532,10 +4481,8 @@ pub(crate) fn recipe_extension_point_dimension(
         .into_iter()
         .any(|(detached, endpoint)| {
             !is_any_line_endpoint(detached)
-                && lines.iter().any(|line| {
-                    let SketchGeometry::Line { start, end } = line.geometry else {
-                        unreachable!("line candidates contain only line entities")
-                    };
+                && lines.iter().any(|(_, [start, end])| {
+                    let (start, end) = (*start, *end);
                     let du = end.u - start.u;
                     let dv = end.v - start.v;
                     let norm_squared = du * du + dv * dv;
@@ -4620,26 +4567,24 @@ pub(crate) fn symmetric_parallel_line_dimension_definition(
     })
 }
 
+fn line_segment(geometry: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
+    match &geometry.geometry {
+        cadmpeg_ir::sketches::SketchGeometry::Line { start, end } => Some([*start, *end]),
+        _ => None,
+    }
+}
+
 fn parallel_line_distance(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    parallel_segment_distance(line_segment(first)?, line_segment(second)?)
+}
 
-    let SketchGeometry::Line {
-        start: first_start,
-        end: first_end,
-    } = &first.geometry
-    else {
-        return None;
-    };
-    let SketchGeometry::Line {
-        start: second_start,
-        end: second_end,
-    } = &second.geometry
-    else {
-        return None;
-    };
+fn parallel_segment_distance(
+    [first_start, first_end]: [Point2; 2],
+    [second_start, second_end]: [Point2; 2],
+) -> Option<f64> {
     let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let second_direction =
         Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
@@ -4666,27 +4611,16 @@ fn parallel_line_span_distance(
     second: &cadmpeg_ir::sketches::SketchEntity,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    use cadmpeg_ir::sketches::SketchGeometry;
-
-    let distance = parallel_line_distance(first, second)?;
-    let (
-        SketchGeometry::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (&first.geometry, &second.geometry)
-    else {
-        unreachable!("parallel line distance requires line entities")
-    };
+    let first_segment = line_segment(first)?;
+    let second_segment = line_segment(second)?;
+    let distance = parallel_segment_distance(first_segment, second_segment)?;
+    let [first_start, first_end] = first_segment;
+    let [second_start, second_end] = second_segment;
     let direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let length = direction.u.hypot(direction.v);
     let project = |point: Point2| (point.u * direction.u + point.v * direction.v) / length;
-    let first_interval = [project(*first_start), project(*first_end)];
-    let second_interval = [project(*second_start), project(*second_end)];
+    let first_interval = [project(first_start), project(first_end)];
+    let second_interval = [project(second_start), project(second_end)];
     let first_min = first_interval[0].min(first_interval[1]);
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);
