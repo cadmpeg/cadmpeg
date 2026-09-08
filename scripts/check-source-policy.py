@@ -44,14 +44,13 @@ NAMED_TOLERANCE_DECL = re.compile(
 )
 # The scanner below identifies `vec![value; count]` repeats structurally. A
 # regular expression cannot distinguish the repeat separator from semicolons
-# inside nested arrays, strings, comments, or format arguments.
+# inside nested arrays or blocks. Comments and literals are already masked.
 VEC_MACRO = re.compile(r"\bvec!\s*\[")
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
 ADMITTED_LEN_REPEAT = re.compile(
     r"^(?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*\.len\(\)"
     r"(?:\s*[+-]\s*\d+)?$"
 )
-CFG_TEST_ATTR = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
 CFG_ATTR = re.compile(r"#\s*\[\s*cfg\s*\((.*)\)\s*\]\s*$", re.DOTALL)
 PATH_ATTR = re.compile(r'#\s*\[\s*path\s*=\s*"([^"]+)"\s*\]\s*$', re.DOTALL)
 MOD_DECL = re.compile(
@@ -72,81 +71,33 @@ def is_production_rs(path: Path) -> bool:
     return "src" in parts
 
 
-def strip_cfg_test_items(text: str) -> str:
-    """Remove ``#[cfg(test)]``-attributed items and their bodies when practical."""
-    lines = text.splitlines(keepends=True)
-    out: list[str] = []
+def production_source(source: str) -> tuple[str, int]:
+    """Mask non-code and test-only items; return code and production line count."""
+    lines = mask_rust_non_code(source).splitlines(keepends=True)
+    production_lines = len(lines)
     i = 0
     while i < len(lines):
-        line = lines[i]
-        if CFG_TEST_ATTR.search(line.split("//", 1)[0]):
-            out.append("\n" if line.endswith("\n") else "")
-            i += 1
-            while i < len(lines):
-                stripped = lines[i].lstrip()
-                if (
-                    stripped.startswith("#[")
-                    or stripped.startswith("//!")
-                    or stripped.startswith("///")
-                ):
-                    out.append("\n" if lines[i].endswith("\n") else "")
-                    i += 1
-                    continue
-                break
-            if i >= len(lines):
-                break
-            item = lines[i]
-            if "{" not in item:
-                out.append("\n" if item.endswith("\n") else "")
-                i += 1
-                continue
-            depth = 0
-            while i < len(lines):
-                for ch in lines[i]:
-                    if ch == "{":
-                        depth += 1
-                    elif ch == "}":
-                        depth -= 1
-                out.append("\n" if lines[i].endswith("\n") else "")
-                i += 1
-                if depth <= 0:
-                    break
-            continue
-        out.append(line)
-        i += 1
-    return "".join(out)
-
-
-def elide_cfg_test_items(text: str) -> str:
-    """Remove cfg(test) items and their bodies without leaving blank lines."""
-    lines = text.splitlines(keepends=True)
-    out: list[str] = []
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].lstrip()
-        if not stripped.startswith("#["):
-            out.append(lines[i])
+        if not lines[i].lstrip().startswith("#["):
             i += 1
             continue
-        attrs: list[str] = []
+        attrs = []
         start = i
         while i < len(lines):
             stripped = lines[i].lstrip()
             if stripped.startswith("#["):
                 attr, i = collect_attribute(lines, i)
                 attrs.append(attr)
-                continue
-            if is_trivia_line(stripped):
+            elif not stripped.strip():
                 i += 1
-                continue
-            break
+            else:
+                break
         if not any(attr_is_test_cfg(attr) for attr in attrs):
-            out.extend(lines[start:i])
             continue
-        if i >= len(lines):
-            break
         i = skip_item(lines, i)
-    return "".join(out)
+        production_lines -= i - start
+        for index in range(start, i):
+            lines[index] = re.sub(r"[^\r\n]", " ", lines[index])
+    return "".join(lines), production_lines
 
 
 RUST_NON_CODE = re.compile(
@@ -188,62 +139,11 @@ def endian_markers(source: str) -> dict[int, str]:
     return markers
 
 
-def _skip_rust_quoted(text: str, start: int) -> int | None:
-    """Return the end of a Rust string/character literal at ``start``."""
-    quote = text[start]
-    raw_start = start
-    if quote in {"b", "c"} and text.startswith("r", start + 1):
-        raw_start += 1
-    if text.startswith("r", raw_start):
-        hash_start = raw_start + 1
-        hash_end = hash_start
-        while hash_end < len(text) and text[hash_end] == "#":
-            hash_end += 1
-        if hash_end < len(text) and text[hash_end] == '"':
-            hashes = text[hash_start:hash_end]
-            terminator = '"' + hashes
-            end = text.find(terminator, hash_end + 1)
-            return len(text) if end < 0 else end + len(terminator)
-    if quote not in {'"', "'"}:
-        return None
-    if quote == "'":
-        # Do not mistake a lifetime such as `'static` for a character literal.
-        if start + 2 >= len(text) or (
-            text[start + 1] != "\\" and text[start + 2] != "'"
-        ):
-            return None
-    index = start + 1
-    while index < len(text):
-        if text[index] == "\\":
-            index += 2
-            continue
-        if text[index] == quote:
-            return index + 1
-        index += 1
-    return len(text)
-
-
 def _vec_repeat_count(text: str, macro: re.Match[str]) -> str | None:
     stack = ["["]
     separator = None
     index = macro.end()
     while index < len(text) and stack:
-        if text.startswith("//", index):
-            newline = text.find("\n", index + 2)
-            index = len(text) if newline < 0 else newline + 1
-            continue
-        if text.startswith("/*", index):
-            end = text.find("*/", index + 2)
-            index = len(text) if end < 0 else end + 2
-            continue
-        quoted_end = (
-            _skip_rust_quoted(text, index)
-            if text[index] in {'"', "'", "b", "c", "r"}
-            else None
-        )
-        if quoted_end is not None:
-            index = quoted_end
-            continue
         character = text[index]
         if character in "([{":
             stack.append(character)
@@ -259,34 +159,12 @@ def _vec_repeat_count(text: str, macro: re.Match[str]) -> str | None:
     return None
 
 
-def iter_vec_repeats(text: str):
-    """Yield offsets and count expressions from syntactic ``vec![value; count]`` repeats."""
-    index = 0
-    while index < len(text):
-        if text.startswith("//", index):
-            newline = text.find("\n", index + 2)
-            index = len(text) if newline < 0 else newline + 1
-            continue
-        if text.startswith("/*", index):
-            end = text.find("*/", index + 2)
-            index = len(text) if end < 0 else end + 2
-            continue
-        quoted_end = (
-            _skip_rust_quoted(text, index)
-            if text[index] in {'"', "'", "b", "c", "r"}
-            else None
-        )
-        if quoted_end is not None:
-            index = quoted_end
-            continue
-        macro = VEC_MACRO.match(text, index)
-        if macro:
-            count = _vec_repeat_count(text, macro)
-            if count is not None:
-                yield macro.start(), count
-            index = macro.end()
-            continue
-        index += 1
+def iter_vec_repeats(code: str):
+    """Yield repeat offsets and counts from already-masked Rust code."""
+    for macro in VEC_MACRO.finditer(code):
+        count = _vec_repeat_count(code, macro)
+        if count is not None:
+            yield macro.start(), count
 
 
 def relative_path(path: Path) -> str:
@@ -362,8 +240,12 @@ def attr_is_test_cfg(attr: str) -> bool:
     match = CFG_ATTR.match(attr.strip())
     if match is None:
         return False
-    body = re.sub(r'"(?:\\.|[^"\\])*"', '""', match.group(1))
-    return re.search(r"(?<![\w:])test(?![\w:])", body) is not None
+    body = mask_rust_non_code(match.group(1)).strip()
+    # ponytail: recognize test and flat all(..., test, ...) gates only.
+    # Retain other expressions as production; extend if new test-only forms occur.
+    return body == "test" or re.fullmatch(
+        r"all\(\s*(?:[^(),]*,\s*)*test\s*(?:,[^()]*)?\)", body
+    ) is not None
 
 
 def path_attr_target(attr: str) -> str | None:
@@ -424,11 +306,15 @@ def resolve_module_target(
 
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
-    code = strip_cfg_test_items(mask_rust_non_code(source))
+    code, size = production_source(source)
     findings = []
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
+
+    if size > PRODUCTION_LINE_LIMIT:
+        report("production_size", 1,
+               f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
 
     markers = endian_markers(source)
     lines = code.splitlines()
@@ -548,11 +434,6 @@ def scan_placement(sources: dict[Path, str]) -> list[Finding]:
     for path in paths:
         if is_production_rs(path) and path not in scanned_tests:
             scan_block(sources[path], path, child_module_dir(path), False, False, False, 0)
-    for path in paths:
-        if is_production_rs(path):
-            size = line_count(elide_cfg_test_items(sources[path]))
-            if size > PRODUCTION_LINE_LIMIT:
-                report("production_size", path, 1, f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
     return findings
 
 

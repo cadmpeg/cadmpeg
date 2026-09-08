@@ -42,6 +42,10 @@ Source-pattern rules inspect production Rust under `crates/**/src`. They exclude
 test, test-support, golden, integration, and bench paths and filenames containing
 `test`. Comments, literals, and `cfg(test)` items are masked before matching.
 Placement rules inspect `crates/**/*.rs`, following test-only module ancestry.
+Both scans recognize `cfg(test)` and flat `cfg(all(..., test, ...))` gates.
+Other conditions remain production, including `cfg(not(test))` and
+`cfg(any(feature = "examples", test))`. Comments and literals are masked
+before test-item boundaries and vector repeats are scanned.
 
 The checker recognizes source forms, not Rust types or data flow. It does not
 prove numerical correctness, memory safety, loss fidelity, or test ownership.

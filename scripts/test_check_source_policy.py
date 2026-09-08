@@ -62,7 +62,7 @@ class StripCfgTest(unittest.TestCase):
             "}\n"
             "fn other() { from_be_bytes(); }\n"
         )
-        stripped = policy.strip_cfg_test_items(text)
+        stripped, _ = policy.production_source(text)
         self.assertEqual(
             policy.FROM_ENDIAN.findall(stripped),
             ["from_le_bytes", "from_be_bytes"],
@@ -70,10 +70,10 @@ class StripCfgTest(unittest.TestCase):
 
     def test_keeps_non_test_cfg(self) -> None:
         text = "#[cfg(feature = \"x\")]\nfn f() { from_le_bytes(); }\n"
-        stripped = policy.strip_cfg_test_items(text)
+        stripped, _ = policy.production_source(text)
         self.assertEqual(policy.FROM_ENDIAN.findall(stripped), ["from_le_bytes"])
 
-    def test_elides_cfg_test_items_without_blank_lines(self) -> None:
+    def test_masks_cfg_test_items_and_counts_only_production_lines(self) -> None:
         text = (
             "fn prod() {}\n"
             "#[cfg(test)]\n"
@@ -82,7 +82,39 @@ class StripCfgTest(unittest.TestCase):
             "}\n"
             "fn other() {}\n"
         )
-        self.assertEqual(policy.elide_cfg_test_items(text), "fn prod() {}\nfn other() {}\n")
+        code, count = policy.production_source(text)
+        self.assertEqual(count, 2)
+        self.assertEqual(len(code), len(text))
+        self.assertEqual(code.splitlines()[0], "fn prod() {}")
+        self.assertEqual(code.splitlines()[5], "fn other() {}")
+        self.assertTrue(all(not line.strip() for line in code.splitlines()[1:5]))
+
+    def test_cfg_classification_keeps_production_and_masks_test_only_items(self) -> None:
+        for expression, test_only in [
+            ("test", True), ('all(test, feature = "schema")', True),
+            ('all(feature = "schema", test)', True),
+            ("not(test)", False), ('any(feature = "examples", test)', False),
+            ('feature = "test"', False), ("not(not(test))", False),
+        ]:
+            with self.subTest(expression=expression):
+                source = f"#[cfg({expression})]\nfn f() {{ from_le_bytes(); }}\n"
+                code, count = policy.production_source(source)
+                self.assertEqual(count, 0 if test_only else 2)
+                self.assertEqual("from_le_bytes" in code, not test_only)
+                self.assertEqual(policy.attr_is_test_cfg(f"#[cfg({expression})]"), test_only)
+
+    def test_multiline_attributes_and_literal_braces_preserve_locations(self) -> None:
+        source = (
+            "#[cfg(\n test\n)]\n#[allow(dead_code)]\n"
+            'fn test_only() { let s = "}"; }\n'
+            'fn prod() { let s = "#[cfg(test)]"; }\n'
+            "fn other() { from_le_bytes(); }"
+        )
+        code, count = policy.production_source(source)
+        self.assertEqual(count, 2)
+        self.assertEqual(len(code), len(source))
+        findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
+        self.assertEqual([(f.rule, f.line) for f in findings], [("unapproved_endian_read", 7)])
 
 
 class PatternFilters(unittest.TestCase):
@@ -146,7 +178,7 @@ class PatternFilters(unittest.TestCase):
                 "fn actual() { from_le_bytes(); let _ = 1e-7; }\n",
                 encoding="utf-8",
             )
-            source = policy.strip_cfg_test_items(policy.mask_rust_non_code(path.read_text()))
+            source, _ = policy.production_source(path.read_text())
         self.assertEqual(policy.FROM_ENDIAN.findall(source), ["from_le_bytes"])
         self.assertEqual(len([item for item in policy.scan_patterns(policy.ROOT / "source.rs", source) if item.rule == "bare_tolerance"]), 1)
 
@@ -170,8 +202,22 @@ class PatternFilters(unittest.TestCase):
             // vec![0; commented_len]
         '''
         self.assertEqual(
-            [count for _, count in policy.iter_vec_repeats(text)], ["len", "outer_len"]
+            [count for _, count in policy.iter_vec_repeats(policy.mask_rust_non_code(text))],
+            ["len", "outer_len"],
         )
+
+    def test_vec_patterns_use_masked_source_and_report_nested_repeats(self) -> None:
+        source = '\n'.join([
+            'let text = r#"vec![0; hidden]; ]"#;',
+            "let nested = vec![vec![0; inner]; outer];",
+            'let quoted = vec!["]; /*"; count];',
+            "/* vec![0; hidden] */ let safe = vec![0; 4];",
+        ])
+        hits = policy.scan_patterns(policy.ROOT / "source.rs", source)
+        self.assertEqual([(f.rule, f.line) for f in hits], [
+            ("unchecked_vec_repeat", 2), ("unchecked_vec_repeat", 2),
+            ("unchecked_vec_repeat", 3),
+        ])
 
     def test_existing_collection_lengths_are_admitted_repeat_sizes(self) -> None:
         self.assertIsNotNone(policy.ADMITTED_LEN_REPEAT.fullmatch("records.len()"))
@@ -206,6 +252,20 @@ class PatternFilters(unittest.TestCase):
 
 
 class PlacementRules(TempSourceCase):
+    def test_production_cfg_is_not_test_placement_or_excluded_from_size(self) -> None:
+        self.write("crates/demo/src/lib.rs", '\n'.join([
+            '#[cfg(not(test))]', '#[path = "prod.rs"]', 'mod prod;',
+            '#[cfg(any(feature = "examples", test))]',
+            '#[path = "examples.rs"]', 'mod examples;', '',
+        ]))
+        self.write("crates/demo/src/prod.rs",
+                   "#[cfg(not(test))]\nfn prod() {\n    work();\n}\n")
+        self.write("crates/demo/src/examples.rs", "fn example() {}\n")
+        self.assertEqual(self.findings("test_path_include"), [])
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 3):
+            oversized = self.findings("production_size")
+        self.assertIn("crates/demo/src/prod.rs", [f.path for f in oversized])
+
     def test_root_router_but_not_nested_tests(self) -> None:
         self.write("crates/demo/src/lib.rs", "#[cfg(test)]\nmod tests;\nmod foo;\n")
         self.write("crates/demo/src/foo.rs", "#[cfg(test)]\nmod tests;\n")
