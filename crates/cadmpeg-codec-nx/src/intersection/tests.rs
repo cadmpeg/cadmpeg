@@ -334,8 +334,15 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
     let [uncharted] = scan.uncharted.as_slice() else {
         panic!("one bounded uncharted intersection");
     };
-    assert!(uncharted.supports.iter().all(|support| *support > 1));
-    assert_ne!(uncharted.supports[0], uncharted.supports[1]);
+    assert!(uncharted
+        .supports
+        .references()
+        .iter()
+        .all(|support| u32::from(*support) > 1));
+    assert_ne!(
+        uncharted.supports.references()[0],
+        uncharted.supports.references()[1]
+    );
     assert!(uncharted.tolerance.is_finite() && uncharted.tolerance > 0.0);
 
     let edge = stream
