@@ -516,7 +516,7 @@ fn resolve_sweep_surface(
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
-) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
+) -> Option<(SurfaceGeometry, usize, &'static str, Option<Exactness>)> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
     let curve = sweep::profile_nurbs(&profile.geometry)?;
@@ -526,7 +526,7 @@ fn resolve_sweep_surface(
             SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)?),
             construction.offset,
             "00_44",
-            profile_derived,
+            profile_derived.then_some(Exactness::Derived),
         )),
         SweepKind::Swept { direction } => {
             // Ruling extent: face vertex travel bracketed by the profile poles'
@@ -578,7 +578,7 @@ fn resolve_sweep_surface(
                 )?),
                 construction.offset,
                 "00_43",
-                true,
+                Some(Exactness::Derived),
             ))
         }
     }
@@ -1848,14 +1848,14 @@ fn decode_graph(
                             cache: None,
                         },
                     });
-                } else if let Some((geometry, offset, tag, derived)) =
+                } else if let Some((geometry, offset, tag, exactness)) =
                     resolve_sweep_surface(carriers, t, f)
                 {
                     annotations
                         .note(id_surf(f.bridge_attr), source_stream, offset as u64)
                         .tag(tag);
-                    if derived {
-                        annotations.exactness(id_surf(f.bridge_attr), Exactness::Derived);
+                    if let Some(exactness) = exactness {
+                        annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     out.surfaces.push(Surface {
                         id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
