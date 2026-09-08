@@ -64,7 +64,7 @@ pub struct SummaryArgs {
 
 fn native_input_parser(
 ) -> impl TypedValueParser<Value = &'static cadmpeg_registry::NativeDescriptor> {
-    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().into_iter().filter(
+    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names().filter(
         |name| {
             matches!(
                 cadmpeg_registry::forced_input(name),
