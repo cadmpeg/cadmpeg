@@ -507,17 +507,21 @@ fn is_finite_nonzero_vector(vector: Vector3) -> bool {
         && (vector.x != 0.0 || vector.y != 0.0 || vector.z != 0.0)
 }
 
+/// The normalized finite vector, when its length is nonzero and finite.
+pub(super) fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+}
+
 pub(crate) fn declared_unit_vector(
     record: &ParameterRecord,
     start: usize,
     vector: Vector3,
     precision: RealPrecision,
-) -> bool {
+) -> Option<Vector3> {
     // CADIR admission for an IGES unit-vector field uses its declared-real
     // interval; IGES defines no separate receiver epsilon.
-    if !is_finite_nonzero_vector(vector) {
-        return false;
-    }
+    let normalized = unit_vector(vector)?;
     let values = [vector.x, vector.y, vector.z];
     let components = std::array::from_fn::<_, 3, _>(|offset| {
         DeclaredInterval::around(
@@ -525,7 +529,9 @@ pub(crate) fn declared_unit_vector(
             record.number_uncertainty(start + offset, values[offset], precision),
         )
     });
-    interval_squared_norm(components).contains(1.0)
+    interval_squared_norm(components)
+        .contains(1.0)
+        .then_some(normalized)
 }
 
 pub(crate) fn declared_orthogonal_vectors(
@@ -1948,7 +1954,7 @@ pub(crate) fn project_geometry(
             };
             let normal_definition =
                 Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
-            if !declared_unit_vector(record, normal_start, normal_definition, precision) {
+            if declared_unit_vector(record, normal_start, normal_definition, precision).is_none() {
                 losses.push(entity_loss(
                     entry,
                     "planar spline normal is not a declared unit vector",
