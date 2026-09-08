@@ -320,11 +320,22 @@ pub fn unique_counterbore_dimension_tuple(
         .then_some(first)
 }
 
-pub fn counterbore_patch_geometries(
-    scan: &ContainerScan,
+pub fn counterbore_patch_geometries<'a>(
+    scan: &'a ContainerScan<'_>,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<Vec<(u32, SurfaceGeometry)>> {
+) -> Option<Vec<(&'a crate::surface::SurfaceRow, SurfaceGeometry)>> {
+    let resolve_rows = |geometries: Vec<(u32, SurfaceGeometry)>| {
+        geometries
+            .into_iter()
+            .map(|(id, geometry)| {
+                Some((
+                    crate::surface::unique_surface_row(&scan.surfaces.rows, id)?,
+                    geometry,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+    };
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
         counterbore_dimensions(scan, ir, feature_id)?;
     let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -335,7 +346,7 @@ pub fn counterbore_patch_geometries(
         bore_diameter,
         counterbore_diameter,
     ) {
-        return Some(geometries);
+        return resolve_rows(geometries);
     }
     if cylinder_sources
         .iter()
@@ -352,6 +363,7 @@ pub fn counterbore_patch_geometries(
         counterbore_diameter,
         counterbore_depth,
     )
+    .and_then(resolve_rows)
 }
 
 pub fn counterbore_cylinder_sources(

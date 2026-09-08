@@ -243,9 +243,9 @@ pub fn cylinder_from_complementary_outline_bounds(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SimpleHoleGeometry {
+pub struct SimpleHoleGeometry<'a> {
     pub entry_surface_id: Option<u32>,
-    pub cylinder_ids: Vec<u32>,
+    pub cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
     pub direction: [f64; 3],
     pub extent: LinearTermination,
     pub geometry: SurfaceGeometry,

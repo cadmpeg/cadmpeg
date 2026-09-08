@@ -1617,8 +1617,10 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
 
 #[test]
 fn circular_sweep_projects_profile_direction_and_extent() {
+    let rows = [12, 13]
+        .map(|id| super::class_911_surface_row(6, id, crate::surface::SurfaceKind::Cylinder));
     let sweep = CircularSweepGeometry {
-        cylinder_ids: vec![12, 13],
+        cylinder_rows: rows.iter().collect(),
         section_definition_id: None,
         direction: [0.0, 0.0, -1.0],
         extent: ExtrudeExtent::OneSided {
