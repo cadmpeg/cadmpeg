@@ -339,16 +339,15 @@ pub(in super::super) fn transfer_hole_cylinders(
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
         let cylinders = if let Some(hole) = simple_hole_geometry(scan, feature_id) {
-            hole.cylinder_ids
+            hole.cylinder_rows
                 .into_iter()
-                .map(|id| (id, hole.geometry.clone()))
+                .map(|row| (row, hole.geometry.clone()))
                 .collect::<Vec<_>>()
         } else {
             counterbore_patch_geometries(scan, ir, feature_id).unwrap_or_default()
         };
-        for (cylinder_id, geometry) in cylinders {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id)
-                .expect("validated cylinder row");
+        for (row, geometry) in cylinders {
+            let cylinder_id = row.id;
             let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
                 .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -1443,9 +1442,8 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         let Some(sweep) = circular_sweep_geometry(scan, feature_id) else {
             continue;
         };
-        for cylinder_id in &sweep.cylinder_ids {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *cylinder_id)
-                .expect("validated cylinder row");
+        for row in &sweep.cylinder_rows {
+            let cylinder_id = row.id;
             let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
                 .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {

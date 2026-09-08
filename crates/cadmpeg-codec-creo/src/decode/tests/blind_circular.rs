@@ -274,7 +274,14 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     );
 
     let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
-    assert_eq!(sweep.cylinder_ids, vec![836]);
+    assert_eq!(
+        sweep
+            .cylinder_rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        vec![836]
+    );
     assert_eq!(sweep.direction, [0.0, -1.0, 0.0]);
     assert_eq!(
         sweep.extent,
