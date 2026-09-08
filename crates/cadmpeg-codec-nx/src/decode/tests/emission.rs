@@ -1468,10 +1468,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(10.0, 0.0, 0.0).unit().unwrap(),
+        geometry: CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                None,
+                false,
             )
             .unwrap(),
         ),
@@ -1633,10 +1636,13 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     let curve = CurveId::mint("test:model:entity#nx:test:boundary-line").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(10.0, 0.0, 0.0).unit().unwrap(),
+        geometry: CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                None,
+                false,
             )
             .unwrap(),
         ),
