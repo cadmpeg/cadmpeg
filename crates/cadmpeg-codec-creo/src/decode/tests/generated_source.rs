@@ -1485,7 +1485,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
 fn design_constraint_coverage_separates_typed_and_native_constraints() {
     let sketch = SketchId::mint("synthetic:test:id#sketch".to_string()).unwrap();
     let constraint = |id: &str, definition| SketchConstraint {
-        id: SketchConstraintId::mint(id.to_string()).unwrap(),
+        id: SketchConstraintId::mint(format!("synthetic:test:id#{id}")).unwrap(),
         sketch: sketch.clone(),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).unwrap(),
         name: None,
