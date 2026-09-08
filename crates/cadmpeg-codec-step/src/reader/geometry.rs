@@ -2305,24 +2305,22 @@ pub(super) fn associate_free_representation_members(
                 })
             };
             if let Some(index) = index.curves.get(&member) {
-                if !owned.curves.contains(index) {
-                    if ir.model.curves[index.0].source_object.is_none() {
-                        ir.model.curves[index.0].source_object = Some(association()?);
-                    }
+                if !owned.curves.contains(index) && ir.model.curves[index.0].source_object.is_none()
+                {
+                    ir.model.curves[index.0].source_object = Some(association()?);
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
-                if !owned.points.contains(index) {
-                    if ir.model.points[index.0].source_object.is_none() {
-                        ir.model.points[index.0].source_object = Some(association()?);
-                    }
+                if !owned.points.contains(index) && ir.model.points[index.0].source_object.is_none()
+                {
+                    ir.model.points[index.0].source_object = Some(association()?);
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
-                if !owned.surfaces.contains(index) {
-                    if ir.model.surfaces[index.0].source_object.is_none() {
-                        ir.model.surfaces[index.0].source_object = Some(association()?);
-                    }
+                if !owned.surfaces.contains(index)
+                    && ir.model.surfaces[index.0].source_object.is_none()
+                {
+                    ir.model.surfaces[index.0].source_object = Some(association()?);
                 }
             }
         }
@@ -2405,24 +2403,18 @@ fn associate_presentation_carrier(
         })
     };
     if let Some(index) = index.curves.get(&target) {
-        if !owned.curves.contains(index) {
-            if ir.model.curves[index.0].source_object.is_none() {
-                ir.model.curves[index.0].source_object = Some(association()?);
-            }
+        if !owned.curves.contains(index) && ir.model.curves[index.0].source_object.is_none() {
+            ir.model.curves[index.0].source_object = Some(association()?);
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
-        if !owned.points.contains(index) {
-            if ir.model.points[index.0].source_object.is_none() {
-                ir.model.points[index.0].source_object = Some(association()?);
-            }
+        if !owned.points.contains(index) && ir.model.points[index.0].source_object.is_none() {
+            ir.model.points[index.0].source_object = Some(association()?);
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
-        if !owned.surfaces.contains(index) {
-            if ir.model.surfaces[index.0].source_object.is_none() {
-                ir.model.surfaces[index.0].source_object = Some(association()?);
-            }
+        if !owned.surfaces.contains(index) && ir.model.surfaces[index.0].source_object.is_none() {
+            ir.model.surfaces[index.0].source_object = Some(association()?);
         }
     }
     Ok(())
