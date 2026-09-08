@@ -19,22 +19,19 @@ const VALUE_INTEGER: &str = "value(i_val)";
 const VALUE_STRING: &str = "value(s_val)";
 
 /// One complete legacy family-table root and its ordered rows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTable {
     /// Direct owning model object identity.
     pub(crate) root_parent_id: String,
     /// Direct owning model object name.
     pub(crate) root_parent_name: String,
     /// Source offset of the root object row.
-    #[serde(flatten, serialize_with = "serialize_root_identity")]
     pub(crate) offset: usize,
     /// Optional root generic-name field.
     pub(crate) generic_name: Option<legacy::StringValue>,
     /// Ordered table-column descriptors.
-    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) items: Vec<FamilyTableItem>,
     /// Ordered instance rows.
-    #[serde(serialize_with = "serialize_ordered")]
     pub(crate) instances: Vec<FamilyTableInstance>,
 }
 
@@ -474,16 +471,33 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
     })
 }
 
-fn serialize_root_identity<S: serde::Serializer>(
-    offset: &usize,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
-    let mut wire = serializer.serialize_struct("FamilyRootIdentity", 3)?;
-    wire.serialize_field("id", &format!("creo:legacy_family:driver_table#{offset}"))?;
-    wire.serialize_field("root_object_id", &legacy::object_node_id(*offset))?;
-    wire.serialize_field("offset", offset)?;
-    wire.end()
+impl Serialize for FamilyTable {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: String,
+            root_object_id: String,
+            root_parent_id: &'a str,
+            root_parent_name: &'a str,
+            offset: usize,
+            generic_name: &'a Option<legacy::StringValue>,
+            #[serde(serialize_with = "serialize_ordered")]
+            items: &'a [FamilyTableItem],
+            #[serde(serialize_with = "serialize_ordered")]
+            instances: &'a [FamilyTableInstance],
+        }
+        Wire {
+            id: self.id(),
+            root_object_id: legacy::object_node_id(self.offset),
+            root_parent_id: &self.root_parent_id,
+            root_parent_name: &self.root_parent_name,
+            offset: self.offset,
+            generic_name: &self.generic_name,
+            items: &self.items,
+            instances: &self.instances,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl FamilyTable {
