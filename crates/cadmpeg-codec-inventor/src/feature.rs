@@ -851,12 +851,7 @@ fn parse_label(
     let index = cursor.u32("feature-label index")?;
     let participants = reference_list(ctx, &mut cursor, 2, "feature-label participants")?;
     let name = cursor.utf16(ctx, "feature label")?;
-    let class_id = type_id_string(
-        cursor
-            .take(16, "feature-label class id")?
-            .try_into()
-            .expect("sixteen-byte class id"),
-    );
+    let class_id = type_id_string(cursor.take_array("feature-label class id")?);
     cursor.finish("feature label")?;
     Ok(PmDcFeatureLabelPayload {
         save_version_major: version,

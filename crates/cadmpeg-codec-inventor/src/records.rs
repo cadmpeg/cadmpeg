@@ -195,27 +195,29 @@ pub(crate) fn parse_meta_tables<'a>(
     )?;
     let mut types = Vec::with_capacity(type_count);
     for index in 0..type_count {
-        let entry = section_4_payload
-            .window()
-            .get(index * type_desc::LEN..index * type_desc::LEN + type_desc::LEN)
-            .expect("counted type-table payload has exact entries");
-        let mut id = [0; 16];
-        id.copy_from_slice(&entry[type_desc::TYPE_ID..type_desc::FIELD_0_KIND]);
+        let entry = child(
+            section_4_payload,
+            index * type_desc::LEN,
+            (index + 1) * type_desc::LEN,
+            "type descriptor",
+        )?;
+        let mut entry = crate::pmdc::Cursor::new(entry);
         types.push(TypeDescriptor {
             index: index as u8,
-            id,
+            id: entry.take_array("type descriptor id")?,
             fields: [
                 (
-                    View::u16_le_at(entry, type_desc::FIELD_0_KIND).expect("two-byte field"),
-                    View::u32_le_at(entry, type_desc::FIELD_0_VALUE).expect("four-byte field"),
+                    entry.u16("type field 0 kind")?,
+                    entry.u32("type field 0 value")?,
                 ),
                 (
-                    View::u16_le_at(entry, type_desc::FIELD_1_KIND).expect("two-byte field"),
-                    View::u32_le_at(entry, type_desc::FIELD_1_VALUE).expect("four-byte field"),
+                    entry.u16("type field 1 kind")?,
+                    entry.u32("type field 1 value")?,
                 ),
             ],
         });
     }
+
     sections.push(MetaSection {
         number: MetaSectionNumber::Four,
         discriminator: type_count as u32,
