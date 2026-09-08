@@ -1549,9 +1549,13 @@ fn scale_spatial_sketch_geometry(
                 })?;
         }
         SpatialSketchGeometry::NurbsSurface { surface } => {
-            for point in surface.control_points_mut() {
-                scale_point3(point, scale);
-            }
+            surface
+                .edit_control_points(|point| scale_point3(point, scale))
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "Creo spatial sketch unit normalization produced invalid B-spline control points: {error}"
+                    ))
+                })?;
         }
         SpatialSketchGeometry::Native { .. } => {}
     }

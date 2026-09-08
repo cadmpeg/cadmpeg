@@ -355,10 +355,13 @@ pub fn project_spatial_sketch_design(
     surfaces: &[SketchSurface],
     relations: &[SketchRelation],
     linear_tolerance: f64,
-) -> (
-    Vec<cadmpeg_ir::sketches::SpatialSketch>,
-    Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
-) {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::sketches::SpatialSketch>,
+        Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry};
 
@@ -608,12 +611,18 @@ pub fn project_spatial_sketch_design(
             .with_native_ref(Some(point.id.clone())),
         )
     }));
-    entities.extend(surfaces.iter().filter_map(|surface| {
-        let scope = native_stream(&surface.id)?;
-        let owner = surface.owner_reference?;
-        let placement = placements_by_suffix.get(&(scope, owner))?;
+    for surface in surfaces {
+        let Some(scope) = native_stream(&surface.id) else {
+            continue;
+        };
+        let Some(owner) = surface.owner_reference else {
+            continue;
+        };
+        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+            continue;
+        };
         let sketch = neutral_spatial_sketch_id(placement);
-        Some(
+        entities.push(
             SpatialSketchEntity::new(
                 neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
                 sketch,
@@ -633,12 +642,17 @@ pub fn project_spatial_sketch_design(
                             })
                             .collect(),
                     )
-                    .ok()?,
+                    .map_err(|error| {
+                        cadmpeg_core::CodecError::malformed(format_args!(
+                            "F3D spatial sketch surface {} is invalid: {error}",
+                            surface.id
+                        ))
+                    })?,
                 },
             )
             .with_native_ref(Some(surface.id.clone())),
-        )
-    }));
+        );
+    }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
     let spatial_ids = entities
         .iter()
@@ -663,7 +677,7 @@ pub fn project_spatial_sketch_design(
         })
         .collect::<Vec<_>>();
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
-    (sketches, entities)
+    Ok((sketches, entities))
 }
 
 /// Project exact aggregate relations owned by model-space spatial sketches.
