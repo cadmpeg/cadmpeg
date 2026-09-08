@@ -170,7 +170,9 @@ fn native_validation_rejects_edited_relation_binding() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("edited relation bindings"));
+    assert!(error
+        .to_string()
+        .contains("relation bindings do not match the native payload"));
 }
 
 #[test]
@@ -206,5 +208,7 @@ fn native_validation_rejects_edited_relation_instance() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("edited relation instances"));
+    assert!(error
+        .to_string()
+        .contains("relation instances do not match the native payload"));
 }

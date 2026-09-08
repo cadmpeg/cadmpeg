@@ -1,15 +1,10 @@
 //! Native lane validation findings.
 
 use super::assembly::is_supplemental_config_lane;
-use super::bindings::finalize_lane_bindings;
 use cadmpeg_ir::{Check, Finding, Severity};
-use std::collections::HashMap;
 
 /// Validate `SolidWorks` native feature-input byte references.
-///
-/// Re-derives the expected feature classes, scalar indices, relation
-/// bindings, reference cells, name structures, and sketch-marker offsets
-/// from each lane's `native_payload` and asserts the stored arenas match.
+
 pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
@@ -166,189 +161,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
         }
     }
-    let mut expected_primary_lanes = native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| !is_supplemental_config_lane(lane))
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut expected_supplemental_lanes = native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| is_supplemental_config_lane(lane))
-        .cloned()
-        .collect::<Vec<_>>();
-    for lane in expected_primary_lanes
-        .iter_mut()
-        .chain(&mut expected_supplemental_lanes)
-    {
-        lane.scalars = crate::resolved_features::scalars::named_scalars(
-            &lane.native_payload,
-            &lane.id,
-            &lane.names,
-        );
-        lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
-            &lane.id,
-            &lane.classes,
-            &lane.scalars,
-        );
-        lane.references =
-            crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes);
-    }
-    crate::resolved_features::bindings::bind_scalar_operands(
-        &native.feature_histories,
-        &mut expected_primary_lanes,
-    );
-    crate::resolved_features::bindings::bind_scalar_operands(
-        &native.feature_histories,
-        &mut expected_supplemental_lanes,
-    );
-    let supplemental_lanes = native
-        .feature_input_lanes
-        .iter()
-        .filter(|lane| is_supplemental_config_lane(lane))
-        .map(|lane| (lane.id.as_str(), lane))
-        .collect::<HashMap<_, _>>();
-    for expected_lane in &mut expected_supplemental_lanes {
-        let actual_lane = supplemental_lanes
-            .get(expected_lane.id.as_str())
-            .expect("expected supplemental lanes are cloned from native lanes");
-        // Detached supplemental objects acquire owners before later projection
-        // can replace an unresolved sketch definition. The final model does not
-        // retain that intermediate state. Treat the stored owner partition as
-        // derived provenance, then re-derive every byte-backed local link from it.
-        for (expected, actual) in expected_lane
-            .sketch_entities
-            .iter_mut()
-            .zip(&actual_lane.sketch_entities)
-        {
-            expected.feature_ref.clone_from(&actual.feature_ref);
-            expected.links = None;
-        }
-        for (expected, actual) in expected_lane
-            .references
-            .iter_mut()
-            .zip(&actual_lane.references)
-        {
-            expected.feature_ref.clone_from(&actual.feature_ref);
-        }
-        for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
-            expected.feature_ref.clone_from(&actual.feature_ref);
-        }
-        finalize_lane_bindings(&native.feature_histories, expected_lane);
-    }
-    let expected_lanes = expected_primary_lanes
-        .iter()
-        .chain(&expected_supplemental_lanes)
-        .map(|lane| (lane.id.as_str(), lane))
-        .collect::<HashMap<_, _>>();
-    for lane in &native.feature_input_lanes {
-        let expected_classes =
-            crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
-        if lane.classes != expected_classes {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "SolidWorks feature-input class index does not match its native payload"
-                    .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        let expected_names =
-            crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
-        if lane.names.len() != expected_names.len()
-            || lane
-                .names
-                .iter()
-                .zip(&expected_names)
-                .any(|(actual, expected)| {
-                    actual.id != expected.id
-                        || actual.parent != expected.parent
-                        || actual.ordinal != expected.ordinal
-                        || actual.offset != expected.offset
-                })
-        {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input name structure does not match its native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        let expected_lane = expected_lanes
-            .get(lane.id.as_str())
-            .expect("expected lanes are cloned from native lanes");
-        if !crate::resolved_features::scalars::scalar_indices_match(
-            &lane.scalars,
-            &expected_lane.scalars,
-        ) {
-            let detail = lane
-                .scalars
-                .iter()
-                .zip(&expected_lane.scalars)
-                .find(|(actual, expected)| {
-                    !crate::resolved_features::scalars::scalar_indices_match(
-                        std::slice::from_ref(actual),
-                        std::slice::from_ref(expected),
-                    )
-                })
-                .map_or_else(
-                    || {
-                        format!(
-                            "count {} != {}",
-                            lane.scalars.len(),
-                            expected_lane.scalars.len()
-                        )
-                    },
-                    |(actual, expected)| format!("{actual:?} != {expected:?}"),
-                );
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!(
-                    "SolidWorks feature-input scalar index does not match its native payload: {detail}"
-                ),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        if lane.relation_bindings != expected_lane.relation_bindings {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input relation bindings do not match the native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        if lane.relation_instances != expected_lane.relation_instances {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input relation instances do not match the native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        if lane.references != expected_lane.references {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "SolidWorks feature-input reference index does not match its native payload"
-                        .into(),
-                entity: Some(lane.id.clone()),
-            });
-        }
-        let expected_offsets = (0..lane.native_payload.len())
-            .filter(|offset| {
-                crate::resolved_features::markers::sketch_marker_at(&lane.native_payload, *offset)
-            })
-            .map(|offset| offset as u64)
-            .collect::<std::collections::HashSet<_>>();
+    for (lane, expected_lane) in crate::native::lanes::expected_lanes(&native) {
         let mut ordinals = std::collections::HashSet::new();
         let mut offsets = std::collections::HashSet::new();
         let mut previous_offset = None;
@@ -456,14 +269,6 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                     entity: Some(entity.id.clone()),
                 });
             }
-        }
-        for offset in expected_offsets.difference(&offsets) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!("SolidWorks feature-input lane omits marker at offset {offset}"),
-                entity: Some(lane.id.clone()),
-            });
         }
     }
     findings

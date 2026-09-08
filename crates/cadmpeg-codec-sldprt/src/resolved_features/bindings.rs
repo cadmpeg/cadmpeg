@@ -958,7 +958,7 @@ pub(crate) fn bind_scalar_operands(
     }
 }
 
-pub(super) fn finalize_lane_bindings(
+pub(crate) fn finalize_lane_bindings(
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
 ) {
