@@ -587,6 +587,43 @@ mod tests {
         });
     }
 
+    #[test]
+    fn revision_selector_framing_preserves_short_and_long_payload_bytes() {
+        for selector in [0, 1, 2, u8::MAX] {
+            let mut bytes = Vec::new();
+            push_u32(&mut bytes, 3);
+            push_u32(&mut bytes, 2);
+            bytes.extend_from_slice(&[0x11; 16]);
+            push_u32(&mut bytes, 7);
+            bytes.extend_from_slice(&u16::MAX.to_le_bytes());
+            bytes.push(selector);
+            if selector == 0 {
+                bytes.extend_from_slice(&[0x5a; 16]);
+            } else {
+                bytes.extend_from_slice(&[0x5a; 8]);
+            }
+            bytes.extend_from_slice(&[0x22; 16]);
+            push_u32(&mut bytes, 8);
+            bytes.extend_from_slice(&2u16.to_le_bytes());
+            with_context(&bytes, |ctx| {
+                let table = parse_revisions(ctx, &bytes).unwrap();
+                assert_eq!(table.entries.len(), 2);
+                assert_eq!(
+                    table.entries[0].payload,
+                    if selector == 0 {
+                        RevisionPayload::Long([0x5a; 16])
+                    } else {
+                        RevisionPayload::Short([0x5a; 8])
+                    }
+                );
+                assert_eq!(table.entries[1].id, [0x22; 16]);
+                assert_eq!(table.entries[1].payload, RevisionPayload::None);
+            });
+            bytes.push(0);
+            with_context(&bytes, |ctx| assert!(parse_revisions(ctx, &bytes).is_err()));
+        }
+    }
+
     fn with_context(bytes: &[u8], test: impl FnOnce(&DecodeContext<'_>)) {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
