@@ -852,7 +852,7 @@ fn metadata_string(properties: &[&PropertyRecord], name: &str) -> Option<String>
     if property.type_name != "App::PropertyString" {
         return None;
     }
-    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return None;

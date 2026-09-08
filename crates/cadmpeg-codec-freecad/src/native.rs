@@ -47,6 +47,40 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn retained_xml_records_reject_invalid_wire_spans() {
+        let bases = [
+            serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
+            serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
+            serde_json::json!({"id":"object", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
+            serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
+        ];
+        for (kind, base) in bases.into_iter().enumerate() {
+            for (start, end, valid) in [
+                (10, 14, true),
+                (10, 10, false),
+                (10, 9, false),
+                (10, 15, false),
+            ] {
+                let mut wire = base.clone();
+                wire["raw_xml"] = serde_json::json!("<A/>");
+                wire["byte_start"] = serde_json::json!(start);
+                wire["byte_end"] = serde_json::json!(end);
+                let admitted = match kind {
+                    0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
+                    1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
+                    2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
+                    _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
+                };
+                assert_eq!(
+                    admitted.is_ok(),
+                    valid,
+                    "kind={kind}, span={start}..{end}: {admitted:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn document_kind_wire_must_match_domains_and_count() {
         let mut wire = serde_json::json!({"id":"document", "schema_version":"4",
             "file_version":"1", "program_version":null, "root_name":"Document",
@@ -278,6 +312,83 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     }
 }
 
+/// A nonempty half-open byte interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByteSpan {
+    start: u64,
+    end: u64,
+}
+
+impl ByteSpan {
+    pub(crate) fn try_new(start: u64, end: u64) -> Result<Self, String> {
+        if start >= end {
+            return Err("byte span start must be less than end".to_owned());
+        }
+        Ok(Self { start, end })
+    }
+    pub(crate) fn start(self) -> u64 {
+        self.start
+    }
+    pub(crate) fn end(self) -> u64 {
+        self.end
+    }
+}
+
+/// Exact XML text paired with its nonempty source interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RetainedXmlWire", into = "RetainedXmlWire")]
+pub struct RetainedXml {
+    text: String,
+    span: ByteSpan,
+}
+
+impl RetainedXml {
+    pub(crate) fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
+        let span = ByteSpan::try_new(start, end)?;
+        if end - start != text.len() as u64 {
+            return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
+        }
+        Ok(Self { text, span })
+    }
+    pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
+        let end = start
+            .checked_add(text.len() as u64)
+            .ok_or("raw_xml byte_end overflow")?;
+        Self::try_new(text, start, end)
+    }
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+    pub(crate) fn start(&self) -> u64 {
+        self.span.start()
+    }
+    pub(crate) fn end(&self) -> u64 {
+        self.span.end()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RetainedXmlWire {
+    raw_xml: String,
+    byte_start: u64,
+    byte_end: u64,
+}
+impl TryFrom<RetainedXmlWire> for RetainedXml {
+    type Error = String;
+    fn try_from(wire: RetainedXmlWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)
+    }
+}
+impl From<RetainedXml> for RetainedXmlWire {
+    fn from(value: RetainedXml) -> Self {
+        Self {
+            raw_xml: value.text,
+            byte_start: value.span.start(),
+            byte_end: value.span.end(),
+        }
+    }
+}
+
 /// Document-level GUI state outside application-object view providers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GuiDocumentRecord {
@@ -306,12 +417,9 @@ pub struct GuiStateRecord {
     pub values: Vec<ValueRecord>,
     /// Referenced display assets.
     pub side_entries: Vec<String>,
-    /// Exact state XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `GuiDocument.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `GuiDocument.xml`.
-    pub byte_end: u64,
+    /// Retained XML and its byte span.
+    #[serde(flatten)]
+    pub xml: RetainedXml,
 }
 
 /// A supported semantic annotation runtime type.
@@ -998,12 +1106,9 @@ pub struct GuiPropertyRecord {
     pub values: Vec<ValueRecord>,
     /// Referenced archive entries.
     pub side_entries: Vec<String>,
-    /// Exact property XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `GuiDocument.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `GuiDocument.xml`.
-    pub byte_end: u64,
+    /// Retained XML and its byte span.
+    #[serde(flatten)]
+    pub xml: RetainedXml,
 }
 
 /// ZIP physical-ledger role stored on one archive span.
@@ -1312,18 +1417,7 @@ pub struct ObjectRecord {
     /// Source-order index.
     pub order: usize,
     /// Exact object-data XML and its source span, when present.
-    pub data: Option<ObjectData>,
-}
-
-/// Object-data XML and the source span that produced it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ObjectData {
-    /// Exact object-data XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset of object-data XML.
-    pub byte_start: u64,
-    /// Exclusive byte offset of object-data XML.
-    pub byte_end: u64,
+    pub data: Option<RetainedXml>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1346,9 +1440,9 @@ impl From<ObjectRecord> for ObjectRecordWire {
     fn from(value: ObjectRecord) -> Self {
         let (raw_xml, byte_start, byte_end) = match value.data {
             Some(data) => (
-                Some(data.raw_xml),
-                Some(data.byte_start),
-                Some(data.byte_end),
+                Some(data.text),
+                Some(data.span.start()),
+                Some(data.span.end()),
             ),
             None => (None, None, None),
         };
@@ -1376,11 +1470,9 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
         let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
-            (Some(raw_xml), Some(byte_start), Some(byte_end)) => Some(ObjectData {
-                raw_xml,
-                byte_start,
-                byte_end,
-            }),
+            (Some(raw_xml), Some(byte_start), Some(byte_end)) => {
+                Some(RetainedXml::try_new(raw_xml, byte_start, byte_end)?)
+            }
             (None, None, None) => None,
             _ => {
                 return Err(
@@ -1625,12 +1717,8 @@ pub struct PropertyRecord {
     pub body: PropertyBody,
     /// Source-order index within the owner.
     pub order: usize,
-    /// Exact property XML.
-    pub raw_xml: String,
-    /// Inclusive byte offset in `Document.xml`.
-    pub byte_start: u64,
-    /// Exclusive byte offset in `Document.xml`.
-    pub byte_end: u64,
+    /// Retained XML and its byte span.
+    pub xml: RetainedXml,
 }
 
 impl PropertyRecord {
@@ -1714,9 +1802,9 @@ impl From<PropertyRecord> for PropertyRecordWire {
             values,
             links,
             side_entries,
-            raw_xml: value.raw_xml,
-            byte_start: value.byte_start,
-            byte_end: value.byte_end,
+            raw_xml: value.xml.text,
+            byte_start: value.xml.span.start(),
+            byte_end: value.xml.span.end(),
         }
     }
 }
@@ -1754,9 +1842,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             status: wire.status,
             body,
             order: wire.order,
-            raw_xml: wire.raw_xml,
-            byte_start: wire.byte_start,
-            byte_end: wire.byte_end,
+            xml: RetainedXml::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)?,
         })
     }
 }

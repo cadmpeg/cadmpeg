@@ -880,7 +880,8 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert_eq!(compatibility_properties.len(), 1);
     assert_eq!(compatibility_properties[0].type_name, "App::PropertyBool");
     assert!(compatibility_properties[0]
-        .raw_xml
+        .xml
+        .text()
         .contains("<Bool value=\"false\"/>"));
     assert!(matches!(
         &feature("Pipe").definition,
