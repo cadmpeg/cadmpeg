@@ -963,19 +963,6 @@ impl<'a> IndexedSection<'a> {
         }
     }
 
-    fn record_views(&self) -> Vec<(usize, &'a [u8], Option<u32>)> {
-        match &self.store {
-            IndexedStore::Fixed { records } => records
-                .iter()
-                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
-                .collect(),
-            IndexedStore::OffsetOnly { records, .. } => records
-                .iter()
-                .map(|record| (record.offset, record.bytes, None))
-                .collect(),
-        }
-    }
-
     /// Decode explicit numeric-expression text within bounded entity records.
     pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
         self.numeric_expression_records()
@@ -986,7 +973,16 @@ impl<'a> IndexedSection<'a> {
 
     /// Decode expressions together with their owning record ordinal.
     pub fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
-        let records = self.record_views();
+        let records: Vec<(usize, &'a [u8], Option<u32>)> = match &self.store {
+            IndexedStore::Fixed { records } => records
+                .iter()
+                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
+                .collect(),
+            IndexedStore::OffsetOnly { records, .. } => records
+                .iter()
+                .map(|record| (record.offset, record.bytes, None))
+                .collect(),
+        };
         if !records.iter().any(|(_, bytes, _)| {
             bytes
                 .windows(b"hostglobalvariables".len())
@@ -1003,64 +999,36 @@ impl<'a> IndexedSection<'a> {
             })
             .collect()
     }
+}
 
-    /// Decode every strictly framed printable string in each bounded record.
-    pub fn string_values(&self) -> Vec<(usize, usize, Option<u32>, StringValue<'a>)> {
-        self.record_views()
-            .into_iter()
-            .enumerate()
-            .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
-                string_values(bytes, offset).into_iter().enumerate().map(
-                    move |(value_ordinal, value)| (record_ordinal, value_ordinal, object_id, value),
-                )
-            })
-            .collect()
+impl<'a> FixedEntityRecord<'a> {
+    /// Decode every strictly framed printable string in this bounded record.
+    pub fn string_values(&self) -> Vec<StringValue<'a>> {
+        string_values(self.bytes, self.offset)
     }
 
-    /// Decode tagged cross-record references from every bounded record.
-    // The tuple carries one coupled result; a separate alias would add no invariant.
-    #[allow(clippy::type_complexity)]
-    pub fn references(
-        &self,
-    ) -> Vec<(
-        usize,
-        usize,
-        Option<u32>,
-        LocatedReference<RecordReference<()>>,
-    )> {
-        let records = self.record_views();
-        let record_count = records.len();
-        records
+    /// Decode tagged references within this fixed-record table.
+    pub fn references(&self, record_count: usize) -> Vec<LocatedReference<RecordReference<()>>> {
+        let mut references = record_references(self.bytes, self.offset)
             .into_iter()
-            .enumerate()
-            .flat_map(|(record_ordinal, (offset, bytes, object_id))| {
-                let mut references = record_references(bytes, offset)
-                    .into_iter()
-                    .map(|reference| LocatedReference {
-                        offset: reference.offset,
-                        value: RecordReference::Direct(reference.value),
-                    })
-                    .collect::<Vec<_>>();
-                references.extend(
-                    counted_record_references(bytes, offset, record_count)
-                        .into_iter()
-                        .map(|reference| LocatedReference {
-                            offset: reference.offset,
-                            value: RecordReference::RecordOrdinal16 {
-                                ordinal: reference.value,
-                                target: (),
-                            },
-                        }),
-                );
-                references.sort_by_key(|reference| reference.offset);
-                references
-                    .into_iter()
-                    .enumerate()
-                    .map(move |(reference_ordinal, reference)| {
-                        (record_ordinal, reference_ordinal, object_id, reference)
-                    })
+            .map(|reference| LocatedReference {
+                offset: reference.offset,
+                value: RecordReference::Direct(reference.value),
             })
-            .collect()
+            .collect::<Vec<_>>();
+        references.extend(
+            counted_record_references(self.bytes, self.offset, record_count)
+                .into_iter()
+                .map(|reference| LocatedReference {
+                    offset: reference.offset,
+                    value: RecordReference::RecordOrdinal16 {
+                        ordinal: reference.value,
+                        target: (),
+                    },
+                }),
+        );
+        references.sort_by_key(|reference| reference.offset);
+        references
     }
 }
 
