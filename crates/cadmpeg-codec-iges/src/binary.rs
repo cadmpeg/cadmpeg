@@ -654,10 +654,16 @@ fn parameter_text(entity_type: i64, values: &[BinaryValue]) -> Result<Vec<u8>, C
     Ok(output)
 }
 
-fn render_field(value: &BinaryValue, label: bool, status: bool) -> Result<[u8; 8], CodecError> {
+enum FieldRendering {
+    Plain,
+    Label,
+    Status,
+}
+
+fn render_field(value: &BinaryValue, rendering: FieldRendering) -> Result<[u8; 8], CodecError> {
     let mut field = [b' '; 8];
-    let rendered = if status {
-        match value {
+    let rendered = match rendering {
+        FieldRendering::Status => match value {
             BinaryValue::Default => Vec::new(),
             BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
                 format!("{value:08}").into_bytes()
@@ -665,25 +671,15 @@ fn render_field(value: &BinaryValue, label: bool, status: bool) -> Result<[u8; 8
             BinaryValue::Real(_) | BinaryValue::String(_) => {
                 return Err(malformed("Binary Directory status is not an integer"));
             }
-        }
-    } else if label {
-        match value {
-            BinaryValue::Default => Vec::new(),
-            BinaryValue::String(value) => value.clone(),
-            BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
-                value.to_string().into_bytes()
-            }
-            BinaryValue::Real(value) => render_real(*value),
-        }
-    } else {
-        match value {
+        },
+        FieldRendering::Plain | FieldRendering::Label => match value {
             BinaryValue::Default => Vec::new(),
             BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
                 value.to_string().into_bytes()
             }
             BinaryValue::Real(value) => render_real(*value),
             BinaryValue::String(value) => value.clone(),
-        }
+        },
     };
     if rendered.len() > field.len() {
         return Err(malformed(
@@ -978,36 +974,34 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
         let values = &directory_record.values;
         let first = [
-            render_field(&values[0], false, false)?,
+            render_field(&values[0], FieldRendering::Plain)?,
             render_field(
                 &BinaryValue::Pointer(i64::from(parameter_starts[index])),
-                false,
-                false,
+                FieldRendering::Plain,
             )?,
-            render_field(&values[2], false, false)?,
-            render_field(&values[3], false, false)?,
-            render_field(&values[4], false, false)?,
-            render_field(&values[5], false, false)?,
-            render_field(&values[6], false, false)?,
-            render_field(&values[7], false, false)?,
-            render_field(&values[8], false, true)?,
+            render_field(&values[2], FieldRendering::Plain)?,
+            render_field(&values[3], FieldRendering::Plain)?,
+            render_field(&values[4], FieldRendering::Plain)?,
+            render_field(&values[5], FieldRendering::Plain)?,
+            render_field(&values[6], FieldRendering::Plain)?,
+            render_field(&values[7], FieldRendering::Plain)?,
+            render_field(&values[8], FieldRendering::Status)?,
         ];
         let second = [
-            render_field(&values[0], false, false)?,
-            render_field(&values[9], false, false)?,
-            render_field(&values[10], false, false)?,
+            render_field(&values[0], FieldRendering::Plain)?,
+            render_field(&values[9], FieldRendering::Plain)?,
+            render_field(&values[10], FieldRendering::Plain)?,
             render_field(
                 &BinaryValue::Integer(i64::try_from(parameter_counts[index]).map_err(|_| {
                     malformed("normalized Parameter Data line count exceeds signed range")
                 })?),
-                false,
-                false,
+                FieldRendering::Plain,
             )?,
-            render_field(&values[11], false, false)?,
-            render_field(&values[12], false, false)?,
-            render_field(&values[13], false, false)?,
-            render_field(&values[14], true, false)?,
-            render_field(&values[15], false, false)?,
+            render_field(&values[11], FieldRendering::Plain)?,
+            render_field(&values[12], FieldRendering::Plain)?,
+            render_field(&values[13], FieldRendering::Plain)?,
+            render_field(&values[14], FieldRendering::Label)?,
+            render_field(&values[15], FieldRendering::Plain)?,
         ];
         let mut first_data = [b' '; CARD_DATA_WIDTH];
         let mut second_data = [b' '; CARD_DATA_WIDTH];
