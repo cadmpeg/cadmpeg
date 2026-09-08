@@ -1105,14 +1105,15 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
     let members = super::operation_body_members(record);
-    assert_eq!(members.len(), 2);
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].members.len(), 2);
     assert_eq!(members[0].body_reference_ordinal, 0);
     assert_eq!(members[0].body_object_index, 66);
-    assert_eq!(members[0].member.atom.value(), 127);
-    assert_eq!(members[0].member.atom.raw(), [0x7f]);
-    assert_eq!(members[0].member.offset, 122);
-    assert_eq!(members[1].member.atom.value(), 1);
-    assert_eq!(members[1].member.atom.raw(), [0x80, 0x01]);
+    assert_eq!(members[0].members[0].atom.value(), 127);
+    assert_eq!(members[0].members[0].atom.raw(), [0x7f]);
+    assert_eq!(members[0].members[0].offset, 122);
+    assert_eq!(members[0].members[1].atom.value(), 1);
+    assert_eq!(members[0].members[1].atom.raw(), [0x80, 0x01]);
 
     let truncated = &bytes[..bytes.len() - 1];
     assert!(super::operation_body_members(

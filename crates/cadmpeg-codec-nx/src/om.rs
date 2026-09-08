@@ -875,15 +875,13 @@ pub struct HolePackageConstructionGroupLane {
 
 /// One wrapped member index in a branch-`11` operation body clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBodyMember {
+pub struct OperationBodyMemberGroup {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
-    /// Zero-based member order in the counted lane.
-    pub ordinal: u32,
-    /// Exact compact index and its absolute source position.
-    pub member: LocatedCompactIndex,
+    /// Ordered compact indices and their absolute source positions.
+    pub members: Vec<LocatedCompactIndex>,
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
@@ -2039,59 +2037,52 @@ pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePay
 }
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.
-pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBodyMember> {
+pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBodyMemberGroup> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
-        .flat_map(|(body_ordinal, reference)| {
+        .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
             if record.bytes().get(end..end + 2) != Some(&[0xff, 0x11]) {
-                return Vec::new();
+                return None;
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let Some(atom) = record.bytes().get(at..).and_then(PayloadScalarAtom::read) else {
-                    return Vec::new();
-                };
+                let atom = record.bytes().get(at..).and_then(PayloadScalarAtom::read)?;
                 at += atom.raw().len();
             }
             if record.bytes().get(at) != Some(&0x01) {
-                return Vec::new();
+                return None;
             }
-            let Some(count) = record.bytes().get(at + 1).copied().map(usize::from) else {
-                return Vec::new();
-            };
+            let count = record.bytes().get(at + 1).copied().map(usize::from)?;
             if count < 2 {
-                return Vec::new();
+                return None;
             }
             at += 2;
             let mut members = Vec::with_capacity(count - 1);
-            for ordinal in 0..count - 1 {
+            for _ in 0..count - 1 {
                 if record.bytes().get(at) != Some(&0x2e) {
-                    return Vec::new();
+                    return None;
                 }
                 at += 1;
                 let member_at = at;
-                let Some(atom) = record.bytes().get(at..).and_then(CompactIndexAtom::read) else {
-                    return Vec::new();
-                };
+                let atom = record.bytes().get(at..).and_then(CompactIndexAtom::read)?;
                 at += atom.raw().len();
                 if record.bytes().get(at) != Some(&0x00) {
-                    return Vec::new();
+                    return None;
                 }
                 at += 1;
-                members.push(OperationBodyMember {
-                    body_reference_ordinal: body_ordinal as u32,
-                    body_object_index: reference.object_index.value(),
-                    ordinal: ordinal as u32,
-                    member: LocatedCompactIndex {
-                        atom,
-                        offset: record.offset() + member_at,
-                    },
+                members.push(LocatedCompactIndex {
+                    atom,
+                    offset: record.offset() + member_at,
                 });
             }
-            members
+            Some(OperationBodyMemberGroup {
+                body_reference_ordinal: body_ordinal as u32,
+                body_object_index: reference.object_index.value(),
+                members,
+            })
         })
         .collect()
 }
